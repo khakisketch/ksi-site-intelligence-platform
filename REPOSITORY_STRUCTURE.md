@@ -164,7 +164,7 @@ their owner until an explicit cleanup task removes them.
 | Former `services/dji-gateway/` | Historical Gateway capability ports and receipts | No — historical | Not a current owner, transport or instruction entry | ARCHIVED (P3 Task 6 → `archive/acquisition-2026/services/dji-gateway/`, historical) |
 | `services/processing-controller/` | Processing — job workers, artifact measurement/upload | Yes | Reads Core work; workers measure, Core adjudicates | RETAIN |
 | `services/spatial-data-mcp/` | Bounded local stdio MCP adapter — six fixed tools over one configured Core origin | No (source-run adapter; no listener/deployment) | Reads Core AI delivery only; owns no bytes, grants, credentials, or device authority | RETAIN |
-| `services/analysis-mcp/` | Bounded local stdio Analysis adapter — six fixed tools over Core | No (source-run adapter; no listener/deployment) | Same fixed V2 result/evidence records; no independent computation or authority | RETAIN |
+| `services/analysis-mcp/` | Bounded local stdio Analysis adapter — seven fixed tools over Core, including calculation-free readiness | No (source-run adapter; no listener/deployment) | Same fixed V2 result/evidence records; no independent computation or authority | RETAIN |
 
 A new `services/` child must have its own independently managed listener, daemon/polling loop,
 health/readiness boundary, deployment configuration, or separately started worker entrypoint. Import

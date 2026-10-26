@@ -1,6 +1,13 @@
 import "server-only";
 
 import { coreFetch } from "./client";
+import {
+  isAnalysisReadinessView,
+  isAnalysisReadinessViewFor,
+  type AnalysisReadinessViewV1,
+} from "../analysis-readiness";
+
+export type { AnalysisReadinessViewV1 };
 
 export type AnalysisSelector = {
   workOrderId: string;
@@ -347,4 +354,26 @@ export function createAnalysis(
       headers: { "Idempotency-Key": idempotencyKey },
     },
   );
+}
+
+/**
+ * 목적별 조건 확인 읽기 뷰(V1) — 고정 분석을 요청하기 전에 고른 쌍의
+ * 조건을 미리 읽는 읽기 전용 판독이다. 권한을 주지 않으며, 생성·의도·
+ * 작업·저널을 만들지 않는다. 실제 요청 시 Core가 같은 쌍을 다시 판정한다.
+ * 모양 검사는 화면과 공유하는 순수 가드를 쓴다(단일 진실 공급원).
+ */
+export async function checkAnalysisReadiness(
+  siteId: string,
+  workAreaId: string,
+  input: { baseline: AnalysisSelector; current: AnalysisSelector },
+): Promise<AnalysisReadinessViewV1> {
+  const view = await coreFetch<unknown>(
+    `/v2/sites/${encodeURIComponent(siteId)}/work-areas/${encodeURIComponent(workAreaId)}/analysis-readiness`,
+    { method: "POST", body: input },
+  );
+  if (!isAnalysisReadinessView(view)
+    || !isAnalysisReadinessViewFor(view, { siteId, workAreaId, ...input })) {
+    throw new Error("분석 조건 확인 응답 형식을 확인할 수 없습니다.");
+  }
+  return view;
 }

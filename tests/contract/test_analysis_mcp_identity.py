@@ -398,7 +398,8 @@ def test_analysis_mcp_client_is_denied_auth_only_and_unrelated_generic_routes(
         fixture.close()
 
 
-def test_analysis_mcp_client_can_use_only_the_six_analysis_routes(tmp_path: Path) -> None:
+def test_analysis_mcp_client_can_use_only_the_seven_analysis_routes(tmp_path: Path) -> None:
+    """The six frozen routes keep their shapes; readiness is the additive seventh."""
     from datetime import UTC, datetime, timedelta
 
     from analysis_api_local_fixture import build_local_analysis_api_fixture
@@ -445,6 +446,17 @@ def test_analysis_mcp_client_can_use_only_the_six_analysis_routes(tmp_path: Path
         )
         assert created.status_code == 202, created.text
         analysis_id = created.json()["analysisId"]
+        readiness = client.post(
+            f"/v2/sites/{fixture.site_id}/work-areas/{fixture.work_area_id}/analysis-readiness",
+            headers=headers,
+            json={
+                "baseline": fixture.baseline.model_dump(by_alias=True, mode="json"),
+                "current": fixture.current.model_dump(by_alias=True, mode="json"),
+            },
+        )
+        assert readiness.status_code == 200, readiness.text
+        assert readiness.json()["contractVersion"] == "analysis-readiness.v1"
+        assert readiness.json()["coverageCheck"] == "REQUIRES_WORKER_VALIDATION"
         read_paths = (
             f"/v2/sites/{fixture.site_id}/analyses/{analysis_id}",
             f"/v2/sites/{fixture.site_id}/analyses/{analysis_id}/evidence",
@@ -461,7 +473,7 @@ def test_analysis_mcp_client_can_use_only_the_six_analysis_routes(tmp_path: Path
         assert coverage.json()["detail"] == "ANALYSIS_RESOURCE_NOT_FOUND"
         assert all(
             response.headers.get("X-KSI-External-AI-Egress") == "ALLOWED"
-            for response in (observations, listed, created, *reads)
+            for response in (observations, listed, created, readiness, *reads)
         )
     finally:
         fixture.close()

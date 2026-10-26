@@ -6,7 +6,7 @@ outside long-term Site Intelligence responsibility. Their sources remain
 retained transitional implementation until a verified successor move.
 
 Preservation is pinned by literal SHA256 digests of the two untouched
-product-state sections (Milestones, Current slice) taken at baseline
+sections (historical Milestones and current product-state Current slice) taken at baseline
 738b4a950e6b202a3a65982cea570e3a2ba4c8b7, plus the exact registry
 status/state mapping by path — no Git-history access at test runtime, so
 shallow-CI checkouts are safe. No invented status enum is accepted: the
@@ -32,6 +32,7 @@ DOC_STATUS = "docs/DOCUMENT_STATUS.md"
 OVERVIEW = "docs/architecture/00_SYSTEM_OVERVIEW.md"
 REPO_STRUCTURE = "REPOSITORY_STRUCTURE.md"
 PRODUCT_STATE = "docs/superpowers/product-state.md"
+PRODUCT_STATE_HISTORY = "docs/superpowers/product-state-history-2026-10-26.md"
 PHASE_REGISTRY = "docs/goals/PHASE_REGISTRY.yaml"
 ROADMAP = "docs/superpowers/plans/2026-09-30-spatial-data-platform-roadmap.md"
 ADR036 = "docs/architecture/ADR-KSI-036-customer-reconstruction-and-result-ingress.md"
@@ -273,21 +274,17 @@ def test_historical_decisions_have_explicit_supersession() -> None:
     # Routing index marks the boundary active.
     assert "ADR-KSI-039" in _read(DOC_STATUS)
 
-    # Preserved sections match the pinned baseline digests exactly.
+    # Dated Milestones moved to history; the literal preservation digest stays
+    # unchanged. Current slice remains at the live path with its original hash.
     state = _read(PRODUCT_STATE)
-    assert (
-        hashlib.sha256(
-            _section(state, "## Milestones", "## Current slice").encode()
-        ).hexdigest()
-        == MILESTONES_SHA256
-    )
+    history = _section(_read(PRODUCT_STATE_HISTORY), "## Milestones", "## Current slice")
+    assert hashlib.sha256(history.encode()).hexdigest() == MILESTONES_SHA256
     assert (
         hashlib.sha256(_section(state, "## Current slice", "## ").encode()).hexdigest()
         == CURRENT_SLICE_SHA256
     )
 
     # Historical Milestones rows are preserved as history, separately from marking.
-    history = _section(state, "## Milestones", "## Current slice")
     for item in EXCLUDED_FUTURE_IDS:
         assert item in history, item
     assert "false_positive_complete" in history

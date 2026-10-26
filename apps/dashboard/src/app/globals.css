@@ -594,8 +594,8 @@ body {
 /* ═══════════════════════════════════════════════════════════════════════════
    Viewer-first shell — site 공간/자료 only (2026-10-26 decision A)
 
-   Dense screens keep the labelled 176/232px rail and the global top bar. On
-   viewer paths the body switches to a 56px icon rail; the main region stops
+   The labelled 176/232px rail is the default on every route. Only an explicit
+   user choice switches it to a 56px icon rail. On viewer paths the main stops
    scrolling so the spatial stage owns the viewport. The top bar hides only
    for a healthy session — expiry/unknown keeps its recovery strip. The site
    header moves into the floating layer panel at lg+; mobile keeps it.
@@ -604,7 +604,7 @@ body {
    class on client navigation; the root layout sets it in the first render.
    ═══════════════════════════════════════════════════════════════════════════ */
 @media (min-width: 1024px) {
-  body.viewer-shell {
+  body.desktop-nav-collapsed {
     grid-template-columns: 56px minmax(0, 1fr);
   }
   body.viewer-shell #main-content {
@@ -638,18 +638,39 @@ body {
   display: none;
 }
 
-/* Workspace: observation/layer controls are primary. Keep them visible by
-   insetting them past the floating catalog; the canvas itself stays full-bleed. */
+/* Panels consume real columns, not the canvas. Percentage bounds leave the
+   stage usable at 1024px even with an expanded global menu and both panels. */
 @media (min-width: 1024px) {
-  [data-workbench-viewer][data-catalog-open="true"] [data-workbench-pane-controls],
-  [data-workbench-viewer][data-catalog-open="true"] [data-workbench-stage-inset] {
-    margin-left: 312px;
+  [data-viewer-columns] {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas: "stage";
+  }
+  [data-viewer-stage] { grid-area: stage; }
+  [data-viewer-panel="catalog"] { grid-area: catalog; }
+  [data-viewer-panel="inspector"] { grid-area: inspector; }
+  [data-workbench-viewer][data-catalog-open="true"] [data-viewer-columns] {
+    grid-template-columns: clamp(224px, 24%, 300px) minmax(0, 1fr);
+    grid-template-areas: "catalog stage";
+  }
+  [data-workbench-viewer][data-inspector-open="true"] [data-viewer-columns] {
+    grid-template-columns: minmax(0, 1fr) clamp(224px, 28%, 332px);
+    grid-template-areas: "stage inspector";
+  }
+  [data-workbench-viewer][data-catalog-open="true"][data-inspector-open="true"] [data-viewer-columns] {
+    grid-template-columns: clamp(224px, 24%, 300px) minmax(0, 1fr) clamp(224px, 28%, 332px);
+    grid-template-areas: "catalog stage inspector";
   }
 }
 
 /* The same viewer bar keeps only actionable controls. The "보기 방식" label and
    the explanatory purpose line duplicate the visible controls at every width. */
 [data-workbench-viewer] [data-viewer-compact-hide] {
+  display: none;
+}
+
+/* The dock header already names the inspector. Mobile/dense surfaces keep the
+   content heading because they do not have that desktop dock header. */
+[data-workbench-viewer] [data-workbench-inspector-heading] {
   display: none;
 }
 

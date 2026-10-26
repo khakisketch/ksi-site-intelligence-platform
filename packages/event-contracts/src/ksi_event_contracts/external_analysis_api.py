@@ -342,6 +342,54 @@ class AnalysisListV1(_CamelModel):
     items: tuple[AnalysisViewV1, ...] = Field(max_length=500)
 
 
+class AnalysisReadinessViewV1(_CamelModel):
+    """Pure read-only preflight for one arbitrary selector pair.
+
+    This projection never creates an intent, AP/NX record, or journal entry
+    and grants no execution authority. It reuses the sealed AP decision
+    predicates read-only; ``create`` rechecks the same predicates before any
+    durable admission. ``coverageCheck`` never promises common-mask
+    verification — that remains worker-validated.
+    """
+
+    contract_version: Literal["analysis-readiness.v1"] = "analysis-readiness.v1"
+    site_id: _Text
+    work_area_id: _Text
+    baseline: AnalysisObservationSelectorV1
+    current: AnalysisObservationSelectorV1
+    suitability_state: AnalysisSuitabilityStateV1
+    blockers: tuple[AnalysisBlockerV1, ...] = Field(max_length=128)
+    limitation_codes: tuple[_ReasonCode, ...] = Field(max_length=128, default=())
+    checked_at: datetime
+    calculation_identity_digest: _Digest | None = None
+    coverage_check: Literal["REQUIRES_WORKER_VALIDATION"] = "REQUIRES_WORKER_VALIDATION"
+
+    @field_validator("checked_at")
+    @classmethod
+    def _checked_at_is_utc(cls, value: datetime) -> datetime:
+        if value.tzinfo is None or value.utcoffset() != UTC.utcoffset(value):
+            raise ValueError("checkedAt must be UTC")
+        return value
+
+    @model_validator(mode="after")
+    def _readiness_state_matches_blockers(self) -> Self:
+        needs_blockers = {
+            AnalysisSuitabilityStateV1.BLOCKED,
+            AnalysisSuitabilityStateV1.REMEDIATION_REQUIRED,
+            AnalysisSuitabilityStateV1.REASSESSMENT_REQUIRED,
+        }
+        if self.suitability_state in needs_blockers and not self.blockers:
+            raise ValueError("unavailable readiness requires one or more typed blockers")
+        if self.suitability_state not in needs_blockers and self.blockers:
+            raise ValueError("available readiness must not carry blockers")
+        if (
+            self.suitability_state is not AnalysisSuitabilityStateV1.PROVISIONAL_ACCURACY_UNVERIFIED
+            and self.limitation_codes
+        ):
+            raise ValueError("only provisional readiness may carry limitation codes")
+        return self
+
+
 class AnalysisEvidenceViewV1(_CamelModel):
     analysis_id: _Text
     authority: AnalysisAuthorityReferencesV1
@@ -369,6 +417,7 @@ __all__ = [
     "AnalysisObservationOptionsV1",
     "AnalysisObservationSelectorV1",
     "AnalysisPolicyEvidenceV1",
+    "AnalysisReadinessViewV1",
     "AnalysisResultV1",
     "AnalysisRuntimeEvidenceV1",
     "AnalysisSuitabilityStateV1",

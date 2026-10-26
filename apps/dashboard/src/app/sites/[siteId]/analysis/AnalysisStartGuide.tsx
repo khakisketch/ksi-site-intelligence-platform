@@ -8,6 +8,11 @@ export function AnalysisStartGuide({
   hasMoreAnalyses,
   canCreate,
   workAreaId,
+  /**
+   * 후보·구역이 있어 실제 선택이 먼저일 때 true — 안내는 접힌 도움말로
+   * 둔다. 기록·후보가 없어 다음 행동을 정해야 할 때는 펼친 안내를 둔다.
+   */
+  compact = false,
 }: {
   siteId: string;
   workAreaCount: number;
@@ -16,17 +21,13 @@ export function AnalysisStartGuide({
   hasMoreAnalyses: boolean;
   canCreate: boolean;
   workAreaId?: string | null;
+  compact?: boolean;
 }) {
   const sitePath = `/sites/${encodeURIComponent(siteId)}`;
   const canChoosePair = workAreaCount > 0 && observationCount >= 2;
 
-  return <section className="rounded-lg border border-line bg-surface p-4" aria-labelledby="analysis-start-heading">
-    <header>
-      <h2 id="analysis-start-heading" className="text-[15px] font-bold">변화 분석 시작 안내</h2>
-      <p className="mt-1 text-[12.5px] leading-5 text-ink-2">현재 이 현장에서 확인되는 기록을 바탕으로 다음 단계를 안내합니다. 기록 수만으로 분석 적합성이나 정확도를 판정하지 않습니다.</p>
-    </header>
-
-    <ol className="mt-3 grid gap-3 border-t border-line pt-3 sm:grid-cols-3">
+  const body = (<>
+    <ol className="grid gap-3 border-t border-line pt-3 sm:grid-cols-3">
       <li className="min-w-0">
         <p className="text-[11.5px] font-semibold text-ink-muted">1 · 작업구역</p>
         <p className="mt-1 text-[13px] font-semibold">{workAreaCount > 0 ? `${workAreaCount}개 확인됨` : "등록된 작업구역 없음"}</p>
@@ -60,5 +61,22 @@ export function AnalysisStartGuide({
       </p>
       {canChoosePair && canCreate && <Link href="#new-analysis-request" className="btn btn-primary shrink-0">변화 분석 요청으로 이동</Link>}
     </div>
+  </>);
+
+  if (compact) {
+    return <details className="rounded-lg border border-line bg-surface px-4 py-3">
+      <summary className="tap-target cursor-pointer text-[14px] font-bold">변화 분석 시작 안내</summary>
+      <p className="mt-1 text-[12.5px] leading-5 text-ink-2">현재 이 현장에서 확인되는 기록을 바탕으로 다음 단계를 안내합니다. 기록 수만으로 분석 적합성이나 정확도를 판정하지 않습니다.</p>
+      <div className="mt-3">{body}</div>
+    </details>;
+  }
+
+  return <section className="rounded-lg border border-line bg-surface p-4" aria-labelledby="analysis-start-heading">
+    <header>
+      <h2 id="analysis-start-heading" className="text-[15px] font-bold">변화 분석 시작 안내</h2>
+      <p className="mt-1 text-[12.5px] leading-5 text-ink-2">현재 이 현장에서 확인되는 기록을 바탕으로 다음 단계를 안내합니다. 기록 수만으로 분석 적합성이나 정확도를 판정하지 않습니다.</p>
+    </header>
+
+    <div className="mt-3">{body}</div>
   </section>;
 }

@@ -415,7 +415,7 @@ describe("workspace shell structure", () => {
     const stage = screen.getByRole("region", { name: "선택 관측 보기" });
     const panel = within(stage).getByRole("region", { name: "기본 관측 선택 상태" });
     expect(panel.textContent).toContain("보관 만료는 등록 자료·검사 기록을 삭제하지 않았습니다");
-    expect(panel.textContent).toContain("복구는 위의 구역 자료 준비에서 확인하세요");
+    expect(panel.textContent).toContain("복구는 위의 보기(선택한 자료에서 다시 준비)를 따르세요");
     expect(panel.textContent).not.toContain("미리보기 보관 기간이 끝났습니다");
     expect(panel.textContent).not.toContain("직접 요청하세요");
     expect(panel.textContent).not.toContain("봉인이 끝나지 않았습니다");
@@ -795,10 +795,10 @@ describe("workspace compare mode", () => {
     await renderOverview({ mode: "compare", baselineAssetRef: "exact-1", currentAssetRef: "exact-2" });
     const stage = screen.getByRole("region", { name: "두 시점 비교" });
     // 쌍 동작은 칸·회복보다 먼저 둔다 — 실패 무대를 스크롤해야 보이지 않는다.
+    // (만료 문구 자체는 각 칸의 보기 자리에서 말하며, 단위 검사에서 둔다.)
     const markup = stage.innerHTML;
     expect(markup.indexOf("이 쌍으로 분석 조건 확인")).toBeGreaterThan(-1);
     expect(markup.indexOf("이 쌍으로 분석 조건 확인")).toBeLessThan(markup.indexOf("기준 자료 관측 선택"));
-    expect(markup.indexOf("이 쌍으로 분석 조건 확인")).toBeLessThan(markup.indexOf("미리보기 보관 기간이 끝났습니다"));
     // 차단 상태에서는 조용한 동작으로 둔다(회복 CTA와 1차를 다투지 않는다).
     const ctas = within(stage).getAllByRole("link", { name: "이 쌍으로 분석 조건 확인" });
     expect(ctas).toHaveLength(1);
@@ -972,6 +972,30 @@ describe("explore capture options", () => {
     };
   }
 
+  it.each(["exact", "date-only"] as const)("binds option precision to the exact %s submission instead of another member of its epoch", (selected) => {
+    const exact = fact({ assetRef: "exact", submissionRef: "exact-submission", viewAssetRef: "exact" });
+    const dateOnly = fact({ assetRef: "date-only", submissionRef: "date-submission", viewAssetRef: "date-only",
+      captureStartedAt: null, captureEndedAt: null, captureDate: "2021-08-17", chronologyCandidate: false });
+    // The representative is date-only, while the first same-kind catalog row
+    // is exact. Neither ordering may relabel or silently replace the selection.
+    const options = buildExploreCaptureOptions({
+      facts: factsFor([dateOnly, exact]) as never, workAreaId: "tiny-1",
+      catalogAssets: [catalogItem({ assetRef: "exact", submissionRef: "exact-submission" }),
+        catalogItem({ assetRef: "date-only", submissionRef: "date-submission" })] as never,
+      selectedAssetRef: selected, currentKind: "dsm", selectedEpochId: "epoch-2021",
+    });
+    expect(options).toHaveLength(1);
+    expect(options[0]!.assetRef).toBe(selected);
+    expect(options[0]!.selected).toBe(true);
+    if (selected === "exact") {
+      expect(options[0]!.label).toContain("19:00–20:00");
+      expect(options[0]!.label).not.toContain("날짜만 확인");
+    } else {
+      expect(options[0]!.label).toContain("날짜만 확인 · 시각 미상");
+      expect(options[0]!.label).not.toContain("19:00");
+    }
+  });
+
   it("preserves the selected kind at another observation and keeps date-only precision verbatim", () => {
     const observations = [
       fact({ observationEpochId: "epoch-2021", assetRef: "dsm-2021", viewAssetRef: "dsm-2021" }),
@@ -1118,5 +1142,30 @@ describe("browse source round trip", () => {
     const caption = within(stage).getByText(/^선택 중 ·/).textContent ?? "";
     expect(caption.match(/날짜만 확인 · 시각 미상/g)).toHaveLength(1);
     expect(caption).toContain("등록 버전 1");
+  });
+
+  it("keeps a transitional selection to one caption line without a separate notice box", async () => {
+    const capture = wireCapture({ precision: "DATE_ONLY", captureStartedAt: null, captureEndedAt: null, captureDate: "2021-08-17" });
+    mocked.workspace.mockResolvedValue(workspacePage({
+      observations: [wireObservation("epoch-2021", ["date-only-1"], {
+        capture,
+        chronologyCandidate: false,
+        viewAvailable: true,
+        viewAssetRef: "date-only-1",
+        versions: [wireVersion("date-only-1", { capture, chronologyCandidate: false, displayReady: true, displayState: "SEALED" })],
+      })],
+      entryDefault: { observationEpochId: null, viewAssetRef: null, reason: "NO_EXACT_CAPTURE_CANDIDATE", detail: "Date only", tiedObservationEpochIds: [] },
+    }));
+    mocked.assets.mockResolvedValue({
+      ...EMPTY_CATALOG,
+      assets: [rasterAsset("date-only-1", { captureStartedAt: null, captureEndedAt: null, captureDate: "2021-08-17" })],
+    });
+    // assetRef 힌트 없이 들어오면 서버 기본이 아닌 전이 선택이 된다 — 무엇이
+    // 보이는지는 캡션 한 줄이 밝히고, 같은 선택을 알리는 상자를 따로 두지 않는다.
+    await renderOverview({ workAreaId: "tiny-1" });
+    const stage = screen.getByRole("region", { name: "선택 관측 보기" });
+    const caption = within(stage).getByText(/^선택 중 ·/).textContent ?? "";
+    expect(caption).toContain("서버 기본이 아니라");
+    expect(within(stage).queryByText(/요청한 구역·자료가 조회 범위에 없어/)).toBeNull();
   });
 });

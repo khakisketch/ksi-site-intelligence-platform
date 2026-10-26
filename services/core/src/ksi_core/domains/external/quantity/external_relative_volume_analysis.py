@@ -250,6 +250,23 @@ class _PreparedAssessment:
 
 
 @dataclass(frozen=True, slots=True)
+class ReadinessPreview:
+    """Immutable guarded read-only preflight for one arbitrary selector pair.
+
+    The admission is the exact sealed AP decision for the pair and ``details``
+    carries the confined per-epoch ``READINESS_*`` explanation when that
+    decision is the coarse ``ESSENTIAL_INPUT_UNAVAILABLE`` block.  Both are
+    captured under one shared currentness guard, so a consumer can project
+    them without a second store round-trip that could observe a newer
+    snapshot.  This snapshot never allocates evaluation revisions, appends a
+    journal event, or authorizes execution.
+    """
+
+    admission: AdmissionV2
+    details: tuple[tuple[str, Epoch], ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
 class _PreparedExecutionWitness:
     """Preflight-only assessment and its historical record selection.
 
@@ -487,6 +504,125 @@ class ExternalRelativeVolumeAnalysisStore:
         if self._suitability_key(admission) != self._suitability_key(historical.admission):
             return None
         return self._public_record(historical)
+
+    def preview_readiness_snapshot(
+        self, *, organization_id: str, request: AnalysisAssessmentRequestV2, now: datetime
+    ) -> ReadinessPreview | None:
+        """Decide and explain one arbitrary pair under one guarded snapshot.
+
+        Preparation, the local currentness recheck, and the per-epoch
+        ``READINESS_*`` classification all complete inside the shared
+        ``guarded_read`` + store lock, so a negative decision can never be
+        prepared from an older snapshot than its diagnostic details (or vice
+        versa).  ``None`` is returned only when the guarded verification
+        itself fails, which is unreachable unless a participant violates the
+        shared coordinator contract; the caller projects that as
+        reassessment-required without inventing a suitability verdict.
+
+        Guard-holding audit: every call under the guard is a local in-memory
+        predicate or pure CPU work — participant ``get``/``resolve``/``list``
+        dict scans under their own locks, retained policy/context
+        dict lookups, ``hashlib`` digests over small canonical JSON, and local
+        PROJ EPSG resolution (system database, no KSI storage or remote I/O).
+        No journal append, ``mutation()``, object-store, worker, lease, or
+        network call runs under the guard; no evaluation revision is
+        allocated.  Lock order is coordinator-then-participant, matching the
+        documented mutation order, and every nested ``guarded_read`` reentry
+        is ``RLock``-safe (``analysis_fact_currentness`` already reenters it
+        under guard today).
+        """
+        self._require_utc(now)
+        with self._coordinator.guarded_read(), self._lock:
+            prepared = self._prepare_for_organization(
+                organization_id=organization_id, request=request, now=now
+            )
+            if isinstance(
+                prepared, _PreparedAssessment
+            ) and not self._prepared_is_locally_current(prepared, now=now):
+                # Defensive: preparation and verification share one guarded
+                # snapshot, so this is unreachable unless a participant
+                # violates the shared coordinator contract. Never project a
+                # possibly stale verdict.
+                return None
+            admission = (
+                prepared.admission if isinstance(prepared, _PreparedAssessment) else prepared
+            )
+            details: list[tuple[str, Epoch]] = []
+            if admission.reason_codes == ("ESSENTIAL_INPUT_UNAVAILABLE",):
+                pairs: tuple[
+                    tuple[SealedExternalSubjectV1, Epoch],
+                    tuple[SealedExternalSubjectV1, Epoch],
+                ] = (
+                    (request.baseline.subject, "BASELINE"),
+                    (request.current.subject, "CURRENT"),
+                )
+                for subject, epoch in pairs:
+                    code = self._diagnose_epoch_unavailable(subject, epoch=epoch)
+                    if code is not None:
+                        details.append((code, epoch))
+                        if len(details) >= 8:
+                            break
+            return ReadinessPreview(admission=admission, details=tuple(details))
+
+    def _diagnose_epoch_unavailable(
+        self, subject: SealedExternalSubjectV1, *, epoch: Epoch
+    ) -> str | None:
+        """Return the first precise readiness code for one epoch, if unresolvable."""
+        revision = self._reconstruction.resolve_sealed_subject(subject)
+        if revision is None or revision.manifest is None:
+            return "READINESS_DSM_UNAVAILABLE"
+        dsm_entries = [
+            entry for entry in revision.manifest.entries if entry.kind is ProcessingArtifactKind.DSM
+        ]
+        if len(dsm_entries) != 1:
+            return "READINESS_DSM_UNAVAILABLE"
+        dsm = dsm_entries[0]
+        capture = revision.submission.input_declaration
+        if (
+            capture.capture_started_at is None
+            or capture.capture_ended_at is None
+            or capture.capture_started_at.tzinfo is None
+            or capture.capture_ended_at.tzinfo is None
+            or capture.capture_started_at.utcoffset() != UTC.utcoffset(capture.capture_started_at)
+            or capture.capture_ended_at.utcoffset() != UTC.utcoffset(capture.capture_ended_at)
+        ):
+            return "READINESS_CAPTURE_INTERVAL_UNAVAILABLE"
+        snapshot = self._inspections.public_snapshot(subject)
+        report = snapshot.report
+        if report is None or report.report_digest is None:
+            return "READINESS_INSPECTION_PENDING"
+        outcome = next(
+            (
+                item
+                for item in report.measurement_payload.outcomes
+                if item.artifact_id == dsm.artifact_id
+            ),
+            None,
+        )
+        if outcome is None:
+            return "READINESS_INSPECTION_PENDING"
+        # Terminal worker verdicts (REJECTED/NOT_APPLICABLE) carry a typed
+        # reason and no measurements by contract, so classify them before any
+        # measurements check. Only a MEASURED outcome with an absent payload
+        # is pending.
+        if outcome.outcome is not ArtifactOutcome.MEASURED:
+            return "READINESS_INSPECTION_REJECTED"
+        if outcome.observed_sha256 != "sha256:" + dsm.observed_sha256:
+            return "READINESS_INSPECTION_BINDING_INVALID"
+        measurements = outcome.measurements
+        if measurements is None:
+            return "READINESS_INSPECTION_PENDING"
+        vertical_reference = measurements.observed_vertical_reference
+        if vertical_reference is None:
+            return "READINESS_VERTICAL_REFERENCE_UNAVAILABLE"
+        if _observed_vertical_unit(vertical_reference) is None:
+            return "READINESS_VERTICAL_UNIT_UNAVAILABLE"
+        if _observed_projected_unit(measurements.observed_crs_identifier) is None:
+            return "READINESS_PROJECTED_UNIT_UNAVAILABLE"
+        a, b, _c, d, e, _f = measurements.transform
+        if epoch == "BASELINE" and (b != 0.0 or d != 0.0 or a <= 0.0 or e >= 0.0):
+            return "READINESS_BASELINE_GRID_INVALID"
+        return None
 
     def latest_current_for_execution(
         self,

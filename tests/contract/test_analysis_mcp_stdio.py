@@ -495,6 +495,7 @@ def test_official_sdk_stdio_server_lists_only_analysis_tools_and_requires_core_a
                 "ksi_list_analysis_observations",
                 "ksi_list_analyses",
                 "ksi_create_analysis",
+                "ksi_check_analysis_readiness",
                 "ksi_get_analysis",
                 "ksi_get_analysis_result",
                 "ksi_get_analysis_evidence",

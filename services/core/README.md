@@ -328,3 +328,24 @@ policies per sealed subject. These are current software limits, not measured
 customer capacity. The exact contract is in `contracts/api/openapi-core.yaml`
 and `contracts/schemas/spatial-asset-catalog.v1.json`. Local verification is
 recorded in `docs/superpowers/plans/2026-09-30-spatial-asset-catalog-v1.md`.
+
+### Exact asset description and calculation-free readiness
+
+`GET /v2/sites/{site_id}/work-areas/{work_area_id}/spatial-assets/{asset_ref}` enriches that
+same opaque asset identity with already-stored V1/V2/V3 producer/capture declarations and
+inspected band/dtype/layout/NoData/valid-pixel detail. Unknowns remain null; date-only metadata
+never becomes a midnight capture interval. Horizontal units require the inspected CRS/WKT
+binding, and resolution is rotation-aware. The versioned schema is
+`contracts/schemas/spatial-asset-description.v1.json`. V1 responses remain unchanged. This is
+not new parsing, producer verification, analysis eligibility, original storage or a byte grant.
+Existing scoped `SITES_READ`, single-WorkArea attribution and bounded-response rules apply.
+
+`POST /v2/sites/{site_id}/work-areas/{work_area_id}/analysis-readiness` accepts only the two
+existing analysis selectors and returns `analysis-readiness.v1`. It reuses the analysis
+assessment predicates without creating intents, assessment/execution records or leases.
+It requires scoped read permission; authenticated Analysis MCP clients additionally require
+the exact route allowance and current Site AI consent. No idempotency key or execution
+activation is needed for this read, and the response grants no authority. Precise read-only
+blockers do not rewrite the historical `ESSENTIAL_INPUT_UNAVAILABLE` meaning. Every response
+retains `coverageCheck=REQUIRES_WORKER_VALIDATION`; creation and publication recheck their
+normal gates. Existing strict V1 and provisional V2 numeric/accuracy policies are unchanged.

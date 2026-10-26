@@ -239,6 +239,76 @@ const ISSUE_GUIDANCE: Record<string, AnalysisIssueGuidance> = {
     selfServiceNextStep:
       "해당 revision의 검사 결과에서 확인되지 않은 조건을 먼저 보완하세요. 조건이 확인된 제출본을 다시 등록하면 됩니다.",
   },
+  READINESS_DSM_UNAVAILABLE: {
+    label: "분석용 DSM 자료 확인 불가",
+    owner: "외부 관측 자료 담당자",
+    nextStep: "봉인된 제출에서 분석용 DSM이 정확히 1건 확인되지 않습니다. 기다려도 해결되지 않으니 담당자가 해당 제출 revision의 DSM 등록·검사 상태를 확인하세요.",
+    destination: "spatial-assets",
+    selfServiceNextStep:
+      "제출에 분석용 DSM 파일이 1건 들어 있는지 확인하세요. 정사영상 등록만으로는 대체되지 않습니다.",
+  },
+  READINESS_CAPTURE_INTERVAL_UNAVAILABLE: {
+    label: "촬영 구간(시작·끝, UTC) 확인 불가",
+    owner: "외부 관측 자료 담당자",
+    nextStep: "촬영 시작·끝 시각이 선언되지 않았거나 UTC가 아닙니다. 날짜만 아는 자료·시각 미상 자료는 이 쌍의 순서 조건을 만족하지 않습니다. 제공자가 UTC 촬영 구간 선언을 보완해야 합니다.",
+    destination: "spatial-assets",
+    selfServiceNextStep:
+      "제출 선언에 UTC 기준 촬영 시작·끝 시각을 포함해 다시 등록하세요. 날짜만으로는 순서 조건이 확인되지 않습니다.",
+  },
+  READINESS_INSPECTION_PENDING: {
+    label: "자료 검사 진행 중",
+    owner: "파일 검사 담당자",
+    nextStep: "Core 검사가 아직 끝나지 않아 기다리면 해결될 수 있습니다. 같은 쌍을 반복 확인하거나 중복 요청할 필요는 없습니다.",
+    destination: "spatial-assets",
+  },
+  READINESS_INSPECTION_REJECTED: {
+    label: "자료 검사에서 거부됨",
+    owner: "외부 관측 자료 담당자",
+    nextStep: "검사 완료 판정이 거부이므로 이 자료는 분석 입력이 될 수 없습니다. 기다려도 바뀌지 않으니 검사 보고서를 확인해 원인을 보완한 뒤 다시 등록하세요.",
+    destination: "spatial-assets",
+    selfServiceNextStep:
+      "검사 보고서의 거부 사유를 확인하고 보완한 파일을 다시 등록하세요. 거부된 파일을 다시 고르면 같은 결과입니다.",
+  },
+  READINESS_INSPECTION_BINDING_INVALID: {
+    label: "검사 기록과 파일 연결 불일치",
+    owner: "외부 관측 자료 담당자",
+    nextStep: "검사 기록의 파일 확인값과 실제 제출 파일이 다릅니다. 검사 뒤 파일이 바뀌었을 수 있으니 같은 파일을 다시 등록하거나 검사를 다시 요청하세요.",
+    destination: "spatial-assets",
+    selfServiceNextStep:
+      "검사가 끝난 뒤 파일을 바꾸지 마세요. 검사받은 그 파일을 다시 등록하면 연결이 맞습니다.",
+  },
+  READINESS_VERTICAL_REFERENCE_UNAVAILABLE: {
+    label: "수직 기준 확인 불가",
+    owner: "공간 자료 담당자",
+    nextStep: "관측된 수직 기준이 기록되지 않아 높이 비교 조건을 확인할 수 없습니다. 제공자가 수직 기준을 명시한 제출로 보완해야 합니다.",
+    destination: "spatial-assets",
+    selfServiceNextStep:
+      "export 설정에서 수직 기준(예: 지오이드 모델)을 기록해 다시 등록하세요. 기준이 없으면 높이를 비교하지 않습니다.",
+  },
+  READINESS_VERTICAL_UNIT_UNAVAILABLE: {
+    label: "수직 단위 확인 불가",
+    owner: "공간 자료 담당자",
+    nextStep: "수직 기준의 단위를 확인할 수 없어 높이 비교 조건을 확인할 수 없습니다. 제공자가 단위가 명시된 제출로 보완해야 합니다.",
+    destination: "spatial-assets",
+    selfServiceNextStep:
+      "수직 기준과 함께 단위(m 등)가 기록되도록 export 설정을 확인해 다시 등록하세요.",
+  },
+  READINESS_PROJECTED_UNIT_UNAVAILABLE: {
+    label: "평면 좌표 단위 확인 불가",
+    owner: "공간 자료 담당자",
+    nextStep: "관측 좌표계의 평면 단위를 확인할 수 없습니다. 제공자가 좌표계와 단위가 명시된 제출로 보완해야 합니다.",
+    destination: "spatial-assets",
+    selfServiceNextStep:
+      "좌표계 식별자와 평면 단위가 기록되도록 export 설정을 확인해 다시 등록하세요.",
+  },
+  READINESS_BASELINE_GRID_INVALID: {
+    label: "기준 격자 해상도·회전 확인 불가",
+    owner: "공간 자료 담당자",
+    nextStep: "기준 격자가 회전했거나 해상도가 유효하지 않아 이 기준으로는 비교할 수 없습니다. 다른 기준 관측을 고르거나 회전 없는 정사격자로 다시 export하세요.",
+    destination: "spatial-assets",
+    selfServiceNextStep:
+      "기준 자료를 회전 없는 정사격자로 export했는지 확인하세요. 격자가 회전하면 기준으로 쓸 수 없습니다.",
+  },
 };
 
 const UNKNOWN_ISSUE: AnalysisIssueGuidance = {

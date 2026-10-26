@@ -32,6 +32,7 @@ from analysis_api_local_fixture import build_local_analysis_api_fixture  # noqa:
 from ksi_core.identity.auth import HumanAuthMode  # noqa: E402
 from ksi_core.identity.oidc_subject_registry import OidcSubjectRegistry  # noqa: E402
 from ksi_core.oidc import OidcJwtVerifier, OidcVerifierConfig  # noqa: E402
+from ksi_event_contracts.site_frame import SiteFrame  # noqa: E402
 from ksi_processing_controller.external_analysis_core_client import (  # noqa: E402
     ExternalAnalysisCoreClient,
 )
@@ -43,13 +44,13 @@ from ksi_processing_controller.external_object_streams import (  # noqa: E402
     ExternalObjectTransportPolicyV1,
     TrustedObjectEndpointV1,
 )
+from test_external_analysis_activation import _write_activation  # noqa: E402
 from test_external_analysis_real_inspection_integration import (  # noqa: E402
     inspect_fixture_epochs_with_real_parser,
 )
 from test_external_analysis_spatial_blockers_integration import (  # noqa: E402
     _inspect_both_epochs_with_actual_lane,
 )
-from test_external_analysis_activation import _write_activation  # noqa: E402
 
 
 def _load_local_issuer() -> ModuleType:
@@ -159,6 +160,10 @@ def _arguments() -> argparse.Namespace:
     parser.add_argument("--dashboard-origin", required=True)
     parser.add_argument("--core-port", type=int, default=8033)
     parser.add_argument("--issuer-port", type=int, default=9031)
+    parser.add_argument("--port-offset", type=int, default=0,
+                        help="Offset the complete isolated port set; never reuse another live rig")
+    parser.add_argument("--include-second-site", action="store_true",
+                        help="Seed a second empty synthetic site for section-preserving navigation")
     parser.add_argument(
         "--scenario",
         choices=(
@@ -171,11 +176,13 @@ def _arguments() -> argparse.Namespace:
         default="normal",
     )
     args = parser.parse_args()
-    if args.dashboard_origin != "http://localhost:3231":
+    if not 0 <= args.port_offset <= 1000:
+        parser.error("isolated port offset must be between 0 and 1000")
+    if args.dashboard_origin != f"http://localhost:{3231 + args.port_offset}":
         parser.error(
             "analysis browser fixture only permits its assigned localhost Dashboard origin"
         )
-    if (args.core_port, args.issuer_port) != (8033, 9031):
+    if (args.core_port, args.issuer_port) != (8033 + args.port_offset, 9031 + args.port_offset):
         parser.error("analysis browser fixture only permits its assigned isolated service ports")
     return args
 
@@ -457,6 +464,18 @@ def main() -> int:
         )
         _wait_http(f"http://127.0.0.1:{args.issuer_port}/healthz", "local issuer")
 
+        fixture_site_ids = [fixture.site_id]
+        if args.include_second_site:
+            second = fixture.app.state.site_store.register(
+                "site-b", "Synthetic empty navigation fixture",
+                SiteFrame(crs="EPSG:5186", vertical_datum="EGM96 height", unit="meter",
+                          transform_version="fixture-v1"),
+                organization_id=fixture.organization_id, ai_egress_allowed=False,
+                actor="local-admin", now=datetime.now(UTC),
+            )
+            if second.record is None:
+                raise RuntimeError("second synthetic site registration failed")
+            fixture_site_ids.append("site-b")
         fixture.app.state.human_auth_mode = HumanAuthMode.OIDC
         fixture.app.state.oidc_verifier = OidcJwtVerifier(
             OidcVerifierConfig(
@@ -483,21 +502,21 @@ def main() -> int:
                                 "local-admin",
                                 "ADMIN",
                                 fixture.organization_id,
-                                [fixture.site_id],
+                                fixture_site_ids,
                                 [fixture.work_area_id],
                             ),
                             (
                                 "local-field-operator",
                                 "FIELD_OPERATOR",
                                 fixture.organization_id,
-                                [fixture.site_id],
+                                fixture_site_ids,
                                 [fixture.work_area_id],
                             ),
                             (
                                 "local-viewer",
                                 "VIEWER",
                                 fixture.organization_id,
-                                [fixture.site_id],
+                                fixture_site_ids,
                                 [fixture.work_area_id],
                             ),
                             ("local-empty-org-admin", "ADMIN", "org-local-empty", [], []),

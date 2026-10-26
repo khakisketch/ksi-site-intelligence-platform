@@ -1,0 +1,1277 @@
+{
+  "$defs": {
+    "ExternalDeclaredVerticalReferenceV1": {
+      "additionalProperties": false,
+      "description": "A bounded external declaration, never a pipeline-produced fact.",
+      "properties": {
+        "datum": {
+          "$ref": "#/$defs/VerticalDatum"
+        },
+        "basis": {
+          "maxLength": 1000,
+          "minLength": 1,
+          "title": "Basis",
+          "type": "string"
+        },
+        "source": {
+          "const": "user_declared",
+          "title": "Source",
+          "type": "string"
+        }
+      },
+      "required": [
+        "datum",
+        "basis",
+        "source"
+      ],
+      "title": "ExternalDeclaredVerticalReferenceV1",
+      "type": "object"
+    },
+    "ExternalDerivativeExportV3": {
+      "additionalProperties": false,
+      "description": "Known local export step that produced the registered derived bytes.\n\nThe originals (for example a 4-band RGBA JPEG-compressed ortho or a JP2\northo) are not relabelled here: this block names the actual tool and\nsettings that exported the supported GeoTIFF derivatives now declared as\nartifacts. The tool identity is the exporter's, never the upstream\nreconstruction producer's.",
+      "properties": {
+        "toolName": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Toolname",
+          "type": "string"
+        },
+        "toolVersion": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Toolversion",
+          "type": "string"
+        },
+        "settingsDigest": {
+          "anyOf": [
+            {
+              "pattern": "^sha256:[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Settingsdigest"
+        },
+        "exportedAt": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Exportedat"
+        },
+        "exportNote": {
+          "anyOf": [
+            {
+              "maxLength": 1000,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Exportnote"
+        }
+      },
+      "required": [
+        "toolName",
+        "toolVersion"
+      ],
+      "title": "ExternalDerivativeExportV3",
+      "type": "object"
+    },
+    "ExternalUpstreamSourceReferenceV3": {
+      "additionalProperties": false,
+      "description": "Typed bounded reference to the upstream public source, never a measurement.\n\nThis records where the bytes came from (portal URI), which upstream bytes\nwere taken (their sha when known), and what licence the publisher page\nstates. The licence string is a customer declaration transcribed from the\npublisher — it grants KSI no data right and verifies nothing. The upstream\nproducer stays unknown; only the local derivative step (below) may carry a\nknown tool identity.\n\nThe URI is stored exactly as declared (no normalization rewrite, so the\ncanonical digest stays stable) but must be a safe http(s) reference: no\njavascript/data/file schemes, no embedded credentials, no whitespace or\ncontrol characters, and a real host. It is never fetched — there is no\nSSRF surface — and rejection messages never echo the supplied value.",
+      "properties": {
+        "sourceUri": {
+          "maxLength": 1000,
+          "minLength": 1,
+          "title": "Sourceuri",
+          "type": "string"
+        },
+        "sourceSha256": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sourcesha256"
+        },
+        "licenceDeclaration": {
+          "anyOf": [
+            {
+              "maxLength": 1000,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Licencedeclaration"
+        },
+        "retrievalNote": {
+          "anyOf": [
+            {
+              "maxLength": 1000,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Retrievalnote"
+        }
+      },
+      "required": [
+        "sourceUri"
+      ],
+      "title": "ExternalUpstreamSourceReferenceV3",
+      "type": "object"
+    },
+    "NodataRepresentation": {
+      "description": "JSON-safe parser observation; NAN is a token, never a non-finite JSON value.",
+      "enum": [
+        "NONE",
+        "FINITE",
+        "NAN",
+        "MASK"
+      ],
+      "title": "NodataRepresentation",
+      "type": "string"
+    },
+    "ProcessingArtifactKind": {
+      "description": "산출물 종류. ADR-KSI-003 원칙상 POINT_CLOUD/CAMERA_POSES가 원본,\nORTHO/DSM/DTM/MESH/TILES_3D가 파생 서빙 계층, REPORT가 파생 분석 산출물이다 —\n실제 계보는 이 값이 아니라 ``lineage.authority``가 밝힌다.",
+      "enum": [
+        "point_cloud",
+        "camera_poses",
+        "ortho",
+        "dsm",
+        "dtm",
+        "mesh",
+        "tiles_3d",
+        "report"
+      ],
+      "title": "ProcessingArtifactKind",
+      "type": "string"
+    },
+    "SpatialAssetCaptureProvenanceV1": {
+      "additionalProperties": false,
+      "description": "What the customer declares about capture timing and original retention.\n\nExact intervals stay strict datetimes only when the submission carries\nboth bounds; a known calendar date without time stays date-only; unknown\ntiming carries no date or timestamps at all. Raw capture bytes are never\nstored by KSI (``rawMediaStoredByKsi`` is always false); the locus says\nwhere the customer claims the originals live.",
+      "properties": {
+        "factClass": {
+          "const": "DECLARED",
+          "default": "DECLARED",
+          "title": "Factclass",
+          "type": "string"
+        },
+        "captureBasis": {
+          "enum": [
+            "EXACT_INTERVAL",
+            "DATE_ONLY",
+            "UNKNOWN"
+          ],
+          "title": "Capturebasis",
+          "type": "string"
+        },
+        "captureStartedAt": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Capturestartedat"
+        },
+        "captureEndedAt": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Captureendedat"
+        },
+        "captureDate": {
+          "anyOf": [
+            {
+              "format": "date",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Capturedate"
+        },
+        "rawMediaStoredByKsi": {
+          "const": false,
+          "default": false,
+          "title": "Rawmediastoredbyksi",
+          "type": "boolean"
+        },
+        "originalRetentionLocus": {
+          "enum": [
+            "customer_workstation",
+            "upstream_source",
+            "unknown"
+          ],
+          "title": "Originalretentionlocus",
+          "type": "string"
+        },
+        "originalRetentionDetail": {
+          "anyOf": [
+            {
+              "maxLength": 1000,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Originalretentiondetail"
+        },
+        "localInputManifestDigest": {
+          "anyOf": [
+            {
+              "pattern": "^sha256:[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Localinputmanifestdigest"
+        },
+        "imageCount": {
+          "anyOf": [
+            {
+              "maximum": 10000000,
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Imagecount"
+        }
+      },
+      "required": [
+        "captureBasis",
+        "originalRetentionLocus"
+      ],
+      "title": "SpatialAssetCaptureProvenanceV1",
+      "type": "object"
+    },
+    "SpatialAssetDeclaredFactsV1": {
+      "additionalProperties": false,
+      "description": "Customer-supplied metadata. It must never be presented as measured fact.",
+      "properties": {
+        "factClass": {
+          "const": "DECLARED",
+          "default": "DECLARED",
+          "title": "Factclass",
+          "type": "string"
+        },
+        "fileName": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Filename",
+          "type": "string"
+        },
+        "format": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Format",
+          "type": "string"
+        },
+        "contentType": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Contenttype",
+          "type": "string"
+        },
+        "sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Sha256",
+          "type": "string"
+        },
+        "sizeBytes": {
+          "maximum": 9223372036854775807,
+          "minimum": 1,
+          "title": "Sizebytes",
+          "type": "integer"
+        },
+        "crs": {
+          "anyOf": [
+            {
+              "maxLength": 8192,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Crs"
+        },
+        "verticalReference": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ExternalDeclaredVerticalReferenceV1"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "gsdM": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Gsdm"
+        },
+        "submittedAt": {
+          "format": "date-time",
+          "title": "Submittedat",
+          "type": "string"
+        },
+        "producerCompletedAt": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Producercompletedat"
+        },
+        "captureStartedAt": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Capturestartedat"
+        },
+        "captureEndedAt": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Captureendedat"
+        },
+        "captureDate": {
+          "anyOf": [
+            {
+              "format": "date",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Capturedate"
+        }
+      },
+      "required": [
+        "fileName",
+        "format",
+        "contentType",
+        "sha256",
+        "sizeBytes",
+        "submittedAt"
+      ],
+      "title": "SpatialAssetDeclaredFactsV1",
+      "type": "object"
+    },
+    "SpatialAssetDescriptionV1": {
+      "additionalProperties": false,
+      "description": "Exact enriched metadata view for one catalog asset reference.",
+      "properties": {
+        "contractVersion": {
+          "const": "spatial-asset-description.v1",
+          "default": "spatial-asset-description.v1",
+          "title": "Contractversion",
+          "type": "string"
+        },
+        "assetRef": {
+          "pattern": "^ksa-v1-[0-9a-f]{64}$",
+          "title": "Assetref",
+          "type": "string"
+        },
+        "siteId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Siteid",
+          "type": "string"
+        },
+        "workAreaId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Workareaid",
+          "type": "string"
+        },
+        "workOrderId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Workorderid",
+          "type": "string"
+        },
+        "observationEpochId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Observationepochid",
+          "type": "string"
+        },
+        "submissionRef": {
+          "pattern": "^ers-v1-[0-9a-f]{64}$",
+          "title": "Submissionref",
+          "type": "string"
+        },
+        "revision": {
+          "minimum": 1,
+          "title": "Revision",
+          "type": "integer"
+        },
+        "artifactId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Artifactid",
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/$defs/ProcessingArtifactKind"
+        },
+        "semanticKindNote": {
+          "const": "SEMANTIC_KIND_IS_DECLARED",
+          "default": "SEMANTIC_KIND_IS_DECLARED",
+          "title": "Semantickindnote",
+          "type": "string"
+        },
+        "lifecycleState": {
+          "$ref": "#/$defs/SpatialAssetLifecycleStateV1"
+        },
+        "declared": {
+          "$ref": "#/$defs/SpatialAssetDeclaredFactsV1"
+        },
+        "observed": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SpatialAssetObservedFactsV1"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "inspection": {
+          "$ref": "#/$defs/SpatialAssetInspectionV1"
+        },
+        "producer": {
+          "$ref": "#/$defs/SpatialAssetProducerProvenanceV1"
+        },
+        "capture": {
+          "$ref": "#/$defs/SpatialAssetCaptureProvenanceV1"
+        },
+        "upstreamSource": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ExternalUpstreamSourceReferenceV3"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "derivativeExport": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ExternalDerivativeExportV3"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "raster": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SpatialAssetInspectedRasterDetailV1"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "dataAccess": {
+          "const": "NOT_AVAILABLE_FROM_CATALOG",
+          "default": "NOT_AVAILABLE_FROM_CATALOG",
+          "title": "Dataaccess",
+          "type": "string"
+        },
+        "analysisStatus": {
+          "const": "NOT_EVALUATED",
+          "default": "NOT_EVALUATED",
+          "title": "Analysisstatus",
+          "type": "string"
+        },
+        "limitations": {
+          "default": [
+            "SEMANTIC_KIND_IS_DECLARED",
+            "ANALYSIS_NOT_EVALUATED",
+            "NO_ORIGINAL_STORAGE_OR_DOWNLOAD_FROM_THIS_ENDPOINT"
+          ],
+          "items": {
+            "enum": [
+              "SEMANTIC_KIND_IS_DECLARED",
+              "ANALYSIS_NOT_EVALUATED",
+              "NO_ORIGINAL_STORAGE_OR_DOWNLOAD_FROM_THIS_ENDPOINT"
+            ],
+            "type": "string"
+          },
+          "title": "Limitations",
+          "type": "array"
+        },
+        "supportedActions": {
+          "default": [
+            "VIEW_METADATA"
+          ],
+          "items": {
+            "const": "VIEW_METADATA",
+            "type": "string"
+          },
+          "title": "Supportedactions",
+          "type": "array"
+        }
+      },
+      "required": [
+        "assetRef",
+        "siteId",
+        "workAreaId",
+        "workOrderId",
+        "observationEpochId",
+        "submissionRef",
+        "revision",
+        "artifactId",
+        "kind",
+        "lifecycleState",
+        "declared",
+        "inspection",
+        "producer",
+        "capture"
+      ],
+      "title": "SpatialAssetDescriptionV1",
+      "type": "object"
+    },
+    "SpatialAssetInspectedRasterDetailV1": {
+      "additionalProperties": false,
+      "description": "Full measured raster facts tied to their exact inspection report and build.\n\nPresent only for a ``MEASURED`` outcome. A DSM without observed vertical\nreference keeps ``observedVerticalReference`` null; horizontal units are\nderived from the exact inspected CRS only (never the declared CRS) and\nstay null when the inspected CRS is absent or unresolvable.",
+      "properties": {
+        "factClass": {
+          "const": "INSPECTED",
+          "default": "INSPECTED",
+          "title": "Factclass",
+          "type": "string"
+        },
+        "sourceReportDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Sourcereportdigest",
+          "type": "string"
+        },
+        "inspectorBuildDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Inspectorbuilddigest",
+          "type": "string"
+        },
+        "observedCrsIdentifier": {
+          "maxLength": 8192,
+          "minLength": 1,
+          "title": "Observedcrsidentifier",
+          "type": "string"
+        },
+        "observedCrsWkt": {
+          "anyOf": [
+            {
+              "maxLength": 65536,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Observedcrswkt"
+        },
+        "observedCrsDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Observedcrsdigest",
+          "type": "string"
+        },
+        "observedVerticalReference": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SpatialAssetObservedVerticalReferenceV1"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "transform": {
+          "maxItems": 6,
+          "minItems": 6,
+          "prefixItems": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            }
+          ],
+          "title": "Transform",
+          "type": "array"
+        },
+        "footprintWkt": {
+          "maxLength": 65536,
+          "minLength": 1,
+          "title": "Footprintwkt",
+          "type": "string"
+        },
+        "footprintDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Footprintdigest",
+          "type": "string"
+        },
+        "width": {
+          "exclusiveMinimum": 0,
+          "title": "Width",
+          "type": "integer"
+        },
+        "height": {
+          "exclusiveMinimum": 0,
+          "title": "Height",
+          "type": "integer"
+        },
+        "bandCount": {
+          "exclusiveMinimum": 0,
+          "title": "Bandcount",
+          "type": "integer"
+        },
+        "dtype": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Dtype",
+          "type": "string"
+        },
+        "layout": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Layout",
+          "type": "string"
+        },
+        "nodataRepresentation": {
+          "$ref": "#/$defs/NodataRepresentation"
+        },
+        "nodataValue": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Nodatavalue"
+        },
+        "validPixelCount": {
+          "minimum": 0,
+          "title": "Validpixelcount",
+          "type": "integer"
+        },
+        "horizontalUnits": {
+          "anyOf": [
+            {
+              "maxLength": 256,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Horizontalunits"
+        },
+        "pixelResolution": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SpatialAssetPixelResolutionV1"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "sourceReportDigest",
+        "inspectorBuildDigest",
+        "observedCrsIdentifier",
+        "observedCrsDigest",
+        "transform",
+        "footprintWkt",
+        "footprintDigest",
+        "width",
+        "height",
+        "bandCount",
+        "dtype",
+        "layout",
+        "nodataRepresentation",
+        "validPixelCount"
+      ],
+      "title": "SpatialAssetInspectedRasterDetailV1",
+      "type": "object"
+    },
+    "SpatialAssetInspectedRasterFactsV1": {
+      "additionalProperties": false,
+      "description": "Measured raster geometry tied to its exact inspection report and build.",
+      "properties": {
+        "factClass": {
+          "const": "INSPECTED",
+          "default": "INSPECTED",
+          "title": "Factclass",
+          "type": "string"
+        },
+        "sourceReportDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Sourcereportdigest",
+          "type": "string"
+        },
+        "inspectorBuildDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Inspectorbuilddigest",
+          "type": "string"
+        },
+        "observedCrsIdentifier": {
+          "maxLength": 8192,
+          "minLength": 1,
+          "title": "Observedcrsidentifier",
+          "type": "string"
+        },
+        "observedCrsWkt": {
+          "anyOf": [
+            {
+              "maxLength": 65536,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Observedcrswkt"
+        },
+        "observedCrsDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Observedcrsdigest",
+          "type": "string"
+        },
+        "observedVerticalReference": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SpatialAssetObservedVerticalReferenceV1"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "transform": {
+          "maxItems": 6,
+          "minItems": 6,
+          "prefixItems": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            }
+          ],
+          "title": "Transform",
+          "type": "array"
+        },
+        "footprintWkt": {
+          "maxLength": 65536,
+          "minLength": 1,
+          "title": "Footprintwkt",
+          "type": "string"
+        },
+        "footprintDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Footprintdigest",
+          "type": "string"
+        },
+        "width": {
+          "exclusiveMinimum": 0,
+          "title": "Width",
+          "type": "integer"
+        },
+        "height": {
+          "exclusiveMinimum": 0,
+          "title": "Height",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "sourceReportDigest",
+        "inspectorBuildDigest",
+        "observedCrsIdentifier",
+        "observedCrsDigest",
+        "transform",
+        "footprintWkt",
+        "footprintDigest",
+        "width",
+        "height"
+      ],
+      "title": "SpatialAssetInspectedRasterFactsV1",
+      "type": "object"
+    },
+    "SpatialAssetInspectionV1": {
+      "additionalProperties": false,
+      "description": "Compact inspection status, never an analysis or accuracy conclusion.",
+      "properties": {
+        "state": {
+          "maxLength": 64,
+          "minLength": 1,
+          "title": "State",
+          "type": "string"
+        },
+        "reportDigest": {
+          "anyOf": [
+            {
+              "pattern": "^sha256:[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Reportdigest"
+        },
+        "outcome": {
+          "anyOf": [
+            {
+              "enum": [
+                "MEASURED",
+                "NOT_APPLICABLE",
+                "REJECTED"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Outcome"
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Reason"
+        },
+        "inspectorBuildDigest": {
+          "anyOf": [
+            {
+              "pattern": "^sha256:[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Inspectorbuilddigest"
+        },
+        "raster": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SpatialAssetInspectedRasterFactsV1"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "state"
+      ],
+      "title": "SpatialAssetInspectionV1",
+      "type": "object"
+    },
+    "SpatialAssetLifecycleStateV1": {
+      "enum": [
+        "UNSEALED",
+        "SEALED",
+        "SUPERSEDED"
+      ],
+      "title": "SpatialAssetLifecycleStateV1",
+      "type": "string"
+    },
+    "SpatialAssetObservedFactsV1": {
+      "additionalProperties": false,
+      "description": "Core-sealed byte observations; storage paths and capabilities are excluded.",
+      "properties": {
+        "factClass": {
+          "const": "OBSERVED",
+          "default": "OBSERVED",
+          "title": "Factclass",
+          "type": "string"
+        },
+        "manifestDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Manifestdigest",
+          "type": "string"
+        },
+        "observedAt": {
+          "format": "date-time",
+          "title": "Observedat",
+          "type": "string"
+        },
+        "sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Sha256",
+          "type": "string"
+        },
+        "sizeBytes": {
+          "maximum": 9223372036854775807,
+          "minimum": 1,
+          "title": "Sizebytes",
+          "type": "integer"
+        },
+        "contentType": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Contenttype",
+          "type": "string"
+        }
+      },
+      "required": [
+        "manifestDigest",
+        "observedAt",
+        "sha256",
+        "sizeBytes",
+        "contentType"
+      ],
+      "title": "SpatialAssetObservedFactsV1",
+      "type": "object"
+    },
+    "SpatialAssetObservedVerticalReferenceV1": {
+      "additionalProperties": false,
+      "properties": {
+        "identifier": {
+          "maxLength": 8192,
+          "minLength": 1,
+          "title": "Identifier",
+          "type": "string"
+        },
+        "basis": {
+          "maxLength": 8192,
+          "minLength": 1,
+          "title": "Basis",
+          "type": "string"
+        }
+      },
+      "required": [
+        "identifier",
+        "basis"
+      ],
+      "title": "SpatialAssetObservedVerticalReferenceV1",
+      "type": "object"
+    },
+    "SpatialAssetPixelResolutionV1": {
+      "additionalProperties": false,
+      "description": "Native pixel size derived from the inspected affine transform.\n\nResolution is the axis norm (``hypot(a, d)`` / ``hypot(b, e)`` for GDAL\norder ``(a, b, c, d, e, f)``), never the naive ``abs(a)``/``abs(e)`` which\nunderstates rotated rasters. ``transform_is_rotated`` is set exactly when\nthe inspected shear terms are nonzero. Values are expressed in\n``horizontal_units`` of the enclosing raster detail; when units are\nunknown the numbers still describe pixel geometry, not meters.",
+      "properties": {
+        "factClass": {
+          "const": "INSPECTED",
+          "default": "INSPECTED",
+          "title": "Factclass",
+          "type": "string"
+        },
+        "sourceReportDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Sourcereportdigest",
+          "type": "string"
+        },
+        "inspectorBuildDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Inspectorbuilddigest",
+          "type": "string"
+        },
+        "resolutionX": {
+          "exclusiveMinimum": 0,
+          "title": "Resolutionx",
+          "type": "number"
+        },
+        "resolutionY": {
+          "exclusiveMinimum": 0,
+          "title": "Resolutiony",
+          "type": "number"
+        },
+        "transformIsRotated": {
+          "title": "Transformisrotated",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "sourceReportDigest",
+        "inspectorBuildDigest",
+        "resolutionX",
+        "resolutionY",
+        "transformIsRotated"
+      ],
+      "title": "SpatialAssetPixelResolutionV1",
+      "type": "object"
+    },
+    "SpatialAssetProducerProvenanceV1": {
+      "additionalProperties": false,
+      "description": "Who the customer says produced the bytes. A declaration, never KSI observation.\n\nV1/V2 submissions always carry a software name and version, so their\nknowledge is ``DECLARED`` by construction. V3 carries its own explicit\n``producerKnowledge`` (``DECLARED``/``PARTIAL``/``UNKNOWN``) with nulls for\nunknown parts; the fabricated label ``\"unknown\"`` never appears here.",
+      "properties": {
+        "factClass": {
+          "const": "DECLARED",
+          "default": "DECLARED",
+          "title": "Factclass",
+          "type": "string"
+        },
+        "producerKnowledge": {
+          "enum": [
+            "DECLARED",
+            "PARTIAL",
+            "UNKNOWN"
+          ],
+          "title": "Producerknowledge",
+          "type": "string"
+        },
+        "softwareName": {
+          "anyOf": [
+            {
+              "maxLength": 255,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Softwarename"
+        },
+        "softwareVersion": {
+          "anyOf": [
+            {
+              "maxLength": 255,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Softwareversion"
+        },
+        "buildIdentifier": {
+          "anyOf": [
+            {
+              "maxLength": 255,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Buildidentifier"
+        },
+        "producerRunIdentifier": {
+          "anyOf": [
+            {
+              "maxLength": 255,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Producerrunidentifier"
+        },
+        "configurationDigest": {
+          "anyOf": [
+            {
+              "pattern": "^sha256:[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Configurationdigest"
+        },
+        "completedAt": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Completedat"
+        },
+        "sourceNote": {
+          "anyOf": [
+            {
+              "maxLength": 1000,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sourcenote"
+        }
+      },
+      "required": [
+        "producerKnowledge"
+      ],
+      "title": "SpatialAssetProducerProvenanceV1",
+      "type": "object"
+    },
+    "VerticalDatum": {
+      "description": "산출물이 어느 수직기준인지 — wire 계약에 실리는 값.\n\n``ELLIPSOIDAL_NATIVE`` 는 \"재구성 엔진이 낸 타원체고를 변환 없이 그대로\n쓴다\"는 뜻이다. ``ELLIPSOIDAL`` 과 굳이 나눈 이유는, 전자가 **의도적으로\n선택한 기준**이 아니라 **변환을 하지 못해 남은 상태**임을 소비자가 구분할\n수 있어야 하기 때문이다 — 나중에 격자가 확보되면 이 값이 남아 있는\n산출물이 곧 재처리 대상 목록이 된다.\n\n두 값의 이 차이는 **호환성 판정에는 영향이 없다** — 둘 다 타원체 기준의\n높이라 서로 빼도 되는 값이다(:func:`family_of`). 재처리 대상 표시와\n비교 가능성은 다른 축이다.\n\n**정표고 멤버가 지오이드 모델 이름을 달고 있는 이유.** 정표고가 서 있는\n기준면은 하나다(KVD1964 = 인천 평균해면, EPSG:5193). 그런데 그 높이를\n타원체고와 잇는 지오이드고 N 은 **격자 모델이 준다** — 즉 모델 이름은\n\"이 높이가 어느 격자로 되돌려지는가\"다. 모델이 다르면 국내 지점 대조에서\n수 cm 가 어긋나고(KNGeoid18↔24 실측 비교 0.001~0.071m), 그 크기는 체적\n집계 문턱(``DEFAULT_VOLUME_THRESHOLD_M`` = 0.05m)과 같은 자릿수다. 그래서\n모델을 이름에 박아 두고, **우리가 실제로 격자를 가진 모델만** 타원체고와\n잇는다(:data:`_GEOID_BRIDGEABLE_ORTHOMETRIC`).",
+      "enum": [
+        "ellipsoidal",
+        "ellipsoidal_native",
+        "orthometric_kngeoid2018",
+        "orthometric_kngeoid2024"
+      ],
+      "title": "VerticalDatum",
+      "type": "string"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "spatial-asset-description.v1.json"
+}

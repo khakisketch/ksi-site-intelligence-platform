@@ -5,6 +5,7 @@ import { usePathname, useSearchParams } from "next/navigation";
 
 import { isChromelessPath } from "./chromeless-path";
 import { isViewerPath } from "./viewer-path";
+import { useDesktopNavCollapsed } from "./desktop-nav-preference";
 
 const CONSOLE_BODY_CLASSES = [
   "lg:grid",
@@ -28,6 +29,7 @@ const CONSOLE_BODY_CLASSES = [
 export function ShellLayoutMode() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
+  const navCollapsed = useDesktopNavCollapsed();
 
   useEffect(() => {
     const chromeless = isChromelessPath(pathname);
@@ -37,7 +39,8 @@ export function ShellLayoutMode() {
       document.body.classList.toggle(className, !chromeless);
     }
     document.body.classList.toggle("viewer-shell", viewer);
-  }, [pathname, searchParams]);
+    document.body.classList.toggle("desktop-nav-collapsed", !chromeless && navCollapsed);
+  }, [pathname, searchParams, navCollapsed]);
 
   return null;
 }

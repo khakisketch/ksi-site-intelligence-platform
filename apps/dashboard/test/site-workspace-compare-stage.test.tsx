@@ -243,6 +243,24 @@ describe("compare stage pair controls", () => {
     expect(formA.getAttribute("action")).toBe("/sites/site-1");
   });
 
+  it("keeps each ready pane to select plus a slim precision tail without a duplicate date line", () => {
+    render(shell(shellProps()));
+    const stage = screen.getByRole("region", { name: "두 시점 비교" });
+    // 선택 상자(날짜머리 포함)와 무대 머리가 신원을 맡는다 — 칸 머리에는
+    // 잘리는 꼬리(정밀도 한정자·등록 버전)만 한 줄로 둔다. 날짜 줄은 두지 않는다.
+    for (const label of ["관측 A 관측 선택", "관측 B 관측 선택"] as const) {
+      const select = within(stage).getByLabelText(label) as HTMLSelectElement;
+      expect(select.textContent).toContain("등록 버전");
+      const pane = select.closest("[data-workbench-pane]");
+      expect(pane).not.toBeNull();
+      const controls = pane!.querySelector(":scope > [data-workbench-pane-controls]");
+      const paragraphs = [...(controls?.querySelectorAll("p") ?? [])];
+      expect(paragraphs).toHaveLength(1);
+      expect(paragraphs[0]!.textContent).toContain("등록 버전");
+      expect(paragraphs[0]!.textContent).not.toContain("촬영");
+    }
+  });
+
   it("states the ready pair as two independent views without borrowing the materials mode name", () => {
     render(shell(shellProps()));
     // 작업공간 쌍 설명은 '나란히'(자료 화면 보기 방식 이름)를 쓰지 않는다.
@@ -328,7 +346,7 @@ describe("compare stage pair controls", () => {
     expect(within(stage).getByLabelText("관측 B 관측 선택")).toBeTruthy();
   });
 
-  it("coalesces only when every known job for both sides expired", () => {
+  it("keeps viewers mounted when both sides expired, each with its own direct recovery", () => {
     const expired = (assetRef: string, jobId: string) => ({
       jobId, assetRef, executionState: "EXPIRED", availability: "RETENTION_EXPIRED",
       createdAt: "2026-10-21T00:00:00Z", receipt: null,
@@ -338,16 +356,18 @@ describe("compare stage pair controls", () => {
       preparedJobs: [expired(REFA, "sdj-exp-a"), expired(REFB, "sdj-exp-b")],
     })));
     const stage = screen.getByRole("region", { name: "두 시점 비교" });
+    // 같은 사유 줄임말은 버튼 없는 한 줄로 한 번만 둔다.
     expect(within(stage).getAllByText(/두 칸의 불러온 준비 기록/)).toHaveLength(1);
-    expect(within(stage).getAllByText(/미리보기 보관 기간이 끝났습니다/)).toHaveLength(1);
-    // 뷰어는 접히고 헤드(관측 선택·층)만 남는다 — 같은 사유 회복 하나만 둔다.
-    expect(within(stage).getByText("관측 A 관측 선택")).toBeTruthy();
-    expect(within(stage).getByText("관측 B 관측 선택")).toBeTruthy();
+    expect(within(stage).getAllByText(/각 칸에서 선택한 자료의 받기 요청으로 바로 이동할 수 있습니다/)).toHaveLength(1);
+    // 각 칸의 보기가 접히지 않고, 무대에 범용 이력 단추를 따로 두지 않는다 —
+    // 만료된 각 칸의 직접 회복은 그 칸의 보기 자리에서 둔다.
+    expect(within(stage).getAllByLabelText(/임시 시각화 어댑터/)).toHaveLength(2);
+    expect(within(stage).queryByRole("link", { name: "구역 자료 준비에서 확인" })).toBeNull();
     // 쌍 동작은 칸·회복보다 먼저 둔다 — 실패 무대를 스크롤해야 보이지 않는다.
+    // (만료 문구 자체는 각 칸의 보기 자리에서 말하며, 단위 검사에서 둔다.)
     const markup = stage.innerHTML;
     expect(markup.indexOf("이 쌍으로 분석 조건 확인")).toBeGreaterThan(-1);
     expect(markup.indexOf("이 쌍으로 분석 조건 확인")).toBeLessThan(markup.indexOf("관측 A 관측 선택"));
-    expect(markup.indexOf("이 쌍으로 분석 조건 확인")).toBeLessThan(markup.indexOf("미리보기 보관 기간이 끝났습니다"));
   });
 
   it("keeps the denied list state instead of an expired claim when the list itself is denied", () => {

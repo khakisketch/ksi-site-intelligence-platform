@@ -225,7 +225,7 @@ describe("mosaic absent-pixel state from current jobs", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it("renders an expired canvas state with one recovery and one folded detail", () => {
+  it("renders an expired canvas state with one direct recovery and one folded detail", () => {
     stubCanvas();
     const fetchMock = vi.fn(async () => new Response(BYTES, { status: 200 }));
     vi.stubGlobal("fetch", fetchMock);
@@ -248,12 +248,18 @@ describe("mosaic absent-pixel state from current jobs", () => {
     );
     // 차단 자리: 사유 한 줄 + 하나의 1차 회복. 큰 빈 사각형이 아니다.
     expect(screen.getByText(/미리보기 보관 기간이 끝났습니다/)).toBeTruthy();
-    // 하나의 1차 회복(구역 자료 준비 길)만 무대에 둔다 — 명시적 다시 준비는 접힘 안에 둔다.
     const media = screen.getByText(/미리보기 보관 기간이 끝났습니다/).closest("div[role]")!;
     // 실패 공지는 alert로 알린다.
     expect(media.getAttribute("role")).toBe("alert");
     expect(media.querySelectorAll("a")).toHaveLength(1);
     expect(media.querySelectorAll("button")).toHaveLength(0);
+    // 1차 회복은 선택한 자료의 받기 요청으로 바로 연결한다 — 이력 목록이 아니다.
+    const direct = screen.getByRole("link", { name: "선택한 자료에서 다시 준비" });
+    expect(direct.getAttribute("href")).toBe(
+      "/sites/site-1/spatial-assets?workAreaId=area-1&assetRef=ksa-v1-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb#asset-ksa-v1-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    );
+    // 요청 이력은 보조 안내로만 둔다.
+    expect(screen.getByText("요청 이력은 구역 자료 준비에서 확인합니다.")).toBeTruthy();
     const folded = screen.getByText("상세·준비").closest("details")!;
     expect(folded.open).toBe(false);
     // 명시적 다시 준비는 권한·노트북 게이트 그대로 접힘 안에만 둔다.

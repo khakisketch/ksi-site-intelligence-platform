@@ -1,14 +1,44 @@
 import Link from "next/link";
 
-import type { AnalysisListItem, AnalysisView } from "@/lib/core-api/analysis";
+import type { AnalysisListItem, AnalysisMetrics, AnalysisView } from "@/lib/core-api/analysis";
 import { formatKoreanDateTime } from "@/lib/datetime";
 import { analysisResultTitle } from "@/lib/operator-language";
 import type { ExplicitResultResolution, WorkspaceServerFacts } from "@/lib/site-workspace-entry";
 import { matchAnalysisSelectors, workspaceCaptureLine } from "@/lib/site-workspace-entry";
 import { capturePeriodTitle } from "@/lib/operator-language";
 import { formatKoreanDate } from "@/lib/datetime";
-import { formatNumberKo } from "@/lib/number-format";
+import { formatNumberKo, formatSignificantKo } from "@/lib/number-format";
 import { analysisStateLabel } from "./SiteSpatialOverview";
+
+/**
+ * 체적 표기 — AnalysisRequestPanel의 formatNumber와 같은 규칙(0.1 미만 0 초과
+ * 절대값은 유효숫자 3자리, 나머지는 소수 첫째 자리)이라 0.02가 0으로 뭉개지지
+ * 않는다. Core가 기록한 값을 옮길 때만 쓰고 새로 계산하지 않는다.
+ */
+function formatVolumeM3(value: number): string {
+  const rendered = Math.abs(value) > 0 && Math.abs(value) < 0.1
+    ? formatSignificantKo(value, 3)
+    : formatNumberKo(value, 1);
+  return rendered;
+}
+
+/** 기록된 Core 수치 3열 — 기본 목록 카드와 명시적 기록이 같은 모양을 쓴다. */
+function VolumeMetrics({ metrics }: { metrics: AnalysisMetrics }) {
+  return <dl className="mt-2 grid grid-cols-3 gap-2 border-y border-line py-2">
+    <div>
+      <dt className="text-[11px] text-ink-muted">절토</dt>
+      <dd className="text-[15px] font-bold tabular-nums">{formatVolumeM3(metrics.cutM3)} m³</dd>
+    </div>
+    <div>
+      <dt className="text-[11px] text-ink-muted">성토</dt>
+      <dd className="text-[15px] font-bold tabular-nums">{formatVolumeM3(metrics.fillM3)} m³</dd>
+    </div>
+    <div>
+      <dt className="text-[11px] text-ink-muted">순변화</dt>
+      <dd className="text-[15px] font-bold tabular-nums">{formatVolumeM3(metrics.netM3)} m³</dd>
+    </div>
+  </dl>;
+}
 
 function suitabilityLimitCopy(item: Pick<AnalysisListItem, "suitabilityState">): string {
   // 불확도 null에서 정확도 상태를 추론하지 않는다. Core의 적합성 판정 그대로 둔다.
@@ -57,23 +87,10 @@ function RecordCard({ item, sitePath, lead = false, pairLine = null, pairUnknown
       <p className="mt-1 text-[12px] leading-5 text-ink-2">원래 입력을 현재 목록에서 확인할 수 없습니다. 기록은 그대로 둡니다.</p>
     )}
     {metrics ? (
-      <dl className="mt-2 grid grid-cols-3 gap-2 border-y border-line py-2">
-        <div>
-          <dt className="text-[11px] text-ink-muted">절토</dt>
-          <dd className="text-[15px] font-bold">{formatNumberKo(metrics.cutM3)} m³</dd>
-        </div>
-        <div>
-          <dt className="text-[11px] text-ink-muted">성토</dt>
-          <dd className="text-[15px] font-bold">{formatNumberKo(metrics.fillM3)} m³</dd>
-        </div>
-        <div>
-          <dt className="text-[11px] text-ink-muted">순변화</dt>
-          <dd className="text-[15px] font-bold">{formatNumberKo(metrics.netM3)} m³</dd>
-        </div>
-      </dl>
+      <VolumeMetrics metrics={metrics} />
     ) : (
       <p className="mt-1 text-[12px] leading-5 text-ink-2">
-        이 기록에는 확정된 수치가 없습니다. 확인된 조건과 근거는 분석 기록에서 확인하세요.
+        이 기록에는 계산된 수치가 없습니다. 확인된 조건과 근거는 분석 기록에서 확인하세요.
       </p>
     )}
     {metrics && (
@@ -83,7 +100,7 @@ function RecordCard({ item, sitePath, lead = false, pairLine = null, pairUnknown
         </p>
         {metrics.uncertaintyM3 !== null && (
           <p className="mt-1 text-[12px] leading-5 text-ink-2">
-            {`불확도는 ±${formatNumberKo(metrics.uncertaintyM3)} m³로 기록되어 있습니다.`}
+            {`불확도는 ±${formatVolumeM3(metrics.uncertaintyM3)} m³로 기록되어 있습니다.`}
           </p>
         )}
       </>
@@ -207,7 +224,7 @@ export function SiteWorkspaceResults({
         <p className="mt-0.5 text-[12px] text-ink-2">
           기록 {formatKoreanDateTime(explicitReady.createdAt, { dateStyle: "medium", timeStyle: "short" })}
           {explicitReady.blockers.length > 0 ? ` · 확인된 조건 ${explicitReady.blockers.length}건` : " · 확인된 조건 없음"}
-          {explicitReady.result ? " · 확정된 수치 있음" : " · 확정된 수치 없음"}
+          {explicitReady.result ? " · 계산 수치 있음" : " · 계산 수치 없음"}
         </p>
         <p className="mt-1 text-[12px] leading-5 text-ink-2">
           링크의 원래 기록을 그대로 보여줍니다. 수치·선택 정보·근거는 분석 기록에 있으며, 다시 계산하지 않습니다.
@@ -224,6 +241,26 @@ export function SiteWorkspaceResults({
               : " — 나머지 입력은 현재 목록에서 확인할 수 없습니다. 기록은 그대로 둡니다."}
           </p>;
         })()}
+        {explicitReady.result ? (
+          <>
+            <VolumeMetrics metrics={explicitReady.result.metrics} />
+            <p className="mt-1 text-[12px] leading-5 text-ink-2">
+              {suitabilityLimitCopy(explicitReady)} 이 값은 물량 정확도 보증·측량 승인·정산 근거가 아닙니다.
+            </p>
+            {explicitReady.result.metrics.uncertaintyM3 !== null && (
+              <p className="mt-1 text-[12px] leading-5 text-ink-2">
+                {`불확도는 ±${formatVolumeM3(explicitReady.result.metrics.uncertaintyM3)} m³로 기록되어 있습니다.`}
+              </p>
+            )}
+            <p className="mt-1 text-[12px] leading-5 text-ink-2">
+              이 화면은 기록된 값을 옮긴 것이며 다시 계산하지 않습니다. 계산에 쓰인 자료·조건·근거는 분석 기록에 있습니다.
+            </p>
+          </>
+        ) : (
+          <p className="mt-1 text-[12px] leading-5 text-ink-2">
+            이 기록에는 계산된 수치가 없습니다. 확인된 조건과 근거는 분석 기록에서 확인하세요.
+          </p>
+        )}
         {normalizedVisualContext && (
           <p className="mt-1 text-[12px] leading-5 text-ink-2">
             탐색 중 자료와 이 결과의 계산 입력은 다를 수 있습니다. 위의 원래 입력이 이 결과의 계산 입력이며,

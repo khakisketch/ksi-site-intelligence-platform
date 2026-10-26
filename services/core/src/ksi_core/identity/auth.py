@@ -634,6 +634,7 @@ _ANALYSIS_MCP_ROUTE_ALLOWLIST: frozenset[tuple[str, str]] = frozenset(
     {
         ("GET", "/v1/sites/{site_id}/analysis-observations"),
         ("POST", "/v2/sites/{site_id}/work-areas/{work_area_id}/analyses"),
+        ("POST", "/v2/sites/{site_id}/work-areas/{work_area_id}/analysis-readiness"),
         ("GET", "/v2/sites/{site_id}/analyses"),
         ("GET", "/v2/sites/{site_id}/analyses/{analysis_id}"),
         ("GET", "/v2/sites/{site_id}/analyses/{analysis_id}/evidence"),
@@ -785,6 +786,8 @@ _OIDC_SCOPED_OPERATOR_ROUTE_ALLOWLIST: frozenset[tuple[str, str]] = frozenset(
         ("GET", "/v1/sites/{site_id}/analyses/{analysis_id}/result"),
         ("GET", "/v1/sites/{site_id}/analyses/{analysis_id}/evidence"),
         ("POST", "/v2/sites/{site_id}/work-areas/{work_area_id}/analyses"),
+        ("POST", "/v2/sites/{site_id}/work-areas/{work_area_id}/analysis-readiness"),
+        ("GET", "/v2/sites/{site_id}/work-areas/{work_area_id}/spatial-assets/{asset_ref}"),
         ("GET", "/v2/sites/{site_id}/analyses"),
         ("GET", "/v2/sites/{site_id}/analyses/{analysis_id}"),
         ("GET", "/v2/sites/{site_id}/analyses/{analysis_id}/evidence"),

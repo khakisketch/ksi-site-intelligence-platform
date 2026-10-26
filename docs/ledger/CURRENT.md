@@ -19,6 +19,7 @@ acceptance remains external and unverified.
 | Work | Owner | Status | Evidence / next |
 |---|---|---|---|
 | Console desktop-first UX | Build | Viewer-first deployed | [`work/2026-10-26-console.md`](work/2026-10-26-console.md) — 56px viewer rail, full-bleed site 공간/자료, collapsible layer/inspector, visual site covers, real extents; dense 업무/결과/검토 retained |
+| Engine + Console integration | Build | Locally verified candidate; not deployed or merged to main | [`work/2026-10-26-console.md`](work/2026-10-26-console.md) — isolated `integration/viewer-first-20261026`; main's original uncommitted work preserved; SIE extension contracts and external acceptance remain open |
 | Spatial engine integration | Build | Active, separate uncommitted stream | [`../superpowers/plans/2026-10-07-agent-first-platform-rebaseline.md`](../superpowers/plans/2026-10-07-agent-first-platform-rebaseline.md) — do not duplicate here until close |
 | Ledger/document consolidation | Build | Active | This directory; legacy console boards deleted after consolidation |
 
@@ -43,4 +44,5 @@ duplicate work authority.
 
 1. Complete the ledger migration for the platform/engine stream when it closes.
 2. Revisit Home/global IA only with explicit approval and required evidence.
-3. Prepare the clean integration merge once the engine/analysis working tree settles.
+3. Verify the existing isolated integration candidate before any main merge/deployment; original
+   main changes remain protected. Do not restart the older shared runtime to test this candidate.

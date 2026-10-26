@@ -11,6 +11,7 @@ import { SiteHeader } from "@/app/sites/[siteId]/SiteHeader";
 
 import { AssetRequestDialog } from "./AssetRequestDialog";
 import { SpatialDataRequestAction } from "./SpatialDataRequestAction";
+import { AssetProvenanceNote } from "./AssetProvenanceNote";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { StateBadge } from "@/components/ui/StatusBadge";
 import { ErrorState } from "@/components/ui/ErrorState";
@@ -374,8 +375,9 @@ function AssetDetail({ item, workName, areaName, headline, compareHref, retryHre
     captureDate: item.declared.captureDate ?? null,
   });
   // 바깥 틀이 경계를 이미 졌으므로 안쪽은 한 줄씩만 둔다. 320px 정보
-  // 판에서도 읽히게 사실 쌍은 세로 한 줄로 둔다.
-  return <section aria-label="관측 자료 상세" className="flex flex-col gap-2.5 rounded-lg border border-line bg-surface p-3 sm:p-4">
+  // 판에서도 읽히게 사실 쌍은 세로 한 줄로 둔다. 작업공간 무대의 만료
+  // 회복이 이 자료의 받기 요청으로 바로 연결되도록 앵커를 둔다.
+  return <section aria-label="관측 자료 상세" id={`asset-${item.assetRef}`} className="flex scroll-mt-4 flex-col gap-2.5 rounded-lg border border-line bg-surface p-3 sm:p-4">
     <header>
       <p className="sr-only">관측 자료 상세</p>
       <h4 className="break-words text-[16px] font-bold tracking-tight">{headline}</h4>
@@ -406,6 +408,7 @@ function AssetDetail({ item, workName, areaName, headline, compareHref, retryHre
       <details className="rounded-lg border border-line bg-surface p-3 text-[12px]"><summary className="tap-target cursor-pointer font-semibold">저장 파일 확인</summary><ObservedFacts item={item} /></details>
     </div>
     <InspectionFacts inspection={item.inspection} />
+    <AssetProvenanceNote siteId={item.siteId} workAreaId={item.workAreaId} assetRef={item.assetRef} />
     <details className="rounded-lg border border-line bg-surface p-3 text-[12px]"><summary className="tap-target cursor-pointer font-semibold">파일·참조 정보</summary><TechnicalFileInfo item={item} workName={workName} areaName={areaName} /></details>
     <p className="text-[11.5px] leading-5 text-ink-muted">파일 검사 완료는 형식·격자 확인이며, 측량·정산 근거나 분석 사용 가능 판정이 아닙니다.</p>
     {item.lifecycleState !== "SEALED" && <p className="text-[11.5px] leading-5 text-high-ink">제출 상태가 {assetLifecycleLabel(item.lifecycleState)}이므로 유효한 분석 입력으로 취급하지 않습니다.</p>}
@@ -1269,7 +1272,7 @@ export default async function SpatialAssetsPage({
   // 오른쪽: 선택 자료 정보 — frame이 열렸을 때만 자리를 차지한다.
   const renderInspector = (): ReactNode => (<>
     <div className="flex min-w-0 items-center justify-between gap-2">
-      <h3 className="min-w-0 break-words text-[13px] font-bold">선택 자료 정보</h3>
+      <h3 data-workbench-inspector-heading className="min-w-0 break-words text-[13px] font-bold">선택 자료 정보</h3>
       <Link scroll={false} data-workbench-info-close className="tap-target shrink-0 text-[12px] underline text-ink-2 xl:hidden" href={materialsHref(siteId, effectiveWorkAreaId!, scopeForLinks({ info: null }))}>닫기</Link>
     </div>
     {!sideA && !sideB && <p>표시할 자료를 목록에서 고르세요.</p>}

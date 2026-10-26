@@ -166,7 +166,7 @@ function SiteWorkspaceEntryPanel({
       if (expiredKnown) {
         return <section aria-label="기본 관측 선택 상태" className="border-t border-line pt-2">
           <p className="text-[12px] leading-5 text-ink-2">
-            보관 만료는 등록 자료·검사 기록을 삭제하지 않았습니다. 복구는 위의 구역 자료 준비에서 확인하세요.
+            보관 만료는 등록 자료·검사 기록을 삭제하지 않았습니다. 복구는 위의 보기(선택한 자료에서 다시 준비)를 따르세요.
           </p>
         </section>;
       }
@@ -330,12 +330,19 @@ export function buildExploreCaptureOptions({
   currentKind: string | null;
   selectedEpochId: string | null;
 }): ExploreCaptureOption[] {
-  return representativeFacts(facts, workAreaId).map((fact) => {
-    const epochLayers = viewerLayersForEpoch(catalogAssets, fact.observationEpochId);
+  const selectedFact = facts.observations.find((fact) => fact.assetRef === selectedAssetRef
+    && fact.workAreaId === workAreaId && facts.authorizedWorkAreaIds.includes(workAreaId));
+  return representativeFacts(facts, workAreaId).map((representative) => {
+    // An epoch may contain submissions with different capture precision. Keep
+    // the selected submission's identity/label together; never borrow another
+    // submission's layer merely because the epoch and file kind are equal.
+    const fact = selectedFact?.observationEpochId === representative.observationEpochId
+      ? selectedFact : representative;
+    const epochLayers = visualLayersForExactSubmission(catalogAssets, fact);
     const target = (currentKind ? epochLayers.find((item) => item.kind === currentKind) : undefined)
       ?? epochLayers[0]
       ?? null;
-    const targetRef = target?.assetRef ?? fact.viewAssetRef ?? fact.assetRef;
+    const targetRef = target?.assetRef ?? fact.assetRef;
     const targetCatalog = catalogAssets.find((item) => item.assetRef === targetRef) ?? null;
     const kindChanged = target !== null && currentKind !== null && target.kind !== currentKind;
     return {
@@ -344,7 +351,7 @@ export function buildExploreCaptureOptions({
       title: targetCatalog
         ? `${entryCaptureLine(fact)} · 등록 버전 ${fact.revision} · ${targetCatalog.declared.fileName}`
         : `${entryCaptureLine(fact)} · 등록 버전 ${fact.revision}`,
-      selected: targetRef === selectedAssetRef || fact.observationEpochId === selectedEpochId,
+      selected: targetRef === selectedAssetRef || (selectedAssetRef === null && fact.observationEpochId === selectedEpochId),
     };
   });
 }
@@ -589,9 +596,20 @@ export function SiteWorkspaceShell({
     ? compareSlotCandidates(facts, selected.workAreaId)
     : { eligible: [] as WorkspaceObservationFact[] };
   const compareOptions = compareEligible.map((item) => ({ assetRef: item.assetRef, label: candidateLabel(item) }));
-  // 나란히 두기 한 칸 — 칸 머리(역할+관측 선택+층 전환)와 그 그림을 둔다.
+  // 나란히 두기 한 칸 — 칸 머리(역할+관측 선택+정밀도 꼬리+층 전환)와 그 그림을 둔다.
   // 층 전환은 칸 머리의 직접 GET 링크이며, 드로어 개폐와 무관하게 항상 그
   // 칸에 붙는다. 카메라는 칸마다 독립이며 동기화·정합 주장을 하지 않는다(무대 위 한 줄 고지만 둔다).
+  // 정밀도 꼬리는 네이티브 선택 상자가 잘라내는 꼬리(정밀도 한정자·등록 버전)만
+  // 둔다 — 날짜머리는 선택 상자가 맡고, 만료 무대에도 이 한 줄이 정밀도를 남긴다.
+  const pairQualifierCaption = (fact: WorkspaceObservationFact): string => {
+    const precision = observationPrecisionOf(fact);
+    const qualifier = precision === "date-only"
+      ? "날짜만 확인 · 시각 미상"
+      : precision === "unknown"
+        ? "관측 시점 미상"
+        : null;
+    return qualifier ? `${qualifier} · 등록 버전 ${fact.revision}` : `등록 버전 ${fact.revision}`;
+  };
   const pairPane = (
     badge: string,
     select: ReactNode,
@@ -607,7 +625,7 @@ export function SiteWorkspaceShell({
           <span aria-hidden="true" className="flex h-6 min-w-6 shrink-0 items-center justify-center rounded bg-sunk px-1 text-[11px] font-bold">{badge}</span>
           {select}
         </div>
-        <p className="min-w-0 break-words text-[11.5px] leading-4 text-ink-2 max-sm:text-[11px]">{pairDateCaption(fact)}</p>
+        <p className="min-w-0 break-words text-[11.5px] leading-4 text-ink-muted">{pairQualifierCaption(fact)}</p>
         {layers.length > 1 && (
           <div role="group" aria-label="자료 층 전환" data-workbench-pane-controls className="flex min-w-0 shrink-0 flex-nowrap gap-1 overflow-x-auto">
             {layers.map((item) => (
@@ -645,19 +663,6 @@ export function SiteWorkspaceShell({
       )}
     </div>
   );
-  // 칸 머리 날짜 한 줄 — 선택 상자가 잘려도 전체 날짜+정밀도가 칸 옆에 남는다.
-  // 390px에서도 날짜·정밀도 한정자는 정보 서랍을 열지 않고 보인다.
-  const pairDateCaption = (fact: WorkspaceObservationFact): string => {
-    const line = entryCaptureLine(fact);
-    const precision = observationPrecisionOf(fact);
-    const qualifier = precision === "date-only"
-      ? "날짜만 확인 · 시각 미상"
-      : precision === "unknown"
-        ? "관측 시점 미상"
-        : null;
-    const base = qualifier && !line.includes(qualifier) ? `${line} · ${qualifier}` : line;
-    return `${base} · 등록 버전 ${fact.revision}`;
-  };
   // 쌍 한쪽의 층 전환 주소 — 같은 구역에서 그쪽만 정확한 참조로
   // 바꾼다. 다른 쪽·다른 쌍 family·구역·모드는 그대로 둔다(정식 쌍은 받는 쪽이 재대조한다).
   const pairLayerHref = (
@@ -723,7 +728,7 @@ export function SiteWorkspaceShell({
   const recoveryPointer = !entryRecoveryCompact
     ? null
     : exploreExpiredKnown
-      ? "위의 보기(구역 자료 준비에서 확인)를 따릅니다"
+      ? "위의 보기(선택한 자료에서 다시 준비)를 따릅니다"
       : viewerJobsState === "denied"
         ? "위의 보기 안내(준비 기록 조회 권한 요청)를 따릅니다"
         : "위의 보기 안내(다시 불러오기)를 따릅니다";
@@ -743,31 +748,19 @@ export function SiteWorkspaceShell({
     && isKnownExpiredAsset(jobs, visualAFact!.assetRef) && isKnownExpiredAsset(jobs, visualBFact!.assetRef);
   const bothOrderedExpired = comparisonReady && viewerJobsState === "ready"
     && isKnownExpiredAsset(jobs, baselineFact!.assetRef) && isKnownExpiredAsset(jobs, currentFact!.assetRef);
-  // 워크스페이스 예시 화면 복귀 주소 — 선택 쌍을 그대로 싣는다.
-  const workspaceExampleReturnTo = (() => {
-    const query = new URLSearchParams();
-    query.set("mode", "compare");
-    if (selectedWorkAreaId) query.set("workAreaId", selectedWorkAreaId);
-    if (visualAFact) query.set("visualAAssetRef", visualAFact.assetRef);
-    if (visualBFact) query.set("visualBAssetRef", visualBFact.assetRef);
-    const search = query.toString();
-    return search ? `${sitePath}?${search}` : sitePath;
-  })();
-  const sharedExpiredMedia = (
-    <WorkbenchMediaState
-      tone="absence"
-      headline="미리보기 보관 기간이 끝났습니다."
-      detail="두 칸의 불러온 준비 기록이 모두 보관 기간이 끝났습니다."
-      action={
-        <Link href={requestsHref} className="btn btn-primary min-h-11">
-          구역 자료 준비에서 확인
-        </Link>
-      }
-      hint={
-        <>무대 구성을 먼저 보려면 <Link className="font-semibold text-ink-1 underline" href={`/design-preview/materials?returnTo=${encodeURIComponent(workspaceExampleReturnTo)}`}>예시 화면으로 미리 보기</Link></>
-      }
-    />
-  );
+  // 만료는 각 칸의 보기가 직접 말한다 — 두 칸이 같은 사유일 때는 버튼 없는
+  // 한 줄만 덧붙인다. 목록 실패·권한 없음은 두 체계에 똑같이 걸리므로
+  // 무대에 한 번만 둔다(그때는 칸 보기를 접는다).
+  const expiredOrderedNotice = comparisonReady && bothOrderedExpired && !pairJobsBlocked ? (
+    <p role="status" className="shrink-0 rounded-md border border-line bg-sunk/40 px-3 py-2 text-[12px] leading-5 text-ink-2">
+      두 칸의 불러온 준비 기록이 모두 보관 기간이 끝났습니다. 각 칸에서 선택한 자료의 받기 요청으로 바로 이동할 수 있습니다.
+    </p>
+  ) : null;
+  const expiredVisualNotice = visualReady && bothVisualExpired && !pairJobsBlocked ? (
+    <p role="status" className="shrink-0 rounded-md border border-line bg-sunk/40 px-3 py-2 text-[12px] leading-5 text-ink-2">
+      두 칸의 불러온 준비 기록이 모두 보관 기간이 끝났습니다. 각 칸에서 선택한 자료의 받기 요청으로 바로 이동할 수 있습니다.
+    </p>
+  ) : null;
   // 목록 실패·읽기 권한 없음은 두 체계에 똑같이 걸리므로 무대에 한 번만 둔다.
   const jobsSharedBar = selected && (comparisonReady || visualReady)
     && viewerJobsState !== "not-requested" && catalogStatus === null && pairJobsBlocked ? (
@@ -789,8 +782,6 @@ export function SiteWorkspaceShell({
       />
     )
   ) : null;
-  const sharedOrderedRecovery = comparisonReady && bothOrderedExpired && !pairJobsBlocked ? sharedExpiredMedia : null;
-  const sharedVisualRecovery = visualReady && bothVisualExpired && !pairJobsBlocked ? sharedExpiredMedia : null;
   // 둘러보기 맥락은 정식 resolve된 사실에서만 싣는다. 요청 문자열(미확인·
   // 실패·거부된 값)은 전파하지 않는다 — 받는 화면이 재대조한다.
   const visualContext = visualAFact && visualBFact && selectedWorkAreaId
@@ -838,19 +829,15 @@ export function SiteWorkspaceShell({
     canCreateAnalysis, canCreateWorkOrder, scopedCompareHref, exploreHref, facts,
   };
   const areaNames = disambiguatedAreaNames(areas);
-  // 선택 고지 — 목록 드로어가 닫혀 있어도 보여야 하므로 무대 1차 영역에 둔다.
-  // 무엇을 보여주는지 정확히 밝힌다. 조용히 다른 대상으로 바꾸지 않았다는
-  // 말은 범위 밖 요청을 기본으로 둔 경우에만 쓴다(기본이 실제로 바뀐 전이
-  // 선택에는 서버 기본이 아니라는 말만 둔다).
-  const selectionNotice = (scopeNotice || (mode === "explore" && transitionalSelection)) ? (
+  // 선택 고지 — 범위 밖 요청을 실제로 기본으로 둔 경우에만 둔다.
+  // 전이 선택(서버 기본 없음)의 밝힘은 선택 캡션 한 줄이 맡아, 같은
+  // 선택을 알리는 회색 상자를 무대 위에 따로 두지 않는다.
+  const selectionNotice = scopeNotice ? (
     <p role="status" data-workbench-stage-inset="true" className="shrink-0 rounded-md border border-line bg-sunk/40 px-3 py-1.5 text-[12px] leading-5 text-ink-2 max-sm:hidden">
-      {scopeNotice ? "요청한 구역·자료가 조회 범위에 없어 아래 선택을 보여줍니다. " : ""}
-      {selected ? `작업구역 · ${areaLabel}. ` : ""}
-      {mode === "explore" && transitionalSelection
-        ? "서버 기본이 없어 확인된 측정 범위를 보여줍니다. 서버가 정한 기본 관측이 아닙니다."
-        : scopeNotice
-          ? "조용히 다른 대상으로 바꾸지 않았습니다."
-          : ""}
+      요청한 구역·자료가 조회 범위에 없어 아래 선택을 보여줍니다.
+      {selected ? ` 작업구역 · ${areaLabel}.` : ""}
+      {mode === "explore" && selectedCaption ? ` 선택 중 · ${selectedCaption}.` : ""}
+      조용히 다른 대상으로 바꾸지 않았습니다.
     </p>
   ) : null;
   // 맥락막대 — 한 줄 맥락(목록·구역) + 작은 보기 방식 전환 + 한 줄 용도만 둔다.
@@ -885,7 +872,7 @@ export function SiteWorkspaceShell({
       </nav>
     </div>
     {mode === "compare" && (
-      <p data-viewer-compact-hide="true" className="min-w-0 shrink-0 basis-full break-words text-[11.5px] leading-4 text-ink-muted lg:basis-auto">두 시점 비교 · 관측을 둘러보고 비교</p>
+      <p data-viewer-compact-hide="true" className="min-w-0 shrink-0 basis-full break-words text-[11.5px] leading-4 text-ink-muted lg:basis-auto">관측을 둘러보고 비교</p>
     )}
   </>);
 
@@ -938,6 +925,12 @@ export function SiteWorkspaceShell({
     {mode === "explore" && transitionalSelection && (
       <p className="text-[11.5px] leading-4 text-ink-muted sm:hidden">표시 범위는 서버 기본이 아니라 확인된 측정 범위입니다.</p>
     )}
+    {mode === "explore" && selected && exploreNextAction && !exploreIsEmpty && (
+      <SiteAreaNextActionNav sitePath={sitePath} workAreaId={selected.workAreaId}
+        action={exploreNextAction} archived={selected.status === "ARCHIVED"}
+        canRegisterOrCompare={canCreateWorkOrder && selected.status === "ACTIVE" || canCreateAnalysis && selected.status === "ACTIVE"}
+        label="탐색 다음 행동" compact />
+    )}
     {mode === "explore" && selectedCatalog && (
       <div className="flex flex-col gap-2 rounded-lg border border-line bg-sunk/35 p-2.5">
         <div className="flex items-start justify-between gap-2">
@@ -962,13 +955,7 @@ export function SiteWorkspaceShell({
     )}
     {mode === "explore" && !selectedCatalog && <p>선택한 자료 사실이 없습니다. 무대에서 관측을 고르세요.</p>}
     {mode === "explore" && (
-      <section aria-label="자료·범위·다음 행동" className="flex min-w-0 flex-col gap-3">
-        {selected && exploreNextAction && !exploreIsEmpty && (
-          <SiteAreaNextActionNav sitePath={sitePath} workAreaId={selected.workAreaId}
-            action={exploreNextAction} archived={selected.status === "ARCHIVED"}
-            canRegisterOrCompare={canCreateWorkOrder && selected.status === "ACTIVE" || canCreateAnalysis && selected.status === "ACTIVE"}
-            label="탐색 다음 행동" compact />
-        )}
+      <section aria-label="자료·범위" className="flex min-w-0 flex-col gap-3">
         <SiteSpatialOverview
           sitePath={sitePath}
           areas={areas}
@@ -1014,7 +1001,7 @@ export function SiteWorkspaceShell({
             <SiteSelectionForm
               key={captureOptions.find((option) => option.selected)?.assetRef ?? "unselected"}
               action={sitePath}
-              className="flex min-w-0 min-w-44 flex-1 items-center gap-1.5"
+              className="flex w-full min-w-0 items-center gap-1.5 sm:w-auto sm:max-w-xl sm:flex-1"
             >
               <input type="hidden" name="workAreaId" value={selected.workAreaId} />
               <label htmlFor="workspace-capture" className="shrink-0 text-[12px] font-semibold">관측 시점</label>
@@ -1057,6 +1044,7 @@ export function SiteWorkspaceShell({
               if (line.includes(selectedCaption)) return `${line} · ${version}`;
               return selectedCaption === version ? `${line} · ${version}` : `${line} · ${selectedCaption} · ${version}`;
             })()}
+            {transitionalSelection ? " · 서버 기본이 아니라 확인된 측정 범위입니다" : ""}
           </p>
         )}
         {exploreIsEmpty && selected && exploreNextAction && (
@@ -1135,7 +1123,7 @@ export function SiteWorkspaceShell({
             <p className="shrink-0 text-[11.5px] leading-5 text-ink-muted max-sm:text-[11px] max-sm:leading-4">각 칸은 독립된 보기입니다. 같은 범위 맞춤·같은 색 눈금은 지원하지 않습니다.</p>
             {(comparisonReady || visualReady) && (
               <div className="flex shrink-0 flex-wrap items-center gap-2">
-                {sharedOrderedRecovery || sharedVisualRecovery || jobsSharedBar ? (
+                {expiredOrderedNotice || expiredVisualNotice || jobsSharedBar ? (
                   <Link href={scopedCompareHref} className="btn w-fit">이 쌍으로 분석 조건 확인</Link>
                 ) : (
                   <Link href={scopedCompareHref} className="btn btn-primary w-fit">이 쌍으로 분석 조건 확인</Link>
@@ -1147,24 +1135,24 @@ export function SiteWorkspaceShell({
               <div className="grid min-w-0 grid-cols-1 gap-2 md:grid-cols-2 md:gap-0 md:divide-x md:divide-line">
                 {pairPane("1",
                   pairSideSelect("baselineAssetRef", "기준 자료", baselineFact!.assetRef, compareOptions, "기준 자료 선택"),
-                  baselineFact!, viewerLayersForEpoch(catalogAssets, baselineFact!.observationEpochId), "windowed-baseline", "baselineAssetRef", sharedOrderedRecovery ?? jobsSharedBar)}
+                  baselineFact!, viewerLayersForEpoch(catalogAssets, baselineFact!.observationEpochId), "windowed-baseline", "baselineAssetRef", jobsSharedBar)}
                 {pairPane("2",
                   pairSideSelect("currentAssetRef", "비교 자료", currentFact!.assetRef, compareOptions, "비교 자료 선택"),
-                  currentFact!, viewerLayersForEpoch(catalogAssets, currentFact!.observationEpochId), "windowed-current", "currentAssetRef", sharedOrderedRecovery ?? jobsSharedBar)}
+                  currentFact!, viewerLayersForEpoch(catalogAssets, currentFact!.observationEpochId), "windowed-current", "currentAssetRef", jobsSharedBar)}
               </div>
             )}
-            {sharedOrderedRecovery}
+            {expiredOrderedNotice}
             {visualReady && (
               <div className="grid min-w-0 grid-cols-1 gap-2 md:grid-cols-2 md:gap-0 md:divide-x md:divide-line">
                 {pairPane("A",
                   pairSideSelect("visualAAssetRef", "관측 A", visualAFact!.assetRef, visualOptions, "관측 A 선택"),
-                  visualAFact!, visualLayersForExactSubmission(catalogAssets, visualAFact!), "windowed-visual-a", "visualAAssetRef", sharedVisualRecovery ?? jobsSharedBar)}
+                  visualAFact!, visualLayersForExactSubmission(catalogAssets, visualAFact!), "windowed-visual-a", "visualAAssetRef", jobsSharedBar)}
                 {pairPane("B",
                   pairSideSelect("visualBAssetRef", "관측 B", visualBFact!.assetRef, visualOptions, "관측 B 선택"),
-                  visualBFact!, visualLayersForExactSubmission(catalogAssets, visualBFact!), "windowed-visual-b", "visualBAssetRef", sharedVisualRecovery ?? jobsSharedBar)}
+                  visualBFact!, visualLayersForExactSubmission(catalogAssets, visualBFact!), "windowed-visual-b", "visualBAssetRef", jobsSharedBar)}
               </div>
             )}
-            {sharedVisualRecovery}
+            {expiredVisualNotice}
             {jobsSharedBar}
           </>
         )}

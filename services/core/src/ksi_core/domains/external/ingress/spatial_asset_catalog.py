@@ -23,6 +23,7 @@ from ksi_event_contracts.spatial_asset_catalog import (
     SpatialAssetObservedFactsV1,
     SpatialAssetObservedVerticalReferenceV1,
 )
+from ksi_event_contracts.spatial_asset_description import SpatialAssetDescriptionV1
 
 from ksi_core.domains.external.ingress.external_artifact_inspections import (
     ExternalArtifactInspectionSnapshotBudgetExceeded,
@@ -33,6 +34,9 @@ from ksi_core.domains.external.ingress.external_reconstruction import (
     ExternalReconstructionRevision,
     ExternalReconstructionStore,
     build_external_reconstruction_submission_ref,
+)
+from ksi_core.domains.external.ingress.spatial_asset_description import (
+    build_spatial_asset_description,
 )
 from ksi_core.domains.sites.observation_work_orders import SiteWorkOrderListBudgetExceeded
 from ksi_core.identity.auth import Permission, Principal, require_permission
@@ -97,14 +101,18 @@ class SpatialAssetCatalog:
         }
         return "ksa-v1-" + hashlib.sha256(canonical_json_bytes(identity)).hexdigest()
 
-    def _inspection(
-        self, record: ExternalReconstructionRevision, artifact_id: str
-    ) -> SpatialAssetInspectionV1:
+    def _snapshot_for(self, record: ExternalReconstructionRevision) -> tuple[str, Any]:
+        """Fetch the bounded current inspection snapshot for one exact revision.
+
+        Returns the display state plus the raw snapshot (or None when no
+        inspection source applies). Reads only; never schedules or mutates
+        inspection work. Callers project their own views from the snapshot.
+        """
         manifest = record.manifest
         if manifest is None:
-            return SpatialAssetInspectionV1(state="PENDING_SEAL")
+            return ("PENDING_SEAL", None)
         if self._inspections is None:
-            return SpatialAssetInspectionV1(state="INSPECTION_NOT_CONFIGURED")
+            return ("INSPECTION_NOT_CONFIGURED", None)
         # Only admitted sealed records enter this projection; missing digests are not inferred.
         assert record.submission.submission_digest is not None
         assert manifest.manifest_digest is not None
@@ -127,7 +135,16 @@ class SpatialAssetCatalog:
             raise HTTPException(
                 status_code=503, detail="SPATIAL_ASSET_SOURCE_BUDGET_EXCEEDED"
             ) from exc
-        report = snapshot.report
+        return (snapshot.state, snapshot)
+
+    def _inspection_view(
+        self,
+        record: ExternalReconstructionRevision,
+        artifact_id: str,
+        state: str,
+        snapshot: Any,
+    ) -> SpatialAssetInspectionV1:
+        report = snapshot.report if snapshot is not None else None
         assert report is None or report.report_digest is not None
         report_digest = report.report_digest if report is not None else None
         outcome = (
@@ -143,7 +160,7 @@ class SpatialAssetCatalog:
             else None
         )
         return SpatialAssetInspectionV1(
-            state=snapshot.state,
+            state=state,
             report_digest=report.report_digest if report is not None else None,
             outcome=outcome.outcome.value if outcome is not None else None,
             reason=outcome.reason if outcome is not None else None,
@@ -177,6 +194,17 @@ class SpatialAssetCatalog:
                 else None
             ),
         )
+
+    def _inspection(
+        self, record: ExternalReconstructionRevision, artifact_id: str
+    ) -> SpatialAssetInspectionV1:
+        manifest = record.manifest
+        if manifest is None:
+            return SpatialAssetInspectionV1(state="PENDING_SEAL")
+        if self._inspections is None:
+            return SpatialAssetInspectionV1(state="INSPECTION_NOT_CONFIGURED")
+        _state, snapshot = self._snapshot_for(record)
+        return self._inspection_view(record, artifact_id, _state, snapshot)
 
     def _iter_revision_items(
         self,
@@ -370,6 +398,52 @@ class SpatialAssetCatalog:
             raise HTTPException(status_code=404, detail=_NOT_FOUND)
         return item.model_copy(update={"inspection": self._inspection(record, item.artifact_id)})
 
+    def describe(
+        self, site_id: str, work_area_id: str, asset_ref: str, principal: Principal
+    ) -> SpatialAssetDescriptionV1:
+        """Enrich one exact asset with already-stored provenance and raster detail.
+
+        Same identity, scope, revision resolution, and finite source budgets as
+        the V1 detail view; no new authority, registry, or analysis claim.
+        """
+        if _ASSET_REF_RE.fullmatch(asset_ref) is None:
+            raise HTTPException(status_code=404, detail=_NOT_FOUND)
+        self._require_scope(site_id, work_area_id, principal)
+        candidate = next(
+            (
+                candidate
+                for candidate in self.items(site_id, work_area_id, principal)
+                if candidate.asset_ref == asset_ref
+            ),
+            None,
+        )
+        if candidate is None:
+            raise HTTPException(status_code=404, detail=_NOT_FOUND)
+        submission_id = self._reconstruction.resolve_submission_ref(
+            candidate.work_order_id,
+            candidate.submission_ref,
+            organization_id=principal.organization_id,
+            site_id=candidate.site_id,
+        )
+        if submission_id is None:
+            raise HTTPException(status_code=404, detail=_NOT_FOUND)
+        record = self._reconstruction.get(
+            candidate.work_order_id,
+            submission_id,
+            candidate.revision,
+            organization_id=principal.organization_id,
+            site_id=candidate.site_id,
+        )
+        if record is None:
+            raise HTTPException(status_code=404, detail=_NOT_FOUND)
+        state, snapshot = self._snapshot_for(record)
+        item = candidate.model_copy(
+            update={
+                "inspection": self._inspection_view(record, candidate.artifact_id, state, snapshot)
+            }
+        )
+        return build_spatial_asset_description(item=item, record=record, snapshot=snapshot)
+
 
 def _encode_cursor(*, site_id: str, work_area_id: str, after: str) -> str:
     payload = canonical_json_bytes(
@@ -521,5 +595,23 @@ def build_spatial_asset_catalog_router(
         ):
             raise HTTPException(status_code=503, detail="SPATIAL_ASSET_EXCEEDS_RESPONSE_BUDGET")
         return detail
+
+    @router.get(
+        "/v2/sites/{site_id}/work-areas/{work_area_id}/spatial-assets/{asset_ref}",
+        response_model=SpatialAssetDescriptionV1,
+    )
+    def describe_asset(
+        site_id: str,
+        work_area_id: str,
+        asset_ref: str,
+        principal: Principal = Depends(read),  # noqa: B008
+    ) -> SpatialAssetDescriptionV1:
+        description = catalog.describe(site_id, work_area_id, asset_ref, principal)
+        if (
+            len(canonical_json_bytes(description.model_dump(by_alias=True, mode="json")))
+            > _MAX_PAGE_BYTES
+        ):
+            raise HTTPException(status_code=503, detail="SPATIAL_ASSET_EXCEEDS_RESPONSE_BUDGET")
+        return description
 
     return router

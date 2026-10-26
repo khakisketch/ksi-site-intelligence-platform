@@ -11,7 +11,10 @@ from typing import Any
 import httpx
 import pytest
 from analysis_api_local_fixture import build_local_analysis_api_fixture
-from ksi_event_contracts.external_analysis_api import AnalysisObservationSelectorV1
+from ksi_event_contracts.external_analysis_api import (
+    AnalysisObservationSelectorV1,
+    AnalysisReadinessViewV1,
+)
 from ksi_processing_controller.external_analysis_core_client import ExternalAnalysisCoreClient
 from ksi_processing_controller.external_analysis_worker import (
     ProcessingWorkerRuntimeIdentityV1,
@@ -161,6 +164,52 @@ def test_mcp_uses_actual_inspection_and_returns_same_core_analysis(
                         assert response.is_error is False, response
                         assert isinstance(response.structured_content, dict)
                         return response.structured_content
+
+                    readiness_arguments = {
+                        key: value for key, value in create_arguments.items()
+                        if key != "idempotencyKey"
+                    }
+                    journals_before_read = {
+                        path: path.read_bytes() for path in tmp_path.rglob("*.jsonl")
+                    }
+                    via_mcp_readiness = await call(
+                        "ksi_check_analysis_readiness", readiness_arguments
+                    )
+                    validated_readiness = AnalysisReadinessViewV1.model_validate(via_mcp_readiness)
+                    # The actual stdio tool reaches the same real inspected Core
+                    # decision. Even the NoData case still requires worker mask
+                    # validation; preflight must never promise full coverage.
+                    assert validated_readiness.suitability_state.value == (
+                        "PROVISIONAL_ACCURACY_UNVERIFIED"
+                    )
+                    assert validated_readiness.coverage_check == "REQUIRES_WORKER_VALIDATION"
+                    assert validated_readiness.blockers == ()
+                    async with httpx.AsyncClient(
+                        base_url=servers.core_origin, trust_env=False
+                    ) as direct_readiness_client:
+                        direct_readiness = await direct_readiness_client.post(
+                            f"/v2/sites/{fixture.site_id}/work-areas/{fixture.work_area_id}"
+                            "/analysis-readiness",
+                            headers=fixture.operator_headers(),
+                            json={
+                                "baseline": create_arguments["baseline"],
+                                "current": create_arguments["current"],
+                            },
+                        )
+                    assert direct_readiness.status_code == 200, direct_readiness.text
+                    assert {
+                        key: value for key, value in via_mcp_readiness.items()
+                        if key != "checkedAt"
+                    } == {
+                        key: value for key, value in direct_readiness.json().items()
+                        if key != "checkedAt"
+                    }
+                    assert journals_before_read == {
+                        path: path.read_bytes() for path in tmp_path.rglob("*.jsonl")
+                    }
+                    assert fixture.app.state.external_analysis_wiring.intents.list_for_organization(
+                        organization_id="org-a"
+                    ) == ()
 
                     created = await call("ksi_create_analysis", create_arguments)
                     analysis_id = created["analysisId"]

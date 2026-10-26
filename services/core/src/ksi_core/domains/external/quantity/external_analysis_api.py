@@ -32,6 +32,7 @@ from ksi_event_contracts.external_analysis_api import (
     AnalysisObservationOptionV1,
     AnalysisObservationSelectorV1,
     AnalysisPolicyEvidenceV1,
+    AnalysisReadinessViewV1,
     AnalysisResultV1,
     AnalysisRuntimeEvidenceV1,
     AnalysisSuitabilityStateV1,
@@ -62,6 +63,7 @@ from ksi_event_contracts.external_artifact_validation import (
 from ksi_event_contracts.external_evidence import EvidenceCoreVerdict
 from ksi_event_contracts.external_relative_volume_analysis import (
     AdmissionDispositionV2,
+    AdmissionV2,
     EvaluationOutcomeV1,
 )
 from ksi_event_contracts.external_relative_volume_calculation import (
@@ -78,6 +80,7 @@ from ksi_core.domains.external.quantity.external_analysis_intents import (
 from ksi_core.domains.external.quantity.external_relative_volume_analysis import (
     AnalysisAssessmentRequestV2,
     AnalysisEpochSelectionV2,
+    ReadinessPreview,
 )
 from ksi_core.domains.external.quantity.external_relative_volume_calculations import (
     CalculationCurrentDispositionV2,
@@ -329,6 +332,10 @@ class _AnalysisAssessmentPort(Protocol):
         self, *, principal: Principal, request: AnalysisAssessmentRequestV2, now: datetime
     ) -> _AnalysisAssessmentRecordPort: ...
 
+    def preview_readiness_snapshot(
+        self, *, organization_id: str, request: AnalysisAssessmentRequestV2, now: datetime
+    ) -> ReadinessPreview | None: ...
+
 
 class _AnalysisAuthorizationPort(Protocol):
     @property
@@ -450,6 +457,16 @@ class _AnalysisPublicRoutePort(Protocol):
         idempotency_key: str,
         now: datetime,
     ) -> AnalysisViewV1: ...
+
+    def check_readiness(
+        self,
+        *,
+        principal: Principal,
+        site_id: str,
+        work_area_id: str,
+        request: CreateAnalysisRequestV1,
+        now: datetime,
+    ) -> AnalysisReadinessViewV1: ...
 
     def list(self, *, principal: Principal, site_id: str, now: datetime) -> AnalysisListV1: ...
 
@@ -689,6 +706,163 @@ class ExternalAnalysisFacade:
             principal=principal,
             now=now,
             resolved=(baseline, current),
+        )
+
+    def check_readiness(
+        self,
+        *,
+        principal: Principal,
+        site_id: str,
+        work_area_id: str,
+        request: CreateAnalysisRequestV1,
+        now: datetime,
+    ) -> AnalysisReadinessViewV1:
+        """Answer a pure read-only preflight without durable side effects.
+
+        This never records an intent, appends an AP/NX event, issues a
+        calculation, links execution, or manufactures a privileged Principal.
+        It resolves the same sealed selectors and reuses the same AP
+        preparation/currentness predicates that ``create`` rechecks; the
+        detailed ``READINESS_*`` blocker codes are confined to this view and
+        never change the durable ``ESSENTIAL_INPUT_UNAVAILABLE`` meaning.
+        """
+        self._require(principal, Permission.SITES_READ)
+        self._require_path(principal, site_id, work_area_id)
+        if not self._selectors_are_in_scope(
+            principal, site_id, (request.baseline, request.current)
+        ):
+            raise AnalysisScopeNotFound("ANALYSIS_RESOURCE_NOT_FOUND")
+        baseline = self._resolve_selector(principal, site_id, request.baseline, "BASELINE")
+        current = self._resolve_selector(principal, site_id, request.current, "CURRENT")
+        selector_blockers = tuple(item for item in (baseline.blocker, current.blocker) if item)
+        if selector_blockers or baseline.subject is None or current.subject is None:
+            return AnalysisReadinessViewV1(
+                site_id=site_id,
+                work_area_id=work_area_id,
+                baseline=request.baseline,
+                current=request.current,
+                suitability_state=AnalysisSuitabilityStateV1.BLOCKED,
+                blockers=selector_blockers
+                or (AnalysisBlockerV1(code="RECONSTRUCTION_NOT_SEALED"),),
+                checked_at=now,
+                calculation_identity_digest=None,
+            )
+        assert baseline.subject is not None and current.subject is not None
+        snapshot = self._assessments.preview_readiness_snapshot(
+            organization_id=principal.organization_id,
+            request=AnalysisAssessmentRequestV2(
+                request_id="analysis-readiness-preview",
+                work_area_id=work_area_id,
+                baseline=AnalysisEpochSelectionV2(subject=baseline.subject),
+                current=AnalysisEpochSelectionV2(subject=current.subject),
+                idempotency_key="analysis-readiness-preview-no-journal",
+            ),
+            now=now,
+        )
+        if snapshot is None:
+            return AnalysisReadinessViewV1(
+                site_id=site_id,
+                work_area_id=work_area_id,
+                baseline=request.baseline,
+                current=request.current,
+                suitability_state=AnalysisSuitabilityStateV1.REASSESSMENT_REQUIRED,
+                blockers=(AnalysisBlockerV1(code="REASSESSMENT_REQUIRED"),),
+                checked_at=now,
+                calculation_identity_digest=None,
+            )
+        # The snapshot carries the exact sealed admission plus the details
+        # classified under the same guard; no further store round-trip can
+        # observe a newer snapshot. Every branch below is fail-closed: only
+        # the two explicit ADMIT dispositions project an available state.
+        admission = snapshot.admission
+        identity_digest = admission.calculation_identity_digest
+        disposition = admission.disposition
+        if disposition is AdmissionDispositionV2.ADMIT_PROVISIONAL:
+            return AnalysisReadinessViewV1(
+                site_id=site_id,
+                work_area_id=work_area_id,
+                baseline=request.baseline,
+                current=request.current,
+                suitability_state=AnalysisSuitabilityStateV1.PROVISIONAL_ACCURACY_UNVERIFIED,
+                blockers=(),
+                limitation_codes=self._limitation_codes(admission),
+                checked_at=now,
+                calculation_identity_digest=identity_digest,
+            )
+        if disposition is AdmissionDispositionV2.ADMIT_EVALUATED:
+            return AnalysisReadinessViewV1(
+                site_id=site_id,
+                work_area_id=work_area_id,
+                baseline=request.baseline,
+                current=request.current,
+                suitability_state=AnalysisSuitabilityStateV1.EVALUATED,
+                blockers=(),
+                checked_at=now,
+                calculation_identity_digest=identity_digest,
+            )
+        if disposition is AdmissionDispositionV2.REMEDIATION_REQUIRED:
+            return AnalysisReadinessViewV1(
+                site_id=site_id,
+                work_area_id=work_area_id,
+                baseline=request.baseline,
+                current=request.current,
+                suitability_state=AnalysisSuitabilityStateV1.REMEDIATION_REQUIRED,
+                blockers=self._readiness_evaluation_blockers(admission),
+                checked_at=now,
+                calculation_identity_digest=identity_digest,
+            )
+        if admission.reason_codes == ("ESSENTIAL_INPUT_UNAVAILABLE",) and snapshot.details:
+            return AnalysisReadinessViewV1(
+                site_id=site_id,
+                work_area_id=work_area_id,
+                baseline=request.baseline,
+                current=request.current,
+                suitability_state=AnalysisSuitabilityStateV1.BLOCKED,
+                blockers=tuple(
+                    AnalysisBlockerV1(code=code, epoch=epoch) for code, epoch in snapshot.details
+                )[:128],
+                checked_at=now,
+                calculation_identity_digest=None,
+            )
+        if identity_digest is not None and admission.evaluation_revisions:
+            return AnalysisReadinessViewV1(
+                site_id=site_id,
+                work_area_id=work_area_id,
+                baseline=request.baseline,
+                current=request.current,
+                suitability_state=AnalysisSuitabilityStateV1.BLOCKED,
+                blockers=self._readiness_evaluation_blockers(admission),
+                checked_at=now,
+                calculation_identity_digest=identity_digest,
+            )
+        return AnalysisReadinessViewV1(
+            site_id=site_id,
+            work_area_id=work_area_id,
+            baseline=request.baseline,
+            current=request.current,
+            suitability_state=AnalysisSuitabilityStateV1.BLOCKED,
+            blockers=tuple(AnalysisBlockerV1(code=code) for code in admission.reason_codes)[
+                :128
+            ]
+            or (AnalysisBlockerV1(code="ESSENTIAL_INPUT_UNAVAILABLE"),),
+            checked_at=now,
+            calculation_identity_digest=identity_digest,
+        )
+
+    @staticmethod
+    def _readiness_evaluation_blockers(
+        admission: AdmissionV2,
+    ) -> tuple[AnalysisBlockerV1, ...]:
+        blockers: list[AnalysisBlockerV1] = []
+        for evaluation in admission.evaluation_revisions:
+            if evaluation.outcome is EvaluationOutcomeV1.PASS:
+                continue
+            for reason in evaluation.reason_codes:
+                blockers.append(AnalysisBlockerV1(code=reason, epoch=evaluation.epoch))
+                if len(blockers) >= 128:
+                    return tuple(blockers)
+        return tuple(blockers) or (
+            AnalysisBlockerV1(code="REASSESSMENT_REQUIRED"),
         )
 
     def _resume(
@@ -1923,11 +2097,13 @@ def build_external_analysis_router(
     clock: Callable[[], datetime] | None = None,
     activation: AnalysisActivationV1 | None = None,
 ) -> APIRouter:
-    """Build the six frozen public Analysis API routes.
+    """Build the six frozen public Analysis API routes plus additive readiness.
 
-    This router intentionally carries no worker control endpoints and does
-    not mount itself.  Only an explicitly injected local/common composition
-    may include it; the production composition remains closed.
+    The six established routes keep their frozen wire shapes; the additive
+    ``POST .../analysis-readiness`` route is a pure read-only preflight that
+    creates no intent, AP/NX record, or journal entry and grants no execution
+    authority. Only an explicitly injected local/common composition may
+    include it; the production composition remains closed.
     """
     now = clock or (lambda: datetime.now(UTC))
     router = APIRouter(tags=["external-analysis"])
@@ -2165,6 +2341,33 @@ def build_external_analysis_router(
         except ValueError as exc:
             raise HTTPException(status_code=409, detail="ANALYSIS_IDEMPOTENCY_CONFLICT") from exc
         return bounded_json(projected, status_code=202, response=response)
+
+    @router.post(
+        "/v2/sites/{site_id}/work-areas/{work_area_id}/analysis-readiness",
+        response_model=AnalysisReadinessViewV1,
+    )
+    def check_analysis_readiness(
+        site_id: str,
+        work_area_id: str,
+        request: CreateAnalysisRequestV1,
+        response: Response,
+        access_purpose: Literal["EXTERNAL_AI"] | None = Header(
+            default=None, alias="X-KSI-Access-Purpose"
+        ),
+        principal: Principal = Depends(read),  # noqa: B008
+    ) -> Response:
+        guard_external_ai_egress(principal=principal, site_id=site_id, response=response)
+        try:
+            readiness = facade.check_readiness(
+                principal=principal,
+                site_id=site_id,
+                work_area_id=work_area_id,
+                request=request,
+                now=now(),
+            )
+        except AnalysisScopeNotFound as exc:
+            raise not_found() from exc
+        return bounded_json(readiness, response=response)
 
     @router.get(
         "/v2/sites/{site_id}/analyses",

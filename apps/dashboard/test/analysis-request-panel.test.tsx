@@ -245,9 +245,11 @@ describe("analysis V2 panel", () => {
   it("keeps existing records before the request form for a bare browse context", () => {
     vi.stubGlobal("fetch", vi.fn());
     const context = { workAreaId: "area-1", visualAAssetRef: `ksa-v1-${"a".repeat(64)}`, visualBAssetRef: `ksa-v1-${"b".repeat(64)}` };
-    renderPanel({ canCreate: true, initialAnalysisId: null, initialSelectedDetail: null,
+    const recorded = detail();
+    renderPanel({ canCreate: true, initialAnalysisId: null,
+      initialPage: listPage([recorded.analysisId]), initialSelectedDetail: recorded,
       visualContext: context, visualReturnHref: "/sites/site-1?mode=compare&workAreaId=area-1" });
-    // 머리 결과 이동은 힌트·앵커 없이 둘러보기 맥락만 싣는다 — 새 요청 의도가 아니다.
+    // 기록이 있으면 이력이 요청보다 먼저 보인다.
     const request = document.getElementById("new-analysis-request")!;
     const history = document.getElementById("analysis-history")!;
     expect(Boolean(history.compareDocumentPosition(request) & Node.DOCUMENT_POSITION_FOLLOWING)).toBe(true);
@@ -277,7 +279,9 @@ describe("analysis V2 panel", () => {
     expect(message.closest(".hidden")).toBeNull();
     expect(screen.getByRole("button", {name:"변화 분석 요청",hidden:true}).closest(".hidden")).not.toBeNull();
     expect(document.getElementById("new-analysis-request")?.className).toContain("scroll-mt-20");
-    expect(document.getElementById("new-analysis-request")!.compareDocumentPosition(document.getElementById("analysis-history")!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    // 기록이 없으면 단일 열로 요청만 둔다 — 이력 섹션은 만들지 않는다.
+    expect(document.getElementById("new-analysis-request")).toBeTruthy();
+    expect(document.getElementById("analysis-history")).toBeNull();
   });
 
   it("renders compact metric definitions without a forced-width horizontal table", () => {
@@ -330,14 +334,16 @@ describe("analysis V2 panel", () => {
   });
 
   it("uses a true-empty message only after a successful list read", async () => {
-    renderPanel({ initialPage: listPage([]), initialSelectedDetail: null, initialAnalysisId: null, canCreate: true });
+    renderPanel({ initialPage: listPage([]), initialSelectedDetail: null, initialAnalysisId: null, canCreate: true,
+      observations: [], siteObservations: [] });
     expect(screen.getByText(/이 현장에는 아직 변화 분석 요청이 없습니다/)).toBeTruthy();
     expect(screen.getByText(/실제 작업구역과 관측 후보를 확인/)).toBeTruthy();
 
     cleanup();
     let finishRequest: ((value: Response) => void) | undefined;
     vi.stubGlobal("fetch", vi.fn(() => new Promise<Response>((resolve) => { finishRequest = resolve; })));
-    renderPanel({ initialPage: listPage([], "older-cursor"), initialSelectedDetail: null, initialAnalysisId: null, canCreate: false });
+    renderPanel({ initialPage: listPage([], "older-cursor"), initialSelectedDetail: null, initialAnalysisId: null, canCreate: false,
+      observations: [], siteObservations: [] });
     expect(screen.getByText(/현재 페이지에 변화 분석 요청이 없습니다/)).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: "다음 변화 분석 보기" }));
@@ -356,7 +362,7 @@ describe("analysis V2 panel", () => {
     expect(baseline.value).toBe("");
     expect(current.value).toBe("");
     expect(baseline.disabled).toBe(true);
-    expect(screen.getByText("기준이 비어 있을 때만 현재 관측보다 앞서 끝난 가장 최근 관측을 제안합니다. 직접 고른 기준은 현재를 바꿔도 유지됩니다. 변화 분석 요청은 직접 눌러야 합니다.")).toBeTruthy();
+    expect(screen.getByText("기준·현재 관측을 고르면 Core가 권한·자료 적합성·계산 실행을 확인합니다. 판단은 요청 시 Core가 하며, 기준이 비어 있을 때만 가장 최근 선행 관측을 제안합니다.")).toBeTruthy();
 
     fireEvent.change(screen.getByLabelText("작업구역"), { target: { value: "area-1" } });
     expect(baseline.options[1]?.textContent).toContain("기준 작업");
@@ -367,7 +373,7 @@ describe("analysis V2 panel", () => {
 
     fireEvent.change(baseline, { target: { value: "0" } });
     fireEvent.change(current, { target: { value: "1" } });
-    const confirmation = screen.getByText(/선택 확인 · 작업구역 연결은 Core가 요청 시 확인합니다/).closest("div")!;
+    const confirmation = screen.getByText("선택 확인").closest("div")!;
     expect(confirmation.textContent).toContain("기준");
     expect(confirmation.textContent).toContain("기준 작업");
     expect(confirmation.textContent).toContain("현재");
@@ -1111,5 +1117,442 @@ describe("newer observation notice", () => {
     });
 
     expect(screen.queryByText(/이 작업구역에 더 새 관측이 있습니다/)).toBeNull();
+  });
+
+  it("shows no empty required selects when the area has zero candidates", () => {
+    vi.stubGlobal("fetch", vi.fn());
+    renderPanel({ canCreate: true, initialAnalysisId: null, initialSelectedDetail: null,
+      initialPage: listPage([]), observations: [], siteObservations: [], initialWorkAreaId: "area-1" });
+    // 빈 선택지를 요구 조건처럼 두지 않는다.
+    expect(screen.getByText("이 구역의 분석 후보가 없습니다")).toBeTruthy();
+    expect(screen.queryByLabelText("기준 관측")).toBeNull();
+    expect(screen.queryByLabelText("현재 관측")).toBeNull();
+    expect(screen.queryByRole("button", { name: "변화 분석 요청" })).toBeNull();
+    // 실제 다음 행동을 둔다.
+    expect(screen.getByRole("link", { name: "등록 자료와 검사 상태 확인" }).getAttribute("href"))
+      .toBe("/sites/site-1/spatial-assets?workAreaId=area-1");
+    expect(screen.getByRole("link", { name: "작업공간으로 돌아가기" }).getAttribute("href"))
+      .toBe("/sites/site-1?workAreaId=area-1");
+  });
+
+  it("names the brought pair without preselecting it when candidates are empty", () => {
+    vi.stubGlobal("fetch", vi.fn());
+    const brought = {
+      baseline: selector("work-baseline", "a"), baselineMatched: false,
+      current: selector("work-current", "b"), currentMatched: false,
+    };
+    renderPanel({ canCreate: true, initialAnalysisId: null, initialSelectedDetail: null,
+      initialPage: listPage([]), observations: [], siteObservations: [], initialWorkAreaId: "area-1",
+      broughtSelectors: brought, visualReturnHref: "/sites/site-1?mode=compare&workAreaId=area-1" });
+    expect(screen.getByText(/가져온 쌍 · 후보 목록에 없어 미리 고르지 않았습니다/)).toBeTruthy();
+    expect(screen.getByText(/관측이 부적합하다는 판정이 아닙니다/)).toBeTruthy();
+    expect(screen.queryByLabelText("기준 관측")).toBeNull();
+    expect(screen.getByRole("link", { name: "독립 보기로 돌아가기" })).toBeTruthy();
+  });
+
+  it("states an exact-selector miss instead of a suitability verdict when candidates are empty", () => {
+    vi.stubGlobal("fetch", vi.fn());
+    renderPanel({ canCreate: true, initialAnalysisId: null, initialSelectedDetail: null,
+      initialPage: listPage([]), observations: [], siteObservations: [], initialWorkAreaId: "area-1" });
+    expect(screen.getByText(/요청 입력과 정확히 맞는 분석 후보가 없습니다/)).toBeTruthy();
+    // 후보 목록의 선택자 일치 여부만 말하며, 관측의 적합성을 판정하지 않는다.
+    expect(screen.queryByText(/분석 가능 관측/)).toBeNull();
+    expect(screen.getByText(/관측이 부적합하다는 판정이 아닙니다/)).toBeTruthy();
+  });
+
+  it("keeps unverified brought identifiers out of trusted display until disclosed", () => {
+    vi.stubGlobal("fetch", vi.fn());
+    const brought = {
+      baseline: selector("work-foreign", "a"), baselineMatched: false,
+      current: selector("work-current", "b"), currentMatched: false,
+    };
+    // work-current만 이 현장·조직 범위의 작업명으로 확인된다.
+    renderPanel({ canCreate: true, initialAnalysisId: null, initialSelectedDetail: null,
+      initialPage: listPage([]), observations: [], siteObservations: [], initialWorkAreaId: "area-1",
+      workOrderNames: { "work-current": "현재 작업" },
+      broughtSelectors: brought, visualReturnHref: "/sites/site-1?mode=compare&workAreaId=area-1" });
+    // 범위에서 확인한 이름만 밝히고, 모르는 작업명은 단정하지 않는다.
+    expect(screen.getByText(/현재 작업 · 버전 1/)).toBeTruthy();
+    expect(screen.getByText(/작업명 확인 불가 · 버전 1/)).toBeTruthy();
+    // 원문 식별자는 1차 표시가 아니라 펼침에만 둔다.
+    const disclosures = screen.getAllByText("가져온 값(검증되지 않음) 확인");
+    expect(disclosures).toHaveLength(2);
+    expect(disclosures[0]!.closest("details")?.hasAttribute("open")).toBe(false);
+    expect(screen.queryByText("work-foreign")).toBeNull();
+    fireEvent.click(disclosures[0]!);
+    expect(disclosures[0]!.closest("details")?.textContent).toContain(selector("work-foreign", "a").submissionRef);
+    expect(disclosures[0]!.closest("details")?.textContent).toContain("이 현장·조직 범위에서 작업명을 확인하지 못했습니다");
+  });
+});
+
+describe("analysis readiness check", () => {
+  const digest = `sha256:${"e".repeat(64)}`;
+  const readinessView = {
+    contractVersion: "analysis-readiness.v1",
+    siteId: "site-1",
+    workAreaId: "area-1",
+    baseline: selector("work-baseline", "a"),
+    current: selector("work-current", "b"),
+    suitabilityState: "EVALUATED",
+    blockers: [],
+    limitationCodes: ["PROVISIONAL_ACCURACY_UNVERIFIED"],
+    checkedAt: "2026-10-20T00:00:00Z",
+    calculationIdentityDigest: digest,
+    coverageCheck: "REQUIRES_WORKER_VALIDATION",
+  };
+
+  function stubReadinessFetch(responder: (url: string) => Response) {
+    const readinessBodies: unknown[] = [];
+    const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input.toString();
+      if (/\/reviews(?:\?|$)/.test(url)) return Promise.resolve(json(reviewPage()));
+      if (url.includes("/analysis-readiness")) {
+        readinessBodies.push(init?.body);
+        return Promise.resolve(responder(url));
+      }
+      return Promise.resolve(json(detail()));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    return { fetchMock, readinessBodies };
+  }
+
+  function renderReadyToCheck() {
+    renderPanel({ canCreate: true, initialAnalysisId: null, initialSelectedDetail: null,
+      initialPage: listPage([]), initialWorkAreaId: "area-1" });
+    fireEvent.change(screen.getByLabelText("기준 관측"), { target: { value: "0" } });
+    fireEvent.change(screen.getByLabelText("현재 관측"), { target: { value: "1" } });
+  }
+
+  function readinessCalls(stub: { fetchMock: ReturnType<typeof vi.fn> }) {
+    return stub.fetchMock.mock.calls.map(([input]) => (typeof input === "string" ? input : String(input)))
+      .filter((url) => url.includes("/analysis-readiness"));
+  }
+
+  it("sends no readiness request on view or selection alone", () => {
+    const fetchMock = stubReadinessFetch(() => json(readinessView));
+    renderReadyToCheck();
+    // 쌍을 고르기 전에도, 고른 뒤에도 화면 진입·선택만으로는 전송하지 않는다.
+    expect(readinessCalls(fetchMock)).toHaveLength(0);
+    expect(screen.getByRole("button", { name: "선택한 쌍의 분석 조건 확인" })).toBeTruthy();
+  });
+
+  it("shows the checked suitability, blockers and limits, then invalidates on pair change", async () => {
+    const blocked = {
+      ...readinessView,
+      suitabilityState: "BLOCKED",
+      limitationCodes: [],
+      blockers: [{ code: "VERTICAL_REFERENCE_MISMATCH", epoch: "CURRENT", evidenceRef: null, detail: null }],
+    };
+    const stubbed = stubReadinessFetch(() => json(blocked));
+    renderReadyToCheck();
+    fireEvent.click(screen.getByRole("button", { name: "선택한 쌍의 분석 조건 확인" }));
+    expect(await screen.findByText("조건 확인 · 차단됨")).toBeTruthy();
+    expect(screen.getByText("높이 기준이 서로 다름 · 현재 관측")).toBeTruthy();
+    expect(screen.getByText(/공통 유효 범위는 계산 과정에서 확인합니다/)).toBeTruthy();
+    expect(screen.getByText(/이 확인은 요청 권한을 주지 않습니다/)).toBeTruthy();
+    // 계산 식별 확인값은 펼침에만 둔다.
+    const recordValues = screen.getByText("확인 기록 값 보기").closest("details")!;
+    expect(recordValues.hasAttribute("open")).toBe(false);
+    fireEvent.click(screen.getByText("확인 기록 값 보기"));
+    expect(recordValues.textContent).toContain(digest);
+    expect(readinessCalls(stubbed)).toHaveLength(1);
+    // 쌍이 바뀌면 확인 결과를 버리고 진행 중 확인을 취소한다.
+    fireEvent.change(screen.getByLabelText("현재 관측"), { target: { value: "" } });
+    expect(screen.queryByText("조건 확인 · 차단됨")).toBeNull();
+    expect(screen.queryByRole("button", { name: "선택한 쌍의 분석 조건 확인" })).toBeNull();
+    expect(JSON.parse(String(stubbed.readinessBodies[0])))
+      .toEqual({ baseline: observations[0]!.selector, current: observations[1]!.selector });
+    expect(screen.getByText(/고르면 조건 확인을 실행할 수 있습니다/)).toBeTruthy();
+  });
+
+  it("fails closed with distinct copy for denial, unsupported environments and server errors", async () => {
+    const fetchMock = stubReadinessFetch(() => json({ message: "denied" }, 403));
+    renderReadyToCheck();
+    fireEvent.click(screen.getByRole("button", { name: "선택한 쌍의 분석 조건 확인" }));
+    expect(await screen.findByText(/분석 조건 확인을 조회할 권한이 없습니다/)).toBeTruthy();
+    expect(screen.queryByText(/조건 확인 ·/)).toBeNull();
+    // 권한이 복구되면 같은 자리에서 다시 확인할 수 있다(쌍을 바꾸지 않아도 된다).
+    expect(screen.getByRole("button", { name: "다시 확인" })).toBeTruthy();
+    expect(readinessCalls(fetchMock)).toHaveLength(1);
+
+    cleanup();
+    stubReadinessFetch(() => json({ message: "no route" }, 404));
+    renderReadyToCheck();
+    fireEvent.click(screen.getByRole("button", { name: "선택한 쌍의 분석 조건 확인" }));
+    expect(await screen.findByText(/이 환경에서는 분석 조건 확인을 지원하지 않습니다/)).toBeTruthy();
+    expect(screen.getByText(/확인할 수 없는 조건을 적합하다고 보지 않습니다/)).toBeTruthy();
+    expect(screen.getByRole("link", { name: "등록 자료와 검사 상태 확인" })).toBeTruthy();
+    expect(screen.queryByText(/조건 확인 ·/)).toBeNull();
+
+    cleanup();
+    const retryMock = stubReadinessFetch(() => json({ message: "boom" }, 500));
+    renderReadyToCheck();
+    fireEvent.click(screen.getByRole("button", { name: "선택한 쌍의 분석 조건 확인" }));
+    expect(await screen.findByText(/분석 조건 확인을 마치지 못했습니다/)).toBeTruthy();
+    expect(screen.getByRole("button", { name: "다시 확인" })).toBeTruthy();
+    expect(readinessCalls(retryMock)).toHaveLength(1);
+  });
+
+  it("keeps the readiness read outside the desktop-only write gate", () => {
+    stubReadinessFetch(() => json(readinessView));
+    renderReadyToCheck();
+    const checkButton = screen.getByRole("button", { name: "선택한 쌍의 분석 조건 확인" });
+    // 조건 확인(읽기)은 쓰기 경계의 hidden 포장 밖에 둔다 — 작은 화면에서도
+    // 볼 수 있고, 요청 제출(쓰기)은 그 안에 둔다.
+    expect(checkButton.closest("div.hidden")).toBeNull();
+    const submitButton = screen.getByRole("button", { name: "변화 분석 요청", hidden: true });
+    expect(submitButton.closest("div.hidden")).not.toBeNull();
+    expect(screen.getByText(/읽기 전용이며 권한을 주지 않고/)).toBeTruthy();
+  });
+
+  it("inspects a catalog-resolved pair read-only when execution candidates are empty", async () => {
+    const pair = {
+      workAreaId: "area-1",
+      a: { assetRef: `ksa-v1-${"a".repeat(64)}`, selector: selector("work-baseline", "a"), kind: "dsm",
+        captureStartedAt: "2026-09-01T00:00:00Z", captureEndedAt: "2026-09-01T00:30:00Z", captureDate: null,
+        revision: 1, declaredFileName: "a.tif", verticalIdentifier: "KNGEO2002", verticalBasis: "geoid", inspectionOutcome: "MEASURED" },
+      b: { assetRef: `ksa-v1-${"b".repeat(64)}`, selector: selector("work-current", "b"), kind: "dsm",
+        captureStartedAt: "2026-09-08T00:00:00Z", captureEndedAt: "2026-09-08T00:30:00Z", captureDate: null,
+        revision: 1, declaredFileName: "b.tif", verticalIdentifier: null, verticalBasis: null, inspectionOutcome: "MEASURED" },
+    };
+    const catalogReadiness = {
+      contractVersion: "analysis-readiness.v1",
+      siteId: "site-1",
+      workAreaId: "area-1",
+      baseline: pair.a.selector,
+      current: pair.b.selector,
+      suitabilityState: "EVALUATED",
+      blockers: [],
+      limitationCodes: [],
+      checkedAt: "2026-10-20T00:00:00Z",
+      calculationIdentityDigest: null,
+      coverageCheck: "REQUIRES_WORKER_VALIDATION",
+    };
+    const bodies: unknown[] = [];
+    vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input.toString();
+      if (/\/reviews(?:\?|$)/.test(url)) return Promise.resolve(json(reviewPage()));
+      if (url.includes("/analysis-readiness")) {
+        bodies.push(init?.body);
+        return Promise.resolve(json(catalogReadiness));
+      }
+      return Promise.resolve(json(detail()));
+    }));
+    renderPanel({ canCreate: true, initialAnalysisId: null, initialSelectedDetail: null,
+      initialPage: listPage([]), observations: [], siteObservations: [], initialWorkAreaId: "area-1",
+      catalogPair: pair,
+      visualContext: { workAreaId: "area-1", visualAAssetRef: pair.a.assetRef, visualBAssetRef: pair.b.assetRef },
+      visualReturnHref: "/sites/site-1?mode=compare&workAreaId=area-1" });
+    // 실행은 열지 않고, 카탈로그 사실로 조건만 확인한다.
+    expect(screen.getByText("가져온 쌍의 조건 확인")).toBeTruthy();
+    expect(screen.getByText(/정확히 맞지 않아 요청할 수 없습니다/)).toBeTruthy();
+    expect(screen.queryByLabelText("기준 관측")).toBeNull();
+    expect(screen.queryByRole("button", { name: "변화 분석 요청" })).toBeNull();
+    expect(screen.getByText(/2026. 9. 1./)).toBeTruthy();
+    expect(screen.getByText(/수직 기준 · KNGEO2002/)).toBeTruthy();
+    expect(screen.getByText(/수직 기준 확인 불가/)).toBeTruthy();
+    expect(screen.queryByText(pair.a.selector.submissionRef)).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "선택한 쌍의 분석 조건 확인" }));
+    expect(await screen.findByText("조건 확인 · 평가 근거 있음")).toBeTruthy();
+    expect(bodies).toHaveLength(1);
+    expect(JSON.parse(String(bodies[0]))).toEqual({ baseline: pair.a.selector, current: pair.b.selector });
+  });
+
+  it("keeps execution closed for an identical-submission catalog pair", () => {
+    const side = { assetRef: `ksa-v1-${"a".repeat(64)}`, selector: selector("work-same", "a"), kind: "dsm",
+      captureStartedAt: "2026-09-01T00:00:00Z", captureEndedAt: "2026-09-01T00:30:00Z", captureDate: null,
+      revision: 1, declaredFileName: "a.tif", verticalIdentifier: null, verticalBasis: null, inspectionOutcome: "MEASURED" };
+    vi.stubGlobal("fetch", vi.fn());
+    renderPanel({ canCreate: true, initialAnalysisId: null, initialSelectedDetail: null,
+      initialPage: listPage([]), observations: [], siteObservations: [], initialWorkAreaId: "area-1",
+      catalogPair: { workAreaId: "area-1", a: side, b: { ...side, assetRef: `ksa-v1-${"b".repeat(64)}`, declaredFileName: "b.tif" } },
+      visualContext: { workAreaId: "area-1", visualAAssetRef: side.assetRef, visualBAssetRef: `ksa-v1-${"b".repeat(64)}` },
+      visualReturnHref: "/sites/site-1?mode=compare&workAreaId=area-1" });
+    expect(screen.getByText(/두 칸이 같은 제출 묶음·버전입니다/)).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "선택한 쌍의 분석 조건 확인" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "변화 분석 요청" })).toBeNull();
+  });
+
+  it("offers a genuine re-login path on session expiry instead of an endless retry", async () => {
+    stubReadinessFetch(() => json({ message: "expired" }, 401));
+    renderReadyToCheck();
+    fireEvent.click(screen.getByRole("button", { name: "선택한 쌍의 분석 조건 확인" }));
+    expect(await screen.findByText(/세션이 만료되어 조건 확인을 마치지 못했습니다/)).toBeTruthy();
+    const login = screen.getByRole("link", { name: "다시 로그인" });
+    expect(login.getAttribute("href")).toMatch(/^\/login\?next=/);
+    // 원문 쿼리를 그대로 믿지 않고 같은 출처 경로만 싣는다.
+    expect(login.getAttribute("href")).not.toContain("http");
+    expect(screen.queryByRole("button", { name: "다시 확인" })).toBeNull();
+  });
+
+  it("fails closed on an echoed pair that does not match the request", async () => {
+    const mismatched = {
+      ...readinessView,
+      suitabilityState: "EVALUATED",
+      blockers: [],
+      limitationCodes: [],
+      current: selector("work-other", "c"),
+    };
+    stubReadinessFetch(() => json(mismatched));
+    renderReadyToCheck();
+    fireEvent.click(screen.getByRole("button", { name: "선택한 쌍의 분석 조건 확인" }));
+    expect(await screen.findByText(/분석 조건 확인을 마치지 못했습니다/)).toBeTruthy();
+    expect(screen.queryByText(/조건 확인 ·/)).toBeNull();
+  });
+
+  it("moves focus to the result after an explicit check and never on pair change", async () => {
+    stubReadinessFetch(() => json({ message: "denied" }, 403));
+    renderReadyToCheck();
+    fireEvent.click(screen.getByRole("button", { name: "선택한 쌍의 분석 조건 확인" }));
+    const denied = await screen.findByText(/분석 조건 확인을 조회할 권한이 없습니다/);
+    expect(document.activeElement).toBe(denied);
+    // 쌍이 바뀌면 확인 결과를 버릴 뿐 초점을 뺏지 않는다.
+    fireEvent.change(screen.getByLabelText("현재 관측"), { target: { value: "" } });
+    expect(screen.queryByText(/분석 조건 확인을 조회할 권한이 없습니다/)).toBeNull();
+    expect(document.activeElement).not.toBe(denied);
+    expect(screen.getByText(/고르면 조건 확인을 실행할 수 있습니다/)).toBeTruthy();
+  });
+
+  it("states the accuracy limit beside a successful condition check", async () => {
+    const cleanEvaluated = { ...readinessView, suitabilityState: "EVALUATED", blockers: [], limitationCodes: [] };
+    stubReadinessFetch(() => json(cleanEvaluated));
+    renderReadyToCheck();
+    fireEvent.click(screen.getByRole("button", { name: "선택한 쌍의 분석 조건 확인" }));
+    expect(await screen.findByText("조건 확인 · 평가 근거 있음")).toBeTruthy();
+    expect(screen.getByText(/이 확인은 물량 정확도 보증, 측량 승인 또는 정산 사용 승인을 뜻하지 않습니다/)).toBeTruthy();
+  });
+
+  it("lets a read-only viewer check a picked pair without any write control", async () => {
+    const posted: Array<{ url: string; method: string | undefined }> = [];
+    const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input.toString();
+      if (/\/reviews(?:\?|$)/.test(url)) return Promise.resolve(json(reviewPage()));
+      posted.push({ url, method: init?.method });
+      if (url.includes("/analysis-readiness")) return Promise.resolve(json({ ...readinessView, suitabilityState: "EVALUATED", blockers: [], limitationCodes: [] }));
+      return Promise.resolve(json(detail()));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    renderPanel({ canCreate: false, initialAnalysisId: null, initialSelectedDetail: null,
+      initialPage: listPage([]), initialWorkAreaId: "area-1" });
+    // 읽기 권한의 선택·조건 확인은 열려 있다.
+    fireEvent.change(screen.getByLabelText("기준 관측"), { target: { value: "0" } });
+    fireEvent.change(screen.getByLabelText("현재 관측"), { target: { value: "1" } });
+    fireEvent.click(screen.getByRole("button", { name: "선택한 쌍의 분석 조건 확인" }));
+    expect(await screen.findByText("조건 확인 · 평가 근거 있음")).toBeTruthy();
+    expect(posted.some(({ url }) => url.includes("/analysis-readiness"))).toBe(true);
+    // 실행(생성·재시도·취소)은 두지 않으며, 쓰기 요청을 보내지 않는다.
+    expect(screen.queryByRole("button", { name: "변화 분석 요청" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "다시 시도" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "보류 요청 취소" })).toBeNull();
+    expect(screen.getByText(/변화 분석 요청 제출은 현장 쓰기 권한이 있는 담당자에게 요청하세요/)).toBeTruthy();
+    expect(screen.getByRole("button", { name: "새 변화 분석 요청" })).toBeTruthy();
+    expect(posted.filter(({ url, method }) => method === "POST" && /\/analyses$/.test(url))).toHaveLength(0);
+  });
+
+  it("inspects a date-only catalog pair even when unrelated executable candidates exist", async () => {
+    // 같은 구역에 실행 후보(정확한 제출 2건)가 있지만, 가져온 쌍은 날짜만
+    // 아는 등록 자료라 후보와 정확히 맞지 않는다.
+    const dateOnlyPair = {
+      workAreaId: "area-1",
+      a: { assetRef: `ksa-v1-${"a".repeat(64)}`, selector: selector("work-date-a", "e"), kind: "dsm",
+        captureStartedAt: null, captureEndedAt: null, captureDate: "2026-09-01",
+        revision: 1, declaredFileName: "date-a.tif", verticalIdentifier: null, verticalBasis: null, inspectionOutcome: "MEASURED" },
+      b: { assetRef: `ksa-v1-${"b".repeat(64)}`, selector: selector("work-date-b", "f"), kind: "dsm",
+        captureStartedAt: null, captureEndedAt: null, captureDate: "2026-09-08",
+        revision: 1, declaredFileName: "date-b.tif", verticalIdentifier: null, verticalBasis: null, inspectionOutcome: "MEASURED" },
+    };
+    const bodies: unknown[] = [];
+    vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input.toString();
+      if (/\/reviews(?:\?|$)/.test(url)) return Promise.resolve(json(reviewPage()));
+      if (url.includes("/analysis-readiness")) {
+        bodies.push(init?.body);
+        return Promise.resolve(json({ ...readinessView, suitabilityState: "EVALUATED", blockers: [], limitationCodes: [],
+          baseline: dateOnlyPair.a.selector, current: dateOnlyPair.b.selector }));
+      }
+      return Promise.resolve(json(detail()));
+    }));
+    renderPanel({ canCreate: true, initialAnalysisId: null, initialSelectedDetail: null,
+      initialPage: listPage([]), initialWorkAreaId: "area-1",
+      catalogPair: dateOnlyPair,
+      visualContext: { workAreaId: "area-1", visualAAssetRef: dateOnlyPair.a.assetRef, visualBAssetRef: dateOnlyPair.b.assetRef },
+      visualReturnHref: "/sites/site-1?mode=compare&workAreaId=area-1" });
+    // 실행 후보 목록과 무관하게 가져온 쌍의 검사가 열린다.
+    expect(screen.getByText("가져온 쌍의 조건 확인")).toBeTruthy();
+    expect(screen.getAllByText(/날짜만 확인/)).toHaveLength(2);
+    fireEvent.click(screen.getByRole("button", { name: "선택한 쌍의 분석 조건 확인" }));
+    expect(await screen.findByText("조건 확인 · 평가 근거 있음")).toBeTruthy();
+    expect(bodies).toHaveLength(1);
+    // 조건 확인은 가져온 쌍의 선택자를 그대로 싣는다(후보 대체 없음).
+    expect(JSON.parse(String(bodies[0]))).toEqual({ baseline: dateOnlyPair.a.selector, current: dateOnlyPair.b.selector });
+    // 다른 실행 후보 쌍은 분리된 라벨 아래에서 직접 고른다.
+    expect(screen.getByText(/다른 분석 후보 쌍 선택/)).toBeTruthy();
+    expect(screen.getByLabelText("기준 관측")).toBeTruthy();
+    // 가져온 쌍을 미리 고르거나 요청 입력으로 쓰지 않는다.
+    expect((screen.getByLabelText("기준 관측") as HTMLSelectElement).value).toBe("");
+  });
+
+  it("does not duplicate controls when the incoming pair is already executable", () => {
+    const matched = {
+      workAreaId: "area-1",
+      a: { assetRef: `ksa-v1-${"a".repeat(64)}`, selector: selector("work-baseline", "a"), kind: "dsm",
+        captureStartedAt: "2026-09-01T00:00:00Z", captureEndedAt: "2026-09-01T00:30:00Z", captureDate: null,
+        revision: 1, declaredFileName: "a.tif", verticalIdentifier: null, verticalBasis: null, inspectionOutcome: "MEASURED" },
+      b: { assetRef: `ksa-v1-${"b".repeat(64)}`, selector: selector("work-current", "b"), kind: "dsm",
+        captureStartedAt: "2026-09-08T00:00:00Z", captureEndedAt: "2026-09-08T00:30:00Z", captureDate: null,
+        revision: 1, declaredFileName: "b.tif", verticalIdentifier: null, verticalBasis: null, inspectionOutcome: "MEASURED" },
+    };
+    vi.stubGlobal("fetch", vi.fn());
+    renderPanel({ canCreate: true, initialAnalysisId: null, initialSelectedDetail: null,
+      initialPage: listPage([]), initialWorkAreaId: "area-1",
+      catalogPair: matched,
+      visualContext: { workAreaId: "area-1", visualAAssetRef: matched.a.assetRef, visualBAssetRef: matched.b.assetRef },
+      visualReturnHref: "/sites/site-1?mode=compare&workAreaId=area-1" });
+    // 정확히 겹치는 쌍은 폼 하나로 충분하므로 검사 블록을 두지 않는다.
+    expect(screen.queryByText("가져온 쌍의 조건 확인")).toBeNull();
+    expect(screen.queryByText(/다른 분석 후보 쌍 선택/)).toBeNull();
+    expect(screen.getByLabelText("기준 관측")).toBeTruthy();
+  });
+
+  it("keeps a foreign-area catalog pair opaque after an area switch", () => {
+    const pair = {
+      workAreaId: "area-1",
+      a: { assetRef: `ksa-v1-${"a".repeat(64)}`, selector: selector("work-baseline", "a"), kind: "dsm",
+        captureStartedAt: "2026-09-01T00:00:00Z", captureEndedAt: "2026-09-01T00:30:00Z", captureDate: null,
+        revision: 1, declaredFileName: "a.tif", verticalIdentifier: null, verticalBasis: null, inspectionOutcome: "MEASURED" },
+      b: { assetRef: `ksa-v1-${"b".repeat(64)}`, selector: selector("work-current", "b"), kind: "dsm",
+        captureStartedAt: "2026-09-08T00:00:00Z", captureEndedAt: "2026-09-08T00:30:00Z", captureDate: null,
+        revision: 1, declaredFileName: "b.tif", verticalIdentifier: null, verticalBasis: null, inspectionOutcome: "MEASURED" },
+    };
+    vi.stubGlobal("fetch", vi.fn());
+    renderPanel({ canCreate: true, initialAnalysisId: null, initialSelectedDetail: null,
+      initialPage: listPage([]), observations: [], siteObservations: [], initialWorkAreaId: "area-2",
+      workAreas: [{ workAreaId: "area-1", name: "1구역" }, { workAreaId: "area-2", name: "2구역" }],
+      catalogPair: pair,
+      visualContext: { workAreaId: "area-1", visualAAssetRef: pair.a.assetRef, visualBAssetRef: pair.b.assetRef },
+      visualReturnHref: "/sites/site-1?mode=compare&workAreaId=area-1" });
+    // 구역이 바뀌면 다른 구역의 쌍은 검사하지 않는다.
+    expect(screen.queryByText("가져온 쌍의 조건 확인")).toBeNull();
+    expect(screen.getByText("이 구역의 분석 후보가 없습니다")).toBeTruthy();
+  });
+});
+
+describe("first-use task order", () => {
+  it("puts the pair form first and shelves the empty-history notice when candidates exist", () => {
+    vi.stubGlobal("fetch", vi.fn());
+    renderPanel({ canCreate: true, initialAnalysisId: null, initialSelectedDetail: null,
+      initialPage: listPage([]), initialWorkAreaId: "area-1" });
+    expect(screen.getByLabelText("기준 관측")).toBeTruthy();
+    expect(screen.getByLabelText("현재 관측")).toBeTruthy();
+    expect(screen.queryByText(/이 현장에는 아직 변화 분석 요청이 없습니다/)).toBeNull();
+  });
+
+  it("keeps the true-empty recovery copy when no candidates exist at all", () => {
+    vi.stubGlobal("fetch", vi.fn());
+    renderPanel({ canCreate: true, initialAnalysisId: null, initialSelectedDetail: null,
+      initialPage: listPage([]), observations: [], siteObservations: [], initialWorkAreaId: "area-1" });
+    expect(screen.getByText(/이 현장에는 아직 변화 분석 요청이 없습니다/)).toBeTruthy();
+    expect(screen.getByText("이 구역의 분석 후보가 없습니다")).toBeTruthy();
+    expect(screen.queryByLabelText("기준 관측")).toBeNull();
   });
 });

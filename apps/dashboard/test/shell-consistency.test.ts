@@ -49,7 +49,8 @@ describe("console shell boundary", () => {
     expect(sidebar).toContain("{userBlock}");
     expect(sidebar).toContain("CompactSidebar");
     expect(sidebar).toContain("data-compact-rail");
-    expect(sidebar).toContain("isViewerPath");
+    expect(sidebar).toContain("useDesktopNavCollapsed");
+    expect(sidebar).not.toContain("isViewerPath");
   });
 
   it("puts the current site context in the dense rail and viewer panel", () => {
@@ -81,6 +82,10 @@ describe("console shell boundary", () => {
     expect(frame).toContain("data-catalog-open");
     expect(frame).toContain('aria-label="레이어 패널 열기"');
     expect(frame).toContain("data-viewer-panel");
+    expect(frame).toContain("data-viewer-columns");
+    expect(frame).toContain("data-inspector-open");
+    expect(css).toContain('grid-template-areas: "catalog stage inspector"');
+    expect(css).not.toContain("margin-left: 312px");
     expect(css).toContain('[data-workbench-viewer][data-catalog-open="true"]');
     expect(css).toContain("[data-materials-stage]");
     expect(css).toContain("data-viewer-compact-hide");

@@ -788,19 +788,21 @@ export function SiteMosaicViewport({
   // 무대용 간결 상태 — 사유 한 줄과 하나의 1차 회복만 둔다. 진입·읽기 흐름은
   // 그대로이며, 명시적 다시 준비(쓰기)는 아래 접힌 상세로만 둔다.
   const expiredInInspector = hidePrepareActions && prepareHref !== undefined;
+  // 보관 만료의 1차 회복은 선택한 자료의 받기 요청으로 바로 연결한다 —
+  // 요청 이력 목록이 아니라 이 asset의 준비 제어로 간다. 자산 참조는
+  // Core 발행 불투명 식별자 그대로 쓰며 새로 만들지 않는다.
+  const assetPrepareHref = `/sites/${encodeURIComponent(siteId)}/spatial-assets?workAreaId=${encodeURIComponent(workAreaId)}&assetRef=${encodeURIComponent(assetRef)}#asset-${assetRef}`;
   const canvasRequestsLink = (
     <a
-      href={expiredInInspector && absentKind === "expired" ? prepareHref : requestsHref}
-      className={compactKind === "absent" && absentKind === "expired"
-        ? "btn btn-primary min-h-11"
-        : "btn min-h-11 border-white/25 bg-sidebar-active font-semibold text-sidebar-active-ink"}
+      href={requestsHref}
+      className="btn min-h-11 border-white/25 bg-sidebar-active font-semibold text-sidebar-active-ink"
     >
-      {expiredInInspector && absentKind === "expired"
-        ? <>
-            <span className="lg:hidden">준비 요청 방법 보기</span>
-            <span className="hidden lg:inline">선택 자료 정보에서 준비 요청</span>
-          </>
-        : "구역 자료 준비에서 확인"}
+      구역 자료 준비에서 확인
+    </a>
+  );
+  const canvasExpiredAction = (
+    <a href={expiredInInspector ? prepareHref : assetPrepareHref} className="btn btn-primary min-h-11">
+      선택한 자료에서 다시 준비
     </a>
   );
   const canvasMediaAction = compactKind === "loading" || hasActiveWait ? (
@@ -820,16 +822,21 @@ export function SiteMosaicViewport({
   ) : compactKind === "paintFailure" ? (
     <WorkbenchRefreshButton />
   ) : absentKind === "rights" ? null
-    : absentKind === "expired" || absentKind === "failed" || absentKind === "canceled" || absentKind === "deadline" ? (
+    : absentKind === "expired" ? (
+      canvasExpiredAction
+    ) : absentKind === "failed" || absentKind === "canceled" || absentKind === "deadline" ? (
       canvasRequestsLink
     ) : (
       <WorkbenchRefreshButton />
     );
   // 권한 없음은 사람 행동(담당자 요청)이 회복이므로 단추를 두지 않고 안내만 둔다.
+  // 보관 만료는 선택한 자료의 준비 제어가 1차 회복이며, 요청 이력은 보조 안내로 둔다.
   const canvasMediaHint =
     (compactKind === "readFailure" && firstReadFailure?.reason === "RIGHTS_UNAVAILABLE") || (compactKind === "absent" && absentKind === "rights")
       ? compactCopy.recovery
-      : null;
+      : compactKind === "absent" && absentKind === "expired"
+        ? "요청 이력은 구역 자료 준비에서 확인합니다."
+        : null;
   const canvasMediaAlert = compactKind !== "loading" && compactKind !== "preparing" && !(compactKind === "absent" && absentKind === "empty");
 
   const canvasDetailBody = (

@@ -4,12 +4,15 @@ import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type 
 
 import { ViewerSiteLabel } from "@/components/nav/ViewerSiteLabel";
 import { ViewerSiteNav } from "@/components/nav/ViewerSiteNav";
+import { useDesktopNavCollapsed } from "@/components/nav/desktop-nav-preference";
 
 /**
  * 공간 작업환경 공유 오버레이 셸 — 실제 등록 자료 화면과
  * `/design-preview/materials` 예시 화면이 같은 머리/무대/드로어 관계를 쓴다.
  * 순수 배치만 맡으며, 권한·조회·선택 판정은 호출자가 둔다.
  *
+ * - Viewer 데스크톱은 목록·무대를·정보를 겹치지 않는 열로 둔다.
+ *   아래 설명의 오버레이는 기존 비-Viewer/모바일 드로어에만 적용한다.
  * - 무대는 가용 높이로 통째로 둔다. 왼쪽 목록과 오른쪽 정보는 무대 위에
  *   뜨는 드로어다 — 열어도 사진의 base bounding rect·칸 너비·카메라가
  *   바뀌지 않고, 다른 패널을 예측不能하게 숨기지도 않는다.
@@ -91,6 +94,7 @@ export function SpatialWorkbenchFrame({
   viewerInspectorDefaultOpen?: boolean;
 }) {
   const showInspector = inspectorOpen && inspector !== null;
+  const navCollapsed = useDesktopNavCollapsed();
   const [catalogOpen, setCatalogOpen] = useState(defaultCatalogOpen);
   const rootRef = useRef<HTMLDivElement>(null);
   const catalogToggleRef = useRef<HTMLButtonElement>(null);
@@ -280,6 +284,7 @@ export function SpatialWorkbenchFrame({
         ref={rootRef}
         data-workbench-viewer="true"
         data-catalog-open={catalogOpen ? "true" : "false"}
+        data-inspector-open={showInspectorPanel ? "true" : "false"}
         className="relative flex min-w-0 min-h-0 flex-1 flex-col overflow-hidden bg-page"
       >
         <div
@@ -324,8 +329,8 @@ export function SpatialWorkbenchFrame({
           )}
         </div>
 
-        <div className="relative mt-2 min-h-0 flex-1">
-          <div ref={stageRef} className="relative h-full min-h-0 overflow-hidden">
+        <div data-viewer-columns className="mx-3 mt-2 mb-3 grid min-h-0 flex-1 gap-2">
+          <div ref={stageRef} data-viewer-stage className="relative min-w-0 min-h-0 overflow-hidden">
             {stage}
           </div>
 
@@ -337,12 +342,11 @@ export function SpatialWorkbenchFrame({
               tabIndex={-1}
               onKeyDown={onCatalogKeyDown}
               data-viewer-panel="catalog"
-              className="absolute bottom-3 left-3 top-2 z-30 flex w-[300px] flex-col overflow-hidden rounded-xl border border-line bg-surface shadow-2xl"
+              className="flex min-w-0 min-h-0 flex-col overflow-hidden rounded-lg border border-line bg-surface"
             >
-              <ViewerSiteNav />
+              {navCollapsed && <ViewerSiteNav />}
               <div className="flex items-center justify-between gap-2 border-b border-line px-3 py-2">
                 <div className="min-w-0">
-                  <p className="font-mono text-[8.5px] uppercase tracking-[0.1em] text-ink-muted">Layer panel</p>
                   <h3 className="truncate text-[12.5px] font-bold">{catalogLabel}</h3>
                 </div>
                 <button
@@ -377,10 +381,10 @@ export function SpatialWorkbenchFrame({
               onKeyDown={onInspectorKeyDown}
               style={{ display: showInspectorPanel ? undefined : "none" }}
               data-viewer-panel="inspector"
-              className="absolute right-3 bottom-3 z-30 flex max-h-[calc(100%-16px)] w-[min(332px,calc(100%-24px))] flex-col overflow-hidden rounded-xl border border-line bg-surface shadow-2xl"
+              className="flex min-w-0 min-h-0 flex-col overflow-hidden rounded-lg border border-line bg-surface"
             >
               <div className="flex shrink-0 items-center justify-between gap-2 border-b border-line px-3 py-1.5">
-                <span className="font-mono text-[8.5px] uppercase tracking-[0.1em] text-ink-muted">Inspector</span>
+                <span className="text-[12px] font-semibold">{inspectorLabel}</span>
                 <button
                   type="button"
                   onClick={closeViewerInspector}

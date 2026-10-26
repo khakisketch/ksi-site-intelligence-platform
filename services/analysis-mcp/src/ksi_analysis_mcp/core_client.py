@@ -12,6 +12,7 @@ import httpx
 from ksi_event_contracts.external_analysis_api import (
     AnalysisObservationOptionsV1,
     AnalysisObservationSelectorV1,
+    AnalysisReadinessViewV1,
     CreateAnalysisRequestV1,
 )
 from ksi_event_contracts.external_analysis_api_v2 import (
@@ -103,6 +104,19 @@ class CreateAnalysisArguments(SiteArguments):
         return value
 
 
+class ReadinessArguments(SiteArguments):
+    """Pure preflight selectors; no idempotency key is accepted or journaled."""
+
+    work_area_id: str = Field(alias="workAreaId", min_length=1, max_length=_MAX_IDENTIFIER_LENGTH)
+    baseline: AnalysisObservationSelectorV1
+    current: AnalysisObservationSelectorV1
+
+    @field_validator("work_area_id")
+    @classmethod
+    def _safe_work_area_id(cls, value: str) -> str:
+        return _safe_identifier(value)
+
+
 def _safe_identifier(value: str) -> str:
     if _SAFE_IDENTIFIER.fullmatch(value) is None:
         raise ValueError("identifier must be a path-safe resource identifier")
@@ -115,11 +129,13 @@ ToolArguments = (
     | AnalysisListArguments
     | AnalysisEvidenceArguments
     | CreateAnalysisArguments
+    | ReadinessArguments
 )
 ToolName = Literal[
     "ksi_list_analysis_observations",
     "ksi_list_analyses",
     "ksi_create_analysis",
+    "ksi_check_analysis_readiness",
     "ksi_get_analysis",
     "ksi_get_analysis_result",
     "ksi_get_analysis_evidence",
@@ -129,6 +145,7 @@ TOOL_ARGUMENT_MODELS: dict[str, type[ToolArguments]] = {
     "ksi_list_analysis_observations": SiteArguments,
     "ksi_list_analyses": AnalysisListArguments,
     "ksi_create_analysis": CreateAnalysisArguments,
+    "ksi_check_analysis_readiness": ReadinessArguments,
     "ksi_get_analysis": AnalysisArguments,
     "ksi_get_analysis_result": AnalysisArguments,
     "ksi_get_analysis_evidence": AnalysisEvidenceArguments,
@@ -140,6 +157,7 @@ TOOL_RESULT_MODELS: dict[str, type[BaseModel]] = {
     "ksi_list_analysis_observations": AnalysisObservationOptionsV1,
     "ksi_list_analyses": AnalysisListPageV2,
     "ksi_create_analysis": AnalysisViewV2,
+    "ksi_check_analysis_readiness": AnalysisReadinessViewV1,
     "ksi_get_analysis": AnalysisViewV2,
     "ksi_get_analysis_result": AnalysisViewV2,
     "ksi_get_analysis_evidence": AnalysisEvidencePageV2,
@@ -194,6 +212,21 @@ class CoreAnalysisClient:
                 TOOL_RESULT_MODELS[name],
                 json_body=request.model_dump(by_alias=True, mode="json"),
                 idempotency_key=parsed.idempotency_key,
+            )
+        if name == "ksi_check_analysis_readiness":
+            assert isinstance(parsed, ReadinessArguments)
+            try:
+                request = CreateAnalysisRequestV1(
+                    baseline=parsed.baseline,
+                    current=parsed.current,
+                )
+            except ValidationError as exc:
+                raise CoreAdapterError("INVALID_TOOL_ARGUMENTS") from exc
+            return await self._request_validated(
+                "POST",
+                self._readiness_path_v2(parsed.site_id, parsed.work_area_id),
+                TOOL_RESULT_MODELS[name],
+                json_body=request.model_dump(by_alias=True, mode="json"),
             )
         assert isinstance(parsed, AnalysisArguments)
         if name == "ksi_get_analysis_evidence":
@@ -347,6 +380,12 @@ class CoreAnalysisClient:
         return (
             f"/v2/sites/{self._segment(site_id)}/work-areas/"
             f"{self._segment(work_area_id)}/analyses"
+        )
+
+    def _readiness_path_v2(self, site_id: str, work_area_id: str) -> str:
+        return (
+            f"/v2/sites/{self._segment(site_id)}/work-areas/"
+            f"{self._segment(work_area_id)}/analysis-readiness"
         )
 
     def _analysis_path(self, site_id: str, analysis_id: str) -> str:

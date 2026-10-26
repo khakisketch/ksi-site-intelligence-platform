@@ -1,19 +1,27 @@
 # KSI Site Intelligence Agent Instructions
 
-## Current operational ledger
+물리적 현장 관측을 공간데이터와 근거형 분석으로 연결하는 플랫폼이다. 고객은 원본·재구성
+실행을 소유하고 KSI는 제출된 파생 산출물의 등록·검사·허용된 활용과 근거를 소유한다.
+비행·자율 취득·전술 제어는 현행 제품 책임 밖이다(ADR-KSI-036/038/039).
 
-Current work/evidence routing is owned by [`docs/ledger/CURRENT.md`](docs/ledger/CURRENT.md) and its
-work/design/evidence indexes. The ledger links to product authority; it does not create or override
-it. `.opencode/working-state.md` is a short pointer to the ledger and active work file, not a
-parallel narrative. Product decisions remain in the authority chain below; do not duplicate them in
-the ledger.
+## Task-relevant knowledge map
+
+| Question | Existing entry point | Responsibility |
+|---|---|---|
+| Current product identity and scope | `docs/00_READ_FIRST.md` | Accepted direction and supersession routes; detailed authorities below |
+| User work and screen responsibilities | `docs/design/CONSOLE_CURRENT_SPEC.md` + `docs/ledger/DESIGN.md` | Current subordinate Console direction and source-bound implementation evidence |
+| System and data ownership | `REPOSITORY_STRUCTURE.md` + relevant owner README/contracts | Core durable authority, worker measurement, Dashboard intent, bounded API/MCP adapters |
+| Current work, evidence and blockers | `docs/ledger/CURRENT.md` | Existing operational index and named work files; no duplicate task ledger |
+| Product slice and remaining product scope | `docs/superpowers/product-state.md` | Current slice unchanged; old milestone/progress history linked separately |
+
+This is a topic map, not a required reading sequence or new authority. Read the relevant sections
+and reconcile implementation claims with working changes and source-bound evidence. Execution owners
+return durable fact/evidence changes; Build integrates shared summaries. No ledger churn for edits
+that change no product fact, and no checkpoint creates another next-goal authority.
 
 ## Product authority precedence
 
-For product-decision conflicts, read in this order. This is a product-authority precedence list;
-it does not replace the session checkpoint/product-state/ledger/Git revalidation route below.
-
-Read in this order:
+For conflicts, use this precedence, not a required reading sequence:
 
 1. `docs/00_READ_FIRST.md`
 2. `docs/product/PRODUCT_CONSTITUTION.md`
@@ -25,120 +33,41 @@ Read in this order:
 8. Reference adoption matrix
 9. Reference code
 
-Domain invariants (INV-xxx) are canonical in `docs/product/DOMAIN_INVARIANTS.md`.
-Every implementation task must state which invariants it touches and how they are enforced.
-Read a supporting design document only when an accepted ADR or higher authority explicitly selects it;
-the design keeps its declared subordination and is not a same-rank authority source.
+Domain invariants are owned by `docs/product/DOMAIN_INVARIANTS.md`; identify and enforce the affected
+ones. Supporting designs keep their declared subordination; a prototype or ledger creates no product
+authority. The accepted supersessions and detailed boundary explanations live in `docs/00_READ_FIRST.md`.
 
-## First-release product-direction routing
+## Product boundaries and work selection
 
-For work that touches capture, reconstruction, spatial artifacts, or analysis, read
-`docs/architecture/ADR-KSI-036-customer-reconstruction-and-result-ingress.md` after the
-authority sequence. It is the accepted first-release responsibility boundary: the customer
-controls reconstruction on its equipment and KSI registers, verifies, and analyzes exported
-derived artifacts. It does not authorize a proprietary KSI photogrammetry engine, a customer
-production reconstruction service, a vendor integration, or a claim that registration, RTK FIX,
-or a software check establishes quantitative or settlement accuracy.
+Use the task-relevant accepted decisions linked by `docs/00_READ_FIRST.md`: ADR-KSI-036 for
+customer-owned reconstruction/result ingress, ADR-KSI-037 and its selected first-request contract
+for earthwork analysis, ADR-KSI-038 for platform/data reuse, ADR-KSI-039 for acquisition separation.
+Registration, RTK FIX or software checks establish neither quantitative/settlement accuracy nor
+vendor/field support. Accepted direction alone creates no endpoint, runtime permission or product acceptance.
 
-The shared worktree checkpoint `.opencode/working-state.md`, when present, is a pointer to
-`docs/ledger/CURRENT.md` and the active work file/task ledger; revalidate Git before relying on it. A current Human-assigned
-bounded task persists without closing or reprioritizing the product slice. Separately,
-`docs/superpowers/product-state.md` identifies the current product slice and its slice ledger.
-Only when no active bounded checkout task exists may work selection begin from product-state.
-`docs/goals/PHASE_REGISTRY.yaml` is a capability-track index, not a competing current-task or
-next-priority source.
-Historical `.ksi/` records and managed NodeODM/ProcessingJob evidence remain historical or
-managed/test scope unless the applicable authority says otherwise. Execution and verification
-ownership is native to the current harness: the active agent plans, implements, integrates and
-verifies, delegating bounded work when useful and using a fresh-context review selectively.
-Retired seat/role instructions (writing-plans recipes, delegated Developer/Test Runner seats,
-goal mode, CE/Reviewer process lines) are historical records only: do not re-instantiate them or
-map them into execution steps. The one-time old→new mapping record is
-`docs/superpowers/plans/2026-10-09-site-harness-mapping.md` (history, not an execution entry).
-Tool auto-memory, session summaries, and handoffs are context only: re-read current product
-authority and revalidate Git before deriving product direction, authorization, or readiness from
-cached memory.
+`docs/ledger/CURRENT.md` and its named work files own active operational routing; the ledger does
+not override product authority. `.opencode/working-state.md` is only a short pointer. Resume the
+current Human-assigned bounded task after Git/evidence revalidation without closing or reprioritizing
+the product slice. Select from `docs/superpowers/product-state.md` only when no active bounded task
+exists and current user authorization permits it. `docs/goals/PHASE_REGISTRY.yaml` is a capability
+index, not another current-task or priority source. Cached memory and session summaries are context,
+not evidence of current authority/readiness.
 
-For API-first earthwork evidence, external-system integration, future MCP access, or first-request
-design, also read `docs/architecture/ADR-KSI-037-api-first-earthwork-evidence-and-integration.md`
-and `docs/design/API_FIRST_EARTHWORK_FIRST_REQUEST_CONTRACT.md`. They set product-direction and
-target requirements only; they create no endpoint, MCP server, client topology, vendor support,
-runtime authorization, or product-state transition.
+## Source ownership and historical material
 
-For the long-term product boundary, read
-`docs/architecture/ADR-KSI-039-physical-site-intelligence-and-acquisition-separation.md`:
-flight, autonomous acquisition, tactical perception/control, and customer production
-reconstruction are outside long-term Site Intelligence responsibility, and their sources are
-retained transitional implementation until a verified successor move. It supersedes acquisition
-product-responsibility routing in the Constitution/Ledger/PRD and ADR-KSI-037 D6/ADR-KSI-038
-acquisition clauses without changing quantitative semantics, originals, invariants, EXT-VAL,
-or milestone history.
+`REPOSITORY_STRUCTURE.md` owns current source/runtime responsibility; `docs/DOCUMENT_STATUS.md`
+distinguishes active authority from history. Use the selected owner's README, contracts, entrypoint,
+dependency manifest and tests as relevant. A directory name or diagram is not runtime proof.
+Independently operated lifecycles belong in `services/`; import-only reusable code belongs in `packages/`.
+Preserve `docs/audit/REPOSITORY_MIGRATION_MANIFEST_R3.json`; do not recreate the retired change-detection,
+BIM or defect service paths or move similarly named modules without approved scope and dependency,
+build/CI/replay/deployment/rollback evidence.
 
-For platform identity, spatial-data delivery, external application reuse, or long-term scope, also
-read `docs/architecture/ADR-KSI-038-spatial-data-and-analysis-platform.md` and its selected roadmap
-`docs/superpowers/plans/2026-09-30-spatial-data-platform-roadmap.md`. ADR-KSI-038 places data access
-and analysis under the platform goal; ADR-KSI-037 remains the first analysis use-case contract.
-Read target capability and verified implementation separately. Resume authority still comes from
-the current user instruction and the revalidated checkpoint/named task ledger.
-
-## Repository routing
-
-After reading product authority, use these two routing documents before locating or changing code:
-
-1. `REPOSITORY_STRUCTURE.md` — responsibility, canonical path, runtime boundary and R0-R3 decision
-2. `docs/DOCUMENT_STATUS.md` — active authority/current-state documents versus historical evidence
-
-These files route work; they do not override product authority or contracts. Route by responsibility:
-
-| Responsibility | Canonical path | Boundary |
-|---|---|---|
-| Operator UX | `apps/dashboard/` | Displays and requests intent; owns no device authority |
-| Durable product authority and workflow | `services/core/` | Owns identity, Site/WorkArea, external WorkOrder, policy, results, evidence and journals; platform assembly only |
-| API/MCP consumers | `services/analysis-mcp/`, `services/spatial-data-mcp/` | Bounded source-run stdio adapters over Core; no independent authority or byte store |
-| Retired DJI/Edge/managed acquisition sources | `archive/acquisition-2026/` | Historical evidence only, not a current owner or instruction entry; never runtime import/build input |
-| Measurement worker | `services/processing-controller/` | Independently operated worker; measures artifacts while Core adjudicates durable state |
-| Reusable domain and algorithm code | `packages/` | Import-only code, including change/BIM/defect processing libraries, through explicit package/contract boundaries |
-| Contract and conformance authority | `contracts/`, `tests/contract/`, `tests/replay/` | Schema and replay verification, not product requirements |
-| Active checkout task | `.opencode/working-state.md` when present + its task ledger | Resume the current Human-assigned bounded task after Git revalidation; does not close/reprioritize a product slice |
-| Product slice | `docs/superpowers/product-state.md` + its named slice ledger | Current Goal/Milestone/slice/Backlog; select from it only when no active bounded checkout task exists; update at slice close (`.ksi/` retired archive) |
-| Capability-track index | `docs/goals/PHASE_REGISTRY.yaml` | Track/status routing only; not current task or next-priority selection |
-
-Priority within a task: applicable authority → the design/spec explicitly selected by an accepted ADR
-or higher authority (subordinate; never runtime/field proof) → owner contracts/README/tests →
-implementation. Verify with the existing owner tests, contract/replay suites and recorded
-verification paths before introducing new process; UI/UX changes are design work under the global policy.
-
-### Terrain-aware planning route (historical design, out-of-product)
-
-ADR-KSI-039 excludes acquisition execution from current platform work. The following is the
-preserved design/evidence route, not authorization to select or resume a runtime task.
-
-For terrain-aware observation planning, read
-`docs/architecture/ADR-KSI-035-terrain-aware-planning-and-pilot-execution.md`,
-`docs/design/TERRAIN_AWARE_OBSERVATION_PLANNING_CONTRACT.md`,
-`docs/acceptance/TERRAIN_AWARE_PILOT_MVP_ACCEPTANCE.md`, and
-`docs/goals/TERRAIN_AWARE_PLANNING_ROADMAP.md` before selecting runtime work. They record an
-approved design baseline only; no terrain-aware runtime, Pilot/device compatibility, HIL, or field
-acceptance is implied. Preserve the future autonomous profile's signed/digest/device/activation
-requirements and do not treat the Pilot-manual exception as an implemented wire contract.
-
-### Runtime placement test
-
-Place a module in `services/` only when it has an independently operated lifecycle: an HTTP listener,
-daemon/polling loop, health/readiness boundary, deployment configuration, or separately started worker
-entrypoint. Place code in `packages/` when another KSI module imports it and it has no independent
-operational lifecycle, even when it performs substantial processing.
-
-The approved R3 mapping is recorded in
-`docs/audit/REPOSITORY_MIGRATION_MANIFEST_R3.json`; its current destinations are canonical. Do not
-recreate `services/change-detection`, `services/bim-integration`, or `services/defect-detection`.
-Do not consolidate any other similarly named runtime modules from names alone. A new move requires an
-approved scope plus dependency, build, CI, replay, deployment, and rollback evidence.
-
-After selecting an owner path, read its nearest `README.md` and any nested `AGENTS.md` (OpenCode V2
-loads nested `AGENTS.md` on discovery; `CLAUDE.md` wrappers apply only to Claude Code clients), then
-inspect its actual entrypoint and dependency manifest (`pyproject.toml`, `package.json`, `CMakeLists.txt`,
-Dockerfile/Compose) plus owner tests. A directory name or architecture diagram alone is not runtime proof.
+`archive/acquisition-2026/`, `.ksi/`, retired harness roles/recipes and the old terrain-aware planning
+route are historical, not runtime imports, build input, current support or task selection. Their
+current routing and exceptions remain in `docs/DOCUMENT_STATUS.md`; preserve retained signed/digest/
+device/activation boundaries. Managed NodeODM/ProcessingJob evidence stays managed/test, not customer
+production evidence. Global Native execution/verification responsibilities apply; do not restore old seats or workflows.
 
 ## Reference repositories
 
@@ -151,28 +80,17 @@ They are read-only reference implementations, not product authority.
 Never import runtime code directly from `references/`.
 Never modify a reference submodule unless the task explicitly says `UPDATE_REFERENCE_PIN`.
 
-## Required implementation plan
+## Change context and verification
 
-Before code changes, state:
-
-```text
-Requirement IDs:
-Owner module:
-Acceptance criteria:
-Contracts affected:
-Reference assets:
-Adoption decisions:
-Files to change:
-Tests:
-HIL or real-device assumptions:
-License/data implications:
-Rollback:
-```
+Keep decisions proportional to the task: affected requirements/invariants, owner, contracts,
+acceptance and verification; include reference adoption/license/data rights, device assumptions and
+rollback when relevant. No fixed report form or mandatory planning stop. Verify with existing owner,
+contract/replay tests and actual outcome evidence; do not add a process just to complete a template.
 
 ## Control boundaries (retained historical acquisition contracts)
 
 These constraints retain their original safety meaning; they do not mount Mission/device/Edge
-routes or assign current product work to the archive. Current platform ownership is the table above.
+routes or assign current product work to the archive. Current platform ownership is in `REPOSITORY_STRUCTURE.md`.
 
 - Manifold owns tactical perception, tracking, local world model, risk, active perception and local mission decisions.
 - DJI Flight Controller owns stabilization, low-level flight, verified reactive avoidance and RTH.

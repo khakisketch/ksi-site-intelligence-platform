@@ -1,4 +1,4 @@
-"""Official MCP v2 low-level stdio server for the fixed Analysis tool set."""
+"""MCP v2 low-level stdio server for the fixed Analysis tool set."""
 
 from __future__ import annotations
 
@@ -22,6 +22,7 @@ _READ_TOOLS = frozenset(
     {
         "ksi_list_analysis_observations",
         "ksi_list_analyses",
+        "ksi_check_analysis_readiness",
         "ksi_get_analysis",
         "ksi_get_analysis_result",
         "ksi_get_analysis_evidence",
@@ -34,6 +35,10 @@ _TOOL_DESCRIPTIONS = {
     ),
     "ksi_list_analyses": "List durable Analysis records for one supplied Site.",
     "ksi_create_analysis": "Create or retry one supplied WorkArea Analysis with a caller key.",
+    "ksi_check_analysis_readiness": (
+        "Check read-only suitability for one supplied WorkArea selector pair; "
+        "this creates no record and grants no execution authority."
+    ),
     "ksi_get_analysis": "Read one durable Analysis state for a supplied Site.",
     "ksi_get_analysis_result": "Read one durable Analysis result state for a supplied Site.",
     "ksi_get_analysis_evidence": "Read provenance and restrictions for one supplied Analysis.",
@@ -82,7 +87,9 @@ def build_server(client: CoreAnalysisClient) -> Server[dict[str, Any]]:
         "ksi-analysis-mcp",
         version="0.0.1",
         instructions=(
-            "Use only the six KSI Analysis tools with explicit Site and WorkArea identifiers."
+            "Use only the seven KSI Analysis tools with explicit Site and WorkArea identifiers. "
+            "The six established tools keep their frozen shapes; ksi_check_analysis_readiness "
+            "is the additive read-only preflight."
         ),
         on_list_tools=list_tools,
         on_call_tool=call_tool,

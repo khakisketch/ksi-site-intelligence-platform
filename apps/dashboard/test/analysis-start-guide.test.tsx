@@ -15,9 +15,12 @@ describe("AnalysisStartGuide", () => {
       analysisCount={4}
       hasMoreAnalyses={false}
       canCreate
+      compact
     />);
 
-    expect(screen.getByRole("heading", { name: "변화 분석 시작 안내" })).toBeTruthy();
+    // 후보·구역이 있으면 접힌 도움말로 둔다 — 내용은 그대로 둔다.
+    const summary = screen.getByText("변화 분석 시작 안내");
+    expect(summary.closest("details")?.hasAttribute("open")).toBe(false);
     expect(screen.getByText("2개 확인됨")).toBeTruthy();
     expect(screen.getByText("3개 표시됨")).toBeTruthy();
     expect(screen.getByText("4개 표시됨")).toBeTruthy();
@@ -68,9 +71,25 @@ describe("AnalysisStartGuide", () => {
       analysisCount={50}
       hasMoreAnalyses
       canCreate
+      compact
     />);
 
+    expect(screen.getByText("변화 분석 시작 안내").closest("details")?.hasAttribute("open")).toBe(false);
     expect(screen.getByText("50개 표시됨")).toBeTruthy();
     expect(screen.getByText(/최근 페이지의 일부 기록입니다/)).toBeTruthy();
+  });
+
+  it("keeps the full guide when no executable pair can be chosen", () => {
+    render(<AnalysisStartGuide
+      siteId="site-1"
+      workAreaCount={1}
+      observationCount={1}
+      analysisCount={0}
+      hasMoreAnalyses={false}
+      canCreate
+    />);
+
+    expect(screen.getByRole("heading", { name: "변화 분석 시작 안내" })).toBeTruthy();
+    expect(screen.queryByText("변화 분석 시작 안내")?.closest("details")).toBeNull();
   });
 });

@@ -73,6 +73,36 @@ def test_openapi_has_no_duplicate_mapping_keys() -> None:
     _require_unique_yaml_keys(node)
 
 
+def test_spatial_asset_description_published_reference_is_self_contained() -> None:
+    document = yaml.safe_load((ROOT / "contracts/api/openapi-core.yaml").read_text())
+    path = "/v2/sites/{site_id}/work-areas/{work_area_id}/spatial-assets/{asset_ref}"
+    response = document["paths"][path]["get"]["responses"]["200"]
+    assert response["content"]["application/json"]["schema"] == {
+        "$ref": "#/components/schemas/SpatialAssetDescriptionV1"
+    }
+    reference = document["components"]["schemas"]["SpatialAssetDescriptionV1"]["$ref"]
+    assert reference == "../schemas/spatial-asset-description.v1.json"
+    schema = json.loads((ROOT / "contracts/api" / reference).read_text())
+    Draft202012Validator.check_schema(schema)
+
+    def visit(value: Any) -> None:
+        if isinstance(value, dict):
+            if "$ref" in value:
+                ref = value["$ref"]
+                assert ref.startswith("#/$defs/"), ref
+                target = schema
+                for key in ref[2:].split("/"):
+                    target = target[key.replace("~1", "/").replace("~0", "~")]
+                assert isinstance(target, dict)
+            for item in value.values():
+                visit(item)
+        elif isinstance(value, list):
+            for item in value:
+                visit(item)
+
+    visit(schema)
+
+
 def test_uniqueness_gate_rejects_even_equal_duplicate_values() -> None:
     node = yaml.compose("component: {a: 1, a: 1}\n")
     assert node is not None

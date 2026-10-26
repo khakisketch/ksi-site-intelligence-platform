@@ -7469,6 +7469,35 @@ paths:
         '403': { description: SITES_READ permission required }
         '404': { description: Site, WorkArea or asset is absent or outside the caller grant }
         '503': { description: A projected response would exceed the structured response budget }
+  /v2/sites/{site_id}/work-areas/{work_area_id}/spatial-assets/{asset_ref}:
+    get:
+      tags: [spatial-asset-catalog]
+      summary: Describe one exact spatial artifact with stored provenance and raster detail
+      description: >-
+        Read-only enrichment of the existing asset identity, lifecycle, declaration,
+        byte observation and inspection. Producer and capture information remain
+        customer declarations, including explicit unknown/date-only metadata. Raster
+        detail is bound to the exact inspection report and build, including NoData,
+        valid pixels, CRS-derived horizontal units and rotation-aware resolution.
+        Semantic kind is declared, analysis is not evaluated, and this route grants
+        neither original storage nor download. Scoped SITES_READ and existing
+        single-WorkArea attribution apply; absent or foreign resources return 404.
+      operationId: describe_asset_v2_sites__site_id__work_areas__work_area_id__spatial_assets__asset_ref__get
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: site_id, in: path, required: true, schema: { type: string } }
+        - { name: work_area_id, in: path, required: true, schema: { type: string } }
+        - { name: asset_ref, in: path, required: true, schema: { type: string, pattern: '^ksa-v1-[0-9a-f]{64}$' } }
+      responses:
+        '200':
+          description: Exact enriched metadata; no storage key, capability or analysis decision.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SpatialAssetDescriptionV1' }
+        '401': { description: Authentication required }
+        '403': { description: SITES_READ permission required }
+        '404': { description: Site, WorkArea or asset is absent or outside the caller grant }
+        '503': { description: A source traversal or response would exceed its bounded budget }
   /v1/sites/{site_id}/work-areas/{work_area_id}/spatial-workspace-observations:
     get:
       tags: [spatial-asset-catalog]
@@ -7804,6 +7833,45 @@ paths:
         '404': { description: Site, WorkArea, or selected input not found within current grants }
         '409': { description: Idempotency key conflicts with another immutable request }
         '503': { description: AnalysisActivationV1 is absent or expired }
+  /v2/sites/{site_id}/work-areas/{work_area_id}/analysis-readiness:
+    post:
+      tags: [external-analysis]
+      summary: Check read-only Analysis readiness for a selector pair
+      description: >-
+        Pure preflight that reuses the exact V1 selector request and sealed AP
+        predicates without creating an intent, AP/NX record, or journal entry
+        and without granting execution authority. Detailed READINESS_* blocker
+        codes are confined to this view; durable ESSENTIAL_INPUT_UNAVAILABLE
+        meaning is unchanged. coverageCheck never promises common-mask
+        verification.
+      security: [{ bearerAuth: [] }]
+      parameters:
+      - { in: path, name: site_id, required: true, schema: { type: string, minLength: 1, maxLength: 255 } }
+      - { in: path, name: work_area_id, required: true, schema: { type: string, minLength: 1, maxLength: 255 } }
+      - name: X-KSI-Access-Purpose
+        in: header
+        required: false
+        schema: { type: string, enum: [EXTERNAL_AI] }
+        description: Compatibility hint only; identity and current Site consent determine MCP access.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateAnalysisRequestV1' }
+      responses:
+        '200':
+          description: Read-only readiness projection; grants no execution authority.
+          headers:
+            X-KSI-External-AI-Egress:
+              required: false
+              schema: { type: string, const: ALLOWED }
+              description: Present only for ANALYSIS_MCP_CLIENT after current Site consent passes.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AnalysisReadinessViewV1' }
+        '401': { description: Authentication failed }
+        '403': { description: Permission denied or current Site consent denied }
+        '404': { description: Site, WorkArea, or selected input not found within current grants }
   /v2/sites/{site_id}/analyses:
     get:
       tags: [external-analysis]
@@ -18589,6 +18657,72 @@ components:
       - createdAt
       title: AnalysisViewV2
       type: object
+    AnalysisReadinessViewV1:
+      additionalProperties: false
+      description: Pure read-only preflight; creates no record and grants no execution authority.
+      properties:
+        contractVersion:
+          type: string
+          const: analysis-readiness.v1
+          default: analysis-readiness.v1
+          title: Contractversion
+        siteId:
+          maxLength: 255
+          minLength: 1
+          title: Siteid
+          type: string
+        workAreaId:
+          maxLength: 255
+          minLength: 1
+          title: Workareaid
+          type: string
+        baseline:
+          $ref: '#/components/schemas/AnalysisObservationSelectorV1'
+        current:
+          $ref: '#/components/schemas/AnalysisObservationSelectorV1'
+        suitabilityState:
+          $ref: '#/components/schemas/AnalysisSuitabilityStateV1'
+        blockers:
+          items:
+            $ref: '#/components/schemas/AnalysisBlockerV1'
+          maxItems: 128
+          title: Blockers
+          type: array
+        limitationCodes:
+          items:
+            maxLength: 128
+            minLength: 1
+            pattern: ^[A-Z][A-Z0-9_]{0,127}$
+            type: string
+          maxItems: 128
+          default: []
+          title: Limitationcodes
+          type: array
+        checkedAt:
+          format: date-time
+          title: Checkedat
+          type: string
+        calculationIdentityDigest:
+          default: null
+          anyOf:
+          - { type: string, pattern: '^sha256:[0-9a-f]{64}$' }
+          - { type: 'null' }
+          title: Calculationidentitydigest
+        coverageCheck:
+          type: string
+          const: REQUIRES_WORKER_VALIDATION
+          default: REQUIRES_WORKER_VALIDATION
+          title: Coveragecheck
+      required:
+      - siteId
+      - workAreaId
+      - baseline
+      - current
+      - suitabilityState
+      - blockers
+      - checkedAt
+      title: AnalysisReadinessViewV1
+      type: object
     AnalysisWorkerFailureRequestV1:
       properties:
         failure:
@@ -19657,6 +19791,9 @@ components:
       - identifier
       - basis
       title: SpatialAssetObservedVerticalReferenceV1
+
+    SpatialAssetDescriptionV1:
+      $ref: '../schemas/spatial-asset-description.v1.json'
 
     SpatialDataRequestV1:
       $ref: '../schemas/spatial-data.v1.json#/$defs/SpatialDataRequestV1'

@@ -1672,6 +1672,94 @@
       ],
       "title": "AnalysisRuntimeEvidenceV1",
       "type": "object"
+    },
+    "AnalysisReadinessViewV1": {
+      "additionalProperties": false,
+      "description": "Pure read-only preflight for one arbitrary selector pair.\n\nThis projection never creates an intent, AP/NX record, or journal entry\nand grants no execution authority. It reuses the sealed AP decision\npredicates read-only; ``create`` rechecks the same predicates before any\ndurable admission. ``coverageCheck`` never promises common-mask\nverification — that remains worker-validated.",
+      "properties": {
+        "contractVersion": {
+          "const": "analysis-readiness.v1",
+          "default": "analysis-readiness.v1",
+          "title": "Contractversion",
+          "type": "string"
+        },
+        "siteId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Siteid",
+          "type": "string"
+        },
+        "workAreaId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Workareaid",
+          "type": "string"
+        },
+        "baseline": {
+          "$ref": "#/$defs/AnalysisObservationSelectorV1"
+        },
+        "current": {
+          "$ref": "#/$defs/AnalysisObservationSelectorV1"
+        },
+        "suitabilityState": {
+          "$ref": "#/$defs/AnalysisSuitabilityStateV1"
+        },
+        "blockers": {
+          "items": {
+            "$ref": "#/$defs/AnalysisBlockerV1"
+          },
+          "maxItems": 128,
+          "title": "Blockers",
+          "type": "array"
+        },
+        "limitationCodes": {
+          "default": [],
+          "items": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[A-Z][A-Z0-9_]{0,127}$",
+            "type": "string"
+          },
+          "maxItems": 128,
+          "title": "Limitationcodes",
+          "type": "array"
+        },
+        "checkedAt": {
+          "format": "date-time",
+          "title": "Checkedat",
+          "type": "string"
+        },
+        "calculationIdentityDigest": {
+          "anyOf": [
+            {
+              "pattern": "^sha256:[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Calculationidentitydigest"
+        },
+        "coverageCheck": {
+          "const": "REQUIRES_WORKER_VALIDATION",
+          "default": "REQUIRES_WORKER_VALIDATION",
+          "title": "Coveragecheck",
+          "type": "string"
+        }
+      },
+      "required": [
+        "siteId",
+        "workAreaId",
+        "baseline",
+        "current",
+        "suitabilityState",
+        "blockers",
+        "checkedAt"
+      ],
+      "title": "AnalysisReadinessViewV1",
+      "type": "object"
     }
   },
   "oneOf": [
@@ -1698,6 +1786,9 @@
     },
     {
       "$ref": "#/$defs/AnalysisViewV2"
+    },
+    {
+      "$ref": "#/$defs/AnalysisReadinessViewV1"
     }
   ]
 }

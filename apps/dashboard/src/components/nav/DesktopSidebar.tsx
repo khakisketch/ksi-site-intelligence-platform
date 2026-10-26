@@ -1,11 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname, useSearchParams } from "next/navigation";
-import { Fragment, Suspense } from "react";
+import { usePathname } from "next/navigation";
+import { Fragment, Suspense, useEffect, useRef } from "react";
 
 import { isChromelessPath } from "./chromeless-path";
-import { isViewerPath } from "./viewer-path";
+import { setDesktopNavCollapsed, useDesktopNavCollapsed } from "./desktop-nav-preference";
 import { DESKTOP_NAV_GROUPS } from "./nav-items";
 import { NavIcon } from "./NavIcon";
 import { SidebarSearchTrigger } from "./SidebarSearchTrigger";
@@ -19,17 +19,16 @@ export interface NavCounts {
 }
 
 /**
- * Viewer-first compact rail — 56px icon column used only on site 공간/자료.
- * The full labelled rail owns global navigation on every dense screen; this
- * variant keeps the same destinations and the current site visible without
- * spending a 176/232px text column on the canvas.
+ * User-selected compact rail. Route changes never choose the menu width.
  */
 function CompactSidebar({
   pathname,
   sites,
+  toggle,
 }: {
   pathname: string;
   sites: readonly SidebarSite[];
+  toggle: React.ReactNode;
 }) {
   const items = DESKTOP_NAV_GROUPS.flatMap((group) => group.items).filter((item) => item.key !== "more");
   const siteId = resolveSiteId(pathname);
@@ -39,9 +38,11 @@ function CompactSidebar({
   return (
     <nav
       aria-label="주 메뉴"
+      id="desktop-navigation"
       data-compact-rail="true"
       className="print:hidden hidden bg-sidebar py-3 text-sidebar-text lg:flex lg:flex-col lg:items-center lg:gap-1 lg:overflow-hidden"
     >
+      {toggle}
       <Link
         href="/"
         aria-label="KSI 홈"
@@ -125,18 +126,49 @@ export function DesktopSidebar({
   userBlock?: React.ReactNode;
 }) {
   const pathname = usePathname();
-  const searchParams = useSearchParams();
+  const collapsed = useDesktopNavCollapsed();
+  const toggleRef = useRef<HTMLButtonElement>(null);
+  const restoreToggleFocus = useRef(false);
+  useEffect(() => {
+    if (!restoreToggleFocus.current) return;
+    restoreToggleFocus.current = false;
+    toggleRef.current?.focus();
+  }, [collapsed]);
+  const toggle = (
+    <button
+      ref={toggleRef}
+      type="button"
+      aria-label={collapsed ? "주 메뉴 펼치기" : "주 메뉴 접기"}
+      aria-expanded={!collapsed}
+      aria-controls="desktop-navigation"
+      title={collapsed ? "주 메뉴 펼치기" : "주 메뉴 접기"}
+      onClick={() => {
+        restoreToggleFocus.current = true;
+        setDesktopNavCollapsed(!collapsed);
+      }}
+      className="tap-target mx-2 mb-2 inline-flex min-h-9 items-center justify-center gap-2 rounded-md px-2 text-[12px] text-sidebar-text hover:bg-sidebar-hover"
+    >
+      <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" className="size-[18px] shrink-0">
+        <rect x="3" y="4" width="18" height="16" rx="2" />
+        <path d="M9 4v16" />
+        <path d={collapsed ? "m13 9 3 3-3 3" : "m16 9-3 3 3 3"} />
+      </svg>
+      {!collapsed && <span>메뉴 접기</span>}
+    </button>
+  );
   // 셸을 벗는 로그인 화면에는 레일 자체가 없다 — 판정은 layout.tsx 와
   // 같은 술어를 쓴다(둘이 갈리면 그리드 트랙만 남고 레일이 사라진다).
   if (isChromelessPath(pathname)) return null;
-  if (isViewerPath(pathname, searchParams?.toString())) {
-    return <CompactSidebar pathname={pathname} sites={sites} />;
+  if (collapsed) {
+    return <CompactSidebar pathname={pathname} sites={sites} toggle={toggle} />;
   }
   return (
     <nav
       aria-label="주 메뉴"
+      id="desktop-navigation"
       className="print:hidden hidden bg-sidebar pt-[18px] pb-2.5 text-sidebar-text lg:flex lg:flex-col lg:overflow-hidden"
     >
+      {toggle}
       <div className="flex items-center gap-[9px] px-[18px] pb-[22px]">
         <span
           aria-hidden="true"

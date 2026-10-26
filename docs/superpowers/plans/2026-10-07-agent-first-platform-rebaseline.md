@@ -7323,6 +7323,198 @@ files preview/route.ts, site-preview.ts and route tests; noAPI/schema/license/HI
 page2validjob with exactlink, multi-area fairness, repeatedcursor/failure/oversizedpage, sameglobal
 budget+unknown at exhaustion, explicit requester/scopedjob filtering. Rollback source-only.
 
+Implementation review transition (2026-10-23 continuation, same authorization/task): first indexed
+handoff was NOT accepted or deployed. Primary and independent Plan found factory still retained
+all journal records; nonretaining construction repaired torn input before audit validation; EOF
+cursor and crash-tail checkpoint could skip records; rebuild/tail omitted full audit transition
+validation; history-sized RAM dictionaries/4MiB batches; logically missing index rows could become
+false absence; global spool+index disk budget omitted eight-global reservations; unsafe file/config
+opening; history-only denial occurred after reservation. Primary reproduced three-row EOF loss and
+18→8-byte torn-tail truncation ONLY in task-local fixtures. Original Core/data remain unchanged.
+Same General is correcting the whole unit and counterexample/factory tests in the isolated copy;
+no new Human decision is needed to satisfy the already-approved preservation/bounds requirements.
+
+Primary's operation tooling was tightened independently: unconditional guards, glibc pidfd wrappers
+(Python build lacks wrappers) pin exact Core identity; SIGTERM only, require process+owned-child exit
+and no listener, not just an ss PID string; reviewed source/config/launcher/receipt SHA binding;
+private preserved-env/config content identity uses separate owner-private HMAC attestation key,
+never raw credentials/unkeyed secret hashes. Stop execute has NOT been called and no reviewed
+activation manifest exists. Photo verifier now blocks all non-read browser-context traffic after
+permitted login, blocks service workers, correlates UI file-response hash with real canvases and
+partial labels, checks no redirect/private headers, and proves authenticated distinct-principal
+opaque refusals (not401-as-proof). Existing /api/sites GET405 was not an auth witness; scoped
+work-area GET200 and server-rendered account identity provide the proper narrower proof.
+
+Parallel preview-page budget fix a0880c2e is built/deployed: current descriptor now chooses exact
+existing9a (available:true, partial:true, expected ortho/area); no byte claim until file succeeds.
+Global calls6/rows48 unchanged. Actual distinct authenticated reader has scoped metadata200 and
+known/unknown file404 with equal safe bodies; no borrowed output. Locked193files/1936tests and
+existing4spec100pass/24expectedskip/code0 passed on that frontend. Core audit repair remains in
+progress, actual photo recovery incomplete, no Core restart/source/S3/TTL/grant/new preparation.
+
+Corrected handback re-review still blocks activation (copy only, no live source/data change): index
+row/session correspondence was reduced to counts; derived-row corruption could induce authoritative
+reopening; strict torn-tail refusal still omitted from actual production journal kwargs; partial
+carry could exceed limits; actual-size index workspace reservation races future growth/omits
+transaction peaks; recovery-mode change was rejected unless tests manually removed the index;
+hardlink aliases were not refused before mutation. These fit the existing approval; no new Human
+question. After repeated wiring/boundary misses, Primary changes implementation ownership to a fresh
+whole-unit finisher with the concrete review/repros and a simpler boot strategy, not another blind
+request to make counts green. Previous code/test handback preserved under handoff-v2-frozen (hash
+manifest), original journals still untouched, liveCore originalPID. No source mutation to get200.
+
+Latest independent review of the fresh finisher handback: prior strict-opening/cursor/scope/hardlink
+fixes are present, but activation remains blocked by six concrete cases: valid admitted→denied
+session double-counting; unverified session summary fields hiding unfinished reservations; external
+SQLite commit between binding checks and journal fsync; cold old/new/rollback peak beyond the stated
+two-index reserve; unindexed session-order grouping causing native temporary memory growth; and a
+boot deadline reset between journal recovery and audit/index recovery without a shared CPU bound.
+The same finisher owns these corrections and adversarial tests in the isolated copy. These are
+requirements of the existing approval, not a new product-scope decision. No live source/restart.
+
+Preflight harness diagnosis (not a product/source fix): urllib3 import probes IPv6 by binding ::1:0.
+The task hook now denies that exact, source-identified capability probe before the syscall and
+records simulated IPv6-unavailable separately; arbitrary loopback binds/external connections still
+fail. Separately, this Python emits sqlite3.connect/handle before Connection initialization, so
+installing an authorizer in that event raised ProgrammingError. The task-only wrapper now installs
+it after the path-guarded connection returns. Seven isolated self-tests pass, including blocked
+outside SQLite/write/attach paths. This explains additional harness failures, not the underlying
+file503 or audit implementation readiness. Live service networking/settings remain unchanged.
+
+Activation tooling has a separate bounded owner while Core corrections continue: generation-bound
+PID/start/stop receipts for compatible fallback; unconditional preservation receipts even on timeout;
+exact old-prefix plus two-record private admitted→denied suffix proof; specific torn-tail refusal;
+before/after helper/config/source hashes and canonical paths; bidirectional preserved-env key checks.
+No live execution is delegated. Main retains the only authority to stop/apply/start owned8074.
+
+Final live observation must include another exact existing-file GET after the >=300-second window,
+not just early success plus passive elapsed time. This also checks that boot-only SQLite progress/
+deadline handlers are removed or rebound appropriately for later requests. Recovered pixels, exact
+old history, interrupted-state semantics and unchanged immutable result/rights are separate claims;
+none follows from a helper self-test or the mere presence of a listening port.
+
+#### Human visual-workspace continuation and current expiry boundary (2026-10-24)
+
+Human continued after the additive public-example swipe. Current Git was revalidated rather than
+using the old checkpoint's active-worker/HEAD claims. Actual materials→workspace navigation exposed
+the old232px global rail plus260px permanent selector and boxed viewport again. Workspace single,
+independent-pair and recorded-result modes now reuse the materials workbench frame, compact rail and
+header, stage-adjacent date/layer controls and stable catalog/info overlays. Status counts moved
+into info. `/analysis` remains the canonical record/request form surface and has a validated exact
+record bridge to workspace results; browsed A/B remain separate from frozen calculation inputs.
+
+Requirement IDs: Human viewer-first continuation, SDP-REQ-01/02/03/05/06; INV020/040/051/053/060/061.
+Owner Dashboard only; no API/schema/permission/calculation change, no new image/decoder/asset/egress,
+no automatic preparation or actual-data swipe. Existing selection/URL scope contracts retained.
+Full plan/evidence and adopted trade-offs are in
+`docs/design/SPATIAL_WORKBENCH_REFERENCE_REVIEW_2026-10-23.md` (2026-10-24 section).
+
+First candidate renders were NOT accepted: desktop pair forms stacked above imagery and clipped
+its bottom; intrinsic content overlapped the legend; catalog denial looked like no layers; true
+empty had contradictory no-layer copy. Same owner corrected composition/state boundaries rather
+than only spacing. Final1440/1280/390 renders and mouse/keyboard interactions confirm independent
+pan, unchanged canvas rect/transform/scroll/URL under overlays, close/Escape focus return, own-pane
+layer selection, exact result/area bridge, ordinary shell restoration, and differentiated empty/
+denied/unknown/expiry states. Ready pixels are synthetic UI fixtures, not recovered Core output.
+206files/2058tests/types/build pass; lint0errors/1oldwarning; axe0 on recorded automated states.
+
+Frontend-only deployed code79e43d36, docsHEADaeba2132, image
+`ksi-product-dashboard:connected-workspace-20261024` / `sha256:2be0202e9c6d49a76993c6148e5635d3e4c67dcac30ba4b3a65d4c2f8c86a990`.
+Rollback `ksi-product-console-pre-workspace-20261024` retained. Actual ordinary OIDC comparison and
+exact-record return were exercised at the public Console address; example swipe/side-by-side remain.
+Evidence `/tmp/opencode/ksi-workbench-continuation-20261024/ui-verification-receipt.json` and live
+captures. Owned UI QA browsers/fixture stopped after verification; actual Console/Core preserved.
+
+The exact9a file now returns410 RETENTION_EXPIRED (100B JSON,no redirect), both before and after UI
+deployment. The current authenticated Floreat WorkArea requests page lists12/12 retention-expired
+outputs, no next page or download links. This does NOT establish prior503 audit-capacity recovery.
+No static example replaces an actual record. No new PREPARE, TTL/grant/S3/cap/security mutation,
+Core source apply/restart, journal rewrite or operational/customer/platform acceptance follows.
+
+Recovery candidate revalidation is still separate and unaccepted. New isolated General completed
+shared boot timing and post-fsync identity checks plus329 synthetic owner/composition tests, but a
+fresh Plan found4 concrete current blockers: production journal callback omits CPU kwargs; binding
+snapshot after commit can adopt foreign deletion and manufacture absence/reopening; invalid parsed/
+deep-copied batches exceed the1MiB RAM budget; SQLite progress/schema setup misses shared CPU checks.
+Same General owns whole-unit corrections in source-copy; no main Core edits or activation. The
+historical counting/summary/group-index/cold-peak labels are present fixes, not blindly reopened.
+
+Task-only factory tooling was corrected independently with genuine timeout/failure receipts,
+canonical source/helper/config pins, new-file pins, exact two-record private extension and specific
+torn-tail refusal. Warm verification reuses the same index under a separate append-only receipt;
+20 synthetic helper tests pass. Primary added outside metadata/descriptor-truncate and link denial
+to the trusted-factory audit hook (8 sentinel +9 guard tests); this is not an OS sandbox claim.
+Primary prepared a new15-backing private clone, but no opt-in config/factory run yet. Next feasible
+integration is corrected-source review and isolated production-factory history proof; actual
+photo recovery remains blocked by expiry and the unaccepted candidate, not closed by UI success.
+
+Whole-goal advisory reconciliation after deployment inspected original final renders and their
+receipt hashes, not only the unit verdict. No additional actionable UI unit was established:
+ready images lead in the synthetic scene; actual records honestly remain expired or non-numeric;
+canonical request/review and exact workspace return are intentional. Feasible P0/P1/P2 closure and
+the recorded F-03/Task5a/5c synthetic/authorized-host evidence remain valid at their stated scope;
+historical OPEN labels are not revived. The separate later shared-inspector incident is not those
+old gates. Next authorized work stays the current isolated correction and clone proof. Actual
+readable output and then purpose-bound pair-display geometry are separate remaining boundaries;
+T2 cache, LOD preparation, worker concurrency, durable saved-work storage or shared-inspector
+recovery are not silently resumed by this `continue`. Customer/two-cycle independent consumption,
+Terra compatibility, production operations, physical input and full no-JS remain separately
+bounded/unverified rather than platform acceptance inferred from the deployed UI.
+
+#### Latest bounded continuation boundary — UI deployed; recovery not activated (2026-10-24)
+
+Follow-up UI code5ad60d2e is deployed as `ksi-product-dashboard:connected-workspace-followup-20261024`
+(`sha256:77815bee10cc7332b6a267e41e04ade930302a521a1debc63b5c6ee315f3fa1e`), rollback
+`ksi-product-console-pre-workspace-recovery-20261024` retained. Broader regressions exposed a real
+zero-assets materials dead end (registration/record entry absent) and late-criteria search draft
+loss. Both were fixed with the same permission/scope/compact-write semantics, including automatic
+debounce after a late response; no new design pass, producer or API contract. Parent read original
+before/after captures and exercised actual OIDC search+sort, automatic search and real Site match
+at390/1440, plus existing workspace/explicit example. Exact9a still410RETENTION_EXPIRED; no fake pixels.
+
+206files/2063unit tests/types/lint0errors/production build pass. Official4spec regression97pass,
+16conditional skips,3Home golden mismatches remain visible. Same-env pre79source3374567f produced
+pixel+SHA256-identical received images for those3: the mismatch pre-exists this change. No PNG,
+threshold or snapshot skip was relaxed. A separate dev StrictMode event-loss class was observed
+without an actionable product cause; not represented as fixed. Final official target/search and
+actual production interaction passed. Test services/browsers stopped; owned tsconfig auto-globs
+removed exactly, user pnpm/lock/.playwright-cli changes preserved. Receipt
+`/tmp/opencode/ksi-workbench-continuation-20261024/ui-followup-verification-receipt.json` records limits.
+
+Core candidate was corrected through the actual initial-parser and late-source-adoption causal
+cases. After source review and341reported synthetic owner/composition checks, guarded production
+factory on15-backing private copies verified1531events/512session queries, zero retained replay list,
+private513th admission→denial (1533events), warm513queries on same dev/ino index, history-only513queries
+and refusal without append, and genuine torn-tail constructor refusal without byte repair. All15
+original backings/code/helper/config hashes stayed unchanged; no denied external operation; cleanup
+remained None. Verifier failures were preserved separately (missing helper symbol, negative-verifier
+exit-code classification), not misreported as Core faults. Phase receipts are append-only. Same-inode
+SQLite bookkeeping may change derived bytes; it is not authority-journal mutation or index recreation.
+
+Resource investigation found data-dependent parser string caching outside accounting. The cache is
+bounded16,384entries, not unbounded: the earlier all-distinct/~1KiB-per-record and >1MiB projected
+claims were withdrawn. Measured1531default retention210368B versus12932B with private `_Record`
+cache_strings=False;4096fixed8482B. Strict JSON validation/wire semantics are unchanged. Final source
+pins-v3 and isolated branch `recovery/audit-working-set-20261024` commit6ba3612a preserve this candidate,
+**not merged into live-imported main**. New512-session cold factory and existing513-session history-only
+factory also passed after the cache change. No actual Core source apply/restart/config activation.
+
+**Aggregate1MiB native/transient RAM acceptance remains UNVERIFIED, not passed or proven overrun.**
+Parent ran a full1531-line synthetic boot/lookup/retry/fill probe at selected cache256KiB/index8MiB/
+workspace64MiB. Settled allocator deltas, Python peaks and reservation allowances do not establish
+a simultaneous native high-water or attribute first-init process growth. Built-in SQLite exposes no
+native status symbol; memory PRAGMA is empty; heaptrack/valgrind/memray are unavailable. No profiler,
+runtime, security or cap change was made to force green. Disk/history/scope evidence remains separate.
+Final status is in `core-final-candidate-status.json`, resource details in `resource-unit/ANALYSIS.md`.
+
+The next whole-goal outcome is blocked, not another routine milestone: a compatible attributable
+native-memory verification environment is required before resource acceptance, and the current
+retention-expired output cannot become a lawful readable photograph through audit-capacity repair.
+Any shift to newly prepared outputs needs a material scope/input decision; no new PREPARE, TTL,
+grant/S3/security change, journal deletion/restore or numeric-cap increase is inferred. Actual-data
+swipe additionally still needs pair-display geometry/rights proof. No whole platform/customer/
+operations/physical-input acceptance is closed; no unrelated T2/LOD/concurrency/inspector work selected.
+
 
 #### Human-rejected appearance reopened — stage-first UI shipped (2026-10-24)
 
@@ -7441,3 +7633,290 @@ S3, cap or deletion.
 - This section supersedes only the preceding paragraph's current-state statements that candidate
   6ba3612a is "isolated/unapplied" and the 1MiB acceptance is "UNVERIFIED"; the historical record
   of those gates and their evidence is retained above.
+
+## Integrated site experience — Human continuation (2026-10-24)
+
+Human asked how the in-site screens, layout, menus and feature-use journeys should become a
+desirable product, then approved implementation: “그렇다면 이어서 개발 개선 전체적으로 진행해줘
+제품 완성을 위해 먼저 화면 등 사용 흐름 등 전반적으로 다 진행하고 싶어”. This authorizes
+the actual Console experience improvement, not a separate demo, data-policy change or whole
+platform/customer acceptance. The current product slice is not closed or reprioritized here.
+
+Requirement IDs: current Human site-UX goal, SDP-REQ-01/02/03/05/06; existing INV-020/024/040/
+050/051/053/055/060/061 remain enforced by exact server-resolved references, immutable result
+inputs, use-specific restrictions, scope/egress/compact-write gates and their tests. Owner:
+Dashboard presentation/navigation; a separate four-test-file typing unit owns no runtime.
+Acceptance: coherent site-view/materials/results destinations, canonical comparison entry,
+context-preserving analysis/evidence and region-data handoffs, useful next-observation continuation,
+actual desktop/mobile runtime interaction evidence and independent review. Existing URL keys,
+permissions, date precision, no-automatic-prepare and no-fabricated-alignment boundaries remain.
+No schema/API, new dependency, reference-code adoption, license, capture/reconstruction or HIL
+claim. Rollback is a frontend-only image change preserving the exact existing configuration.
+
+Baseline main `30d83480`; production frontend `ia-pass-20261024`, Core8074/identity9042 healthy
+under their existing systemd units. Original user ledger edits and untracked `.playwright-cli/`,
+dashboard pnpm lock/workspace files are retained. Evidence is owner-private at
+`~/.local/state/ksi-site-ux-20261024/`; `integration-baseline.json` binds all14 Core journal
+hashes, original frontend identity/security/environment hashes and health without storing secrets.
+Live navigation is read-only: no new PREPARE/registration, Core restart, retention/grant/S3/audit
+activation change or shared-inspector recovery. Existing real outputs remain expired.
+
+### Current execution and independently revalidated evidence
+
+- Design `ses_e924e7538ffeA5dewe4Qtyyzw0` owns the complete Dashboard UX unit. The first return
+  (timeline strip + mobile pane grids) was not accepted as completion of the integrated goal;
+  the same owner continues canonical comparison and task handoffs with actual runtime evidence.
+  Passing structural tests or contract correctness do not redefine the Human's usability goal.
+- Main ran the existing external result-consumer crosscheck tests: **6 passed in71.77s**
+  (`api-mcp-crosscheck.log`). A planning suggestion to implement that existing script again was
+  rejected after reconciling the code and the later 2026-10-20 execution section above; no duplicate
+  example, API or MCP authority was introduced.
+- Main reproduced the first candidate's two Home golden mismatches on isolated baseline source
+  main30d83480 with the same Node modules/browser/test configuration (only independent loopback
+  ports/output paths). Mobile390 and tablet768 received PNGs are **byte/SHA-identical** to the
+  candidate outputs (`home-baseline-e2e.log`, `home-baseline-comparison.json`). Both desktop Home
+  tests pass. No golden, threshold or skip was changed; the image match establishes pre-existence,
+  not an inferred font/rendering cause. The synthetic baseline stack was stopped by Playwright.
+- Engineer `ses_e9243b23affeEt6dWa6G8AluaZ` resolved the verified32 existing mypy errors only in
+  `test_operator_journey_seed.py`, `test_external_reconstruction_v3_incomplete_metadata.py`,
+  `test_site_spatial_workspace.py`, `test_read_vs_quantity_separation.py`. Main reviewed the diff
+  and independently reran official `.venv/bin/mypy packages services tests tools`:
+  **zero issues in785 files**; the four owner test files: **95 passed in6.74s**. Commit `c3c9e645`.
+  Accurate annotations, real typed fixtures, sealed-digest preconditions and scoped test-adapter
+  casts preserve runtime expectations; no product code, assertion removal, skip or gate relaxation.
+  Logs: `mypy-integrated.log`, `type-gate-integrated-tests.log`.
+
+UI delivery/review/rollout remains in progress. Real readable pixels, a calculable real pair,
+two-cycle customer/independent consumption, retained shared-inspector incident and archive-gate
+disposition are separate bounded gates; this execution does not manufacture their acceptance.
+
+### Final integrated delivery and frontend-only rollout (2026-10-24)
+
+The preceding in-progress note is superseded for this UI unit only. The first candidate
+`a08aefa7` was held, not deployed, after main read its actual Core-backed1440/390 renders and
+fresh Critic `ses_e9231ed82ffefua7uayT27F6yB` identified three task-impacting problems: redundant
+observation-strip controls pushed the mobile stage down, pair actions remained after recovery,
+and ordinary-entry copy conflated never-prepared with prepared-then-expired. The same Design
+owner corrected them; the proposed strip was removed rather than treated as a fixed requirement.
+Main rejected a claimed placement fix until the actual DOM moved the single action before the
+preview/recovery; regression tests now pin that order in both page and component fixtures.
+
+- Final behavior: materials pair selection has a canonical workspace bridge **before** its
+  preview; workspace pair selection has one explicit analysis-conditions action **before** its
+  panes/recovery. Exact area, A/B/layer and six candidate-hint selectors remain; normal Results
+  navigation does not add request intent. Legacy comparison URLs/rendering remain compatible.
+- Mobile panes retain full-width independent controls without a third observation selector.
+  Ordinary-entry recovery compacts only for actual known blocked/expired states; all shown layers
+  must be known expired before saying prepared-then-expired. Mixed/readable/unknown cases are not
+  hidden or relabeled. Rights, projection reasons and detailed preparation evidence remain available.
+- Main observed that a session-error re-login link dropped pair/mode/area. The new proxy-owned
+  `x-return-to` carries path+query; TopBar uses it with the old pathname fallback, and existing
+  login actions still apply unchanged `safeNextPath`. Proxy overwrites the internal header, so
+  caller-supplied headers cannot choose a foreign return. No token/TTL/permission policy changed.
+  A browser-session error was observed; its underlying cause was not inferred from the banner.
+- Source: `19a7dd1e` plus placement assertion `34eb2781` (prior integrated candidate `a08aefa7`).
+  Main independently ran **2103 unit tests /207 files**, tsc, lint0errors/1existing evidence-script
+  warning, and focused136 tests. Production Docker build uses exact `git archive` source, excluding
+  untracked user files. Relevant four existing E2E specs: **98 passed /24 conditional skipped /
+  2 Home golden failures**; final received390/768 PNGs are again byte/SHA-identical to isolated
+  baseline (`final-home-baseline-comparison.json`). No golden/threshold/retry/skip was weakened.
+- Final actual candidate10scenes and deployed10scenes at1440/390: no horizontal overflow,
+  axe WCAG2A/AA violations or page JS errors; drawer click/Escape/focus-return passes. Recorded
+  `ERR_ABORTED` requests are non-navigation fetches with prefetch=1, not hidden page failures.
+  Main exercised both A-only/B-only changes preserving sibling+scope; materials→workspace exact
+  pair; explicit six-hint analysis destination; record browsing without request hints. No create
+  analysis/PREPARE operation was executed. Browser-cookie simulation followed by the **actual
+  deployed OIDC login/callback** restored the exact compare path+query; this is simulated session
+  failure plus real auth roundtrip, not a server-expiry/TTL or physical-input test.
+- Critic follow-up read original final renders and closed its F1–F3 with no remaining material
+  UI findings in that coverage. Main separately read deployed originals and checked interactions;
+  neither an agent verdict nor test counts alone granted completion.
+
+Deployed frontend `ksi-product-dashboard:site-ux-final-20261024`, source
+`34eb278194ef2982cc5c41ee9f4a04697418aec4`, image
+`sha256:50907ce7371b1e4db3652418fa8ded6be9d044b47dc5c62caffef7e54ec810a3`.
+Rollback container `ksi-product-console-pre-site-ux-20261024` retains the original frontend.
+Environment and HostConfig/security hashes equal the baseline. Core8074/identity9042 PIDs remain
+1660492/341926; all14 Core authoritative journal hashes/sizes/mtimes are unchanged. No Core restart,
+new records, PREPARE, retention/grant/S3/audit policy change, shared-inspector repair or push.
+
+Durable evidence: `~/.local/state/ksi-site-ux-20261024/task-final-receipt.json`,
+`main-final-candidate-checks.json`, `main-final-interactions.json`, `deployed-check-summary.json`,
+`deployed-auth-roundtrip.json`, `after-live-*.png`, `frontend-rollout.json`, build/gate logs,
+and versioned verification scripts. Two failed verifier attempts (source-clean guard caught an
+unstaged placement-test addition; JSON summary tuple-key formatting) were corrected as harness
+issues without weakening checks; their failure does not describe an application regression.
+
+This bounded Console UX/type-gate delivery is implemented, integrated, reviewed and live-verified.
+It is **not whole-product acceptance**: actual readable outputs remain retention-expired; new
+download admission/old503 resolution, real calculable pairs, customer `t0→t1→t2` and independent
+customer-host use still need authorized suitable inputs/decisions. Shared-inspector history and
+archive-conformance disposition stay separately bounded. Screen-reader, physical touch and full
+no-JS remain unverified; mouse/keyboard/automated a11y evidence is not substituted for them.
+
+## Reference-led UX investigation after Human rejection (2026-10-24)
+
+Human reviewed the deployed Console and said its work usability was not good despite improvements;
+requested current-screen observation rather than generic advice, then explicitly challenged the lack
+of reference/other-product research. After leaving Plan: “이제 전환했으니 체계쩍으로 해봐”. The
+previous bounded UI findings/tests remain valid at their scope, not acceptance of the broader UX.
+This stage is investigation and a concrete structural proposal, **not adoption/deployment**.
+
+- Main revalidated main34eb2781/image50907ce7 and healthy Core/issuer. Independently followed the
+  real read-only path from site-list→entry→A/B selection→explicit conditions→materials→history,
+  plus normal Results and intake/external comparison history, at1440/390. Evidence is under
+  `~/.local/state/ksi-ux-reference-20261024/current-observation/` (walkthrough.json,
+  results-no-intent.json, intake-and-observation-history.json, verified screenshots).
+- Observed: exact pair/six hints survive, but the condition form offers no candidate choices and
+  still instructs direct selection; recovery goes to12expired historical outputs; same-site routes
+  reframe64px↔232px navigation. Normal Results is record-first while explicit request intent is
+  form-first. A rushed scene06 capture raced navigation; corrected URL-wait observation replaces
+  that inference, not a fabricated navigation bug.
+- Root-cause hypothesis: resource-specific screens preserve technical identity but ask users to
+  assemble task continuity and distinguish viewing, admissibility, preparation and historical
+  results themselves. Reference comparison explores stable site context, contextual controls and
+  explicit unavailable states, not a new calculation/authorization authority.
+- Design retained the same unit; Research supplied a separate external-evidence subdeliverable.
+  Official Propeller Timeline/Survey Explorer and DroneDeploy Side-by-Side/Cut-Fill articles were
+  read; actual public UI figures and API-returned Mobbin Felt/komoot images were inspected. Main
+  independently read original pixels and official pages, including the full11.96MB DroneDeploy
+  comparison figure (immutable original plus1600px research derivative/source hash). PIX4Dcloud/
+  ArcGIS marketing-only material is not used as observed application UI. Internal Terra mockup
+  pixels and Scout source structure were reviewed read-only at their pinned references; the
+  real-time safety-oriented ksi-platform was not a primary matching workflow. No reference source
+  or assets were imported into runtime code.
+- Fresh Critic `ses_e91d091b9ffeTBXIg7TaENhYHs` challenged the proposal's no-candidate=>rejection
+  overclaim, eight-peer navigation, mislabeled inspection links and context ambiguity. Same Design
+  owner corrected these. Main adjudicated suggestions, rather than treating critique as contracts:
+  manual draft may be proposed as unverified under existing gates; raw IDs belong in details;
+  independent visual browsing is not subjected to another product's overlap/synchronization rule.
+- Main found and reproduced a prototype-only cross-task event-binding defect (Results→conditions
+  left the active Results panel unchanged). The same owner fixed global step routing, forced record
+  intent for record links and added next-observation return. Earlier prototypes/evidence remain.
+- Final decision artifact: `site-workspace-review.html` (packaged from
+  `site-workspace-proposal-v3-corrected.html`), six cited reference/current images embedded for
+  offline preview. Main verified36 scoped functional assertions at1440/390, including cross-task
+  directions, record/request intent, unchanged readable area/A/B/layer/version context, disabled
+  send controls and all images loading; no page JS exceptions or external requests. This tests a
+  static connected sketch, **not production integration or participant task-success**. Source
+  labels/candidate picks/input forms are sketches; real prepared pixels and numeric two-cycle
+  acceptance remain unproven. The existing invalid/expired production data was not replaced.
+
+The proposal and reference gallery were shown in the browser Review pane. Exact citations/source
+notes, old versions, screenshots and packaging/verification scripts are retained under
+`~/.local/state/ksi-ux-reference-20261024/`. No Dashboard source, manifests, reference submodule,
+Core/identity service, retention/grants/audit/S3/shared-inspector state or original user work was
+changed. The existing no-live-PREPARE verification restriction is **not** a product policy banning
+manual requests: the viewer already contains an explicit bounded request path under Core rights
+and desktop gates; it was inspected, not executed. Product implementation/adoption of the new
+structure remains separate from this research/proposal outcome and does not close the product slice.
+
+## Human-steered visual-first workspace study (2026-10-24 → 2026-10-25)
+
+Human also rejected the structural proposal as disappointing and asked for a more visual experience,
+closely studying/copying DroneDeploy and Angelswing UI/UX. The earlier three-tab recommendation was
+not adopted as a product contract. This follow-up replaces the text-centered proposal with a spatial
+working-surface study; it still does not authorize a speculative production rollout or close the slice.
+
+- Same Design owner completed the visual prototype and scoped repairs. Main revalidated main34eb2781,
+  image50907ce7 and all14 protected journal hashes/bytes/mtimes. Git status paths remain the existing
+  modified ledger and untracked playwright/pnpm/workspace files. No Dashboard source/dependency,
+  reference submodule, production request, retention, rights, security or service change was made.
+- Main independently verified all four CC BY4.0 Floreat display-crop hashes against
+  `docs/design/DEMO_MATERIALS.json`. These coastal/public design images remain explicitly separate
+  from expired operational outputs, construction imagery, geodetic alignment and quantitative evidence.
+- Stronger Angelswing evidence came through the official public home and its embedded10.24s video:
+  a full2048×1074 two-second application frame shows a thin utility rail, a wider source-photo panel
+  and a large model surface. Main also read the official-linked public Viewing-data and comparison
+  guides in an isolated ordinary browser. Guide prose describes date/layer/history and split→date→
+  compare behavior; the large platform diagram failed and anonymous figure downloads403 were not
+  bypassed. Published illustrations without chrome and a small YouTube-thumbnail inset were not
+  promoted to full workflow evidence. Exact sources, original bytes/hashes and coverage limits live
+  under `~/.local/state/ksi-visual-workspace-20261024/evidence/main-reviewed/`.
+- Main's real entry renders and interactions found and returned defects rather than relaying the
+  owner's completion claims: missing site/area identity, duplicate selectors, inaccessible local-action
+  anchors, B zoom targeting A, expired-history routing loop, condition intent lost on selection change,
+  and mobile geometry overlap. An empty repair return left an unchanged copy and was treated as
+  incomplete. Same-owner recovery produced the actual repair. Main's first scoped50-check pass then
+  exposed hidden-B zoom after returning to A plus remaining viewport overflow; the owner corrected
+  those and clarified historical-record input versus the currently viewed pair.
+- Final authored source is `workspace-reviewed.html`. Main packaged its four public observation
+  images and five cited reference figures into `preview/workspace.html` (7,460,119bytes), without
+  layout/behavior changes. Its SHA256 is
+  `da9b738ad788accf5e48b67ae36b0ca7c6470652dcfb198af13b263237497d46`.
+  Main's final packed-artifact run at1440×900 and390×844 passed50 scoped assertions: actual dated/layer
+  image-byte identity, pan/zoom including B→single-A, keyboard actions/Escape, contextual conditions,
+  material/history/record continuity, disabled submission, frame geometry, all reference images and
+  scoped axe checks. No page JS exceptions, external requests or non-GET requests were observed.
+  Source, screenshots, script, final JSON and protected-state comparison are retained in the same root.
+- The mechanical detector returned two text-size warnings; these are retained as minor prototype
+  limitations, not disguised as an all-clear design/a11y claim. Automated checks are not screen-reader,
+  physical-touch or participant usability acceptance. The source still contains explanatory copy and
+  a nonexecuting manual draft, not integrated preparation/calculation. Some owner receipts reused
+  old flow labels that do not exist in this artifact; only main's actual final observations support
+  the verification claims above.
+- Fresh Critic `ses_e919cb5d7ffeeHr2UKE2oXUxK1` was commissioned for an independent review of the
+  initial visual proposal; its return is pending at this record. No independent acceptance is claimed.
+  Native Browser tools are no longer configured. Main closed its verification browsers and stopped
+  the broad evidence-directory server8854. A loopback-only user preview remains at
+  `http://127.0.0.1:8855/workspace.html`, serving only the self-contained preview directory. The HTML
+  also works as a standalone file and no production server was changed.
+
+Outcome at this boundary: a substantially visual, interactable decision artifact is available for
+reaction; the production Console remains unchanged. Any later integration must connect the chosen
+spatial frame to authoritative records, preserve per-purpose permissions and frozen inputs, and
+verify real persistence/recovery and rendered runtime behavior. No successful preparation, restored
+pixels, calculable pair, customer task success or real t0→t1→t2 acceptance is established by this study.
+
+### Late initial-draft review reconciliation (2026-10-25)
+
+Critic `ses_e919cb5d7ffeeHr2UKE2oXUxK1` subsequently returned findings explicitly against the
+initial369-line `workspace.html` and initial entry renders, not an independent acceptance of the
+delivered packed build. Main revalidated the authored/packed hashes and mapped its8 material
+findings to the already-corrected source and existing final browser evidence: site/area identity,
+single canonical selectors, native keyboard actions, retained zoom target, expired history routing,
+explicit condition state, reachable mobile tools/coherent frame and a full official Angelswing
+application frame instead of a small thumbnail inset. The final50-check evidence remains valid for
+the unchanged artifact; no new UI/source/runtime change was made merely to respond to this late
+review. Mobile density remains exploratory, not a one-row-header or participant-success claim.
+The review's preservation note about the old color-incompatibility wording was not adopted: the
+source display crops share a palette, while the final UI only disclaims geodetic/numeric equivalence.
+Main's reconciliation is retained as `main-review-reconciliation.json`; it is not relabeled as an
+independent final-build pass or whole-product acceptance. Minor prototype text-size/focus limitations
+and all previously stated live integration/customer/field gates remain open.
+
+### 2026-10-25 — approved Console destination/list/registration reconstruction (Design unit)
+
+The Human re-rejected text-heavy layouts, requested a reconstruction proposal for the other
+menus/pages, then approved execution. UI commit `825455e3` implements the stable Home/Sites/Work
+navigation with lower-priority account/help, compact honest site directory (no decorative landscape
+for missing pixels or repeated add-site tile), filterable work queue instead of large empty group
+cards, separate profile/help destinations, and clearer registration stages. Exact existing links,
+permission/unknown states, data identity, draft/idempotency and mobile write restrictions remain.
+No endpoint/schema, resource/retention policy, production service, existing journal, grant or S3
+change was made by this UI unit. Concurrent engine integration changes in the shared worktree
+remain outside this commit; no product-slice, EXT-VAL or whole-product acceptance transition.
+
+Verification: the current checkout (including protected concurrent engine work) passed Dashboard
+Vitest211files/2171tests, tsc0, lint0errors/1existingwarning and production Next build. Six E2E
+specs passed120/24explicitdevice-skips/0failed; the final work-header layout delta passed an
+additional10/2explicitdesktop-skips. Thirty initial renders across1440/768/390 on the isolated
+official synthetic stack3298/8098/9098 returned200 with no document overflow or axeWCAG2A-AA
+violations. Independent mapped-bootstrap fixture3297/8097/9097 completed registration201→detail→
+reload; parent separately verified draft reload and absence of a user-entered site-ID field.
+Registry restart was repaired to use a private task-owned0700 evidence root; shared `/tmp/opencode`
+permissions are775 and no shared ancestor changes are required. The prior temporary sticky-bit
+attempt is retained in the technical fixture receipt, not adopted as an operational procedure.
+
+Evidence: `~/.local/state/ksi-console-ia-20261025/` (`source-receipt.json`, `capture-index.json`,
+`final-*.png`, build/unit/E2E logs, private `registration/` receipt and captures). Impeccable detect
+returned`[]`; subsequent small header alignment was checked in rendered desktop/mobile and
+delta E2E. UI scope/decision rationale is appended to the existing spatial-workbench reference
+brief. On2026-10-26 independent final Critic returned no blocking defects in this owned scope;
+its small account-title inconsistency was corrected and visually verified at1440/390. Official
+Linear/DroneDeploy reference principles and rejected acquisition/location/support-promise patterns
+are reconciled in that brief. Final canonical six-spec run (its own fresh3230/8032/9030 stack)
+again passed120/24explicitdevice-skips/0failed, and full Dashboard Vitest again passed2171.
+Task-owned3298 and3297 stacks were stopped after verification; captures/receipts remain, URLs are
+not presented as still-live user previews. No production deployment or customer/physical-touch/
+screen-reader/real-pixel recovery acceptance is established by these local synthetic fixtures.

@@ -2,11 +2,11 @@
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const mocked = vi.hoisted(() => ({ session: vi.fn(), site: vi.fn(), areas: vi.fn(), observations: vi.fn(), workOrders: vi.fn(), list: vi.fn(), detail: vi.fn(), catalog: vi.fn() }));
+const mocked = vi.hoisted(() => ({ session: vi.fn(), site: vi.fn(), areas: vi.fn(), observations: vi.fn(), workOrders: vi.fn(), list: vi.fn(), detail: vi.fn(), asset: vi.fn() }));
 vi.mock("@/app/field/resolve-session", () => ({ resolveFieldSession: mocked.session }));
 vi.mock("@/lib/core-api/sites", () => ({ getSite: mocked.site }));
 vi.mock("@/lib/core-api/workAreas", () => ({ listWorkAreas: mocked.areas }));
-vi.mock("@/lib/core-api/spatial-assets", () => ({ listSpatialAssets: mocked.catalog }));
+vi.mock("@/lib/core-api/spatial-assets", () => ({ getSpatialAsset: mocked.asset }));
 vi.mock("@/lib/core-api/analysis", () => ({ listAnalysisObservations: mocked.observations, listAnalyses: mocked.list, getAnalysis: mocked.detail }));
 vi.mock("@/lib/core-api/observation-work-orders", () => ({ listObservationWorkOrders: mocked.workOrders }));
 vi.mock("@/app/sites/[siteId]/analysis/AnalysisRequestPanel", () => ({ AnalysisRequestPanel: ({ initialPage, initialAnalysisId, initialSelectedDetail, observations, unattributedObservationCount, workOrderNames, initialWorkAreaId, scopeNotice, ...extra }: { initialPage: { items: Array<{ analysisId: string }> }; initialAnalysisId: string; initialSelectedDetail: { analysisId: string } | null; observations: Array<{ observationEpochId: string; workAreaIds: string[] }>; unattributedObservationCount: number; workOrderNames: Record<string, string>; initialWorkAreaId?: string; scopeNotice?: string | null; [key: string]: unknown }) => <><p>{`${initialAnalysisId}:${initialSelectedDetail?.analysisId ?? "none"}:${initialPage.items.map((item) => item.analysisId).join(",")}`}</p><p data-testid="panel-attribution">{`${observations.map((item) => `${item.observationEpochId}:${item.workAreaIds.join(",")}`).join(";")}|unknown:${unattributedObservationCount}`}</p><p data-testid="panel-work-names">{Object.entries(workOrderNames ?? {}).map(([id, name]) => `${id}=${name}`).join(";")}</p><p data-testid="panel-scope">{`${initialWorkAreaId ?? ""}|${scopeNotice ?? ""}`}</p><p data-testid="panel-exact">{JSON.stringify(extra)}</p></> }));
@@ -28,7 +28,7 @@ beforeEach(() => {
   mocked.workOrders.mockResolvedValue([]);
   mocked.list.mockResolvedValue({ siteId: "site-1", items: [], nextCursor: null });
   mocked.detail.mockResolvedValue(null);
-  mocked.catalog.mockResolvedValue({ siteId: "site-1", workAreaId: "area-1", assets: [] });
+  mocked.asset.mockResolvedValue(null);
 });
 
 describe("analysis deep link", () => {
@@ -58,7 +58,9 @@ describe("analysis deep link", () => {
 
     render(await SiteAnalysisPage({ params: Promise.resolve({ siteId: "site-1" }), searchParams: Promise.resolve({}) }));
 
-    expect(screen.getByRole("heading", { name: "변화 분석 시작 안내" })).toBeTruthy();
+    // 후보·구역이 있어 실제 선택이 먼저이므로 안내는 접힌 도움말로 둔다.
+    const summary = screen.getByText("변화 분석 시작 안내");
+    expect(summary.closest("details")?.hasAttribute("open")).toBe(false);
     expect(screen.getByText("2개 확인됨")).toBeTruthy();
     expect(screen.getByText("2개 표시됨")).toBeTruthy();
     expect(screen.getByText("표시된 기록 없음")).toBeTruthy();
@@ -281,7 +283,16 @@ describe("routed independent-pair analysis handoff", () => {
       { selector: current, observationEpochId: "epoch-b", captureStartedAt: "2026-10-13T00:00:00Z", captureEndedAt: "2026-10-13T01:00:00Z" },
     ]);
     mocked.workOrders.mockResolvedValue(["work-a", "work-b"].map((workOrderId) => ({ workOrderId, siteId: "site-1", organizationId: "org-1", workAreaIds: ["area-1"] })));
-    mocked.catalog.mockResolvedValue({ siteId: "site-1", workAreaId: "area-1", assets: [a,b].map((assetRef) => ({ assetRef, siteId: "site-1", workAreaId: "area-1" })) });
+    const assetByRef: Record<string, unknown> = Object.fromEntries([a, b].map((assetRef, index) => [assetRef, {
+      assetRef, siteId: "site-1", workAreaId: "area-1",
+      workOrderId: index === 0 ? "work-a" : "work-b",
+      observationEpochId: index === 0 ? "epoch-a" : "epoch-b",
+      submissionRef: index === 0 ? sa : sb, revision: index === 0 ? 1 : 2,
+      kind: "dsm",
+      declared: { fileName: `tile-${index}.tif`, captureStartedAt: "2026-10-06T00:00:00Z", captureEndedAt: "2026-10-06T01:00:00Z", captureDate: null },
+      inspection: { outcome: "MEASURED", raster: { observedVerticalReference: { identifier: "KNGEO2002", basis: "geoid" } } },
+    }]));
+    mocked.asset.mockImplementation(async (_siteId: string, _workAreaId: string, assetRef: string) => assetByRef[assetRef] ?? null);
   }
   const panelProps = () => JSON.parse(screen.getByTestId("panel-exact").textContent!);
   it("does not create a missing-hint warning or extra catalogue request on an ordinary visit", async () => {
@@ -289,7 +300,7 @@ describe("routed independent-pair analysis handoff", () => {
     render(await SiteAnalysisPage({ params: Promise.resolve({siteId:"site-1"}), searchParams: Promise.resolve({workAreaId:"area-1"}) }));
     expect(panelProps().exactHintNotice).toBeNull();
     expect(panelProps().initialBaselineSelector).toBeNull();
-    expect(mocked.catalog).not.toHaveBeenCalled();
+    expect(mocked.asset).not.toHaveBeenCalled();
   });
   it("validates exact draft selectors and the separate return pair at the receiving route", async () => {
     setupPair();
@@ -300,7 +311,15 @@ describe("routed independent-pair analysis handoff", () => {
     expect(props.exactHintNotice).toBeNull();
     expect(props.visualContext).toEqual({workAreaId:"area-1",visualAAssetRef:a,visualBAssetRef:b});
     expect(props.visualReturnHref).toContain(`visualAAssetRef=${a}`);
-    expect(mocked.catalog).toHaveBeenCalledTimes(1);
+    // 정확한 참조 조회로 바인딩하므로 목록 페이지와 무관하게 풀린다.
+    expect(mocked.asset).toHaveBeenCalledWith("site-1", "area-1", a);
+    expect(mocked.asset).toHaveBeenCalledWith("site-1", "area-1", b);
+    // 바인딩된 시각 쌍은 카탈로그 사실로도 풀어 읽기 전용 확인에 싣는다.
+    expect(props.catalogPair.workAreaId).toBe("area-1");
+    expect(props.catalogPair.a.selector).toEqual(base);
+    expect(props.catalogPair.b.selector).toEqual(current);
+    expect(props.catalogPair.a.assetRef).toBe(a);
+    expect(props.catalogPair.b.assetRef).toBe(b);
   });
   it("rejects repeated exact hints and never falls back to a WorkOrder approximation", async () => {
     setupPair();
@@ -311,12 +330,49 @@ describe("routed independent-pair analysis handoff", () => {
     expect(props.initialCurrentWorkOrderId).toBeNull();
     expect(props.exactHintNotice).toContain("직접 선택");
   });
-  it("drops return context when the metadata page contradicts its scope", async () => {
+  it("drops return context when the exact lookup contradicts its scope", async () => {
     setupPair();
-    mocked.catalog.mockResolvedValue({siteId:"other-site",workAreaId:"area-1",assets:[a,b].map((assetRef)=>({assetRef,siteId:"other-site",workAreaId:"area-1"}))});
+    mocked.asset.mockImplementation(async (_siteId: string, _workAreaId: string, assetRef: string) => ({
+      assetRef, siteId: "other-site", workAreaId: "area-1",
+      workOrderId: "work-a", observationEpochId: "epoch-a",
+      submissionRef: sa, revision: 1, kind: "dsm",
+      declared: { fileName: "tile-0.tif", captureStartedAt: "2026-10-06T00:00:00Z", captureEndedAt: "2026-10-06T01:00:00Z", captureDate: null },
+      inspection: { outcome: "MEASURED", raster: null },
+    }));
     render(await SiteAnalysisPage({ params: Promise.resolve({siteId:"site-1"}), searchParams: Promise.resolve({workAreaId:"area-1",visualAAssetRef:a,visualBAssetRef:b}) }));
     expect(panelProps().visualContext).toBeNull();
     expect(panelProps().visualReturnHref).toBeNull();
     expect(panelProps().visualContextNotice).toContain("확인하지 못");
+  });
+  it("passes an unmatched browsed pair to the panel as display context, not a blank form", async () => {
+    mocked.areas.mockResolvedValue({ workAreas: [{ workAreaId: "area-1", name: "북측", status: "ACTIVE" }] });
+    mocked.observations.mockResolvedValue([]);
+    mocked.workOrders.mockResolvedValue([]);
+    mocked.asset.mockImplementation(async (_siteId: string, _workAreaId: string, assetRef: string) => ({
+      assetRef, siteId: "site-1", workAreaId: "area-1",
+      workOrderId: assetRef === a ? "work-a" : "work-b",
+      observationEpochId: assetRef === a ? "epoch-a" : "epoch-b",
+      submissionRef: assetRef === a ? sa : sb, revision: assetRef === a ? 1 : 2,
+      kind: "dsm",
+      declared: { fileName: "tile.tif", captureStartedAt: "2026-09-01T00:00:00Z", captureEndedAt: "2026-09-01T00:30:00Z", captureDate: null },
+      inspection: { outcome: "MEASURED", raster: null },
+    }));
+    render(await SiteAnalysisPage({ params: Promise.resolve({siteId:"site-1"}), searchParams: Promise.resolve({workAreaId:"area-1", visualAAssetRef:a, visualBAssetRef:b, ...hints}) }));
+    const props = panelProps();
+    // 후보에 맞지 않아 미리 고르지는 않는다 — 부적합 판정이 아니다.
+    expect(props.initialBaselineSelector).toBeNull();
+    expect(props.initialCurrentSelector).toBeNull();
+    expect(props.exactHintNotice).toContain("정확히 맞지 않아");
+    // 가져온 쌍이 무엇이었는지는 표시용으로 넘긴다.
+    expect(props.broughtSelectors).toEqual({
+      baseline: { workOrderId: "work-a", submissionRef: sa, revision: 1 },
+      baselineMatched: false,
+      current: { workOrderId: "work-b", submissionRef: sb, revision: 2 },
+      currentMatched: false,
+    });
+    // 후보 목록이 비어도 바인딩된 쌍은 카탈로그 사실로 풀린다.
+    expect(props.catalogPair.workAreaId).toBe("area-1");
+    expect(props.catalogPair.a.selector).toEqual({ workOrderId: "work-a", submissionRef: sa, revision: 1 });
+    expect(props.catalogPair.b.selector).toEqual({ workOrderId: "work-b", submissionRef: sb, revision: 2 });
   });
 });

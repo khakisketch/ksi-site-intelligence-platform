@@ -64,7 +64,9 @@ describe("viewer-first workbench frame", () => {
     fireEvent.click(layer);
     const catalog = await screen.findByLabelText("자료 목록");
     expect(catalog.getAttribute("data-viewer-panel")).toBe("catalog");
-    expect(screen.getByText("Floreat public sample")).toBeTruthy();
+    // Expanded global navigation already owns site/section context; do not
+    // repeat the same navigation inside the layer panel.
+    expect(catalog.querySelector("[data-viewer-site-nav]")).toBeNull();
     expect(screen.getByText("실제 범위 캔버스")).toBeTruthy();
 
     const info = screen.getByRole("button", { name: "정보" });
@@ -73,6 +75,15 @@ describe("viewer-first workbench frame", () => {
     const inspector = document.getElementById("viewer-inspector")!;
     await waitFor(() => expect(inspector.style.display).toBe(""));
     expect(info.getAttribute("aria-expanded")).toBe("true");
+    const frame = document.querySelector('[data-workbench-viewer="true"]')!;
+    expect(frame.getAttribute("data-catalog-open")).toBe("true");
+    expect(frame.getAttribute("data-inspector-open")).toBe("true");
+    const columns = frame.querySelector("[data-viewer-columns]")!;
+    expect(catalog.parentElement).toBe(columns);
+    expect(inspector.parentElement).toBe(columns);
+    expect(frame.querySelector("[data-viewer-stage]")?.parentElement).toBe(columns);
+    expect(catalog.className).not.toContain("absolute");
+    expect(inspector.className).not.toContain("absolute");
   });
 
   it("closes and reopens the floating layer panel with focus restoration", async () => {
