@@ -26,6 +26,10 @@ and the prior dense board [`../design/CONSOLE_DESKTOP_FIRST_2026-10-26.html`](..
 - Home and site list keep a consistent 16:9 neutral cover when no prepared preview exists. The
   cover is explicitly not imagery; it is not a synthetic landscape and makes no extent/accuracy
   claim. Real prepared pixels replace it whenever available.
+- Home status/count and `받은 업무함` share one centered line box. Empty-preview site cards do
+  not repeat a separate status row; the gallery count appears once and the duplicate visual
+  heading is screen-reader-only. The viewer's descriptive purpose line is not shown when the
+  visible controls already explain the mode.
 - No legacy tabs, duplicate ledgers or design-board-as-product.
 
 ## Decided — 2026-10-26
@@ -34,9 +38,9 @@ and the prior dense board [`../design/CONSOLE_DESKTOP_FIRST_2026-10-26.html`](..
   Comparison: [`../design/CONSOLE_VIEWER_FIRST_COMPARISON_2026-10-26.html`](../design/CONSOLE_VIEWER_FIRST_COMPARISON_2026-10-26.html);
   full screen: [`../design/CONSOLE_VIEWER_FIRST_2026-10-26.html`](../design/CONSOLE_VIEWER_FIRST_2026-10-26.html).
 - Scope A chosen: 공간/자료 are viewer-first; 업무/결과/검토 stay list/form-first with reduced chrome.
-- Implemented on branch `viewer-first-20261026` (product commit `4879a05e`) and deployed as
+- Implemented on branch `viewer-first-20261026` (product commit `6fe28675`) and deployed as
   `ksi-product-dashboard:viewer-first-20261026`
-  `sha256:8efc8dc2eb56746ef062068a48c93bf0a3915cca0a0b3a75f9514279323a4a50`.
+  `sha256:5cb96229db0297351290e29b9159ae05958fd72dba6d6eda409dd1874bbb55bb`.
 
 ## Open design decisions
 

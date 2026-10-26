@@ -39,9 +39,9 @@ site/queue authority.
 - Site context rail and switcher: `1b8ed545`.
 - Desktop materials 3-pane, compact inspector, request dialog: `589490ca`.
 - Expired extent canvas (`SiteMosaicAbsentCanvas`): `49d19a3d`.
-- Viewer-first site 공간/자료: branch `viewer-first-20261026`, product commit `4879a05e`;
+- Viewer-first site 공간/자료: branch `viewer-first-20261026`, product commit `6fe28675`;
   production image `ksi-product-dashboard:viewer-first-20261026`
-  `sha256:8efc8dc2eb56746ef062068a48c93bf0a3915cca0a0b3a75f9514279323a4a50`.
+  `sha256:5cb96229db0297351290e29b9159ae05958fd72dba6d6eda409dd1874bbb55bb`.
 - Visual site covers (`SiteVisualPlaceholder`), collapsible viewer panels, and mobile site
   switcher.
 - Visual reference: [`CONSOLE_VIEWER_FIRST_COMPARISON_2026-10-26.html`](CONSOLE_VIEWER_FIRST_COMPARISON_2026-10-26.html)
