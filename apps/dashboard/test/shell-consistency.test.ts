@@ -75,6 +75,17 @@ describe("console shell boundary", () => {
     expect(topbar).toContain("sessionState");
   });
 
+  it("viewer frames keep the layer toggle in the toolbar and protect stage controls", () => {
+    const frame = readSource("src/components/site/SpatialWorkbenchFrame.tsx");
+    const css = readSource("src/app/globals.css");
+    expect(frame).toContain("data-catalog-open");
+    expect(frame).toContain('aria-label="레이어 패널 열기"');
+    expect(frame).toContain("data-viewer-panel");
+    expect(css).toContain('[data-workbench-viewer][data-catalog-open="true"]');
+    expect(css).toContain("[data-materials-stage]");
+    expect(css).toContain("data-viewer-compact-hide");
+  });
+
   it("mobile bottom navigation is unchanged by the shell correction", () => {
     const bottomNav = readSource("src/components/nav/MobileBottomNav.tsx");
     expect(bottomNav).not.toContain("isFocusModePath");
