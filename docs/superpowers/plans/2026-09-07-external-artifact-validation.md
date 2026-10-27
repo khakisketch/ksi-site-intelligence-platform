@@ -1026,3 +1026,56 @@ files; `ruff check .` clean; dashboard vitest 923/923, tsc/lint/build 0; local p
 of the real Home carousel with real card text (desktop/mobile, no page errors).
 Not verified yet: Home against a live Core with real pending results (planned in the
 browser acceptance pass).
+
+## Review packet — 2026-10-27 (evidence index, not an acceptance verdict)
+
+For the Human slice acceptance review against EXT-VAL-01..08. This section adds
+no verification and renders no verdict; it only points at existing receipts so
+the reviewer can rule. Local scope throughout: synthetic inputs, loopback-only
+runtimes, Linux ARM64. Customer/field/external-host acceptance remains
+unverified (`docs/ledger/CURRENT.md`).
+
+Base: `integration/viewer-first-20261026`, worktree clean at
+`279b2d82b23b457eb22a4645e054125f51bbdd6e`, stacking
+`b9dc81ea` (P1+P2 SIE integration) + `6d9a86c3` (standalone relocation) +
+`279b2d82` (Docker target-image proof). Owning implementation record:
+`docs/superpowers/plans/2026-10-25-spatial-intelligence-engine-integration.md`
+(final reconciliation + two follow-ups).
+
+Durable non-secret evidence roots
+(`~/.local/state/ksi-console-ia-20261025/integration-20261026/`):
+`p2-masked-20261027/` (manifest, rendered-verification, browser
+drains/captures, backend receipt), `standalone-20261027/` (build/package/smoke
+receipts, login captures, commit + main-protection provenance),
+`docker-20261027/` (image inspect, container smoke receipt, login captures).
+
+Bearing per item (local only; external remainder named, not closed):
+- EXT-VAL-01: masked ingress/inspection through the first worker; FLOAT64
+  native readback (3 finite `[-1,0,+1]` / 9 NaN); 525,191-byte browser delta
+  download with pre/post SHA-256. Production byte acceptance: unverified.
+- EXT-VAL-02: declaration/inspection/calculation kept as separate intents;
+  stale export invalidated on new draft. No customer declarations involved
+  locally.
+- EXT-VAL-03: V3 `CURRENT_MINUS_BASELINE` delta separate from frozen V2;
+  positive download path plus NoData-tagged negative path (terminal REJECTED,
+  fresh-child recovery, zero-mutation restore). Quantitative/settlement
+  suitability: unverified.
+- EXT-VAL-04: explicit rejection/recovery/resume flows with named causes;
+  no blanket raw-upload or DSM-absence denial introduced.
+- EXT-VAL-05: bounded reads, stable retry intent IDs, designated-worker scope
+  filtering, incomplete-`EXTERNAL_VM` pre-listen rejection, unauthenticated
+  BFF 401. OS/host containment: not established (diagnostic guard only).
+- EXT-VAL-06: designated-principal mounted Core/worker workflow verified at
+  synthetic local scope (task-owned loopback Core/issuer/Console). The
+  release-evidence run on a prepared host stays BLOCKED per the 2026-09-18
+  owner deferral above. This item is what keeps the slice open.
+- EXT-VAL-07: backend 372 contract/replay/integration tests (unchanged, not
+  relabeled as rerun), Dashboard 2,429/233, MCP/official-SDK stdio 17/17,
+  mypy 34 modules, Ruff clean; SIE reconciliation + follow-ups recorded.
+- EXT-VAL-08: SIE plan + `CURRENT.md` record scope, evidence and the
+  local-vs-release boundary explicitly; no production claims.
+
+Still open after this packet: AX-5..AX-7 (no specs; direction check needed
+after the viewer-first reconstruction), boot-hazard degraded boot (spec in
+proposal/review), EXT-VAL-06 release-evidence run, and this slice acceptance
+review itself.
