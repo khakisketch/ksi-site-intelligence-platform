@@ -39,6 +39,10 @@ duplicate work authority.
   required; not implemented.
 - Real Floreat imagery is retention-expired; quantitative/field/customer acceptance unverified.
 - Theme selection deferred to a future `설정 > 화면 테마` decision; no palette change.
+- A/B/C workspace/materials layout comparison is ready for Human selection:
+  [`comparison`](../design/CONSOLE_LAYOUT_CHOICES_20261027.html) /
+  [`scope`](../design/CONSOLE_LAYOUT_CHOICES_20261027.md). Not selected or applied;
+  no change to the governing design, production routes or theme setting.
 - P2 independent masks/new profile and separate delta publication are approved and locally verified.
   New policy/runtime signing, deployment-host containment, permitted retained data and customer
   quantitative acceptance remain external activation/acceptance gates, not reasons to stop local work.

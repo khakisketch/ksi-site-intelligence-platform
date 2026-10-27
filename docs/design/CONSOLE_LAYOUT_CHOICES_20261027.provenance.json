@@ -1,0 +1,31 @@
+{
+  "artifact": "docs/design/CONSOLE_LAYOUT_CHOICES_20261027.html",
+  "assets": [
+    {
+      "path": "apps/dashboard/public/design-preview/spatial/ortho-2021.webp",
+      "sha256": "b9f7d673e3dfb202ac646790e76f8d79da25f967805ea532329d833910b8bb3d",
+      "sidecar": "apps/dashboard/public/design-preview/spatial/ortho-2021.webp.json"
+    },
+    {
+      "path": "apps/dashboard/public/design-preview/spatial/ortho-2022.webp",
+      "sha256": "9043fcf50c8b5c1347744a93ab16089d3896a45a446aac67613382a0d211653e",
+      "sidecar": "apps/dashboard/public/design-preview/spatial/ortho-2022.webp.json"
+    },
+    {
+      "path": "apps/dashboard/public/design-preview/spatial/dsm-2021.webp",
+      "sha256": "37357b61f9070da3bf272ccc990d0c0c5fea36354e2fd0012fd0c26fd3b2cfcd",
+      "sidecar": "apps/dashboard/public/design-preview/spatial/dsm-2021.webp.json"
+    },
+    {
+      "path": "apps/dashboard/public/design-preview/spatial/dsm-2022.webp",
+      "sha256": "4ce297249c406055b953d77d37c16e7d0cdde5672ceeddcd094f731ad2496958",
+      "sidecar": "apps/dashboard/public/design-preview/spatial/dsm-2022.webp.json"
+    }
+  ],
+  "rights": "CC BY 4.0 · Cambridge Coastcare / DataWA · existing KSI design-only crops unchanged",
+  "scope": "Layout concepts only; not registered or recovered pixels; no API requests",
+  "artifactSha256": "97924f24528bea5c5909f1e7f7faacc707e81c67de539f44e2b73666bab41d11",
+  "originalSourceManifest": "docs/design/DEMO_MATERIALS.json",
+  "catalogue": "https://catalogue.data.wa.gov.au/",
+  "derivation": "Existing display crops embedded byte-identically; only viewport sizing changes; no generation or geodetic alignment"
+}
