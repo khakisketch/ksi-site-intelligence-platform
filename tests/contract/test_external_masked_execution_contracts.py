@@ -20,6 +20,7 @@ from ksi_event_contracts.external_artifact_validation import (
     SealedExternalSubjectV1,
 )
 from ksi_event_contracts.external_masked_execution import (
+    MaskedAdmissionDispositionV3,
     MaskedAdmissionV3,
     MaskedExecutionAttemptV3,
     MaskedExecutionAuthorizationV3,
@@ -276,7 +277,7 @@ def _admission(
         activation_digest=_digest("activation"),
         scope_digest=_digest("scope"),
         ai_egress_digest=_digest("egress"),
-        disposition="ADMIT_EVALUATED",
+        disposition=MaskedAdmissionDispositionV3.ADMIT_EVALUATED,
         reason_codes=("MASK_ADMITTED",),
         assessed_at=datetime(2026, 9, 21, tzinfo=UTC),
     ).sealed()

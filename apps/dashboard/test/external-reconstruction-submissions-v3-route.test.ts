@@ -1,16 +1,26 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
+import { CoreApiError } from "@/lib/core-api/client";
 
 const mocked = vi.hoisted(() => ({
-  session: vi.fn(), whoAmI: vi.fn(), workOrder: vi.fn(), externalContext: vi.fn(), list: vi.fn(), register: vi.fn(),
+  session: vi.fn(), coreFetchWithToken: vi.fn(), externalContext: vi.fn(), list: vi.fn(), register: vi.fn(),
 }));
-vi.mock("@/lib/core-api/session", () => ({ getSessionToken: mocked.session }));
-vi.mock("@/lib/core-api/auth", () => ({ whoAmI: mocked.whoAmI }));
-vi.mock("@/lib/core-api/observation-work-orders", () => ({ getObservationWorkOrder: mocked.workOrder }));
-vi.mock("@/lib/core-api/external-reconstruction", () => ({
-  getExternalReconstructionContext: mocked.externalContext,
-  listExternalReconstructionSubmissions: mocked.list,
-  registerExternalReconstructionSubmissionV3: mocked.register,
-}));
+vi.mock("@/lib/core-api/session", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/core-api/session")>();
+  return { ...actual, getSessionToken: mocked.session };
+});
+vi.mock("@/lib/core-api/client", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/core-api/client")>();
+  return { ...actual, coreFetchWithToken: mocked.coreFetchWithToken };
+});
+vi.mock("@/lib/core-api/external-reconstruction", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/core-api/external-reconstruction")>();
+  return {
+    ...actual,
+    getExternalReconstructionContextWithToken: mocked.externalContext,
+    listExternalReconstructionSubmissionsWithToken: mocked.list,
+    registerExternalReconstructionSubmissionV3WithToken: mocked.register,
+  };
+});
 
 import { POST } from "@/app/api/observation-work-orders/[workOrderId]/external-reconstruction-submissions-v3/route";
 
@@ -29,8 +39,12 @@ const body = {
 beforeEach(() => {
   vi.resetAllMocks();
   mocked.session.mockResolvedValue("token");
-  mocked.whoAmI.mockResolvedValue({ principalId: "trusted-principal", organizationId: "trusted-org" });
-  mocked.workOrder.mockResolvedValue({ workOrderId: "work-1", organizationId: "trusted-org", siteId: "trusted-site", cycleNumber: 1, version: 2, executionMode: "MANAGED_ACQUISITION" });
+  mocked.coreFetchWithToken.mockImplementation(async (path: unknown) => {
+    if (String(path).endsWith("/v1/auth/whoami")) {
+      return { principalId: "trusted-principal", organizationId: "trusted-org" };
+    }
+    return { workOrderId: "work-1", organizationId: "trusted-org", siteId: "trusted-site", cycleNumber: 1, version: 2, executionMode: "MANAGED_ACQUISITION" };
+  });
   mocked.externalContext.mockResolvedValue({ workOrderId: "work-1", siteId: "trusted-site", expectedEpochId: "epoch-1", cycleNumber: 1, workOrderVersion: 2, executionMode: "MANAGED_ACQUISITION" });
   mocked.list.mockResolvedValue([]);
   mocked.register.mockResolvedValue({ submissionRef: "opaque", state: "REGISTERED" });
@@ -70,7 +84,7 @@ describe("external reconstruction V3 collection BFF", () => {
   it("rejects BFF-owned identity claims and other unknown body fields before Core calls", async () => {
     const response = await POST(request({ ...body, organizationId: "spoof" }) as never, context);
     expect(response.status).toBe(400);
-    expect(mocked.whoAmI).not.toHaveBeenCalled();
+    expect(mocked.coreFetchWithToken).not.toHaveBeenCalled();
     expect(mocked.register).not.toHaveBeenCalled();
   });
   it("accepts a date-only declaration with null timestamps while keeping the calendar date", async () => {
@@ -141,6 +155,36 @@ describe("external reconstruction V3 collection BFF", () => {
     const response = await POST(request(body) as never, context);
     expect(response.status).toBe(200);
     expect(mocked.register).toHaveBeenCalledTimes(1);
+  });
+  it("does not let a failed recovery read mask a definitive Core rejection", async () => {
+    mocked.list.mockResolvedValueOnce([]);
+    mocked.register.mockRejectedValueOnce(new CoreApiError(422, { detail: "BAD_DECLARATION" }));
+    mocked.list.mockRejectedValueOnce(new CoreApiError(401, { detail: "auth required" }));
+    const response = await POST(request(body) as never, context);
+    expect(response.status).toBe(422);
+    expect((await response.json()).code).toBe("BAD_DECLARATION");
+  });
+  it("reports unknown instead of the recovery read error when the POST outcome is unknowable", async () => {
+    mocked.list.mockResolvedValueOnce([]);
+    mocked.register.mockRejectedValueOnce(new Error("lost response"));
+    mocked.list.mockRejectedValueOnce(new CoreApiError(403, { detail: "HUMAN_AUTHORITY_REQUIRED" }));
+    const response = await POST(request(body) as never, context);
+    expect(response.status).toBe(503);
+    const payload = await response.json() as { code?: string };
+    expect(payload.code).toBe("EXTERNAL_RECONSTRUCTION_RESULT_UNKNOWN");
+    expect(response.headers.get("cache-control")).toBe("private, no-store");
+  });
+  it.each([
+    ["a mismatched digest", [{ submission: { submissionId: "attempt-1", revision: 1, submissionDigest: "sha256:" + "0".repeat(64) } }]],
+    ["an unreadable item", [null]],
+    ["an unreadable list", null],
+  ])("reports unknown after a lost POST when recovery returns %s", async (_label, recovery) => {
+    mocked.list.mockResolvedValueOnce([]).mockResolvedValueOnce(recovery);
+    mocked.register.mockRejectedValueOnce(new Error("lost response"));
+    const response = await POST(request(body) as never, context);
+    expect(response.status).toBe(503);
+    expect((await response.json()).code).toBe("EXTERNAL_RECONSTRUCTION_RESULT_UNKNOWN");
+    expect(response.headers.get("cache-control")).toBe("private, no-store");
   });
   it("does not post when a retry reuses the id with a different stored declaration", async () => {
     mocked.list.mockResolvedValue([{ submissionRef: "opaque", state: "REGISTERED", submission: { submissionId: "attempt-1", revision: 1, submissionDigest: "sha256:" + "0".repeat(64) } }]);

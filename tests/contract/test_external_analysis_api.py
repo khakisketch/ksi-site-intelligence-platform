@@ -257,6 +257,11 @@ class _UnusedAssessments:
     ) -> _AnalysisAssessmentRecordPort:
         raise AssertionError("unexpected assessment write")
 
+    def preview_readiness_snapshot(
+        self, *, organization_id: str, request: AnalysisAssessmentRequestV2, now: datetime
+    ) -> NoReturn:
+        raise AssertionError("unexpected readiness preview")
+
 
 class _UnusedCalculations:
     def get_history(
@@ -385,6 +390,11 @@ class _AdmittedAssessments:
         )
         self.records[request_id] = record
         return record
+
+    def preview_readiness_snapshot(
+        self, *, organization_id: str, request: AnalysisAssessmentRequestV2, now: datetime
+    ) -> NoReturn:
+        raise AssertionError("unexpected readiness preview")
 
 
 class _CrashThenQueueCalculations:
@@ -1683,6 +1693,17 @@ class _PublicApiFacade:
     def external_ai_egress_allowed(self, *, principal: Principal, site_id: str) -> bool:
         del principal, site_id
         return False
+
+    def check_readiness(
+        self,
+        *,
+        principal: Principal,
+        site_id: str,
+        work_area_id: str,
+        request: CreateAnalysisRequestV1,
+        now: datetime,
+    ) -> NoReturn:
+        raise AssertionError("unexpected readiness check")
 
     def create_v2(self, **kwargs: Any) -> NoReturn:
         raise NotImplementedError("V1 plumbing fixture does not issue V2 authority")

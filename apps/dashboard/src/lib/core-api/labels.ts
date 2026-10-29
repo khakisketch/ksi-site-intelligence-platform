@@ -372,6 +372,14 @@ export const API_ERROR_MESSAGE: Record<string, string> = {
     "이 현장의 작업구역이 상한에 도달했습니다 — 쓰지 않는 구역을 먼저 보관하세요.",
   INVALID_WORK_AREA: "작업구역 폴리곤 형식이 올바르지 않습니다.",
   UNKNOWN_REPORT: "그 설계 대비 잔량 리포트를 찾을 수 없습니다.",
+  // 관측 작업 생성 계정 연속성(BFF 중복 방지 가드) — Core 권한·범위 판단이
+  // 아니라 같은 키의 다른 계정/조직 재시도를 막는 usability guard다.
+  ACCOUNT_CONTINUITY_MISMATCH:
+    "계정이 바뀌어 같은 요청을 다시 보내지 않았습니다. 원래 계정으로 다시 로그인한 뒤 같은 요청으로 다시 시도하세요.",
+  // BFF 연속성 확인값 자체가 깨진 경우 — 같은 키 재시도도 막는다. 화면을
+  // 새로고침해 서버에서 새로 받은 확인값으로 다시 시작한다.
+  INVALID_CONTINUITY_CLAIM:
+    "계정 연속성 확인값이 올바르지 않습니다. 화면을 새로고침한 뒤 다시 시도하세요.",
 };
 
 export function humanizeApiError(

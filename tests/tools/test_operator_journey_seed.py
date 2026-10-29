@@ -53,7 +53,10 @@ class NoAdministration:
 def _finish_fixture(
     tmp_path: Path,
 ) -> tuple[
-    SimpleNamespace, tuple[SealedExternalSubjectV1, SealedExternalSubjectV1], dict[str, Any], datetime
+    SimpleNamespace,
+    tuple[SealedExternalSubjectV1, SealedExternalSubjectV1],
+    dict[str, Any],
+    datetime,
 ]:
     subjects = (
         _test_subject("obs-work-1", "syn-demo-t0-submission", "ab"),
@@ -279,7 +282,9 @@ def test_core_url_rejects_remote_and_unsafe_shapes() -> None:
             seed.validate_core_url(bad)
 
 
-def _area(wid: str, name: str, status: str = "ACTIVE", polygon: dict[str, Any] | None = None) -> dict[str, Any]:
+def _area(
+    wid: str, name: str, status: str = "ACTIVE", polygon: dict[str, Any] | None = None
+) -> dict[str, Any]:
     return {
         "workAreaId": wid,
         "name": name,

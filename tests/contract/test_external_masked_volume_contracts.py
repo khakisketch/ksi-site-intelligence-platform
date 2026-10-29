@@ -404,9 +404,9 @@ def test_mask_binding_rejects_bool_and_string_numeric_coercion() -> None:
         with pytest.raises(ValidationError, match="boolean is not an integer literal"):
             ExclusionMaskBindingV1.model_validate(payload)
 
-    for value in (True, "0.0"):
+    for coerced_value in (True, "0.0"):
         payload = _profile().model_dump(by_alias=True, mode="json")
-        payload["thresholdM"] = value
+        payload["thresholdM"] = coerced_value
         payload["maskedProfileDigest"] = None
         with pytest.raises(ValidationError):
             MaskedRelativeVolumeProfileV3.model_validate(payload)

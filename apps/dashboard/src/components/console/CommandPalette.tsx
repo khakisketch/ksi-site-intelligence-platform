@@ -9,6 +9,9 @@ import {
   type PaletteItem,
 } from "./palette-items";
 import { parseScopedNavQuery, parseSiteNavBridge } from "@/lib/operator-journey";
+import { useSiteListSnapshot } from "@/components/nav/SiteListContext";
+import { SITE_STATUS_LABEL } from "@/lib/core-api/labels";
+import { useAccountDisplayLock } from "@/components/nav/AccountDisplayBoundary";
 import { useCommandModifierLabel } from "./command-modifier";
 import { resolveShortcut } from "./shortcuts";
 import { contextPaletteItems } from "./context-palette";
@@ -27,6 +30,9 @@ function KeyCap({ children }: { children: React.ReactNode }) {
 }
 
 export function CommandPalette({ items }: { items: PaletteItem[] }) {
+  const accountDisplay = useAccountDisplayLock();
+  const snapshot = useSiteListSnapshot();
+  const effectiveItems = useMemo(() => !snapshot?.refreshed ? items : [...items.filter(item => item.group !== "현장"), ...snapshot.sites.map(site => ({ key: `site:${site.siteId}`, label: site.name, group: "현장", href: `/sites/${encodeURIComponent(site.siteId)}`, hint: "현장 자료와 작업 보기", keywords: `${site.siteId} ${SITE_STATUS_LABEL[site.status]?.label ?? site.status}` }))], [items, snapshot]);
   const router = useRouter();
   const pathname = usePathname();
   const commandModifier = useCommandModifierLabel();
@@ -48,8 +54,8 @@ export function CommandPalette({ items }: { items: PaletteItem[] }) {
   const listboxId = "ksi-palette-listbox";
 
   const results = useMemo(
-    () => filterPaletteItems([...contextPaletteItems(items, pathname ?? "", scopeSearch), ...items], query),
-    [items, pathname, query, scopeSearch],
+    () => filterPaletteItems([...contextPaletteItems(effectiveItems, pathname ?? "", scopeSearch), ...effectiveItems], query),
+    [effectiveItems, pathname, query, scopeSearch],
   );
   const scopedSite = scopeSearch ? parseScopedNavQuery(scopeSearch) : null;
   const shortcutRows: Array<{ keys: string[]; desc: string }> = [
@@ -99,7 +105,7 @@ export function CommandPalette({ items }: { items: PaletteItem[] }) {
     const bridgeUsable = (() => {
       if (!bridge || !bridge.workAreaId) return null;
       const siteHref = `/sites/${encodeURIComponent(bridge.siteId)}`;
-      const authorized = items.some((item) => item.group === "현장" && item.href === siteHref);
+      const authorized = effectiveItems.some((item) => item.group === "현장" && item.href === siteHref);
       if (!authorized) return null;
       if (!(path === siteHref || path.startsWith(`${siteHref}/`))) return null;
       return bridge;
@@ -116,13 +122,14 @@ export function CommandPalette({ items }: { items: PaletteItem[] }) {
       return;
     }
     setScopeSearch(search);
-  }, [items, pathname]);
+  }, [effectiveItems, pathname]);
 
   const isOpen = open || helpOpen;
 
   // 전역 단축키 — 판정은 순수 함수(shortcuts.ts)가 하고 여기서는 결과만 실행한다.
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
+      if (accountDisplay?.locked()) return;
       const action = resolveShortcut({
         key: event.key,
         metaKey: event.metaKey,
@@ -143,15 +150,16 @@ export function CommandPalette({ items }: { items: PaletteItem[] }) {
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [close, openPalette]);
+  }, [accountDisplay, close, openPalette]);
 
   useEffect(() => {
     function onOpenRequest() {
+      if (accountDisplay?.locked()) return;
       openPalette();
     }
     window.addEventListener(PALETTE_OPEN_EVENT, onOpenRequest);
     return () => window.removeEventListener(PALETTE_OPEN_EVENT, onOpenRequest);
-  }, [openPalette]);
+  }, [accountDisplay, openPalette]);
 
   // 열림 전환에만 트리거 포커스를 기억한다(닫힘→열림 경계). 팔레트 안에서 이동한
   // 포커스를 덮어쓰면 닫을 때 언마운트된 노드로 복원하려 한다. 닫힘 전환에는
@@ -223,6 +231,7 @@ export function CommandPalette({ items }: { items: PaletteItem[] }) {
   useEffect(() => {
     if (!isOpen) return;
     function onFocusIn(event: FocusEvent) {
+      if (accountDisplay?.locked()) return;
       const root = dialogRef.current;
       if (!root) return;
       if (event.target instanceof HTMLElement && !root.contains(event.target)) {
@@ -231,7 +240,7 @@ export function CommandPalette({ items }: { items: PaletteItem[] }) {
     }
     document.addEventListener("focusin", onFocusIn);
     return () => document.removeEventListener("focusin", onFocusIn);
-  }, [isOpen, helpOpen]);
+  }, [accountDisplay, isOpen, helpOpen]);
 
   // 선택 항목이 보이는 자리에 있게 한다 — 키보드로만 훑을 때 화면 밖으로 나가면
   // "아무 일도 안 일어난다"로 읽힌다.

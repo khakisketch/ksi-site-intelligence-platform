@@ -243,6 +243,10 @@ approval remain separate gates. The Docker target image proof is recorded below.
 Build and verify the pinned `Dockerfile` (Node 22.18 Alpine, `npm ci`,
 non-root `ksi-dashboard`) without pushing or deploying:
 
+This build can access image and package registries and install dependencies.
+Run it only when that network and installation scope is explicitly permitted;
+the command itself does not provide offline isolation.
+
 ```bash
 docker build -t ksi-dashboard-docker-proof:local -f apps/dashboard/Dockerfile apps/dashboard
 npm run verify:docker -- ksi-dashboard-docker-proof:local
@@ -259,17 +263,23 @@ It removes its containers afterwards. Recorded proof is same-platform
 Linux ARM64; signing, production TLS, external consumer hosts and
 customer/field acceptance are not established by this step.
 
-The browser suite starts an isolated local Identity/Core/Dashboard stack and
+The default browser suite starts a local Identity/Core/Dashboard fixture and
 checks the `390`, `768`, `1024`, and `1440` px layouts, OIDC sign-in, primary
 navigation, horizontal overflow, touch targets, reduced motion, and serious or
-critical axe-core findings:
+critical axe-core findings. Local binding and run-scoped state do **not** establish
+OS network isolation or prove ownership of another process. Some tests create
+synthetic records, and the shared configuration can start its webServer before
+a spec skips. Run only against a verified task-owned fixture under the applicable
+network/data permissions; see the [handoff](../../docs/DEVELOPMENT_HANDOFF.md) for
+currently disabled diagnostics:
 
 ```bash
 npm run test:e2e
 ```
 
-To repeat the same non-mutating checks against an already running tailnet-only
-development stack, set its origin explicitly:
+The suite also supports an explicitly supplied origin. Its tests must be reviewed
+for mutations and the target must be separately authorized; this configuration
+does not guarantee non-mutating behavior or authorize a real service:
 
 ```bash
 KSI_DASHBOARD_E2E_BASE_URL=http://<magic-dns-name>:3210 npm run test:e2e

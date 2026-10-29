@@ -44,6 +44,7 @@ export function SiteHeader({
   latestExternalReportKnown,
   canCreateWorkOrder,
   canEditAoi,
+  workOrderRecordOwnsAction = false,
   scopedWorkAreaId = null,
   scopedAssetRef = null,
   visualContext = null,
@@ -56,6 +57,8 @@ export function SiteHeader({
   latestExternalReportKnown?: boolean;
   canCreateWorkOrder: boolean;
   canEditAoi: boolean;
+  /** The site work-order record supplies its own area-aware registration action. */
+  workOrderRecordOwnsAction?: boolean;
   /** 루트가 검증한 현행 승인 구역 — 원문 쿼리를 그대로 두지 않는다. 없으면 범위 없이 간다. */
   scopedWorkAreaId?: string | null;
   /** 같은 등록 자료 목록에서 확인한 자산 참조 — 구역과 함께일 때만 싣는다. */
@@ -92,15 +95,19 @@ export function SiteHeader({
     canCreateWorkOrder,
   }, { includeRoutineSurvey: true });
   // 관측 자료 등록은 검증된 구역이 있을 때 범위를 함께 싣는다. 전체 경계·작업구역
-  // 설정(AOI) 링크에는 붙이지 않는다. 관측 탭의 중복 진입점은 그대로 둔다.
+  // 설정(AOI) 링크에는 붙이지 않는다.
   const scopedPreparationAction = preparationAction
     && preparationAction.kind === "CREATE_OBSERVATION"
     && scope.workAreaId
     ? { ...preparationAction, href: `${preparationAction.href}?workAreaId=${encodeURIComponent(scope.workAreaId)}` }
     : preparationAction;
   // The workspace panel and the 자료 catalog own this action on their own
-  // surfaces; keep one entry point there. Other tabs keep the header action.
-  const primaryAction = tab === "workspace" || tab === "materials" ? null : scopedPreparationAction;
+  // surfaces; keep one entry point there. The site's work-order record owns
+  // its registration action too, including area readiness and the mobile notice.
+  // Keep a distinct work-area-management action for other permitted cases.
+  const primaryAction = tab === "workspace" || tab === "materials" || (workOrderRecordOwnsAction && tab === "work-orders" && scopedPreparationAction?.kind === "CREATE_OBSERVATION")
+    ? null
+    : scopedPreparationAction;
   // 최상위 메뉴는 세 영역만 바로 보인다. 관측 작업 기록(work-orders) 키와
   // 현장 설정(manage) 키는 옛 URL(?section=...) 호환을 위해 SITE_TABS·
   // normalizeSiteTab에 남기되, 최상위 nav가 아니라 각각 자료 맥락의 하위 길과

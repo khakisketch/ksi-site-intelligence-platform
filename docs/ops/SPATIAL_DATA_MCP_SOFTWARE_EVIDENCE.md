@@ -11,6 +11,12 @@ accuracy, no cost/rights/containment acceptance, and no production readiness.
 Sample, rights, cost, containment, and product-state acceptances remain open;
 `docs/superpowers/product-state.md` (EXTVAL slice) is unchanged by this task.
 
+The 2026-10-28 local candidate adds a same-token machine-channel preflight before
+MCP create/cancel. The earlier wheel/sdist and installed-SDK evidence below is
+historical and does not verify that newer adapter source. The newer candidate's
+separately scoped installed-package verification is recorded below; no external
+AI-host installation or package publication is implied.
+
 Base revision: `bcca3c3` (`feat(spatial-data): add bounded local stdio MCP adapter`).
 Task5 runtime changes: one minimal RGBA mask-flag repair in
 `packages/geo-spatial/src/ksi_geo_spatial/external_native_window.py`
@@ -84,7 +90,50 @@ third-party entries. Manifest/console source closure and source import passed.
 Skipped tests are unverified, not acceptance evidence. See the durable ledger
 for exact frozen hashes, commands, receipts and the initially failing full run.
 
-### Isolated package verification — 2026-10-07
+### Updated isolated package verification — 2026-10-28
+
+- The source snapshot includes `core_client.py` SHA256
+  `fed939572004418f20e1c8461333fdd8d58deae048cd2c8a7d098113a81a808c`.
+  Offline wheel and sdist builds succeeded; rebuilding the wheel from that sdist
+  produced the same wheel SHA256
+  `4c5fe19e29a50b1e9e35ddf755e7a206b610ec91a3757e6a95196cc86d550a3a`.
+  The five installed adapter modules match the source snapshot. These are local
+  unsigned test artifacts, not a released package.
+- A private Python 3.12 environment installed local wheels with `--no-deps` and
+  a copied, already installed third-party closure; `uv pip check` passed. Cached
+  index metadata was insufficient for a fresh offline dependency resolution, so
+  this is **not** evidence of a clean resolver install. The SDK and console
+  children used installed adapter bytes and no source `PYTHONPATH`; Core remained
+  the project fixture, not an installed or deployed Core.
+- With generated rights and a loopback Core, the installed stdio adapter listed,
+  created and replayed one job, then canceled and re-canceled it. Wrong human
+  credentials were refused and left the job count unchanged. Source-based MCP
+  client, HTTP-integration and stdio suites passed **21 + 14 + 23 tests**.
+  This is not a fresh full-suite, external-host, real-data or customer-acceptance
+  claim. Logs and source/wheel hashes:
+  `/tmp/opencode/spatial-mcp-offline-verify-93cewG/logs/`.
+- Follow-through on the same installed candidate: generated DSM, RGB and RGBA
+  fixtures each went through installed SDK stdio discovery/create, the real
+  local worker control path, installed SDK result retrieval and the guarded HTTP
+  consumer. A separately derived native-grid window compared downloaded pixel
+  arrays, masks, affine, bounds, CRS, NoData, valid counts, byte sizes and
+  hashes. The installed adapter refused a human credential before job creation;
+  a separate direct Core HTTP check verified consent denial and restoration,
+  and restart/same-key retrieval preserved the job and bytes. Build re-ran the
+  task-owned harness independently with exit 0 and checked all five live source
+  modules against the installed modules. Command:
+  `PYTHONDONTWRITEBYTECODE=1 .venv/bin/python /tmp/opencode/spatial-mcp-lead-parity-9h7oyvy1/installed_full_parity.py`;
+  author receipt and harness are in the same temporary directory. Core and
+  worker remain the generated fixture described above, and its Core transport
+  bridge is not a separately deployed network worker. This does not add a fresh
+  resolver install, external host, real-data, field or customer acceptance.
+- Build reran the installed parity harness and checked the five installed adapter
+  module hashes against the live source: all matched. The current source's MCP
+  client, config, stdio, HTTP, identity, example and replay suites also passed
+  **120 tests**. The DSM/RGB/RGBA bytes are generated test inputs, and the
+  results do not extend the package, host or customer-acceptance claims above.
+
+### Earlier isolated package verification — 2026-10-07
 
 After explicit permission for a task-owned isolated build/test environment,
 Hatchling 1.32.4 and its build closure were prepared separately under
@@ -125,7 +174,9 @@ Exact commands, fresh command witnesses, archive/installed origins and before/
 after snapshots: `/tmp/opencode/task6-package-final-verify/receipt.json`, SHA256
 `db1258a1577dd7246fb273768f56f81c3211d24bad17da5b04e7ae763565e7ef`;
 durable summary and closeout evidence are in the continuation ledger linked
-above. These temporary local artifacts are not a published release. Earlier
+above. That temporary receipt is no longer available in the current environment;
+the older package run was not independently revalidated. These local artifacts
+are not a published release. Earlier
 full-suite/static results are reused for unchanged runtime bytes, not rerun
 or relabelled as fresh package-era full-suite execution.
 

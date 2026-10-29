@@ -222,6 +222,20 @@ describe("spatial asset catalog page", () => {
     expect(html).toContain(`visualAAssetRef=${refusedRef}&amp;visualBAssetRef=${second.assetRef}`);
     expect(html).toContain(`name="visualAAssetRef" value="${refusedRef}"`);
   });
+  it("names an authorized B-only selection and its missing A without substituting", async () => {
+    const refusedRef = `ksa-v1-${"9".repeat(64)}`;
+    const second = { ...asset(), assetRef: `ksa-v1-${"c".repeat(64)}`, observationEpochId: "epoch-2", declared: { ...asset().declared, fileName: "second-dsm.tif" } };
+    mocked.catalog.mockResolvedValueOnce({ siteId: "site-1", workAreaId: "area-1", scopePolicy: "SINGLE_WORK_AREA_WORK_ORDERS_ONLY", scopeNote: "scope", assets: [asset(), second], nextCursor: null, hasMore: false });
+    const html = renderToStaticMarkup(await callPage({ workAreaId: "area-1", visualAAssetRef: refusedRef, visualBAssetRef: second.assetRef }));
+    // B는 해석된 선택 그대로, A는 조용히 다른 자료로 바꾸지 않는다.
+    expect(html).toContain('data-materials-current="true"');
+    expect(html).toContain("선택한 B · B ·");
+    expect(html).toContain("첫 자료(A)는 목록에서 고르세요");
+    expect(html).toContain("지표면 높이 자료(DSM)");
+    expect(html).not.toContain('aria-label="현재 A로 선택됨"');
+    expect(html).not.toContain("목록 첫 자료 · A ·");
+    expect(html).not.toContain("현재 선택 · A ·");
+  });
   it("resolves an explicit visual selection even on an empty cursor page", async () => {
     mocked.catalog.mockResolvedValueOnce({ siteId: "site-1", workAreaId: "area-1", scopePolicy: "SINGLE_WORK_AREA_WORK_ORDERS_ONLY", scopeNote: "scope", assets: [], nextCursor: null, hasMore: false });
     const html = renderToStaticMarkup(await callPage({ workAreaId: "area-1", cursor: "empty-tail", visualAAssetRef: assetRef }));
@@ -476,7 +490,7 @@ describe("spatial asset catalog page", () => {
     mocked.catalog.mockResolvedValueOnce({ siteId: "site-1", workAreaId: "area-1", scopePolicy: "SINGLE_WORK_AREA_WORK_ORDERS_ONLY", scopeNote: "scope", assets: [], nextCursor: null, hasMore: false });
     const empty = renderToStaticMarkup(await callPage({ workAreaId: "area-1" }));
     expect(empty).toContain("이 작업구역에 등록된 자료가 없습니다");
-    expect(empty).toContain("관측 자료가 이 작업구역에 등록되면 해당 자료의 메타데이터가 여기에 표시됩니다.");
+    expect(empty).toContain("관측 자료가 이 작업구역에 등록되면 해당 자료의 메타데이터와 검사 상태를 여기에서 확인할 수 있습니다.");
   });
 
   it("keeps the register and records entries on a genuinely empty catalog when authorized", async () => {
@@ -915,7 +929,9 @@ describe("materials visual browsing", () => {
     // 커서 페이지 밖 참조는 같은 범위에서 최대 2건까지 직접 확인한다.
     expect(mocked.detail).toHaveBeenCalledWith("site-1", "area-1", foreignRef);
     expect(html).toContain("선택한 첫 자료를 현재 목록에서 확인하지 못했습니다");
-    expect(html).toContain("표시할 자료를 목록에서 고르세요");
+    expect(html).toContain("자료 목록을 열어 표시할 자료를 고르세요");
+    // 빈 선택 안내는 viewer의 중복 캡션 숨김 대상이 아니다.
+    expect(html).toContain('role="status" data-materials-empty-selection="true"');
     expect(html).not.toContain("목록 첫 자료");
   });
 
@@ -1089,5 +1105,71 @@ describe("materials visual browsing", () => {
     expect(html).not.toContain("상세·준비");
     expect(html).not.toContain("범위 도식 · 사진 아님");
     expect(html).toContain('id="material-inspector-details"');
+  });
+
+  it("names the current material on the desktop stage without duplicating pane controls", async () => {
+    const html = renderToStaticMarkup(await callPage({ workAreaId: "area-1" }));
+    // lg+에서만 보인다 — 아래에서는 칸 머리가 같은 사실을 두므로 390은 그대로다.
+    expect(html).toContain('data-materials-current="true"');
+    expect(html).toContain("hidden min-w-0 shrink-0 break-words text-[11.5px] leading-4 text-ink-muted lg:block");
+    // 기본값은 목록 첫 자료이며 B를 미리 고르지 않는다.
+    expect(html).toContain("목록 첫 자료 · A ·");
+    expect(html).toContain("목록에서 다른 자료를 고르세요");
+    // withheld 바이트·참조를 새로 내놓지 않는다.
+    expect(html).not.toContain("objectKey");
+    expect(html).not.toContain("https://");
+  });
+
+  it("names both sides of an exact pair without claiming order", async () => {
+    pairCatalog();
+    const html = renderToStaticMarkup(await callPage({ workAreaId: "area-1", visualAAssetRef: assetRef, visualBAssetRef: secondRef }));
+    expect(html).toContain('data-materials-current="true"');
+    expect(html).toContain("현재 선택 · A ·");
+    expect(html).toContain("/ B ·");
+    expect(html).not.toContain("목록 첫 자료 · A ·");
+  });
+
+  it("leaves the stage identity out when no side resolves", async () => {
+    const { CoreApiError } = await import("@/lib/core-api/client");
+    mocked.catalog.mockResolvedValueOnce({ siteId: "site-1", workAreaId: "area-1", scopePolicy: "SINGLE_WORK_AREA_WORK_ORDERS_ONLY", scopeNote: "scope", assets: [], nextCursor: null, hasMore: false });
+    mocked.detail.mockRejectedValueOnce(new CoreApiError(404, {}));
+    const html = renderToStaticMarkup(await callPage({ workAreaId: "area-1", cursor: "empty-tail", visualAAssetRef: `ksa-v1-${"f".repeat(64)}` }));
+    // 선택 불능은 기존 불투명 실패 문구에만 맡기고 조용한 기본값을 만들지 않는다.
+    expect(html).not.toContain('data-materials-current="true"');
+    expect(html).toContain("선택한 첫 자료를 현재 목록에서 확인하지 못했습니다");
+  });
+
+  it("keeps a one-line register limit in the toolbar instead of a boxed notice", async () => {
+    mocked.session.mockResolvedValueOnce({ kind: "ready", principal: { organizationId: "org-1", principalId: "operator-1", permissions: ["SITES_READ", "WORK_ORDERS_WRITE"] } });
+    const html = renderToStaticMarkup(await callPage({ workAreaId: "area-1" }));
+    // 좁은 화면에서만 보이는 한 줄 설명 — 데스크톱 배치와 버튼 권한 게이트는 그대로다.
+    expect(html).toContain("자료 등록은 노트북 이상의 화면에서 진행하세요.");
+    expect(html).toContain("text-ink-muted lg:hidden");
+    expect(html).not.toContain("노트북에서 계속");
+    expect(html).toContain("/sites/site-1/observations/new?workAreaId=area-1");
+  });
+
+  it("says the register limit once on a genuinely empty catalog", async () => {
+    mocked.session.mockResolvedValueOnce({ kind: "ready", principal: { organizationId: "org-1", principalId: "operator-1", permissions: ["SITES_READ", "WORK_ORDERS_WRITE"] } });
+    mocked.catalog.mockResolvedValueOnce({ siteId: "site-1", workAreaId: "area-1", scopePolicy: "SINGLE_WORK_AREA_WORK_ORDERS_ONLY", scopeNote: "scope", assets: [], nextCursor: null, hasMore: false });
+    const html = renderToStaticMarkup(await callPage({ workAreaId: "area-1" }));
+    expect(html).toContain("이 작업구역에 등록된 자료가 없습니다");
+    // 맥락막대 한 줄과 빈 행동 줄 안내가 같은 말을 두 번 하지 않는다.
+    expect(html.match(/자료 등록은 노트북 이상의 화면에서 진행하세요\./g)).toHaveLength(1);
+    expect(html).toContain("노트북에서 계속");
+  });
+
+  it("shows no register limit to readers without the write permission", async () => {
+    const html = renderToStaticMarkup(await callPage({ workAreaId: "area-1" }));
+    expect(html).not.toContain("자료 등록은 노트북 이상의 화면에서 진행하세요.");
+    expect(html).not.toContain("/sites/site-1/observations/new");
+  });
+
+  it("keeps the compact register limit outside the nowrap register/더 보기 group", () => {
+    const source = readFileSync(join(process.cwd(), "src/app/sites/[siteId]/spatial-assets/page.tsx"), "utf8");
+    // basis-full inside the shrink-0 nowrap group shoves 더 보기 past the clipped
+    // edge while document.scrollWidth stays silent — the line must be a direct
+    // toolbar row after the group closes.
+    expect(source).toMatch(/<\/span>\s*\{\s*\/\*[\s\S]*?\*\/\}\s*\{canRegister && !isGenuinelyEmpty && \(\s*<p data-register-limit="true"/);
   });
 });

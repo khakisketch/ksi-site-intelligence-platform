@@ -98,7 +98,6 @@ describe("exact site report detail", () => {
 
   it.each([
     ["report", "projection"],
-    ["WorkArea", "areas"],
   ] as const)("preserves Site context and provides a non-retryable history exit after a %s 403", async (_label, target) => {
     mocked[target].mockRejectedValue(new CoreApiError(403, {}));
 
@@ -111,6 +110,19 @@ describe("exact site report detail", () => {
     expect(mocked.share).not.toHaveBeenCalled();
     expect(mocked.pair).not.toHaveBeenCalled();
     expect(mocked.operations).not.toHaveBeenCalled();
+  });
+
+  it("keeps the verified report visible with a notice when only WorkArea names are denied", async () => {
+    mocked.areas.mockRejectedValue(new CoreApiError(403, {}));
+
+    render(await SiteObservationDetailPage({ params: Promise.resolve({ siteId: "site-1", reportRef }) }));
+
+    // 보관 결과는 그대로 보이고, 이름 실패만 따로 알린다. 이름 없는 행은
+    // '작업구역'으로 표시되며 권한 없는 이름은 노출되지 않는다.
+    expect(screen.getByText("현장 1")).toBeTruthy();
+    expect(screen.queryByText("이 관측 결과를 확인할 권한이 없습니다.")).toBeNull();
+    expect(screen.getByRole("status").textContent).toMatch(/작업구역 이름을 불러오지 못했습니다/);
+    expect(screen.getByTestId("display-pair")).toBeTruthy();
   });
 
   it("keeps a dependent 404 in the Site-scoped unavailable state rather than declaring the Site missing", async () => {
@@ -142,15 +154,16 @@ describe("exact site report detail", () => {
     expect(mocked.operations).not.toHaveBeenCalled();
   });
 
-  it("allows retry for transient server failures while preserving the Site and history exit", async () => {
+  it("keeps the verified report visible when only WorkArea names fail transiently", async () => {
     mocked.areas.mockRejectedValue(new CoreApiError(503, {}, 12));
 
     render(await SiteObservationDetailPage({ params: Promise.resolve({ siteId: "site-1", reportRef }) }));
 
+    // 보관 결과는 그대로 보이고, 이름 실패만 따로 알린다.
     expect(screen.getByText("현장 1")).toBeTruthy();
-    expect(screen.getByText("관측 결과를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.")).toBeTruthy();
-    expect(screen.getByRole("link", { name: "관측 이력" })).toBeTruthy();
-    expect(screen.getByRole("button", { name: "12초 후 다시 시도" })).toBeTruthy();
+    expect(screen.queryByText("관측 결과를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.")).toBeNull();
+    expect(screen.getByRole("status").textContent).toMatch(/작업구역 이름을 불러오지 못했습니다/);
+    expect(screen.getByTestId("display-pair")).toBeTruthy();
   });
 
   it("uses the exact verified report for a safe display pair and retained successor operation state", async () => {

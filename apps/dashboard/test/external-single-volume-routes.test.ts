@@ -17,7 +17,7 @@ vi.mock("@/lib/core-api/session", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/core-api/session")>();
   return { ...actual, getSessionToken: mocked.session };
 });
-vi.mock("@/lib/core-api/external-reconstruction", () => ({ requestExternalSingleVolumeDecision: mocked.decision }));
+vi.mock("@/lib/core-api/external-reconstruction", () => ({ requestExternalSingleVolumeDecision: mocked.decision, requestExternalSingleVolumeDecisionWithToken: mocked.decision }));
 vi.mock("@/lib/core-api/external-result-workflow", () => ({
   issueExternalSingleVolume: mocked.issue,
   listExternalSingleVolumeRequests: mocked.list,
@@ -94,7 +94,7 @@ describe("external single-volume use-decision BFF", () => {
   it("forwards only the exact Core zoneId and a stable idempotency key", async () => {
     const response = await decide(post({ zoneId: "zone-1" }, { "idempotency-key": "intent-key" }) as never, decisionContext);
     expect(response.status).toBe(201);
-    expect(mocked.decision).toHaveBeenCalledWith("work-1", submissionRef, 1, "zone-1", "intent-key");
+    expect(mocked.decision).toHaveBeenCalledWith("work-1", submissionRef, 1, "zone-1", "intent-key", "token");
   });
 
   it("rejects a missing idempotency key before forwarding", async () => {

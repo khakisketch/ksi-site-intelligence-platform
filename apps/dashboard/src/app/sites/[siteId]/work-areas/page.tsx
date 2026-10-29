@@ -4,7 +4,10 @@ import { parseScopeId } from "../site-spatial";
 import { CoreApiError } from "@/lib/core-api/client";
 import { humanizeApiError } from "@/lib/core-api/labels";
 import { hasAllPermissions } from "@/lib/core-api/permissions";
+import { whoAmI } from "@/lib/core-api/auth";
+import { continuityFingerprint } from "@/lib/core-api/work-order-continuity";
 import { getSite } from "@/lib/core-api/sites";
+import { AccountDisplayBoundary } from "@/components/nav/AccountDisplayBoundary";
 import { SiteHeader } from "@/app/sites/[siteId]/SiteHeader";
 import { listWorkAreas } from "@/lib/core-api/workAreas";
 import { ErrorState } from "@/components/ui/ErrorState";
@@ -84,10 +87,14 @@ export default async function SiteWorkAreasPage({
   // 목록·권한 조회는 서로 독립이다 — 목록이 실패해도 등록 폼은 살아 있어야 한다.
   // 보관된 것까지 함께 읽는다: 이 화면은 "고를 수 있는 것"을 고르는 자리가 아니라
   // 현장의 구역 이력을 관리하는 자리다(무엇이 무엇을 대신했는지가 여기 남는다).
-  const [workAreasResult, canWriteResult, canCreateWorkOrderResult] = await Promise.allSettled([
+  // 계정 연속성 확인값도 함께 읽는다 — 서버에서 확인한 두 식별자의 비교값일 뿐
+  // 자격 증명이나 인가가 아니다. 페이지와 현재 계정을 확인하지 못하면
+  // 패널은 목록과 원문을 숨기고 재확인을 안내한다. 쓰기 요청은 별도 BFF 가드도 쓴다.
+  const [workAreasResult, canWriteResult, canCreateWorkOrderResult, identityResult] = await Promise.allSettled([
     listWorkAreas(site.siteId, { includeArchived: true }),
     hasAllPermissions("SITES_WRITE"),
     hasAllPermissions("WORK_ORDERS_WRITE"),
+    whoAmI().catch(() => null),
   ]);
   const workAreas: WorkArea[] =
     workAreasResult.status === "fulfilled" ? workAreasResult.value.workAreas : [];
@@ -95,8 +102,19 @@ export default async function SiteWorkAreasPage({
     workAreasResult.status === "rejected" ? workAreaListFailure(workAreasResult.reason) : null;
   const canWrite = canWriteResult.status === "fulfilled" && canWriteResult.value;
   const canCreateWorkOrder = canCreateWorkOrderResult.status === "fulfilled" && canCreateWorkOrderResult.value;
+  const identity = identityResult.status === "fulfilled" ? identityResult.value : null;
+  // Core가 principal에 경로 안전 형식을 강제하지 않으므로, 서버에서 정확한 두
+  // 식별자의 ASCII 비교값을 만들고 원문 식별자는 클라이언트에 내보내지 않는다.
+  const accountIdentity = (() => {
+    const fingerprint = continuityFingerprint(identity);
+    const permissions = identity?.permissions;
+    const permissionsVerified =
+      Array.isArray(permissions) && permissions.every((permission) => typeof permission === "string");
+    return fingerprint && permissionsVerified ? { fingerprint } : null;
+  })();
 
   return (
+    <AccountDisplayBoundary fingerprint={accountIdentity?.fingerprint ?? null}>
     <div className="flex flex-col">
       <SiteHeader
         site={site}
@@ -124,8 +142,10 @@ export default async function SiteWorkAreasPage({
         canWrite={canWrite}
         initialWorkAreas={workAreas}
         workAreaListError={workAreaError}
+        accountIdentity={accountIdentity}
       />
       </div>
     </div>
+    </AccountDisplayBoundary>
   );
 }

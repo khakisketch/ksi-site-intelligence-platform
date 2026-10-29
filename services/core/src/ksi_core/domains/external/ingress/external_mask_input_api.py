@@ -78,6 +78,9 @@ from starlette.concurrency import run_in_threadpool
 from ksi_core.domains.external.ingress.external_mask_input_bytes import (
     ExternalMaskInputByteStore,
 )
+from ksi_core.domains.external.ingress.external_mask_input_core_adapters import (
+    MaskSourceNotAdmitted,
+)
 from ksi_core.domains.external.ingress.external_mask_input_store import (
     ExternalMaskInputStore,
 )
@@ -1321,8 +1324,6 @@ def build_external_mask_input_router(
         require_operator(principal)
         require_operator_scope(principal, site_id, work_area_id)
         try:
-            from ksi_core.composition.masked_quantitative_graph import MaskSourceNotAdmitted
-
             view = lane_source.resolve_source_context(
                 organization_id=principal.organization_id,
                 site_id=site_id,

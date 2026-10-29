@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from dataclasses import asdict, replace
 from datetime import timedelta
+from pathlib import Path
+from typing import Any
 
 import pytest
 from ksi_core.domains.external.quantity.external_delta_output_observations import (
@@ -32,7 +35,7 @@ from test_external_delta_publications import (
 
 
 @pytest.fixture
-def graph(tmp_path):
+def graph(tmp_path: Path) -> Iterator[tuple[Any, Any, Any, Any, Any, Any]]:
     clock, source, authority = _Clock(), _FakeSource(), _FakeAuthority()
     coor = ExternalAuthorityCurrentnessCoordinator()
     obs_journal = DurableJournal(tmp_path / "observations.jsonl")
@@ -57,7 +60,7 @@ def graph(tmp_path):
     byte_store.close()
 
 
-def test_no_receipt_can_be_accepted_without_the_current_worker_lease(graph):
+def test_no_receipt_can_be_accepted_without_the_current_worker_lease(graph: Any) -> None:
     store, receipts, clock, _, _, journal = graph
     observation = _observation(b"unit-only-not-real-tiff")
     assert (
@@ -112,7 +115,9 @@ def test_no_receipt_can_be_accepted_without_the_current_worker_lease(graph):
         {"source_contract_version": "external-relative-volume-calculation-report.v2"},
     ],
 )
-def test_worker_observation_cannot_borrow_another_scope_source_or_fence(graph, change):
+def test_worker_observation_cannot_borrow_another_scope_source_or_fence(
+    graph: Any, change: dict[str, object]
+) -> None:
     store, receipts, clock, _, _, journal = graph
     assert _leased(store, _worker(), clock) is not None
     observation = replace(_observation(b"unit-bytes"), **change, observation_digest=None).sealed()
@@ -128,7 +133,9 @@ def test_worker_observation_cannot_borrow_another_scope_source_or_fence(graph, c
 
 
 @pytest.mark.parametrize("revoked", ["source", "policy", "runtime"])
-def test_current_authority_loss_prevents_accepting_even_a_valid_worker_receipt(graph, revoked):
+def test_current_authority_loss_prevents_accepting_even_a_valid_worker_receipt(
+    graph: Any, revoked: str
+) -> None:
     store, receipts, clock, source, authority, journal = graph
     assert _leased(store, _worker(), clock) is not None
     if revoked == "source":
@@ -148,7 +155,9 @@ def test_current_authority_loss_prevents_accepting_even_a_valid_worker_receipt(g
     assert list(journal.replay()) == []
 
 
-def test_human_cannot_create_worker_receipt_even_when_allowed_to_request_publication(graph):
+def test_human_cannot_create_worker_receipt_even_when_allowed_to_request_publication(
+    graph: Any,
+) -> None:
     store, receipts, _, _, _, journal = graph
     with pytest.raises(PermissionError, match="designated Analysis worker"):
         receipts.record_worker_result(
@@ -159,7 +168,9 @@ def test_human_cannot_create_worker_receipt_even_when_allowed_to_request_publica
     assert list(journal.replay()) == []
 
 
-def test_receipt_shape_and_journal_corruption_are_rejected(tmp_path, graph):
+def test_receipt_shape_and_journal_corruption_are_rejected(
+    tmp_path: Path, graph: Any
+) -> None:
     store, receipts, clock, _, _, journal = graph
     assert _leased(store, _worker(), clock) is not None
     observed = _observation(b"unit-bytes")

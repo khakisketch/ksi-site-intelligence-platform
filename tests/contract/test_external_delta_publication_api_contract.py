@@ -18,7 +18,8 @@ from pydantic import ValidationError
 from test_external_delta_publications import _observation
 
 
-def test_worker_wire_observation_matches_the_core_canonical_receipt_without_reinterpretation():
+def test_worker_wire_observation_matches_the_core_canonical_receipt_without_reinterpretation(
+) -> None:
     receipt = _observation(b"unit-only-payload")
     model = DeltaOutputObservationWireV1.model_validate(asdict(receipt))
     assert model.observation_digest == receipt.canonical_digest()
@@ -34,7 +35,7 @@ def test_worker_wire_observation_matches_the_core_canonical_receipt_without_rein
         DeltaOutputObservationWireV1.model_validate({**model.model_dump(), "dtype": "FLOAT32"})
 
 
-def test_source_only_request_rejects_undeclared_grid_and_resource_coercion():
+def test_source_only_request_rejects_undeclared_grid_and_resource_coercion() -> None:
     payload = {
         "publicationId": "pub-01",
         "sourceCalculationIdentityDigest": "sha256:" + "a" * 64,
@@ -53,14 +54,14 @@ def test_source_only_request_rejects_undeclared_grid_and_resource_coercion():
             CreateDeltaPublicationV1.model_validate({**payload, **bad})
 
 
-def test_byte_slices_reject_bad_encoding_noncanonical_pad_bits_and_oversize():
+def test_byte_slices_reject_bad_encoding_noncanonical_pad_bits_and_oversize() -> None:
     assert DeltaPublicationBytesV1(publication_id="pub", offset=0, content_base64="YQ==")
     for raw in ("YR==", "YQ", "YQ==\n", "!!!!", "eA==" * 400000):
         with pytest.raises(ValidationError):
             DeltaPublicationBytesV1(publication_id="pub", offset=0, content_base64=raw)
 
 
-def test_checked_in_schema_matches_generator_and_accepts_closed_observation():
+def test_checked_in_schema_matches_generator_and_accepts_closed_observation() -> None:
     root = Path(__file__).resolve().parents[2]
     spec = importlib.util.spec_from_file_location(
         "delta_schema_generator", root / "tools/generate_delta_publication_api_schema.py"

@@ -257,10 +257,24 @@ def test_fixed_method_path_map_and_exact_call_ids() -> None:
         for name, arguments in args.items():
             result = asyncio.run(client.invoke(name, arguments))
             assert isinstance(result, dict)
-        assert len(core.requests) == 5
-        cancel = next(r for r in core.requests if r["path"].endswith("/cancel"))
+        # Cancel now proves the machine channel first: one acknowledged job
+        # GET with the same invocation token precedes the scoped POST, so the
+        # five tool calls produce six loopback exchanges.
+        assert len(core.requests) == 6
+        gets = [r for r in core.requests if r["method"] == "GET"]
+        posts = [r for r in core.requests if r["method"] == "POST"]
+        assert len(posts) == 1
+        cancel = next(r for r in posts if r["path"].endswith("/cancel"))
         assert cancel["method"] == "POST"
         assert cancel["body"] == b""
+        preflight = next(
+            r
+            for r in gets
+            if r["path"] == f"/v1/sites/{SITE}/work-areas/{AREA}/spatial-data-requests/{JOB}"
+        )
+        assert core.requests.index(preflight) < core.requests.index(cancel)
+        assert preflight["headers"].get("Authorization") == cancel["headers"].get("Authorization")
+        assert "Idempotency-Key" not in preflight["headers"]
         listed = asyncio.run(
             client.invoke(
                 "ksi_list_spatial_data_assets",
@@ -276,10 +290,20 @@ def test_create_supplies_native_external_ai_and_returns_queued_job() -> None:
     seen: dict[str, Any] = {}
 
     def responder(method: str, path: str, headers: dict[str, str], body: bytes) -> Any:
+        # Same-token machine-channel preflight first: an acknowledged asset
+        # list (limit 1, no grant required) must ack before any POST creates
+        # a record.
+        if method == "GET":
+            assert path == f"/v1/sites/{SITE}/work-areas/{AREA}/spatial-data-assets?limit=1"
+            assert body == b""
+            assert "Idempotency-Key" not in headers
+            seen["preflight_auth"] = headers.get("Authorization")
+            return json_response({"items": [], "nextCursor": None})
         assert method == "POST"
         assert path == f"/v1/sites/{SITE}/work-areas/{AREA}/spatial-data-requests"
         seen["body"] = json.loads(body)
         seen["idempotency"] = headers.get("Idempotency-Key")
+        seen["post_auth"] = headers.get("Authorization")
         return json_response(_job_view(), status=201)
 
     core = LoopbackCore(responder).start()
@@ -302,6 +326,78 @@ def test_create_supplies_native_external_ai_and_returns_queued_job() -> None:
         assert seen["body"]["purpose"] == "EXTERNAL_AI"
         assert seen["body"]["assetRef"] == ASSET
         assert seen["idempotency"] == "stable-key-a"
+        assert seen["preflight_auth"] == seen["post_auth"]
+        assert seen["preflight_auth"] is not None
+        assert len(core.requests) == 2
+        assert core.requests[0]["method"] == "GET"
+        assert core.requests[1]["method"] == "POST"
+    finally:
+        core.close()
+
+
+def test_mutation_requires_machine_ack_before_any_post() -> None:
+    """A non-machine bearer fails closed before any create/cancel POST.
+
+    The loopback mimics Core's channel split: the human GET either denies
+    (asset 403) or succeeds generically without the AI ack (job 200 without
+    the header), while the POST would succeed without the ack (the record
+    the old adapter created before noticing). The adapter must never emit
+    the POST.
+    """
+
+    from ksi_spatial_data_mcp.config import AdapterConfig
+    from ksi_spatial_data_mcp.core_client import CoreAdapterError, CoreSpatialDataClient
+
+    def responder(method: str, path: str, headers: dict[str, str], body: bytes) -> Any:
+        if method == "GET" and path.endswith("/spatial-data-assets?limit=1"):
+            return json_response(
+                {
+                    "reason": "PERMISSION_DENIED",
+                    "message": "no ai rights",
+                    "retryable": False,
+                    "remediation": ["CONTACT_OPERATOR"],
+                },
+                status=403,
+                ack=False,
+            )
+        if method == "GET" and path.endswith(f"/spatial-data-requests/{JOB}"):
+            return json_response(_job_view(), ack=False)
+        if method == "POST":
+            # Would-be mutation without the machine ack: must stay unreached.
+            return json_response(_job_view("CANCELED", "UNAVAILABLE"), status=201, ack=False)
+        return json_response({"reason": "NOT_FOUND"}, status=404, ack=False)
+
+    core = LoopbackCore(responder).start()
+    try:
+        token = fixture.write_token(f"human-{time.time_ns()}", "human-token")
+        path = fixture.write_adapter_config(
+            f"human-{time.time_ns()}.json", origin=core.origin, token_path=token
+        )
+        human = CoreSpatialDataClient(AdapterConfig.from_file(path))
+        with pytest.raises(CoreAdapterError):
+            asyncio.run(
+                human.invoke(
+                    "ksi_create_spatial_data_request",
+                    {
+                        "siteId": SITE,
+                        "workAreaId": AREA,
+                        "assetRef": ASSET,
+                        "requestedBounds": [0.0, 0.0, 4.0, 4.0],
+                        "observedCrsDigest": _digest(),
+                        "idempotencyKey": "human-key-a",
+                    },
+                )
+            )
+        with pytest.raises(CoreAdapterError) as canceled:
+            asyncio.run(
+                human.invoke(
+                    "ksi_cancel_spatial_data_request",
+                    {"siteId": SITE, "workAreaId": AREA, "jobId": JOB},
+                )
+            )
+        assert canceled.value.code == "AI_EGRESS_UNACKNOWLEDGED"
+        assert [r for r in core.requests if r["method"] == "POST"] == []
+        assert len([r for r in core.requests if r["method"] == "GET"]) == 2
     finally:
         core.close()
 

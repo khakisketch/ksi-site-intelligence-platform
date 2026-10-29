@@ -632,6 +632,13 @@ _ANALYSIS_MCP_CLIENT_PERMISSIONS: frozenset[Permission] = frozenset(
 # never a raw path prefix that could admit lookalike or nested routes.
 _ANALYSIS_MCP_ROUTE_ALLOWLIST: frozenset[tuple[str, str]] = frozenset(
     {
+        ("GET", "/v1/spatial-task-sites"),
+        ("POST", "/v1/sites/{site_id}/spatial-tasks"),
+        ("GET", "/v1/sites/{site_id}/spatial-tasks/{task_id}"),
+        ("GET", "/v1/sites/{site_id}/spatial-tasks/{task_id}/options"),
+        ("POST", "/v1/sites/{site_id}/spatial-tasks/{task_id}/selection"),
+        ("POST", "/v1/sites/{site_id}/spatial-tasks/{task_id}/readiness"),
+        ("POST", "/v1/sites/{site_id}/spatial-tasks/{task_id}/run"),
         ("GET", "/v1/sites/{site_id}/analysis-observations"),
         ("POST", "/v2/sites/{site_id}/work-areas/{work_area_id}/analyses"),
         ("POST", "/v2/sites/{site_id}/work-areas/{work_area_id}/analysis-readiness"),
@@ -657,6 +664,13 @@ _ANALYSIS_MCP_ROUTE_ALLOWLIST: frozenset[tuple[str, str]] = frozenset(
 # operational workflows, while generic Core routes remain closed by default.
 _OIDC_SCOPED_OPERATOR_ROUTE_ALLOWLIST: frozenset[tuple[str, str]] = frozenset(
     {
+        ("GET", "/v1/spatial-task-sites"),
+        ("POST", "/v1/sites/{site_id}/spatial-tasks"),
+        ("GET", "/v1/sites/{site_id}/spatial-tasks/{task_id}"),
+        ("GET", "/v1/sites/{site_id}/spatial-tasks/{task_id}/options"),
+        ("POST", "/v1/sites/{site_id}/spatial-tasks/{task_id}/selection"),
+        ("POST", "/v1/sites/{site_id}/spatial-tasks/{task_id}/readiness"),
+        ("POST", "/v1/sites/{site_id}/spatial-tasks/{task_id}/run"),
         (
             "GET",
             "/v3/sites/{site_id}/work-areas/{work_area_id}/masked-calculations/{request_id}/failure",

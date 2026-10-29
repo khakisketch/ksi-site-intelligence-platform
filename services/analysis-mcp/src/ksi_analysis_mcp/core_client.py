@@ -25,6 +25,14 @@ from ksi_event_contracts.external_delta_publication_api import (
     DeltaPublicationIntentViewV1,
     DeltaPublicationViewV1,
 )
+from ksi_event_contracts.external_spatial_task import (
+    CreateSpatialTaskV1,
+    RunSpatialTaskV1,
+    SelectSpatialTaskV1,
+    SpatialTaskOptionsV1,
+    SpatialTaskSitesV1,
+    SpatialTaskViewV1,
+)
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
 from .config import (
@@ -136,6 +144,42 @@ class ReadinessArguments(SiteArguments):
         return _safe_identifier(value)
 
 
+class TaskSitesArguments(_ClosedModel):
+    offset: int = Field(default=0, ge=0, le=10000, strict=True)
+
+
+class CreateTaskArguments(SiteArguments):
+    request: CreateSpatialTaskV1
+    idempotency_key: str = Field(alias="idempotencyKey", min_length=1, max_length=255)
+
+    @field_validator("idempotency_key")
+    @classmethod
+    def _key(cls, value: str) -> str:
+        if not all(0x21 <= ord(c) <= 0x7E for c in value):
+            raise ValueError("invalid idempotency key")
+        return value
+
+
+class TaskArguments(SiteArguments):
+    task_id: str = Field(alias="taskId", pattern=r"^st-[0-9a-f]{32}$")
+
+
+class TaskOptionsArguments(TaskArguments):
+    offset: int = Field(default=0, ge=0, le=500, strict=True)
+
+
+class SelectTaskArguments(TaskArguments):
+    request: SelectSpatialTaskV1
+
+
+class TaskActionArguments(TaskArguments):
+    request: RunSpatialTaskV1
+
+
+class SpatialTaskToolView(SpatialTaskViewV1):
+    selection_url: str
+
+
 def _safe_identifier(value: str) -> str:
     if _SAFE_IDENTIFIER.fullmatch(value) is None:
         raise ValueError("identifier must be a path-safe resource identifier")
@@ -152,8 +196,21 @@ ToolArguments = (
     | CreateDeltaPublicationArguments
     | DeltaPublicationScopeArguments
     | ReadDeltaPublicationBytesArguments
+    | TaskSitesArguments
+    | CreateTaskArguments
+    | TaskArguments
+    | TaskOptionsArguments
+    | SelectTaskArguments
+    | TaskActionArguments
 )
 ToolName = Literal[
+    "ksi_list_spatial_task_sites",
+    "ksi_create_spatial_task",
+    "ksi_get_spatial_task",
+    "ksi_get_spatial_task_options",
+    "ksi_select_spatial_task",
+    "ksi_check_spatial_task",
+    "ksi_run_spatial_task",
     "ksi_list_analysis_observations",
     "ksi_list_analyses",
     "ksi_create_analysis",
@@ -167,6 +224,13 @@ ToolName = Literal[
 ]
 
 TOOL_ARGUMENT_MODELS: dict[str, type[ToolArguments]] = {
+    "ksi_list_spatial_task_sites": TaskSitesArguments,
+    "ksi_create_spatial_task": CreateTaskArguments,
+    "ksi_get_spatial_task": TaskArguments,
+    "ksi_get_spatial_task_options": TaskOptionsArguments,
+    "ksi_select_spatial_task": SelectTaskArguments,
+    "ksi_check_spatial_task": TaskActionArguments,
+    "ksi_run_spatial_task": TaskActionArguments,
     "ksi_list_analysis_observations": SiteArguments,
     "ksi_list_analyses": AnalysisListArguments,
     "ksi_create_analysis": CreateAnalysisArguments,
@@ -182,6 +246,13 @@ TOOL_ARGUMENT_MODELS: dict[str, type[ToolArguments]] = {
 # Core responses are never treated as arbitrary JSON.  This same map backs
 # transport validation and the MCP output schemas advertised to a client.
 TOOL_RESULT_MODELS: dict[str, type[BaseModel]] = {
+    "ksi_list_spatial_task_sites": SpatialTaskSitesV1,
+    "ksi_create_spatial_task": SpatialTaskToolView,
+    "ksi_get_spatial_task": SpatialTaskToolView,
+    "ksi_get_spatial_task_options": SpatialTaskOptionsV1,
+    "ksi_select_spatial_task": SpatialTaskToolView,
+    "ksi_check_spatial_task": SpatialTaskToolView,
+    "ksi_run_spatial_task": SpatialTaskToolView,
     "ksi_list_analysis_observations": AnalysisObservationOptionsV1,
     "ksi_list_analyses": AnalysisListPageV2,
     "ksi_create_analysis": AnalysisViewV2,
@@ -214,22 +285,119 @@ class CoreAnalysisClient:
 
     async def invoke(self, name: str, arguments: dict[str, Any] | None) -> dict[str, Any]:
         parsed = validate_tool_arguments(name, arguments)
+        if (
+            isinstance(parsed, (CreateTaskArguments, TaskArguments))
+            and not isinstance(parsed, TaskOptionsArguments)
+            and self._config.console_origin is None
+        ):
+            raise CoreAdapterError("CONSOLE_ORIGIN_REQUIRED")
+        # One bounded snapshot per logical invocation. The acknowledged
+        # machine-channel preflight below and every subsequent mutation in
+        # this call must present this exact credential; the file is never
+        # reread in between, so a legitimate owner-side rotation mid-call
+        # cannot turn an acknowledged machine preflight into a human POST.
+        # The next independent tool invocation snapshots again and picks up
+        # rotation. Core still enforces current scopes, consent and rights
+        # on every operation; this binding is not an authorization.
+        try:
+            token = self._config.read_token()
+        except AdapterConfigurationError as exc:
+            raise CoreAdapterError("CORE_CREDENTIAL_UNAVAILABLE") from exc
+        if isinstance(parsed, TaskSitesArguments):
+            return await self._read(
+                f"/v1/spatial-task-sites?offset={parsed.offset}", SpatialTaskSitesV1,
+                token=token,
+            )
+        if isinstance(parsed, CreateTaskArguments):
+            await self._read(
+                self._observations_path(parsed.site_id), AnalysisObservationOptionsV1,
+                token=token,
+            )
+            result = await self._request_validated(
+                "POST",
+                f"/v1/sites/{self._segment(parsed.site_id)}/spatial-tasks",
+                SpatialTaskViewV1,
+                json_body=parsed.request.model_dump(mode="json", by_alias=True),
+                idempotency_key=parsed.idempotency_key,
+                token=token,
+            )
+            if result["task"]["siteId"] != parsed.site_id:
+                raise CoreAdapterError("INVALID_CORE_RESPONSE")
+            return self._handoff(result)
+        if isinstance(parsed, TaskArguments):
+            path = (
+                f"/v1/sites/{self._segment(parsed.site_id)}/spatial-tasks/"
+                f"{self._segment(parsed.task_id)}"
+            )
+            if isinstance(parsed, TaskOptionsArguments):
+                result = await self._read(
+                    path + f"/options?offset={parsed.offset}", SpatialTaskOptionsV1,
+                    token=token,
+                )
+                if result["siteId"] != parsed.site_id:
+                    raise CoreAdapterError("INVALID_CORE_RESPONSE")
+                return result
+            if isinstance(parsed, (SelectTaskArguments, TaskActionArguments)):
+                # Reject a mistakenly configured human token before mutation.
+                # Each POST independently rechecks current external consent in Core.
+                # The preflight and the mutation below present the same
+                # snapshot credential, so rotation between them cannot swap
+                # the acknowledged machine identity for a human one.
+                await self._read(path, SpatialTaskViewV1, token=token)
+                suffix = {
+                    "ksi_select_spatial_task": "selection",
+                    "ksi_check_spatial_task": "readiness",
+                    "ksi_run_spatial_task": "run",
+                }[name]
+                result = await self._request_validated(
+                    "POST",
+                    path + "/" + suffix,
+                    SpatialTaskViewV1,
+                    json_body=parsed.request.model_dump(mode="json", by_alias=True),
+                    token=token,
+                )
+            else:
+                result = await self._read(path, SpatialTaskViewV1, token=token)
+            if (
+                result["task"]["siteId"] != parsed.site_id
+                or result["task"]["taskId"] != parsed.task_id
+            ):
+                raise CoreAdapterError("INVALID_CORE_RESPONSE")
+            return self._handoff(result)
         if name == "ksi_list_analysis_observations":
             assert isinstance(parsed, SiteArguments)
             return await self._read(
-                self._observations_path(parsed.site_id), TOOL_RESULT_MODELS[name]
+                self._observations_path(parsed.site_id), TOOL_RESULT_MODELS[name],
+                token=token,
             )
         if name == "ksi_list_analyses":
             assert isinstance(parsed, AnalysisListArguments)
-            return await self._read(
+            result = await self._read(
                 self._page_path(self._analyses_path(parsed.site_id), parsed.limit, parsed.cursor),
                 TOOL_RESULT_MODELS[name],
+                token=token,
             )
+            # Tenant binding the list model supports: the page and every item
+            # must echo the requested Site. Core scopes these server-side;
+            # this keeps a misrouted Core reply from becoming MCP output.
+            if result.get("siteId") != parsed.site_id:
+                raise CoreAdapterError("INVALID_CORE_RESPONSE")
+            items = result.get("items")
+            if type(items) is not list:
+                raise CoreAdapterError("INVALID_CORE_RESPONSE")
+            for item in items:
+                if type(item) is not dict or item.get("siteId") != parsed.site_id:
+                    raise CoreAdapterError("INVALID_CORE_RESPONSE")
+            return result
         if name == "ksi_create_analysis":
             assert isinstance(parsed, CreateAnalysisArguments)
             # The same scoped, acknowledged observation read establishes the
             # current egress decision before a mutation is even attempted.
-            await self._read(self._observations_path(parsed.site_id), AnalysisObservationOptionsV1)
+            # The POST below reuses the identical snapshot credential.
+            await self._read(
+                self._observations_path(parsed.site_id), AnalysisObservationOptionsV1,
+                token=token,
+            )
             try:
                 request = CreateAnalysisRequestV1(
                     baseline=parsed.baseline,
@@ -237,13 +405,28 @@ class CoreAnalysisClient:
                 )
             except ValidationError as exc:
                 raise CoreAdapterError("INVALID_TOOL_ARGUMENTS") from exc
-            return await self._request_validated(
+            result = await self._request_validated(
                 "POST",
                 self._create_path_v2(parsed.site_id, parsed.work_area_id),
                 TOOL_RESULT_MODELS[name],
                 json_body=request.model_dump(by_alias=True, mode="json"),
                 idempotency_key=parsed.idempotency_key,
+                token=token,
             )
+            # Bind the created view to the requested scope and pair before
+            # projecting it. Core binds a durable intent's selectors to its
+            # idempotency key (a same-key/different-pair retry is a 409, never
+            # a 2xx with a foreign pair) and projects every view from that
+            # intent, so a legitimate success always echoes these verbatim.
+            expected_selectors = request.model_dump(by_alias=True, mode="json")
+            if (
+                result.get("siteId") != parsed.site_id
+                or result.get("workAreaId") != parsed.work_area_id
+                or result.get("baseline") != expected_selectors["baseline"]
+                or result.get("current") != expected_selectors["current"]
+            ):
+                raise CoreAdapterError("INVALID_CORE_RESPONSE")
+            return result
         if name == "ksi_check_analysis_readiness":
             assert isinstance(parsed, ReadinessArguments)
             try:
@@ -253,16 +436,37 @@ class CoreAnalysisClient:
                 )
             except ValidationError as exc:
                 raise CoreAdapterError("INVALID_TOOL_ARGUMENTS") from exc
-            return await self._request_validated(
+            result = await self._request_validated(
                 "POST",
                 self._readiness_path_v2(parsed.site_id, parsed.work_area_id),
                 TOOL_RESULT_MODELS[name],
                 json_body=request.model_dump(by_alias=True, mode="json"),
+                token=token,
             )
+            # The readiness answer is only valid for the asked scope and pair:
+            # Core echoes all four verbatim on every success branch.
+            expected_selectors = request.model_dump(by_alias=True, mode="json")
+            if (
+                result.get("siteId") != parsed.site_id
+                or result.get("workAreaId") != parsed.work_area_id
+                or result.get("baseline") != expected_selectors["baseline"]
+                or result.get("current") != expected_selectors["current"]
+            ):
+                raise CoreAdapterError("INVALID_CORE_RESPONSE")
+            return result
         if name == "ksi_create_delta_publication":
             assert isinstance(parsed, CreateDeltaPublicationArguments)
             # Source-only intent: Core resolves all grid facts. The POST response
             # itself must carry the machine-channel egress acknowledgment.
+            # A machine-acknowledged site-scoped read with the same snapshot
+            # credential precedes the POST, so a statically misconfigured
+            # human token fails before any mutation and a mid-call rotation
+            # cannot swap identities between preflight and POST. Core still
+            # enforces the work-area consent and rights on the POST itself.
+            await self._read(
+                self._observations_path(parsed.site_id), AnalysisObservationOptionsV1,
+                token=token,
+            )
             try:
                 body = create_delta_publication_body(parsed)
             except DeltaPublicationError as exc:
@@ -272,6 +476,7 @@ class CoreAnalysisClient:
                 create_delta_publication_path(parsed.site_id, parsed.work_area_id),
                 TOOL_RESULT_MODELS[name],
                 json_body=body,
+                token=token,
             )
             try:
                 return validate_intent_response(
@@ -279,15 +484,11 @@ class CoreAnalysisClient:
                     site_id=parsed.site_id,
                     work_area_id=parsed.work_area_id,
                     publication_id=parsed.publication_id,
-                    source_calculation_identity_digest=(
-                        parsed.source_calculation_identity_digest
-                    ),
+                    source_calculation_identity_digest=(parsed.source_calculation_identity_digest),
                     source_numeric_result_identity_digest=(
                         parsed.source_numeric_result_identity_digest
                     ),
-                    source_coverage_witness_digest=(
-                        parsed.source_coverage_witness_digest
-                    ),
+                    source_coverage_witness_digest=(parsed.source_coverage_witness_digest),
                 )
             except DeltaPublicationError as exc:
                 raise CoreAdapterError(exc.code) from exc
@@ -295,10 +496,9 @@ class CoreAnalysisClient:
             assert isinstance(parsed, DeltaPublicationScopeArguments)
             payload = await self._request_validated(
                 "GET",
-                delta_publication_path(
-                    parsed.site_id, parsed.work_area_id, parsed.publication_id
-                ),
+                delta_publication_path(parsed.site_id, parsed.work_area_id, parsed.publication_id),
                 TOOL_RESULT_MODELS[name],
+                token=token,
             )
             try:
                 return validate_view_response(
@@ -329,6 +529,7 @@ class CoreAnalysisClient:
                 TOOL_RESULT_MODELS[name],
                 response_limit=MAX_DELTA_BYTES_RESPONSE_BYTES,
                 structured_limit=MAX_DELTA_BYTES_RESPONSE_BYTES,
+                token=token,
             )
             try:
                 return validate_bytes_response(
@@ -353,7 +554,30 @@ class CoreAnalysisClient:
             model = TOOL_RESULT_MODELS[name]
         else:
             raise CoreAdapterError("UNKNOWN_TOOL")
-        return await self._read(path, model)
+        result = await self._read(path, model, token=token)
+        if name == "ksi_get_analysis_evidence":
+            # The evidence page model carries no Site echo, so only the
+            # Analysis binding is checkable here; the Site scope stays enforced
+            # by Core's path-scoped read.
+            if result.get("analysisId") != parsed.analysis_id:
+                raise CoreAdapterError("INVALID_CORE_RESPONSE")
+        elif (
+            result.get("siteId") != parsed.site_id
+            or result.get("analysisId") != parsed.analysis_id
+        ):
+            raise CoreAdapterError("INVALID_CORE_RESPONSE")
+        return result
+
+    def _handoff(self, payload: dict[str, Any]) -> dict[str, Any]:
+        # Core DTO has already validated the exact task-bound relative path.
+        if self._config.console_origin is None:
+            raise CoreAdapterError("CONSOLE_ORIGIN_REQUIRED")
+        return SpatialTaskToolView.model_validate(
+            {
+                **payload,
+                "selectionUrl": self._config.console_origin + payload["selectionHref"],
+            }
+        ).model_dump(by_alias=True, mode="json")
 
     @staticmethod
     def _page_path(path: str, limit: int, cursor: str | None) -> str:
@@ -362,8 +586,8 @@ class CoreAnalysisClient:
             params["cursor"] = cursor
         return path + "?" + urlencode(params)
 
-    async def _read(self, path: str, model: type[BaseModel]) -> dict[str, Any]:
-        return await self._request_validated("GET", path, model)
+    async def _read(self, path: str, model: type[BaseModel], *, token: str) -> dict[str, Any]:
+        return await self._request_validated("GET", path, model, token=token)
 
     async def _request_validated(
         self,
@@ -371,6 +595,7 @@ class CoreAnalysisClient:
         path: str,
         model: type[BaseModel],
         *,
+        token: str,
         json_body: dict[str, Any] | None = None,
         idempotency_key: str | None = None,
         response_limit: int | None = None,
@@ -382,6 +607,7 @@ class CoreAnalysisClient:
             json_body=json_body,
             idempotency_key=idempotency_key,
             response_limit=response_limit,
+            token=token,
         )
         try:
             validated = model.model_validate(payload)
@@ -403,14 +629,14 @@ class CoreAnalysisClient:
         method: Literal["GET", "POST"],
         path: str,
         *,
+        token: str,
         json_body: dict[str, Any] | None = None,
         idempotency_key: str | None = None,
         response_limit: int | None = None,
     ) -> dict[str, Any]:
-        try:
-            token = self._config.read_token()
-        except AdapterConfigurationError as exc:
-            raise CoreAdapterError("CORE_CREDENTIAL_UNAVAILABLE") from exc
+        # The credential arrives as a per-invocation snapshot from invoke();
+        # this layer never rereads the file and keeps no process-global copy,
+        # so concurrent invocations cannot exchange identities.
         headers = {
             "Authorization": "Bearer " + token,
             "Accept": "application/json",
@@ -466,9 +692,7 @@ class CoreAnalysisClient:
         return bytes(body)
 
     @staticmethod
-    def _status_code(
-        status: int, body: bytes, method: Literal["GET", "POST"], path: str
-    ) -> str:
+    def _status_code(status: int, body: bytes, method: Literal["GET", "POST"], path: str) -> str:
         detail = None
         try:
             decoded = json.loads(body)
@@ -476,6 +700,26 @@ class CoreAnalysisClient:
                 detail = decoded["detail"]
         except (UnicodeDecodeError, json.JSONDecodeError, RecursionError):
             pass
+        if "/spatial-task" in path:
+            # Never echo arbitrary response bodies, paths or token material.
+            safe_codes = {
+                "SPATIAL_TASK_NOT_FOUND",
+                "SPATIAL_TASK_EXPIRED",
+                "SPATIAL_TASK_REVISION_CONFLICT",
+                "SPATIAL_TASK_IDEMPOTENCY_CONFLICT",
+                "SPATIAL_TASK_SELECTION_LOCKED",
+                "SPATIAL_TASK_SELECTION_UNAVAILABLE",
+                "SPATIAL_TASK_PURPOSE_UNSUPPORTED",
+                "SPATIAL_TASK_SELECTION_REQUIRED",
+                "AI_EGRESS_NOT_ALLOWED",
+                "ANALYSIS_ACTIVATION_UNAVAILABLE",
+                "ANALYSIS_SNAPSHOT_CHANGED",
+                "SPATIAL_TASK_CAPACITY_OR_TRANSITION",
+                "SPATIAL_TASK_STORE_UNAVAILABLE",
+                "SPATIAL_TASK_REVISION_LIMIT",
+            }
+            if detail in safe_codes:
+                return detail
         if "/delta-publications" in path:
             # The delta lane reports honest typed errors; a missing mount,
             # expired intent, or revoked publication is never a fake export.
@@ -509,8 +753,10 @@ class CoreAnalysisClient:
         if status == 409:
             if method == "POST" and detail == "ANALYSIS_IDEMPOTENCY_CONFLICT":
                 return detail
-            if method == "GET" and path.startswith("/v2/sites/") and detail in (
-                _V2_READ_CONFLICT_CODES
+            if (
+                method == "GET"
+                and path.startswith("/v2/sites/")
+                and detail in (_V2_READ_CONFLICT_CODES)
             ):
                 return detail
             return "CORE_CONFLICT"
@@ -534,8 +780,7 @@ class CoreAnalysisClient:
 
     def _create_path_v2(self, site_id: str, work_area_id: str) -> str:
         return (
-            f"/v2/sites/{self._segment(site_id)}/work-areas/"
-            f"{self._segment(work_area_id)}/analyses"
+            f"/v2/sites/{self._segment(site_id)}/work-areas/{self._segment(work_area_id)}/analyses"
         )
 
     def _readiness_path_v2(self, site_id: str, work_area_id: str) -> str:

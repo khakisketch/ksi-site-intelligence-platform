@@ -163,8 +163,8 @@ describe("Site spatial overview data bounds", () => {
     fireEvent.click(screen.getByRole("button", { name: "정보" }));
     expect(screen.queryByRole("combobox")).toBeNull();
     expect(screen.queryByRole("button", { name: "구역 보기" })).toBeNull();
-    expect(screen.queryByText("등록된 작업구역이 없습니다")).toBeTruthy();
     const overview = within(screen.getByRole("region", { name: "선택 구역 공간 확인" }));
+    expect(overview.getByText("등록된 작업구역이 없습니다")).toBeTruthy();
     expect(overview.getByRole("link", { name: "작업구역 확인" }).getAttribute("href")).toBe("/sites/site-1/work-areas");
     expect(mocked.assets).not.toHaveBeenCalled();
   });

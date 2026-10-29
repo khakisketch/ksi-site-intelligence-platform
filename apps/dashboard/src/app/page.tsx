@@ -247,7 +247,7 @@ export default async function HomePage() {
     <header className="flex flex-wrap items-center justify-between gap-3 border-b border-line pb-3">
       <div className="flex min-h-9 flex-wrap items-center gap-x-3 gap-y-1 text-[13px] leading-5">
         <span className="font-semibold tracking-[-0.01em] break-keep">
-          전체 {sitesResult.ok ? `${sites.length}곳` : "—"}
+          볼 수 있는 현장 {sitesResult.ok ? `${sites.length}곳` : "—"}
         </span>
         <span aria-hidden="true" className="h-3 w-px bg-line-strong/70" />
         <span className={`font-semibold break-keep ${portfolioComplete && attentionCount > 0 ? "text-accent" : "text-ink-2"}`}>
@@ -266,7 +266,7 @@ export default async function HomePage() {
     </header>
 
     {!sitesResult.ok && <ErrorState message={sitesResult.message} retryable />}
-    {sitesResult.ok && sites.length === 0 && <EmptyState title="아직 등록된 현장이 없습니다" description={canRegisterSite ? "첫 현장을 등록하면 관측과 변화 기록을 시작할 수 있습니다." : "현장 등록 권한이 있는 계정에서 시작할 수 있습니다."} action={canRegisterSite ? { label: "현장 등록", href: "/sites/new" } : undefined} />}
+    {sitesResult.ok && sites.length === 0 && <EmptyState title="현재 계정에서 볼 수 있는 현장이 없습니다" description="찾는 현장이 이미 있다면 관리자에게 이 계정의 현장 접근 권한을 확인해 주세요." action={canRegisterSite ? { label: "현장 등록", href: "/sites/new" } : { label: "현장 목록", href: "/sites" }} />}
     {sites.length > 0 && !portfolioComplete && <section aria-label="일부 정보를 확인하지 못했습니다" className="rounded-lg border border-line bg-sunk px-4 py-3">
       <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1">
         <p className="text-[12.5px] leading-5 break-keep text-ink-2">일부 현장 또는 작업 원장을 불러오지 못해 확인 필요 건수를 추측하지 않습니다.</p>

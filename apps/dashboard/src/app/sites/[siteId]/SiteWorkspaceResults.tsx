@@ -98,11 +98,15 @@ function RecordCard({ item, sitePath, lead = false, pairLine = null, pairUnknown
         <p className="mt-1 text-[12px] leading-5 text-ink-2">
           {suitabilityLimitCopy(item)} 이 값은 물량 정확도 보증·측량 승인·정산 근거가 아닙니다.
         </p>
-        {metrics.uncertaintyM3 !== null && (
+        {metrics.uncertaintyM3 === null ? (
           <p className="mt-1 text-[12px] leading-5 text-ink-2">
-            {`불확도는 ±${formatVolumeM3(metrics.uncertaintyM3)} m³로 기록되어 있습니다.`}
+            불확실성 미기록 — 기록된 값이 없으므로 0으로 볼 수 없습니다. 검사점 평가와 별개입니다.
           </p>
-        )}
+        ) : typeof metrics.uncertaintyM3 === "number" && Number.isFinite(metrics.uncertaintyM3) ? (
+          <p className="num mt-1 break-words text-[12px] leading-5 text-ink-2">
+            {`불확실성 ±${formatVolumeM3(metrics.uncertaintyM3)} m³ (기록값)`}
+          </p>
+        ) : null}
       </>
     )}
     <p className="mt-1 text-[12px] leading-5 text-ink-2">
@@ -247,11 +251,15 @@ export function SiteWorkspaceResults({
             <p className="mt-1 text-[12px] leading-5 text-ink-2">
               {suitabilityLimitCopy(explicitReady)} 이 값은 물량 정확도 보증·측량 승인·정산 근거가 아닙니다.
             </p>
-            {explicitReady.result.metrics.uncertaintyM3 !== null && (
+            {explicitReady.result.metrics.uncertaintyM3 === null ? (
               <p className="mt-1 text-[12px] leading-5 text-ink-2">
-                {`불확도는 ±${formatVolumeM3(explicitReady.result.metrics.uncertaintyM3)} m³로 기록되어 있습니다.`}
+                불확실성 미기록 — 기록된 값이 없으므로 0으로 볼 수 없습니다. 검사점 평가와 별개입니다.
               </p>
-            )}
+            ) : typeof explicitReady.result.metrics.uncertaintyM3 === "number" && Number.isFinite(explicitReady.result.metrics.uncertaintyM3) ? (
+              <p className="num mt-1 break-words text-[12px] leading-5 text-ink-2">
+                {`불확실성 ±${formatVolumeM3(explicitReady.result.metrics.uncertaintyM3)} m³ (기록값)`}
+              </p>
+            ) : null}
             <p className="mt-1 text-[12px] leading-5 text-ink-2">
               이 화면은 기록된 값을 옮긴 것이며 다시 계산하지 않습니다. 계산에 쓰인 자료·조건·근거는 분석 기록에 있습니다.
             </p>

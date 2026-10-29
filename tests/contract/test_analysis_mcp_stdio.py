@@ -354,7 +354,9 @@ def test_mcp_create_rejects_unsafe_keys_before_network_and_preserves_valid_key(
         valid_key = "same printable ascii key 01"
         assert (
             asyncio.run(
-                client._request("POST", "/v1/test", json_body={}, idempotency_key=valid_key)
+                client._request(
+                    "POST", "/v1/test", token="test-token", json_body={}, idempotency_key=valid_key
+                )
             )
             == {}
         )
@@ -518,6 +520,13 @@ def test_official_sdk_stdio_server_lists_only_analysis_tools_and_requires_core_a
             await session.initialize()
             tools = await session.list_tools()
             assert {tool.name for tool in tools.tools} == {
+                "ksi_list_spatial_task_sites",
+                "ksi_create_spatial_task",
+                "ksi_get_spatial_task",
+                "ksi_get_spatial_task_options",
+                "ksi_select_spatial_task",
+                "ksi_check_spatial_task",
+                "ksi_run_spatial_task",
                 "ksi_list_analysis_observations",
                 "ksi_list_analyses",
                 "ksi_create_analysis",

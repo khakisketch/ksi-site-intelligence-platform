@@ -131,7 +131,7 @@ export default async function FieldWorkListPage({ searchParams }: {
             ) : (
               <ActionUnavailable label="관측 자료 등록" description="현재 계정으로는 관측 자료를 등록할 수 없습니다. 작업 등록 권한이 있는 담당자에게 문의하세요." />
             )}
-            <p className="console-page-description !mt-0 basis-full">조직의 전체 관측 작업 기록입니다.</p>
+            <p className="console-page-description !mt-0 basis-full">조직의 관측 작업 기록입니다. 나에게 배정되거나 공유된 항목은 받은 업무에서 확인하세요.</p>
           </div>
         </header>
         <WorkQueueOperationsNotices notices={notices} />
@@ -139,7 +139,7 @@ export default async function FieldWorkListPage({ searchParams }: {
           <EmptyState title="등록된 관측 작업이 없습니다" description="현장 화면에서 작업구역을 확인하고 관측 자료 등록을 시작할 수 있습니다." action={{ label: "현장 보기", href: "/sites" }} />
         ) : (
           <>
-            <nav className="flex items-center gap-1 overflow-x-auto border-b border-line pb-3" aria-label="작업 요약">
+            <nav className="flex flex-wrap items-center gap-x-1 gap-y-2 border-b border-line pb-3 sm:flex-nowrap sm:gap-1 sm:overflow-x-auto" aria-label="작업 요약">
               <Link href={filterHref()} aria-current={!groupKey ? "page" : undefined} className="console-filter-link">전체 <span className="tabular-nums text-ink-muted">{workOrders.length}</span></Link>
               {SUMMARY_GROUPS.map(([key, label]) => (
                 <Link key={key} href={filterHref(key)} aria-current={groupKey === key ? "page" : undefined} className="console-filter-link">{label}<span className="tabular-nums text-ink-muted">{summary[key].length}</span></Link>

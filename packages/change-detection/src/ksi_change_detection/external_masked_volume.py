@@ -28,6 +28,7 @@ from rasterio.transform import Affine, array_bounds
 from ksi_change_detection.dsm_diff import DiffResult, _same_frame
 from ksi_change_detection.external_volume import (
     ExternalVolumeMeasurementError,
+    ExternalVolumeMeasurementErrorReason,
     _full_window,
     _masked_full_zone,
     _validate_diff_grid,
@@ -104,8 +105,20 @@ def _fail(
     )
 
 
-def _as_v1_error_reason(reason: MaskedExternalVolumeErrorReason) -> str:
-    return reason.value
+def _as_masked_reason(
+    reason: ExternalVolumeMeasurementErrorReason,
+) -> MaskedExternalVolumeErrorReason:
+    """Map an underlying full-zone error onto the masked-profile reason.
+
+    The six overlapping reasons keep their exact value. The two
+    boundary-only reasons have no masked-profile counterpart; they fail
+    closed as INVALID_INPUT with the original detail preserved by the
+    caller, never as invented coverage.
+    """
+    try:
+        return MaskedExternalVolumeErrorReason(reason.value)
+    except ValueError:
+        return MaskedExternalVolumeErrorReason.INVALID_INPUT
 
 
 def _validate_mask(
@@ -208,7 +221,7 @@ def measure_masked_external_volume_zone(
     )
     if isinstance(parameter_error, ExternalVolumeMeasurementError):
         return _fail(
-            MaskedExternalVolumeErrorReason(_as_v1_error_reason(parameter_error.reason)),
+            _as_masked_reason(parameter_error.reason),
             parameter_error.detail,
         )
     parameters = parameter_error
@@ -216,7 +229,7 @@ def measure_masked_external_volume_zone(
     validated_grid = _validate_diff_grid(diff)
     if isinstance(validated_grid, ExternalVolumeMeasurementError):
         return _fail(
-            MaskedExternalVolumeErrorReason(_as_v1_error_reason(validated_grid.reason)),
+            _as_masked_reason(validated_grid.reason),
             validated_grid.detail,
         )
     if not isinstance(from_crs, str) or not from_crs.strip():
@@ -259,7 +272,7 @@ def measure_masked_external_volume_zone(
     window = _full_window(geometry, validated_grid.transform, parameters.maximum_zone_grid_cells)
     if isinstance(window, ExternalVolumeMeasurementError):
         return _fail(
-            MaskedExternalVolumeErrorReason(_as_v1_error_reason(window.reason)),
+            _as_masked_reason(window.reason),
             window.detail,
         )
     row_start, row_stop, col_start, col_stop = window
@@ -274,7 +287,7 @@ def measure_masked_external_volume_zone(
     )
     if isinstance(original, ExternalVolumeMeasurementError):
         return _fail(
-            MaskedExternalVolumeErrorReason(_as_v1_error_reason(original.reason)),
+            _as_masked_reason(original.reason),
             original.detail,
         )
     original_selected = original.copy()

@@ -127,6 +127,16 @@ def create_platform_app(
         external_delta_wiring=graph.delta,
         external_masked_wiring=graph.masked,
     )
+    if graph.spatial_tasks is not None:
+        from ksi_core.domains.external.spatial_tasks import build_spatial_task_router
+
+        app.include_router(
+            build_spatial_task_router(
+                graph.spatial_tasks,
+                activation=graph.analysis.activation if graph.analysis else None,
+            )
+        )
+        app.state.spatial_tasks = graph.spatial_tasks
     return app
 
 

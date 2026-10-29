@@ -14,6 +14,7 @@ import threading
 from datetime import UTC, datetime, timedelta
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from typing import Any
 from urllib.parse import unquote, urlsplit
 
 import pytest
@@ -54,13 +55,13 @@ from ksi_processing_controller.external_delta_reproduction_measurement import (
 from ksi_processing_controller.external_measurement_algorithms import MeasurementWatchdogV2
 
 
-def _reconstruction_of(fixture):
+def _reconstruction_of(fixture: Any) -> Any:
     if hasattr(fixture.app.state, "external_reconstruction_store"):
         return fixture.app.state.external_reconstruction_store
     raise AssertionError("fixture reconstruction store is unavailable")
 
 
-def _publish_once(tmp_path: Path):
+def _publish_once(tmp_path: Path) -> tuple[Any, Any, Any, bytes, str, int, str, str]:
     from analysis_api_local_fixture import build_local_analysis_api_fixture
     from test_external_quantitative_extension_activation import _unsigned, _write_files
 
@@ -90,7 +91,7 @@ def _publish_once(tmp_path: Path):
         attempt = AnalysisExecutionAttemptV2.model_validate(leased.json()["attempt"])
 
         class _Handler(BaseHTTPRequestHandler):
-            def do_GET(self):  # noqa: N802
+            def do_GET(self) -> None:  # noqa: N802
                 if not self.path.startswith("/objects/"):
                     self.send_error(404)
                     return
@@ -107,7 +108,7 @@ def _publish_once(tmp_path: Path):
                 self.end_headers()
                 self.wfile.write(payload)
 
-            def log_message(self, *_a, **_k):
+            def log_message(self, *_a: Any, **_k: Any) -> None:
                 return
 
         object_server = ThreadingHTTPServer(("127.0.0.1", 0), _Handler)
@@ -313,7 +314,9 @@ def _publish_once(tmp_path: Path):
         # Close journals to simulate a crash; bytes stay on disk.
         obs_journal.close()
         pub_journal.close()
-        store._bytes.close()  # noqa: SLF001
+        byte_store_port = store._bytes  # noqa: SLF001
+        assert isinstance(byte_store_port, FilesystemDeltaByteStore)
+        byte_store_port.close()
         journal_bytes = (tmp_path / "replay-pubs.jsonl").read_bytes()
         return (
             fixture,
@@ -335,7 +338,7 @@ def _publish_once(tmp_path: Path):
         raise
 
 
-def test_restart_replays_exact_history_with_unchanged_journal_bytes(tmp_path):
+def test_restart_replays_exact_history_with_unchanged_journal_bytes(tmp_path: Path) -> None:
     (
         fixture,
         object_server,
@@ -449,7 +452,7 @@ def test_restart_replays_exact_history_with_unchanged_journal_bytes(tmp_path):
         fixture.close()
 
 
-def test_replay_rejects_tampered_observation_binding(tmp_path):
+def test_replay_rejects_tampered_observation_binding(tmp_path: Path) -> None:
     _, _, _, _, _, _, _, _ = _publish_once(tmp_path)
     # Tamper the journaled observation hash and prove replay fails closed.
     # _publish_once closed its fixture; reopen the journal file directly.
@@ -491,7 +494,7 @@ def test_replay_rejects_tampered_observation_binding(tmp_path):
     assert journal.sealed_reason == "closed"
 
 
-def test_missing_bytes_after_replay_fail_closed(tmp_path):
+def test_missing_bytes_after_replay_fail_closed(tmp_path: Path) -> None:
     fixture, object_server, object_thread, _, sha, size, _, _ = _publish_once(tmp_path)
     try:
         for child in (tmp_path / "replay-bytes").glob("*.tiff"):

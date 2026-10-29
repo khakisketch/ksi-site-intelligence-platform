@@ -57,7 +57,7 @@ describe("deriveExternalWorkOrderStage", () => {
     expect(deriveExternalWorkOrderStage(base)).toMatchObject({ stage: "REGISTER", label: "외부 산출물 등록 준비" });
   });
   it("asks to seal when a registration is not sealed", () => {
-    expect(deriveExternalWorkOrderStage({ ...base, registeredSubmissionCount: 1 })).toMatchObject({ stage: "SEAL", label: "업로드와 봉인 완료" });
+    expect(deriveExternalWorkOrderStage({ ...base, registeredSubmissionCount: 1 })).toMatchObject({ stage: "SEAL", label: "업로드·봉인 필요" });
   });
   it("asks for a comparison decision when sealed but no result", () => {
     expect(deriveExternalWorkOrderStage({ ...base, sealedSubmissionCount: 1 })).toMatchObject({ stage: "DECIDE", label: "검사와 비교 판정" });

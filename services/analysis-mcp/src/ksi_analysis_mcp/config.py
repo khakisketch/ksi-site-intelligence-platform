@@ -5,6 +5,7 @@ from __future__ import annotations
 import ipaddress
 import os
 import stat
+from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -28,9 +29,12 @@ class AdapterConfig:
     token_file: Path
     timeout_seconds: float = 10.0
     max_response_bytes: int = MAX_STRUCTURED_RESPONSE_BYTES
+    console_origin: str | None = None
 
     @classmethod
-    def from_values(cls, *, core_origin: str, token_file: str) -> AdapterConfig:
+    def from_values(
+        cls, *, core_origin: str, token_file: str, console_origin: str | None = None
+    ) -> AdapterConfig:
         if type(core_origin) is not str or not core_origin or len(core_origin) > 16_384:
             raise AdapterConfigurationError(
                 "core origin must be one exact scheme://literal-ip[:port]"
@@ -63,7 +67,40 @@ class AdapterConfig:
         path = Path(token_file)
         if not path.is_absolute():
             raise AdapterConfigurationError("token file path must be absolute")
-        config = cls(core_origin=core_origin.rstrip("/"), token_file=path)
+        if console_origin is not None:
+            if type(console_origin) is not str or not console_origin or len(console_origin) > 2048:
+                raise AdapterConfigurationError("Console origin must be one bounded origin")
+            # Presentation link only, never an outbound request or redirect target
+            # supplied by a model. Keep Core and Console origins explicitly separate.
+            try:
+                console = urlsplit(console_origin)
+                port = console.port
+                del port
+                loopback = console.hostname == "localhost"
+                with suppress(ValueError):
+                    loopback = ipaddress.ip_address(console.hostname or "").is_loopback
+                if (
+                    console.scheme not in {"http", "https"}
+                    or not console.hostname
+                    or console.username is not None
+                    or console.password is not None
+                    or console.path not in {"", "/"}
+                    or console.query
+                    or console.fragment
+                    or any(ord(c) <= 32 or ord(c) >= 127 for c in console_origin)
+                    or "\\" in console_origin
+                    or (console.scheme == "http" and not loopback)
+                ):
+                    raise ValueError("invalid Console origin")
+            except ValueError as exc:
+                raise AdapterConfigurationError(
+                    "Console origin requires HTTPS or loopback HTTP"
+                ) from exc
+        config = cls(
+            core_origin=core_origin.rstrip("/"),
+            token_file=path,
+            console_origin=console_origin.rstrip("/") if console_origin else None,
+        )
         config._check_token_file()
         return config
 
@@ -76,7 +113,11 @@ class AdapterConfig:
             raise AdapterConfigurationError(
                 "Core origin and token file environment are required"
             ) from exc
-        return cls.from_values(core_origin=origin, token_file=token_file)
+        return cls.from_values(
+            core_origin=origin,
+            token_file=token_file,
+            console_origin=os.environ.get("KSI_ANALYSIS_MCP_CONSOLE_ORIGIN"),
+        )
 
     def _check_token_file(self) -> None:
         try:

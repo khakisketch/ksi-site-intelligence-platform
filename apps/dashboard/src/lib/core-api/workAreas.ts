@@ -1,6 +1,6 @@
 import "server-only";
 
-import { coreFetch } from "./client";
+import { coreFetch, coreFetchWithToken } from "./client";
 import type { WorkAreaListResponse, WorkAreaRegisterInput, WorkAreaResponse } from "./types";
 
 /**
@@ -39,6 +39,25 @@ export async function registerWorkArea(
 }
 
 /**
+ * 같은 세션 토큰으로 검사와 변이를 잇는 등록 — BFF 계정 연속성 가드 전용.
+ *
+ * 토큰을 두 번 읽으면 검사와 Core 생성 사이 세션 교체(TOCTOU)가 생기므로,
+ * 호출부가 확인한 그 토큰을 그대로 변이에 쓴다. 호출 계약·응답 모양은
+ * `registerWorkArea` 와 같다.
+ */
+export async function registerWorkAreaWithToken(
+  siteId: string,
+  input: WorkAreaRegisterInput,
+  token: string,
+): Promise<WorkAreaResponse> {
+  return coreFetchWithToken<WorkAreaResponse>(
+    `/v1/sites/${encodeURIComponent(siteId)}/work-areas`,
+    token,
+    { method: "POST", body: input },
+  );
+}
+
+/**
  * 보관 — **삭제가 아니다.** 새 비교에 고를 수 없게 될 뿐, 이미 낸 리포트는 그대로
  * 남는다(그 리포트들이 zoneId 로 이 id 를 들고 있어서다).
  */
@@ -48,6 +67,19 @@ export async function archiveWorkArea(
 ): Promise<WorkAreaResponse> {
   return coreFetch<WorkAreaResponse>(
     `/v1/sites/${encodeURIComponent(siteId)}/work-areas/${encodeURIComponent(workAreaId)}/archive`,
+    { method: "POST" },
+  );
+}
+
+/** 같은 토큰으로 연속성 확인 후 Core 인가에 전달한다. */
+export async function archiveWorkAreaWithToken(
+  siteId: string,
+  workAreaId: string,
+  token: string,
+): Promise<WorkAreaResponse> {
+  return coreFetchWithToken<WorkAreaResponse>(
+    `/v1/sites/${encodeURIComponent(siteId)}/work-areas/${encodeURIComponent(workAreaId)}/archive`,
+    token,
     { method: "POST" },
   );
 }

@@ -383,7 +383,9 @@ class FileSystemInputStaging:
                 os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
                 dir_fd=root,
             )
-            if _Identity.from_stat(os.fstat(attempt_fd)) != attempt_identity:
+            if not _same_owned_directory(
+                _Identity.from_stat(os.fstat(attempt_fd)), attempt_identity
+            ):
                 raise InspectorStagingUnavailable("private attempt directory identity changed")
             writer_fd = os.open(
                 "artifact",
@@ -531,7 +533,9 @@ class FileSystemInputStaging:
                 os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
                 dir_fd=root,
             )
-            if _Identity.from_stat(os.fstat(attempt_fd)) != attempt_identity:
+            if not _same_owned_directory(
+                _Identity.from_stat(os.fstat(attempt_fd)), attempt_identity
+            ):
                 raise InspectorStagingUnavailable("registered staging directory identity changed")
             writer_fd = os.open(
                 plan.artifact_leaf,
@@ -691,7 +695,9 @@ class FileSystemInputStaging:
             if directory is None:
                 _unlink_registered_marker(root, plan.committed_marker_name, committed)
                 return self._recovery_cleaned(root)
-            if receipt is not None and not _matches_staging_identity(directory, receipt.directory):
+            if receipt is not None and not _matches_staging_directory_identity(
+                directory, receipt.directory
+            ):
                 return RegisteredStagingRecoveryDispositionV1.OWNERSHIP_UNCERTAIN
             _require_owned_private_directory(directory, allow_acl_mask=True)
             if not self._recover_registered_directory(root, plan, directory, receipt):
@@ -722,7 +728,7 @@ class FileSystemInputStaging:
                 os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
                 dir_fd=root_fd,
             )
-            if _Identity.from_stat(os.fstat(directory_fd)) != directory:
+            if not _same_owned_directory(_Identity.from_stat(os.fstat(directory_fd)), directory):
                 return False
             children = os.listdir(directory_fd)
             if any(child != plan.artifact_leaf for child in children):
@@ -1726,6 +1732,58 @@ def _matches_staging_identity(identity: _Identity, expected: StagingFileIdentity
     )
 
 
+def _matches_staging_directory_identity(
+    identity: _Identity, expected: StagingFileIdentityV1
+) -> bool:
+    """Directory receipt match excluding st_size; non-directories fail closed.
+
+    The directory receipt is recorded before the owned artifact child exists,
+    so its st_size predates legitimate entry growth (see _same_owned_directory).
+    Directory type, device, inode, owner, link count and the permission bits
+    stored in the receipt remain checked, with the single known 0700 -> 0710
+    ACL-mask allowance. Other mode bits are not represented in that receipt.
+    Existing seal/receipt/digest byte-size checks are unchanged.
+    """
+
+    # Mode is compared masked below, which drops file-type bits: without this
+    # gate a mode-0700 regular file could satisfy a directory receipt.
+    if not stat.S_ISDIR(identity.mode):
+        return False
+    exact = (
+        identity.device,
+        identity.inode,
+        identity.mode & 0o777,
+        identity.owner_uid,
+        identity.owner_gid,
+        identity.link_count,
+    ) == (
+        expected.device,
+        expected.inode,
+        expected.mode,
+        expected.owner_uid,
+        expected.owner_gid,
+        expected.link_count,
+    )
+    return exact or (
+        expected.mode & 0o777 == 0o700
+        and identity.mode & 0o777 == 0o710
+        and (
+            identity.device,
+            identity.inode,
+            identity.owner_uid,
+            identity.owner_gid,
+            identity.link_count,
+        )
+        == (
+            expected.device,
+            expected.inode,
+            expected.owner_uid,
+            expected.owner_gid,
+            expected.link_count,
+        )
+    )
+
+
 def _write_all(file_descriptor: int, payload: bytes) -> None:
     view = memoryview(payload)
     while view:
@@ -1834,6 +1892,34 @@ def _same_file_except_size(left: _Identity, right: _Identity) -> bool:
     )
 
 
+def _same_owned_directory(left: _Identity, right: _Identity) -> bool:
+    """Directory identity excluding st_size, which is filesystem-dependent.
+
+    Directory st_size is entry-table accounting, not a security property: it
+    legitimately grows when the single owned artifact child is created (for
+    example 40 -> 60 on tmpfs while ext4 reports a stable 4096), and POSIX
+    never promises stability across child creation.  Replacement, symlink
+    swap, permission, ownership, and link-count games remain exact: every one
+    of those changes device, inode, mode, owner, or link count.
+    """
+
+    return (
+        left.device,
+        left.inode,
+        left.mode,
+        left.owner_uid,
+        left.owner_gid,
+        left.link_count,
+    ) == (
+        right.device,
+        right.inode,
+        right.mode,
+        right.owner_uid,
+        right.owner_gid,
+        right.link_count,
+    )
+
+
 def _same_inode(left: _Identity, right: _Identity) -> bool:
     return left.device == right.device and left.inode == right.inode
 
@@ -1888,7 +1974,9 @@ def _cleanup_exact(
 ) -> None:
     try:
         try:
-            if _Identity.from_stat(os.fstat(attempt_fd)) != attempt_identity:
+            if not _same_owned_directory(
+                _Identity.from_stat(os.fstat(attempt_fd)), attempt_identity
+            ):
                 if strict_name_identity:
                     raise InspectorStagingUnavailable(
                         "staging directory identity changed during cleanup"
@@ -1913,7 +2001,7 @@ def _cleanup_exact(
         finally:
             _close_if_open(attempt_fd)
         current_attempt = _identity_at(root_fd, attempt_name)
-        if current_attempt != attempt_identity:
+        if current_attempt is None or not _same_owned_directory(current_attempt, attempt_identity):
             if strict_name_identity:
                 raise InspectorStagingUnavailable(
                     "staging directory identity changed during cleanup"

@@ -416,42 +416,75 @@ export function resolveExactAnalysisSelectorHints(input: {
   };
   const baselineHint = parseHint(input.rawBaseline);
   const currentHint = parseHint(input.rawCurrent);
-  if (baselineHint === "invalid" || currentHint === "invalid") {
-    return {
-      baseline: null,
-      current: null,
-      notice: "요청한 관측을 분석 후보에서 확인하지 못했습니다. 기준·현재 관측을 직접 선택하세요.",
-    };
-  }
   const scoped = input.candidates.filter((candidate) => candidate.workAreaIds.includes(input.workAreaId));
-  const match = (hint: ExactAnalysisSelectorHint | null) => {
-    if (!hint) return null;
+  type SideResolution =
+    | { status: "absent" }
+    | { status: "matched"; hint: ExactAnalysisSelectorHint }
+    | { status: "failed"; reason: "malformed" | "not-found" | "ambiguous" };
+  const resolve = (hint: ExactAnalysisSelectorHint | "invalid" | null): SideResolution => {
+    if (!hint) return { status: "absent" };
+    if (hint === "invalid") return { status: "failed", reason: "malformed" };
     const hits = scoped.filter((candidate) =>
       candidate.selector.workOrderId === hint.workOrderId &&
       candidate.selector.submissionRef === hint.submissionRef &&
       candidate.selector.revision === hint.revision);
-    if (hits.length !== 1) return "ambiguous" as const;
-    return hint;
+    if (hits.length === 1) return { status: "matched", hint };
+    return { status: "failed", reason: hits.length === 0 ? "not-found" : "ambiguous" };
   };
-  const baseline = match(baselineHint);
-  const current = match(currentHint);
-  if (baseline === "ambiguous" || current === "ambiguous") {
-    return {
-      baseline: null,
-      current: null,
-      notice: "요청한 관측이 분석 후보와 정확히 맞지 않아 자동으로 고르지 않았습니다. 기준·현재 관측을 직접 선택하세요.",
-    };
-  }
-  if (baseline && current
-    && baseline.workOrderId === current.workOrderId
-    && baseline.submissionRef === current.submissionRef
-    && baseline.revision === current.revision) {
+  const baseline = resolve(baselineHint);
+  const current = resolve(currentHint);
+  if (baseline.status === "matched" && current.status === "matched"
+    && baseline.hint.workOrderId === current.hint.workOrderId
+    && baseline.hint.submissionRef === current.hint.submissionRef
+    && baseline.hint.revision === current.hint.revision) {
     return {
       baseline: null,
       current: null,
       notice: "요청한 기준·현재 관측이 서로 같아 자동으로 고르지 않았습니다. 서로 다른 두 관측을 직접 선택하세요.",
     };
   }
-  if (!baseline && !current) return empty;
-  return { baseline, current, notice: null };
+  const matchedBaseline = baseline.status === "matched" ? baseline.hint : null;
+  const matchedCurrent = current.status === "matched" ? current.hint : null;
+  if (matchedBaseline && matchedCurrent) return { baseline: matchedBaseline, current: matchedCurrent, notice: null };
+  if (!matchedBaseline && !matchedCurrent) {
+    if (baseline.status === "failed" && baseline.reason === "malformed"
+      || current.status === "failed" && current.reason === "malformed") {
+      return {
+        baseline: null,
+        current: null,
+        notice: "요청한 관측을 분석 후보에서 확인하지 못했습니다. 기준·현재 관측을 직접 선택하세요.",
+      };
+    }
+    return {
+      baseline: null,
+      current: null,
+      notice: "요청한 관측이 분석 후보와 정확히 맞지 않아 자동으로 고르지 않았습니다. 기준·현재 관측을 직접 선택하세요.",
+    };
+  }
+  // 한쪽만 정확히 맞았을 때는 그쪽만 미리 고른다. 반대쪽 사유를 그대로 밝혀
+  // 자동 완성을 지어내지 않는다. 한쪽 미리 고름만으로는 요청할 수 없고(두 쪽
+  // 선택이 있어야 제출 가능), 같은 선택은 제출 전에 막히며, 최종 판단은
+  // 요청 시 Core가 한다. 정확한 삼중항·같은 구역·유일 후보만 미리 고르므로
+  // 다른 관측으로 바꾸거나 깊은 연결을 만들지 않는다.
+  const reasonLine = (side: "baseline" | "current", reason: "malformed" | "not-found" | "ambiguous"): string => {
+    const label = side === "baseline" ? "기준" : "현재";
+    if (reason === "malformed") return `요청한 ${label} 관측 형식을 확인하지 못했습니다.`;
+    if (reason === "ambiguous") return `요청한 ${label} 관측에 후보가 여러 개 있어 자동으로 고르지 않았습니다.`;
+    return `요청한 ${label} 관측을 이 구역의 분석 후보에서 확인하지 못했습니다.`;
+  };
+  if (matchedBaseline && current.status === "failed") {
+    return {
+      baseline: matchedBaseline,
+      current: null,
+      notice: `가져온 기준 관측은 분석 후보와 정확히 맞아 미리 골랐습니다. ${reasonLine("current", current.reason)} 현재 관측을 직접 선택하세요.`,
+    };
+  }
+  if (matchedCurrent && baseline.status === "failed") {
+    return {
+      baseline: null,
+      current: matchedCurrent,
+      notice: `가져온 현재 관측은 분석 후보와 정확히 맞아 미리 골랐습니다. ${reasonLine("baseline", baseline.reason)} 기준 관측을 직접 선택하세요.`,
+    };
+  }
+  return { baseline: matchedBaseline, current: matchedCurrent, notice: null };
 }

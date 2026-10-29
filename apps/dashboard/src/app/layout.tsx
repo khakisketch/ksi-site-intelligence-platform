@@ -2,13 +2,15 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { headers } from "next/headers";
 
+import { AccountDisplayBoundary } from "@/components/nav/AccountDisplayBoundary";
 import { DesktopSidebar } from "@/components/nav/DesktopSidebar";
 import { isChromelessPath } from "@/components/nav/chromeless-path";
 import { isViewerPath } from "@/components/nav/viewer-path";
+import { SiteListRefreshNotice } from "@/components/nav/SiteListRefreshNotice";
 import { SiteListProvider } from "@/components/nav/SiteListContext";
 import type { SidebarSite } from "@/components/nav/site-context";
 import { getNavCounts } from "@/components/nav/nav-counts";
-import { listSitesCached } from "@/lib/core-api/cached";
+import { readRootShellSnapshot } from "@/components/nav/root-shell-snapshot";
 import { MobileBottomNav } from "@/components/nav/MobileBottomNav";
 import { MainPageTitle } from "@/components/nav/PageTitle";
 import { RouteFocusManager } from "@/components/nav/RouteFocusManager";
@@ -55,15 +57,15 @@ export default async function RootLayout({
   const viewerShell = !chromeless && isViewerPath(currentPathname, headerStore.get(SEARCH_HEADER));
   const currentPageTitle = resolvePageTitle(currentPathname) || "KSI Site Intelligence";
   // 셸을 벗는 로그인 화면에는 세션이 없어 현장 목록을 부르면 401 왕복만 는다.
-  const [navCounts, paletteItems, sidebarSites] = chromeless
-    ? [undefined, [], [] as SidebarSite[]]
-    : await Promise.all([
-        getNavCounts(),
-        buildPaletteItems(),
-        listSitesCached()
-          .then((items): SidebarSite[] => items.map(({ siteId, name, status }) => ({ siteId, name, status })))
-          .catch((): SidebarSite[] => []),
-      ]);
+  // Bind shell identity, site menu, counts and palette to one resolved token.
+  // Separate page RSCs still have their own snapshot and authorization checks.
+  const shellSnapshot = chromeless ? null : await readRootShellSnapshot();
+  const shellFingerprint = shellSnapshot?.fingerprint ?? null;
+  const [navCounts, paletteItems] = chromeless
+    ? [undefined, []]
+    : await Promise.all([getNavCounts(shellSnapshot?.sites ?? null), buildPaletteItems(shellSnapshot?.sites ?? null)]);
+  const sidebarSites: SidebarSite[] = (shellSnapshot?.sites ?? [])
+    .map(({ siteId, name, status }) => ({ siteId, name, status }));
 
   return (
     <html
@@ -94,7 +96,8 @@ export default async function RootLayout({
             : `min-h-full lg:grid lg:h-screen lg:grid-cols-[176px_1fr] lg:overflow-hidden xl:grid-cols-[232px_1fr]${viewerShell ? " viewer-shell" : ""}`
         }
       >
-        <SiteListProvider sites={sidebarSites}>
+        <AccountDisplayBoundary fingerprint={shellFingerprint} bypass={chromeless} ownsFreshLoginMarker>
+        <SiteListProvider sites={sidebarSites} fingerprint={shellFingerprint}>
           <ShellLayoutMode />
           <ShellViewport>
             {!chromeless && (
@@ -111,15 +114,17 @@ export default async function RootLayout({
             )}
             <ShellMain>
               {!chromeless && <MainPageTitle fallback={currentPageTitle} />}
+              <SiteListRefreshNotice />
               <ToastProvider>{children}</ToastProvider>
             </ShellMain>
           </ShellViewport>
-          <DesktopSidebar counts={navCounts} sites={sidebarSites} userBlock={!chromeless && <SidebarUserBlock />} />
+          <DesktopSidebar counts={navCounts} sites={sidebarSites} userBlock={!chromeless && <SidebarUserBlock snapshot={shellSnapshot?.principal ?? null} />} />
           <MobileBottomNav />
           {!chromeless && <RouteFocusManager />}
           {!chromeless && <CommandPalette items={paletteItems} />}
           {authRuntime.mode !== "OPAQUE" && <SessionRefresh />}
         </SiteListProvider>
+        </AccountDisplayBoundary>
       </body>
     </html>
   );

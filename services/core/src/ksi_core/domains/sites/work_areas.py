@@ -121,6 +121,7 @@ class WorkAreaStore:
         *,
         site_exists: Any = None,
         coordinator: ExternalAuthorityCurrentnessCoordinator | None = None,
+        registration_stopped: bool = False,
     ) -> None:
         """``site_exists`` 는 ``site_id -> bool`` 콜러블(보통 ``SiteStore.get`` 래퍼).
 
@@ -128,6 +129,9 @@ class WorkAreaStore:
         ``site_store`` 동반을 이미 강제하므로 프로덕션 경로에서는 항상 주어진다.
         테스트가 site 저장소 없이 이 저장소만 세울 수 있게 열어 둔다.
         """
+        if type(registration_stopped) is not bool:
+            raise ValueError("registration_stopped must be a bool")
+        self._registration_stopped = registration_stopped
         self._journal = journal
         self._coordinator = coordinator or ExternalAuthorityCurrentnessCoordinator()
         self._areas: dict[str, WorkArea] = {}
@@ -383,6 +387,11 @@ class WorkAreaStore:
                         f"등록된 적 없는 현장이다: {site_id!r} — 작업구역은 '어느 현장의 "
                         "어디인가'로만 의미를 갖는다"
                     ),
+                )
+            if self._registration_stopped:
+                return WorkAreaResult(
+                    WorkAreaVerdict.STORE_UNAVAILABLE,
+                    detail="WorkArea registration is temporarily stopped for recovery",
                 )
             if self._journal.sealed_reason is not None:
                 return WorkAreaResult(

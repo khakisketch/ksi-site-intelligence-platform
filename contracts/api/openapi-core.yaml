@@ -184,6 +184,156 @@ info:
     경로는 아직 구현되지 않은 설계 스케치이며, 표기 없는 경로는 실구현과
     tests/contract/test_api_contract_sync.py 가 대조한다.
 paths:
+  /v1/spatial-task-sites:
+    get:
+      summary: List named, explicitly granted Sites with current AI consent
+      description: >-
+        Additive platform-with-Analysis orchestration, not global discovery. Machine identity
+        is ANALYSIS_MCP_CLIENT. The operator or client needs explicit Site scope; no credential,
+        consent or grant is issued. Pages contain at most32 rows. No-store and a machine-only
+        X-KSI-External-AI-Egress acknowledgment apply. Not a real-host/deployment support claim.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: query, name: offset, schema: { type: integer, minimum: 0, maximum: 10000, default: 0 } }
+      responses:
+        '200':
+          description: Provisioned candidates only
+          content:
+            application/json:
+              schema: { $ref: '../schemas/external-spatial-task.v1.json#/$defs/SpatialTaskSitesV1' }
+        '401': { description: Authentication required }
+        '403': { description: Explicit scope or read permission required }
+  /v1/sites/{site_id}/spatial-tasks:
+    parameters:
+      - { in: path, name: site_id, required: true, schema: { type: string } }
+    post:
+      summary: Create or retry a durable spatial task without coordinate entry
+      description: >-
+        Mounted only in the platform graph with explicit Analysis wiring. SITES_WRITE or
+        ANALYSIS_API_CREATE, current Site/WorkArea grants and machine AI-egress consent apply.
+        References only: no geometry, policy, grant or numerical authority. CLARIFY asks purpose;
+        DESIGN_REMAINING and DAILY_TARGET remain unsupported, never substituted. Task lifetime7days;
+        retained-task/revision capacity fails closed without automatic deletion. Selection links
+        are authenticated relative Console paths, not capabilities. Machine clients read only their
+        own tasks; authorized humans may select within the intersection of human scope and the
+        creator's original scope ceiling. A new WorkArea does not automatically expand that ceiling.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: header, name: Idempotency-Key, required: true, schema: { type: string, minLength: 1, maxLength: 255 } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '../schemas/external-spatial-task.v1.json#/$defs/CreateSpatialTaskV1' }
+      responses:
+        '201': &SpatialTaskViewResponse
+          description: Saved task; never an execution permission
+          content:
+            application/json:
+              schema: { $ref: '../schemas/external-spatial-task.v1.json#/$defs/SpatialTaskViewV1' }
+        '401': { description: Authentication required }
+        '403': { description: Permission or current AI consent denied }
+        '404': { description: Scope not found; no cross-organization existence disclosure }
+        '409': { description: Idempotency conflict, stale selection or retained capacity limit }
+        '410': { description: Task expired; underlying analysis and evidence are not deleted }
+        '422': { description: Closed request validation failed }
+  /v1/sites/{site_id}/spatial-tasks/{task_id}:
+    parameters: &SpatialTaskPathParameters
+      - { in: path, name: site_id, required: true, schema: { type: string } }
+      - { in: path, name: task_id, required: true, schema: { type: string, pattern: '^st-[0-9a-f]{32}$' } }
+    get:
+      summary: Resume the same task and current linked Core result
+      description: >-
+        SITES_READ or ANALYSIS_API_READ. Scope and machine consent are checked freshly.
+        Archived/unavailable selections retain context without pretending usable numbers;
+        SELECTION_UNAVAILABLE allows re-selection before execution. Authentication is still
+        required after following selectionHref. The MCP adapter adds selectionUrl using its
+        configured Console origin, never a model-supplied URL or a token in the link.
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': *SpatialTaskViewResponse
+        '401': { description: Authentication required }
+        '403': { description: Permission or current AI consent denied }
+        '404': { description: Task absent or not in current caller/owner scope }
+        '410': { description: Task expired }
+  /v1/sites/{site_id}/spatial-tasks/{task_id}/options:
+    parameters: *SpatialTaskPathParameters
+    get:
+      summary: Get named areas and exactly attributed dated observations
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: query, name: offset, schema: { type: integer, minimum: 0, maximum: 500, default: 0 } }
+      responses:
+        '200':
+          description: At most64 named areas and32 observations; nextOffset continues observations
+          content:
+            application/json:
+              schema: { $ref: '../schemas/external-spatial-task.v1.json#/$defs/SpatialTaskOptionsV1' }
+        '404': { description: Current task/caller scope not found }
+        '403': { description: Permission or current AI consent denied }
+        '410': { description: Task expired }
+  /v1/sites/{site_id}/spatial-tasks/{task_id}/selection:
+    parameters: *SpatialTaskPathParameters
+    post:
+      summary: Save explicit area, purpose and optional exact ordered pair
+      description: >-
+        Full selection replacement with expectedRevision; area alone may be saved first.
+        Identical lost-response retry is idempotent. A conflicting concurrent selection returns
+        SPATIAL_TASK_REVISION_CONFLICT. Sources must belong to the selected area, creator ceiling
+        and current selector grants. Execution reservation locks selection; edits require a new task.
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '../schemas/external-spatial-task.v1.json#/$defs/SelectSpatialTaskV1' }
+      responses:
+        '200': *SpatialTaskViewResponse
+        '409': { description: Revision conflict, selection locked/unavailable or capacity limit }
+        '404': { description: Current task/caller scope not found }
+        '403': { description: Permission or current AI consent denied }
+        '410': { description: Task expired }
+        '422': { description: Closed request validation failed }
+  /v1/sites/{site_id}/spatial-tasks/{task_id}/readiness:
+    parameters: *SpatialTaskPathParameters
+    post:
+      summary: Fresh read-only readiness for saved exact selection
+      description: >-
+        No task, analysis or worker journal mutation. Reuses existing Analysis readiness.
+        coverageCheck always requires worker validation. No quantitative/accuracy promise.
+      security: [{ bearerAuth: [] }]
+      requestBody: &SpatialTaskActionBody
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '../schemas/external-spatial-task.v1.json#/$defs/RunSpatialTaskV1' }
+      responses:
+        '200': *SpatialTaskViewResponse
+        '409': { description: Stale revision, unsupported purpose, missing/unavailable selection }
+        '404': { description: Current task/caller scope not found }
+        '403': { description: Permission or current AI consent denied }
+        '410': { description: Task expired }
+        '422': { description: Closed request validation failed }
+  /v1/sites/{site_id}/spatial-tasks/{task_id}/run:
+    parameters: *SpatialTaskPathParameters
+    post:
+      summary: Resume or request the same supported observed-change Analysis
+      description: >-
+        SITES_WRITE or ANALYSIS_API_CREATE. Current explicit Analysis activation required;
+        no activation is synthesized. Core rechecks selection/current grants/consent and AP/NX
+        conditions. Durable reservation precedes idempotent Analysis create; a crash between
+        journals resumes the same Analysis and cannot change its selection. Success links the
+        existing Analysis V2, not a second result. Blockers/failure never become a zero quantity.
+      security: [{ bearerAuth: [] }]
+      requestBody: *SpatialTaskActionBody
+      responses:
+        '200': *SpatialTaskViewResponse
+        '409': { description: Stale revision, unsupported purpose, missing/unavailable selection }
+        '404': { description: Current task/caller scope not found }
+        '403': { description: Permission or current AI consent denied }
+        '410': { description: Task expired }
+        '422': { description: Closed request validation failed }
+        '503': { description: Existing Analysis activation unavailable/expired or task journal unavailable }
   /health:
     get:
       summary: Liveness probe

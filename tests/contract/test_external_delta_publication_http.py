@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Iterator
 from dataclasses import asdict
+from typing import Any
 
 import pytest
 from fastapi import FastAPI
@@ -31,11 +33,12 @@ from test_external_delta_publications import (
 )
 
 PATH = "/v1/sites/site-a/work-areas/work-area-a/delta-publications"
+_HTTP_FIXTURE = tuple[TestClient, Any, Any]
 JOB = "/v1/internal/delta-publication-uploads/pub-01"
 
 
 @pytest.fixture
-def http(graph):  # noqa: F811 -- imported pytest fixture, not a runtime redefinition
+def http(graph: Any) -> Iterator[_HTTP_FIXTURE]:  # noqa: F811 -- imported pytest fixture, not a runtime redefinition
     store, receipts, clock, source, authority, journal = graph
     principals = {
         "operator": _operator(),
@@ -61,11 +64,11 @@ def http(graph):  # noqa: F811 -- imported pytest fixture, not a runtime redefin
     yield TestClient(app), store, journal
 
 
-def _headers(role="operator", **extra):
+def _headers(role: str = "operator", **extra: str) -> dict[str, str]:
     return {"Authorization": "Bearer synthetic-" + role, **extra}
 
 
-def _body(**extra):
+def _body(**extra: object) -> dict[str, object]:
     return {
         "publicationId": "pub-01",
         "sourceCalculationIdentityDigest": CALC_DIGEST,
@@ -79,14 +82,18 @@ def _body(**extra):
 @pytest.mark.parametrize(
     "extra", [{"gridRows": 4}, {"lifetimeSeconds": True}, {"downloadUrl": "https://x.invalid"}]
 )
-def test_create_accepts_only_closed_source_intent_no_grids_urls_or_coerced_lifetime(http, extra):
+def test_create_accepts_only_closed_source_intent_no_grids_urls_or_coerced_lifetime(
+    http: _HTTP_FIXTURE, extra: dict[str, object]
+) -> None:
     client, _, journal = http
     before = list(journal.replay())
     assert client.post(PATH, headers=_headers(), json=_body(**extra)).status_code == 422
     assert list(journal.replay()) == before
 
 
-def test_bounded_json_rejects_oversize_duplicates_and_unauthenticated_commands(http):
+def test_bounded_json_rejects_oversize_duplicates_and_unauthenticated_commands(
+    http: _HTTP_FIXTURE,
+) -> None:
     client, _, journal = http
     before = list(journal.replay())
     assert (
@@ -106,7 +113,7 @@ def test_bounded_json_rejects_oversize_duplicates_and_unauthenticated_commands(h
     assert list(journal.replay()) == before
 
 
-def test_mcp_identity_ack_scoped_control_and_wrong_path_never_mutates(http):
+def test_mcp_identity_ack_scoped_control_and_wrong_path_never_mutates(http: _HTTP_FIXTURE) -> None:
     client, _, journal = http
     created = client.post(PATH, headers=_headers("mcp"), json=_body())
     assert created.status_code == 200, created.text
@@ -134,7 +141,9 @@ def test_mcp_identity_ack_scoped_control_and_wrong_path_never_mutates(http):
     assert list(journal.replay()) == before
 
 
-def test_worker_output_observation_and_raw_upload_are_separate_guarded_steps(http):
+def test_worker_output_observation_and_raw_upload_are_separate_guarded_steps(
+    http: _HTTP_FIXTURE,
+) -> None:
     client, store, _ = http
     leased = client.post(
         JOB + "/lease",
@@ -148,7 +157,7 @@ def test_worker_output_observation_and_raw_upload_are_separate_guarded_steps(htt
         by_alias=True,
         mode="json",
     )
-    query = {"worker_instance_id": "inst-1", "lease_generation": 1}
+    query: dict[str, str | int] = {"worker_instance_id": "inst-1", "lease_generation": 1}
     raw_headers = _headers("worker", **{"Content-Type": "application/octet-stream"})
     assert (
         client.post(JOB + "/bytes", headers=raw_headers, params=query, content=payload).status_code
@@ -190,7 +199,9 @@ def test_worker_output_observation_and_raw_upload_are_separate_guarded_steps(htt
     assert unavailable.json() == {"detail": "DELTA_PUBLICATION_REVOKED"}
 
 
-def test_bad_output_bytes_return_closed_conflict_without_claiming_publication(http):
+def test_bad_output_bytes_return_closed_conflict_without_claiming_publication(
+    http: _HTTP_FIXTURE,
+) -> None:
     client, _, _ = http
     assert (
         client.post(
@@ -231,7 +242,9 @@ def test_bad_output_bytes_return_closed_conflict_without_claiming_publication(ht
     assert client.get(PATH + "/pub-01", headers=_headers()).status_code == 404
 
 
-def test_pending_discovery_is_bounded_worker_only_and_does_not_mint_a_lease(http):
+def test_pending_discovery_is_bounded_worker_only_and_does_not_mint_a_lease(
+    http: _HTTP_FIXTURE,
+) -> None:
     client, _, journal = http
     before = list(journal.replay())
     pending = client.get(
@@ -289,8 +302,8 @@ def test_pending_discovery_is_bounded_worker_only_and_does_not_mint_a_lease(http
 
 
 def test_authenticated_state_codes_distinguish_pending_from_terminal_without_disclosing_foreign_ids(
-    http,
-):
+    http: _HTTP_FIXTURE,
+) -> None:
     client, _, _ = http
     pending = client.get(PATH + "/pub-01", headers=_headers())
     assert pending.status_code == 404
@@ -310,7 +323,9 @@ def test_authenticated_state_codes_distinguish_pending_from_terminal_without_dis
     assert foreign.json() == missing.json() == {"detail": "DELTA_PUBLICATION_NOT_FOUND"}
 
 
-def test_upload_and_slice_limits_cannot_be_bypassed_with_multipart_or_range(http):
+def test_upload_and_slice_limits_cannot_be_bypassed_with_multipart_or_range(
+    http: _HTTP_FIXTURE,
+) -> None:
     client, _, journal = http
     leased = client.post(
         JOB + "/lease",
@@ -319,7 +334,7 @@ def test_upload_and_slice_limits_cannot_be_bypassed_with_multipart_or_range(http
     )
     assert leased.status_code == 200
     before = list(journal.replay())
-    query = {"worker_instance_id": "inst-1", "lease_generation": 1}
+    query: dict[str, str | int] = {"worker_instance_id": "inst-1", "lease_generation": 1}
     assert (
         client.post(
             JOB + "/bytes",
@@ -347,9 +362,11 @@ def test_upload_and_slice_limits_cannot_be_bypassed_with_multipart_or_range(http
     assert list(journal.replay()) == before
 
 
-def test_openapi_declares_closed_request_and_observation_bodies(http):
+def test_openapi_declares_closed_request_and_observation_bodies(http: _HTTP_FIXTURE) -> None:
     client, _, _ = http
-    schema = client.app.openapi()
+    app = client.app
+    assert isinstance(app, FastAPI)
+    schema = app.openapi()
     template = "/v1/sites/{site_id}/work-areas/{work_area_id}/delta-publications"
     body = schema["paths"][template]["post"]["requestBody"]["content"]["application/json"]["schema"]
     assert body["additionalProperties"] is False

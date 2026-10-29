@@ -1,0 +1,994 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ksi.example/contracts/external-spatial-task.v1.json",
+  "$defs": {
+    "AnalysisBlockerV1": {
+      "additionalProperties": false,
+      "description": "Typed cause with optional epoch/evidence linkage for a fail-closed view.",
+      "properties": {
+        "code": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Z][A-Z0-9_]{0,127}$",
+          "title": "Code",
+          "type": "string"
+        },
+        "epoch": {
+          "anyOf": [
+            {
+              "enum": [
+                "BASELINE",
+                "CURRENT"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Epoch"
+        },
+        "evidenceRef": {
+          "anyOf": [
+            {
+              "maxLength": 255,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Evidenceref"
+        },
+        "detail": {
+          "anyOf": [
+            {
+              "maxLength": 512,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Detail"
+        }
+      },
+      "required": [
+        "code"
+      ],
+      "title": "AnalysisBlockerV1",
+      "type": "object"
+    },
+    "AnalysisCoverageSummaryV2": {
+      "additionalProperties": false,
+      "description": "Small digest-bound coverage facts; coverage masks are never embedded.",
+      "properties": {
+        "coverageWitnessDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Coveragewitnessdigest",
+          "type": "string"
+        },
+        "rows": {
+          "maximum": 1000000000,
+          "minimum": 1,
+          "title": "Rows",
+          "type": "integer"
+        },
+        "columns": {
+          "maximum": 1000000000,
+          "minimum": 1,
+          "title": "Columns",
+          "type": "integer"
+        },
+        "selectedCellCount": {
+          "maximum": 1000000000000000,
+          "minimum": 0,
+          "title": "Selectedcellcount",
+          "type": "integer"
+        },
+        "commonValidCellCount": {
+          "maximum": 1000000000000000,
+          "minimum": 0,
+          "title": "Commonvalidcellcount",
+          "type": "integer"
+        },
+        "unavailableCellCount": {
+          "maximum": 1000000000000000,
+          "minimum": 0,
+          "title": "Unavailablecellcount",
+          "type": "integer"
+        },
+        "thresholdExcludedCellCount": {
+          "maximum": 1000000000000000,
+          "minimum": 0,
+          "title": "Thresholdexcludedcellcount",
+          "type": "integer"
+        },
+        "cellAreaM2": {
+          "exclusiveMinimum": 0.0,
+          "title": "Cellaream2",
+          "type": "number"
+        },
+        "selectedAreaM2": {
+          "minimum": 0.0,
+          "title": "Selectedaream2",
+          "type": "number"
+        },
+        "commonValidAreaM2": {
+          "minimum": 0.0,
+          "title": "Commonvalidaream2",
+          "type": "number"
+        },
+        "bounds": {
+          "maxItems": 4,
+          "minItems": 4,
+          "prefixItems": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            }
+          ],
+          "title": "Bounds",
+          "type": "array"
+        }
+      },
+      "required": [
+        "coverageWitnessDigest",
+        "rows",
+        "columns",
+        "selectedCellCount",
+        "commonValidCellCount",
+        "unavailableCellCount",
+        "thresholdExcludedCellCount",
+        "cellAreaM2",
+        "selectedAreaM2",
+        "commonValidAreaM2",
+        "bounds"
+      ],
+      "title": "AnalysisCoverageSummaryV2",
+      "type": "object"
+    },
+    "AnalysisExecutionStateV1": {
+      "description": "Lifecycle of the Core-recorded request, independent from suitability.",
+      "enum": [
+        "NOT_STARTED",
+        "QUEUED",
+        "RUNNING",
+        "COMPLETED",
+        "FAILED"
+      ],
+      "title": "AnalysisExecutionStateV1",
+      "type": "string"
+    },
+    "AnalysisMetricsV1": {
+      "additionalProperties": false,
+      "properties": {
+        "cutM3": {
+          "minimum": 0.0,
+          "title": "Cutm3",
+          "type": "number"
+        },
+        "fillM3": {
+          "minimum": 0.0,
+          "title": "Fillm3",
+          "type": "number"
+        },
+        "netM3": {
+          "title": "Netm3",
+          "type": "number"
+        },
+        "thresholdM": {
+          "minimum": 0.0,
+          "title": "Thresholdm",
+          "type": "number"
+        },
+        "uncertaintyM3": {
+          "default": null,
+          "title": "Uncertaintym3",
+          "type": "null"
+        }
+      },
+      "required": [
+        "cutM3",
+        "fillM3",
+        "netM3",
+        "thresholdM"
+      ],
+      "title": "AnalysisMetricsV1",
+      "type": "object"
+    },
+    "AnalysisObservationSelectorV1": {
+      "additionalProperties": false,
+      "description": "The only caller-controlled epoch reference accepted by analysis create.",
+      "properties": {
+        "workOrderId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Workorderid",
+          "type": "string"
+        },
+        "submissionRef": {
+          "pattern": "^ers-v1-[0-9a-f]{64}$",
+          "title": "Submissionref",
+          "type": "string"
+        },
+        "revision": {
+          "minimum": 1,
+          "title": "Revision",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "workOrderId",
+        "submissionRef",
+        "revision"
+      ],
+      "title": "AnalysisObservationSelectorV1",
+      "type": "object"
+    },
+    "AnalysisReadinessViewV1": {
+      "additionalProperties": false,
+      "description": "Pure read-only preflight for one arbitrary selector pair.\n\nThis projection never creates an intent, AP/NX record, or journal entry\nand grants no execution authority. It reuses the sealed AP decision\npredicates read-only; ``create`` rechecks the same predicates before any\ndurable admission. ``coverageCheck`` never promises common-mask\nverification \u2014 that remains worker-validated.",
+      "properties": {
+        "contractVersion": {
+          "const": "analysis-readiness.v1",
+          "default": "analysis-readiness.v1",
+          "title": "Contractversion",
+          "type": "string"
+        },
+        "siteId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Siteid",
+          "type": "string"
+        },
+        "workAreaId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Workareaid",
+          "type": "string"
+        },
+        "baseline": {
+          "$ref": "#/$defs/AnalysisObservationSelectorV1"
+        },
+        "current": {
+          "$ref": "#/$defs/AnalysisObservationSelectorV1"
+        },
+        "suitabilityState": {
+          "$ref": "#/$defs/AnalysisSuitabilityStateV1"
+        },
+        "blockers": {
+          "items": {
+            "$ref": "#/$defs/AnalysisBlockerV1"
+          },
+          "maxItems": 128,
+          "title": "Blockers",
+          "type": "array"
+        },
+        "limitationCodes": {
+          "default": [],
+          "items": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[A-Z][A-Z0-9_]{0,127}$",
+            "type": "string"
+          },
+          "maxItems": 128,
+          "title": "Limitationcodes",
+          "type": "array"
+        },
+        "checkedAt": {
+          "format": "date-time",
+          "title": "Checkedat",
+          "type": "string"
+        },
+        "calculationIdentityDigest": {
+          "anyOf": [
+            {
+              "pattern": "^sha256:[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Calculationidentitydigest"
+        },
+        "coverageCheck": {
+          "const": "REQUIRES_WORKER_VALIDATION",
+          "default": "REQUIRES_WORKER_VALIDATION",
+          "title": "Coveragecheck",
+          "type": "string"
+        }
+      },
+      "required": [
+        "siteId",
+        "workAreaId",
+        "baseline",
+        "current",
+        "suitabilityState",
+        "blockers",
+        "checkedAt"
+      ],
+      "title": "AnalysisReadinessViewV1",
+      "type": "object"
+    },
+    "AnalysisResultSummaryV2": {
+      "additionalProperties": false,
+      "description": "Compact numeric result projection with unchanged provisional semantics.",
+      "properties": {
+        "resultId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Resultid",
+          "type": "string"
+        },
+        "reportDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Reportdigest",
+          "type": "string"
+        },
+        "numericResultIdentityDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Numericresultidentitydigest",
+          "type": "string"
+        },
+        "computedAt": {
+          "format": "date-time",
+          "title": "Computedat",
+          "type": "string"
+        },
+        "metrics": {
+          "$ref": "#/$defs/AnalysisMetricsV1"
+        },
+        "coverage": {
+          "$ref": "#/$defs/AnalysisCoverageSummaryV2"
+        },
+        "limitationCodes": {
+          "items": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[A-Z][A-Z0-9_]{0,127}$",
+            "type": "string"
+          },
+          "maxItems": 128,
+          "title": "Limitationcodes",
+          "type": "array"
+        }
+      },
+      "required": [
+        "resultId",
+        "reportDigest",
+        "numericResultIdentityDigest",
+        "computedAt",
+        "metrics",
+        "coverage",
+        "limitationCodes"
+      ],
+      "title": "AnalysisResultSummaryV2",
+      "type": "object"
+    },
+    "AnalysisSuitabilityStateV1": {
+      "description": "Current AP/NX usability projection; it never certifies field accuracy.",
+      "enum": [
+        "BLOCKED",
+        "REMEDIATION_REQUIRED",
+        "PROVISIONAL_ACCURACY_UNVERIFIED",
+        "EVALUATED",
+        "REASSESSMENT_REQUIRED"
+      ],
+      "title": "AnalysisSuitabilityStateV1",
+      "type": "string"
+    },
+    "AnalysisViewV2": {
+      "additionalProperties": false,
+      "description": "Bounded detail projection; evidence and full coverage are separate resources.",
+      "properties": {
+        "analysisId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Analysisid",
+          "type": "string"
+        },
+        "siteId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Siteid",
+          "type": "string"
+        },
+        "workAreaId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Workareaid",
+          "type": "string"
+        },
+        "baseline": {
+          "$ref": "#/$defs/AnalysisObservationSelectorV1"
+        },
+        "current": {
+          "$ref": "#/$defs/AnalysisObservationSelectorV1"
+        },
+        "executionState": {
+          "$ref": "#/$defs/AnalysisExecutionStateV1"
+        },
+        "suitabilityState": {
+          "$ref": "#/$defs/AnalysisSuitabilityStateV1"
+        },
+        "blockers": {
+          "items": {
+            "$ref": "#/$defs/AnalysisBlockerV1"
+          },
+          "maxItems": 128,
+          "title": "Blockers",
+          "type": "array"
+        },
+        "result": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AnalysisResultSummaryV2"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "evidenceRevision": {
+          "minimum": 1,
+          "title": "Evidencerevision",
+          "type": "integer"
+        },
+        "evidenceDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Evidencedigest",
+          "type": "string"
+        },
+        "evidenceHref": {
+          "maxLength": 2048,
+          "minLength": 5,
+          "pattern": "^/v2/[A-Za-z0-9._~/%?=&;:@,\\-]+$",
+          "title": "Evidencehref",
+          "type": "string"
+        },
+        "coverageHref": {
+          "anyOf": [
+            {
+              "maxLength": 2048,
+              "minLength": 5,
+              "pattern": "^/v2/[A-Za-z0-9._~/%?=&;:@,\\-]+$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Coveragehref"
+        },
+        "createdAt": {
+          "format": "date-time",
+          "title": "Createdat",
+          "type": "string"
+        }
+      },
+      "required": [
+        "analysisId",
+        "siteId",
+        "workAreaId",
+        "baseline",
+        "current",
+        "executionState",
+        "suitabilityState",
+        "blockers",
+        "evidenceRevision",
+        "evidenceDigest",
+        "evidenceHref",
+        "createdAt"
+      ],
+      "title": "AnalysisViewV2",
+      "type": "object"
+    },
+    "CreateAnalysisRequestV1": {
+      "additionalProperties": false,
+      "description": "Two ordered selectors; caller policy/runtime/digest fields are forbidden.",
+      "properties": {
+        "baseline": {
+          "$ref": "#/$defs/AnalysisObservationSelectorV1"
+        },
+        "current": {
+          "$ref": "#/$defs/AnalysisObservationSelectorV1"
+        }
+      },
+      "required": [
+        "baseline",
+        "current"
+      ],
+      "title": "CreateAnalysisRequestV1",
+      "type": "object"
+    },
+    "CreateSpatialTaskV1": {
+      "additionalProperties": false,
+      "properties": {
+        "purpose": {
+          "$ref": "#/$defs/SpatialTaskPurposeV1",
+          "default": "CLARIFY"
+        },
+        "workAreaId": {
+          "anyOf": [
+            {
+              "maxLength": 255,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Workareaid"
+        },
+        "inputs": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CreateAnalysisRequestV1"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "title": "CreateSpatialTaskV1",
+      "type": "object"
+    },
+    "RunSpatialTaskV1": {
+      "additionalProperties": false,
+      "properties": {
+        "expectedRevision": {
+          "minimum": 1,
+          "title": "Expectedrevision",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "expectedRevision"
+      ],
+      "title": "RunSpatialTaskV1",
+      "type": "object"
+    },
+    "SelectSpatialTaskV1": {
+      "additionalProperties": false,
+      "properties": {
+        "purpose": {
+          "$ref": "#/$defs/SpatialTaskPurposeV1",
+          "default": "CLARIFY"
+        },
+        "workAreaId": {
+          "anyOf": [
+            {
+              "maxLength": 255,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Workareaid"
+        },
+        "inputs": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CreateAnalysisRequestV1"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "expectedRevision": {
+          "minimum": 1,
+          "title": "Expectedrevision",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "expectedRevision"
+      ],
+      "title": "SelectSpatialTaskV1",
+      "type": "object"
+    },
+    "SpatialTaskAreaV1": {
+      "additionalProperties": false,
+      "properties": {
+        "workAreaId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+          "title": "Workareaid",
+          "type": "string"
+        },
+        "name": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        }
+      },
+      "required": [
+        "workAreaId",
+        "name"
+      ],
+      "title": "SpatialTaskAreaV1",
+      "type": "object"
+    },
+    "SpatialTaskObservationV1": {
+      "additionalProperties": false,
+      "properties": {
+        "selector": {
+          "$ref": "#/$defs/AnalysisObservationSelectorV1"
+        },
+        "observationEpochId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Observationepochid",
+          "type": "string"
+        },
+        "captureStartedAt": {
+          "format": "date-time",
+          "title": "Capturestartedat",
+          "type": "string"
+        },
+        "captureEndedAt": {
+          "format": "date-time",
+          "title": "Captureendedat",
+          "type": "string"
+        },
+        "workAreaIds": {
+          "items": {
+            "maxLength": 255,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+            "type": "string"
+          },
+          "maxItems": 64,
+          "minItems": 1,
+          "title": "Workareaids",
+          "type": "array"
+        }
+      },
+      "required": [
+        "selector",
+        "observationEpochId",
+        "captureStartedAt",
+        "captureEndedAt",
+        "workAreaIds"
+      ],
+      "title": "SpatialTaskObservationV1",
+      "type": "object"
+    },
+    "SpatialTaskOptionsV1": {
+      "additionalProperties": false,
+      "properties": {
+        "siteId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+          "title": "Siteid",
+          "type": "string"
+        },
+        "areas": {
+          "items": {
+            "$ref": "#/$defs/SpatialTaskAreaV1"
+          },
+          "maxItems": 64,
+          "title": "Areas",
+          "type": "array"
+        },
+        "observations": {
+          "items": {
+            "$ref": "#/$defs/SpatialTaskObservationV1"
+          },
+          "maxItems": 32,
+          "title": "Observations",
+          "type": "array"
+        },
+        "nextOffset": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Nextoffset"
+        }
+      },
+      "required": [
+        "siteId",
+        "areas",
+        "observations"
+      ],
+      "title": "SpatialTaskOptionsV1",
+      "type": "object"
+    },
+    "SpatialTaskPurposeV1": {
+      "enum": [
+        "CLARIFY",
+        "OBSERVED_CHANGE",
+        "DESIGN_REMAINING",
+        "DAILY_TARGET"
+      ],
+      "title": "SpatialTaskPurposeV1",
+      "type": "string"
+    },
+    "SpatialTaskSelectionV1": {
+      "additionalProperties": false,
+      "properties": {
+        "purpose": {
+          "$ref": "#/$defs/SpatialTaskPurposeV1",
+          "default": "CLARIFY"
+        },
+        "workAreaId": {
+          "anyOf": [
+            {
+              "maxLength": 255,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Workareaid"
+        },
+        "inputs": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CreateAnalysisRequestV1"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "title": "SpatialTaskSelectionV1",
+      "type": "object"
+    },
+    "SpatialTaskSiteV1": {
+      "additionalProperties": false,
+      "properties": {
+        "siteId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+          "title": "Siteid",
+          "type": "string"
+        },
+        "name": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        }
+      },
+      "required": [
+        "siteId",
+        "name"
+      ],
+      "title": "SpatialTaskSiteV1",
+      "type": "object"
+    },
+    "SpatialTaskSitesV1": {
+      "additionalProperties": false,
+      "properties": {
+        "items": {
+          "items": {
+            "$ref": "#/$defs/SpatialTaskSiteV1"
+          },
+          "maxItems": 32,
+          "title": "Items",
+          "type": "array"
+        },
+        "nextOffset": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Nextoffset"
+        }
+      },
+      "required": [
+        "items"
+      ],
+      "title": "SpatialTaskSitesV1",
+      "type": "object"
+    },
+    "SpatialTaskV1": {
+      "additionalProperties": false,
+      "properties": {
+        "taskId": {
+          "pattern": "^st-[0-9a-f]{32}$",
+          "title": "Taskid",
+          "type": "string"
+        },
+        "siteId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+          "title": "Siteid",
+          "type": "string"
+        },
+        "revision": {
+          "minimum": 1,
+          "title": "Revision",
+          "type": "integer"
+        },
+        "selection": {
+          "$ref": "#/$defs/SpatialTaskSelectionV1"
+        },
+        "analysisId": {
+          "anyOf": [
+            {
+              "maxLength": 255,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Analysisid"
+        },
+        "executionRequested": {
+          "default": false,
+          "title": "Executionrequested",
+          "type": "boolean"
+        },
+        "createdAt": {
+          "format": "date-time",
+          "title": "Createdat",
+          "type": "string"
+        },
+        "expiresAt": {
+          "format": "date-time",
+          "title": "Expiresat",
+          "type": "string"
+        }
+      },
+      "required": [
+        "taskId",
+        "siteId",
+        "revision",
+        "selection",
+        "createdAt",
+        "expiresAt"
+      ],
+      "title": "SpatialTaskV1",
+      "type": "object"
+    },
+    "SpatialTaskViewV1": {
+      "additionalProperties": false,
+      "properties": {
+        "task": {
+          "$ref": "#/$defs/SpatialTaskV1"
+        },
+        "state": {
+          "enum": [
+            "PURPOSE_REQUIRED",
+            "UNSUPPORTED_PURPOSE",
+            "AREA_REQUIRED",
+            "OBSERVATIONS_REQUIRED",
+            "CHECK_REQUIRED",
+            "ANALYSIS_PENDING",
+            "ANALYSIS_LINKED",
+            "SELECTION_UNAVAILABLE"
+          ],
+          "title": "State",
+          "type": "string"
+        },
+        "selectionHref": {
+          "pattern": "^/sites/[A-Za-z0-9._~-]+/spatial-tasks/st-[0-9a-f]{32}$",
+          "title": "Selectionhref",
+          "type": "string"
+        },
+        "analysisHref": {
+          "anyOf": [
+            {
+              "pattern": "^/sites/[A-Za-z0-9._~/?=&-]+$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Analysishref"
+        },
+        "readiness": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AnalysisReadinessViewV1"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "analysis": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AnalysisViewV2"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "task",
+        "state",
+        "selectionHref"
+      ],
+      "title": "SpatialTaskViewV1",
+      "type": "object"
+    }
+  },
+  "anyOf": [
+    {
+      "$ref": "#/$defs/CreateSpatialTaskV1"
+    },
+    {
+      "$ref": "#/$defs/SelectSpatialTaskV1"
+    },
+    {
+      "$ref": "#/$defs/RunSpatialTaskV1"
+    },
+    {
+      "$ref": "#/$defs/SpatialTaskViewV1"
+    },
+    {
+      "$ref": "#/$defs/SpatialTaskOptionsV1"
+    },
+    {
+      "$ref": "#/$defs/SpatialTaskSitesV1"
+    }
+  ]
+}

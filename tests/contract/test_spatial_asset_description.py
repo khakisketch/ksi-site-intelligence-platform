@@ -10,6 +10,7 @@ from types import SimpleNamespace
 from typing import Any, cast
 
 import pytest
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from jsonschema import Draft202012Validator
 from ksi_core.app import create_app
@@ -969,6 +970,7 @@ def test_describe_openapi_declares_v2_route_and_schema(tmp_path: Path) -> None:
 
     client, order, _, _, area_a, _, _, _, _ = _setup(tmp_path)
     app = client.app
+    assert isinstance(app, FastAPI)
     assert (
         "/v2/sites/{site_id}/work-areas/{work_area_id}/spatial-assets/{asset_ref}"
         in app.openapi()["paths"]

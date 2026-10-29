@@ -199,17 +199,19 @@ def _origin_config(token: Path, origin: str) -> Path:
     )
 
 
-def test_tmp_parent_configs_are_rejected(tmp_path: Path) -> None:
-    """The world-writable /tmp ancestry must fail; scratch is the owned path."""
+def test_world_writable_parent_configs_are_rejected() -> None:
+    """Reject an unsafe ancestor regardless of the runner's TMPDIR setting."""
     from ksi_spatial_data_mcp.config import (
         AdapterConfig,
         AdapterConfigurationError,
     )
 
-    token = tmp_path / "token"
+    parent = fixture.private_dir() / "world-writable-config-parent"
+    parent.mkdir(mode=0o700)
+    token = parent / "token"
     token.write_text("tmp-token\n", encoding="ascii")
     token.chmod(0o600)
-    config = tmp_path / "config.json"
+    config = parent / "config.json"
     payload = {
         "coreOrigin": "http://127.0.0.1:9",
         "tokenFile": os.fspath(token),
@@ -217,8 +219,15 @@ def test_tmp_parent_configs_are_rejected(tmp_path: Path) -> None:
     }
     config.write_text(json.dumps(payload), encoding="utf-8")
     config.chmod(0o600)
-    with pytest.raises(AdapterConfigurationError):
-        AdapterConfig.from_file(config)
+    # Prove the same files are accepted with a safe ancestry first; changing
+    # only the parent mode must then fail even when pytest's tmp_path is private.
+    assert AdapterConfig.from_file(config).read_token() == "tmp-token"
+    parent.chmod(0o707)
+    try:
+        with pytest.raises(AdapterConfigurationError, match="group- or world-writable"):
+            AdapterConfig.from_file(config)
+    finally:
+        parent.chmod(0o700)
 
 
 def test_group_writable_ancestor_rejected() -> None:

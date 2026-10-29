@@ -296,8 +296,12 @@ def sdk_storage(
 
     # Each storage gets its OWN log file: the child is a fresh interpreter, so the
     # log is the only channel back to the parent, and two storages must not
-    # interleave their calls into one file.
-    log_path = path / f"sdk-{next(_log_counter)}.jsonl"
+    # interleave their calls into one file. The counter is module-global and
+    # shared by every importer in the pytest process, so names are zero-padded:
+    # lexical glob order must equal numeric (creation) order, otherwise a
+    # 9/10 boundary flips head/get/close and the fail-closed assertion reads
+    # the wrong last operation.
+    log_path = path / f"sdk-{next(_log_counter):06d}.jsonl"
     changes = dict(response_changes or {})
     if listing_changes is not None:
         changes["__listing__"] = dict(listing_changes)
@@ -363,7 +367,14 @@ def sdk_storage(
 def sdk_events(path: Path) -> list[dict[str, Any]]:
     """Every recorded SDK call across this test's storages (one log per storage)."""
     events: list[dict[str, Any]] = []
-    for log in sorted(path.glob("sdk-*.jsonl")):
+
+    def _log_order(item: Path) -> Any:
+        try:
+            return (0, int(item.stem.split("-", 1)[1]))
+        except (ValueError, IndexError):
+            return (1, item.name)
+
+    for log in sorted(path.glob("sdk-*.jsonl"), key=_log_order):
         events.extend(json.loads(line) for line in log.read_text().splitlines())
     return events
 
@@ -422,6 +433,27 @@ def test_s3_get_substitution_fails_and_closes_body(tmp_path: Path, change: dict)
         list(chunks)
     assert child_supervisor.wait_for_idle(timeout_seconds=1)
     assert sdk_events(tmp_path)[-1]["operation"] == "close"
+
+
+def test_s3_substitution_cleanup_keeps_log_order_across_digit_boundary(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Other test imports can advance the shared counter through 9 -> 10."""
+    monkeypatch.setitem(globals(), "_log_counter", iter((9, 10)))
+    storage, supervisor = sdk_storage(tmp_path)
+    observed = storage.observe_owned_output(target())
+    mutated, child_supervisor = sdk_storage(tmp_path, response_changes={"VersionId": "version-2"})
+    with (
+        pytest.raises(SpatialDataDomainError) as error,
+        mutated.open_version(
+            observed, chunk_bytes=3, deadline=NOW + timedelta(seconds=1)
+        ) as chunks,
+    ):
+        list(chunks)
+    assert error.value.reason == "INTEGRITY_MISMATCH"
+    assert supervisor.wait_for_idle(timeout_seconds=1)
+    assert child_supervisor.wait_for_idle(timeout_seconds=1)
+    assert [event["operation"] for event in sdk_events(tmp_path)] == ["head", "get", "close"]
 
 
 def test_s3_stream_checks_full_hash_not_only_metadata(tmp_path: Path) -> None:
@@ -549,7 +581,9 @@ def test_s3_blocking_sdk_call_returns_within_outer_total_deadline(
     assert owner.wait_for_idle(timeout_seconds=3)
 
 
-def test_real_botocore_model_signs_exact_put_headers_without_remote_io(tmp_path: Path) -> None:
+def test_real_botocore_model_signs_exact_put_headers_without_remote_io(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
     """A permissive SDK double cannot prove real PUT signing accepts and binds our parameters."""
     from urllib.parse import parse_qs, urlsplit
 
@@ -560,6 +594,29 @@ def test_real_botocore_model_signs_exact_put_headers_without_remote_io(tmp_path:
     from botocore.config import Config
     from ksi_core.domains.external.delivery.storage_s3 import SpatialDataS3Storage
     from ksi_core.domains.external.delivery.storage_supervisor import SpatialDataStorageSupervisor
+
+    # The child is a FRESH interpreter: it never inherits this parent factory
+    # object. Earlier sdk_storage tests leave KSI_CORE_S3_CLIENT_FACTORY
+    # pointing at the finite stub, so an uncleared environment would make this
+    # "real botocore" test silently exercise the stub again. Clear the leak
+    # and hand the child an explicit real endpoint; the child rebuilds a
+    # genuine botocore client from the description plus generated creds only.
+    # No remote I/O happens: presigning is offline, the host is unreachable.
+    # Deliberately seed a synthetic ambient token so the no-token assertion
+    # catches a future regression even when the invoking shell is clean.
+    monkeypatch.setenv("AWS_SESSION_TOKEN", "synthetic-ambient-token")
+    monkeypatch.delenv("KSI_CORE_S3_CLIENT_FACTORY", raising=False)
+    monkeypatch.delenv("KSI_CORE_S3_ENDPOINT", raising=False)
+    for name in tuple(os.environ):
+        if name.startswith("AWS_"):
+            monkeypatch.delenv(name)
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("BOTO_CONFIG", str(tmp_path / "empty-boto-config"))
+    monkeypatch.setenv("AWS_CONFIG_FILE", str(tmp_path / "empty-aws-config"))
+    monkeypatch.setenv("AWS_SHARED_CREDENTIALS_FILE", str(tmp_path / "empty-aws-credentials"))
+    monkeypatch.setenv("AWS_EC2_METADATA_DISABLED", "true")
+    monkeypatch.setenv("AWS_ACCESS_KEY_ID", "local-test-only")
+    monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "local-test-only")
 
     def factory() -> Any:
         return boto3.client(
@@ -584,9 +641,14 @@ def test_real_botocore_model_signs_exact_put_headers_without_remote_io(tmp_path:
         source_key_resolver=lambda _: "unused",
         policy=make_policy(),
         supervisor=supervisor,
-        operation_timeout_seconds=1,
+        # Fresh interpreter plus real boto3 import costs more than the stub;
+        # 2s is still far below the 10s policy deadline and bounds the stall.
+        operation_timeout_seconds=2.0,
+        child_sdk_settings={"endpointUrl": "https://store.invalid"},
     )
-    current_target = replace(target(), expires_at=datetime.now(UTC) + timedelta(seconds=2))
+    # Keep the expiry safely beyond process startup, while still checking that
+    # the actual signature never grants authority beyond the owned target.
+    current_target = replace(target(), expires_at=datetime.now(UTC) + timedelta(seconds=60))
     capability = storage.issue_output_put(
         current_target,
         sha256=DIGEST,
@@ -598,7 +660,12 @@ def test_real_botocore_model_signs_exact_put_headers_without_remote_io(tmp_path:
     assert query["X-Amz-SignedHeaders"] == [
         "content-length;content-type;host;x-amz-checksum-sha256"
     ]
-    assert query["X-Amz-Expires"] == ["1"]
+    assert query["X-Amz-Credential"][0].startswith("local-test-only/")
+    assert "X-Amz-Security-Token" not in query
+    signed_at = datetime.strptime(query["X-Amz-Date"][0], "%Y%m%dT%H%M%SZ").replace(tzinfo=UTC)
+    ttl = int(query["X-Amz-Expires"][0])
+    assert 0 < ttl <= 60
+    assert signed_at + timedelta(seconds=ttl) <= current_target.expires_at
     assert supervisor.wait_for_idle(timeout_seconds=1)
 
 

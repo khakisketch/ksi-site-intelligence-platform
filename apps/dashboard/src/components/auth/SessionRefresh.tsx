@@ -1,7 +1,8 @@
 "use client";
 
+import { useAccountDisplayLock } from "@/components/nav/AccountDisplayBoundary";
 import { useEffect } from "react";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 
 const REFRESH_INTERVAL_MS = 10 * 60 * 1000;
 let browserRefresh: Promise<Response | null> | null = null;
@@ -16,8 +17,8 @@ function requestRefresh(): Promise<Response | null> {
 }
 
 export function SessionRefresh() {
+  const accountDisplay = useAccountDisplayLock();
   const pathname = usePathname();
-  const router = useRouter();
 
   useEffect(() => {
     if (pathname === "/login") return;
@@ -25,7 +26,8 @@ export function SessionRefresh() {
     async function refresh() {
       const response = await requestRefresh();
       if (!stopped && response?.status === 401) {
-        router.replace(`/login?notice=oidc-session-expired&next=${encodeURIComponent(pathname)}`);
+        // Preserve any in-progress subtree; let the user sign in in a new tab.
+        accountDisplay?.invalidate();
       }
     }
     const interval = window.setInterval(() => void refresh(), REFRESH_INTERVAL_MS);
@@ -33,7 +35,7 @@ export function SessionRefresh() {
       stopped = true;
       window.clearInterval(interval);
     };
-  }, [pathname, router]);
+  }, [accountDisplay, pathname]);
 
   return null;
 }

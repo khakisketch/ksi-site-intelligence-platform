@@ -95,6 +95,7 @@ export interface CoreFetchOptions {
   query?: Record<string, string | number | undefined>;
   body?: unknown;
   headers?: Record<string, string>;
+  signal?: AbortSignal;
 }
 
 function buildUrl(path: string, query?: CoreFetchOptions["query"]): string {
@@ -124,6 +125,7 @@ async function rawCoreRequest(
     // 이 대시보드는 Next 데이터 캐시에 기대지 않는다 — 매 요청 Core API 최신 상태를 그대로
     // 반영한다(운영자가 현장/이벤트/임무 최신 상태를 봐야 하므로 staleness 허용치가 낮다).
     cache: "no-store",
+    ...(options.signal ? { signal: options.signal } : {}),
   });
 
   if (!response.ok) {

@@ -14,10 +14,13 @@ import hashlib
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from threading import Thread
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from urllib.parse import parse_qs, urlsplit
 
 import pytest
+
+if TYPE_CHECKING:
+    from ksi_analysis_mcp.core_client import CoreAnalysisClient
 
 SITE = "site-a"
 AREA = "area-a"
@@ -147,7 +150,9 @@ def _bytes_payload(offset: int = 0, length: int = 16, **overrides: Any) -> dict[
     )
 
 
-def _client(tmp_path: Path, handler: type[BaseHTTPRequestHandler]):
+def _client(
+    tmp_path: Path, handler: type[BaseHTTPRequestHandler]
+) -> tuple[CoreAnalysisClient, ThreadingHTTPServer, Thread]:
     from ksi_analysis_mcp.config import AdapterConfig
     from ksi_analysis_mcp.core_client import CoreAnalysisClient
 
@@ -183,6 +188,18 @@ def test_delta_create_posts_source_only_body_and_requires_machine_ack(
     seen: dict[str, Any] = {}
 
     class CoreHandler(BaseHTTPRequestHandler):
+        def do_GET(self) -> None:  # noqa: N802
+            # Machine-acknowledged site-scoped preflight read, served the
+            # same way a real Core serves analysis-observations to the
+            # dedicated machine client before the delta intent POST.
+            assert self.path == f"/v1/sites/{SITE}/analysis-observations"
+            body = json.dumps({"items": []}).encode()
+            self.send_response(200)
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("X-KSI-External-AI-Egress", "ALLOWED")
+            self.end_headers()
+            self.wfile.write(body)
+
         def do_POST(self) -> None:  # noqa: N802
             length = int(self.headers.get("Content-Length", "0"))
             seen["path"] = self.path
@@ -299,6 +316,18 @@ def test_delta_create_maps_native_core_errors_honestly(tmp_path: Path) -> None:
     from ksi_analysis_mcp.core_client import CoreAdapterError
 
     class CoreHandler(BaseHTTPRequestHandler):
+        def do_GET(self) -> None:  # noqa: N802
+            # Machine-acknowledged site-scoped preflight read now precedes
+            # the delta intent POST; a real Core serves it to the machine
+            # client the same way.
+            assert self.path == f"/v1/sites/{SITE}/analysis-observations"
+            body = json.dumps({"items": []}).encode()
+            self.send_response(200)
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("X-KSI-External-AI-Egress", "ALLOWED")
+            self.end_headers()
+            self.wfile.write(body)
+
         def do_POST(self) -> None:  # noqa: N802
             length = int(self.headers.get("Content-Length", "0"))
             body_in = json.loads(self.rfile.read(length))
@@ -527,12 +556,20 @@ def test_delta_bytes_pass_through_opaque_chunk_and_deny_tampering(
 
 
 def test_delta_tools_leave_established_analysis_tools_unchanged(tmp_path: Path) -> None:
-    """The seven frozen tools keep their shapes and behavior."""
+    """The seven frozen tools keep their shapes and behavior, next to the
+    seven additive spatial-task tools and three delta-publication tools."""
     import json
 
     from ksi_analysis_mcp.core_client import TOOL_ARGUMENT_MODELS, TOOL_RESULT_MODELS
 
     assert set(TOOL_ARGUMENT_MODELS) == {
+        "ksi_list_spatial_task_sites",
+        "ksi_create_spatial_task",
+        "ksi_get_spatial_task",
+        "ksi_get_spatial_task_options",
+        "ksi_select_spatial_task",
+        "ksi_check_spatial_task",
+        "ksi_run_spatial_task",
         "ksi_list_analysis_observations",
         "ksi_list_analyses",
         "ksi_create_analysis",
@@ -544,6 +581,9 @@ def test_delta_tools_leave_established_analysis_tools_unchanged(tmp_path: Path) 
         "ksi_get_delta_publication",
         "ksi_read_delta_publication_bytes",
     }
+    # The result registry must cover exactly the same allowlisted tool set:
+    # no tool without a validated result model and no result without a tool.
+    assert set(TOOL_RESULT_MODELS) == set(TOOL_ARGUMENT_MODELS)
     assert TOOL_RESULT_MODELS["ksi_get_analysis"] is TOOL_RESULT_MODELS[
         "ksi_get_analysis_result"
     ]

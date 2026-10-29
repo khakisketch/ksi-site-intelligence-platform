@@ -244,10 +244,14 @@ describe("관측 작업 페이지 follow-up", () => {
     await renderPage();
     expect(screen.getByText("등록 상태 확인 필요")).toBeTruthy();
     expect(screen.getByText(/산출물 등록 목록을 불러오지 못했습니다/)).toBeTruthy();
+    expect(screen.getByText(/목록이 복구돼도 상단 상태는 이전 정보일 수 있습니다/)).toBeTruthy();
+    expect(screen.getByText(/화면을 새로고침하면 미제출 입력·파일 선택·동결된 요청이 사라지니/)).toBeTruthy();
     expect(screen.queryByText("외부 산출물 등록 준비")).toBeNull();
     expect(screen.queryByRole("region", { name: "등록 자료 다음 확인" })).toBeNull();
-    // 기존 등록·검사 진입과 재시도는 그대로 둔다.
-    expect(screen.getByRole("link", { name: "자료 등록·검사 기록으로 이동" }).getAttribute("href")).toBe("#external-submissions");
+    // 기존 등록·검사 진입과 재시도는 그대로 둔다 — 상태 배너와 작업 내 이동에 같은 앵커가 함께 있다.
+    const stageEntries = screen.getAllByRole("link", { name: "자료 등록·검사 기록으로 이동" });
+    expect(stageEntries).toHaveLength(2);
+    for (const entry of stageEntries) expect(entry.getAttribute("href")).toBe("#external-submissions");
   });
 
   it("withholds the catalog/analysis continuation until a retained submission exists", async () => {
@@ -273,6 +277,9 @@ describe("관측 작업 페이지 follow-up", () => {
     mocked.session.mockResolvedValueOnce({ kind: "ready", principal: { principalId: "viewer-1", organizationId: "org-1", permissions: [] } });
     await renderPage();
     expect(screen.queryByTestId("responsive-notice")).toBeNull();
-    expect(screen.getByRole("link", { name: "자료 등록·검사 기록으로 이동" }).getAttribute("href")).toBe("#external-submissions");
+    // 조회 전용에도 상태 배너와 작업 내 이동의 같은 앵커 진입은 둔다.
+    const viewerEntries = screen.getAllByRole("link", { name: "자료 등록·검사 기록으로 이동" });
+    expect(viewerEntries).toHaveLength(2);
+    for (const entry of viewerEntries) expect(entry.getAttribute("href")).toBe("#external-submissions");
   });
 });

@@ -1,6 +1,7 @@
 import "server-only";
 
 import { listSitesCached } from "@/lib/core-api/cached";
+import type { SiteView } from "@/lib/core-api/types";
 import { SITE_STATUS_LABEL } from "@/lib/core-api/labels";
 
 import { DESKTOP_NAV_ITEMS } from "../nav/nav-items";
@@ -17,7 +18,7 @@ import type { PaletteItem } from "./palette-items";
  * 불러왔다고 이동 자체를 막으면 사용자가 갇힌다. 실패를 0건으로 위장하지도 않는다 —
  * 그냥 그 갈래가 비어 있고, 사용자는 현장 목록에서 확인할 수 있다.
  */
-export async function buildPaletteItems(): Promise<PaletteItem[]> {
+export async function buildPaletteItems(snapshot?: readonly SiteView[] | null): Promise<PaletteItem[]> {
   const screens: PaletteItem[] = DESKTOP_NAV_ITEMS.map((item) => ({
     key: `screen:${item.key}`,
     label: item.label,
@@ -29,7 +30,7 @@ export async function buildPaletteItems(): Promise<PaletteItem[]> {
     hint: item.description,
   }));
 
-  const sites = await listSitesCached().catch(() => null);
+  const sites = snapshot === undefined ? await listSitesCached().catch(() => null) : snapshot;
   const siteItems: PaletteItem[] = (sites ?? []).map((site) => ({
     key: `site:${site.siteId}`,
     label: site.name,

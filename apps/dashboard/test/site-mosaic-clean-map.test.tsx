@@ -211,4 +211,37 @@ describe("site mosaic clean map", () => {
     // File extent itself is still drawn from the measured transform.
     expect(screen.getByText("0 – 1022")).toBeTruthy();
   });
+
+  it("keeps the same-plane reason visible in the canvas stage when the ring cannot overlay", () => {
+    stubCanvas();
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(BYTES, { status: 200 })));
+    const ring: Array<[number, number]> = [[0, 0], [10, 0], [10, 10], [0, 10]];
+    render(
+      <SiteMosaicViewport
+        siteId="site-1"
+        workAreaId="area-1"
+        assetRef={assetRef}
+        grid={grid}
+        observedCrsDigest={crsDigest}
+        observedCrsIdentifier="EPSG:7850"
+        isDsm={false}
+        jobs={[]}
+        canRequest={false}
+        requestsHref="/sites/site-1/spatial-data-requests?workAreaId=area-1"
+        workAreaRing={ring}
+        workAreaCrs="EPSG:4326"
+        presentation="canvas"
+        showAbsentExtentCanvas
+      />,
+    );
+
+    // The viewer-first stage shows the file-only extent canvas here — the missing
+    // work-area ring must still explain itself in visible stage text, not aria-label
+    // or collapsed details only.
+    expect(screen.getByText("등록 범위 · 실제 픽셀 아님")).toBeTruthy();
+    const mentions = screen.getAllByText(/위치 기준이 달라/);
+    expect(mentions.length).toBeGreaterThanOrEqual(1);
+    expect(mentions.some((node) => node.closest("details") === null)).toBe(true);
+    expect(screen.queryByText(/실선은 작업구역 경계이며/)).toBeNull();
+  });
 });

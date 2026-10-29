@@ -6,6 +6,8 @@ import { ResponsiveNotice } from "@/components/responsive/ResponsiveActionBounda
 import { ErrorState } from "@/components/ui/ErrorState";
 import { StateBadge } from "@/components/ui/StatusBadge";
 import { CoreApiError } from "@/lib/core-api/client";
+import { whoAmI } from "@/lib/core-api/auth";
+import { continuityFingerprint } from "@/lib/core-api/work-order-continuity";
 import { getObservationWorkOrder, getObservationWorkOrderOperations, listReobservationDrafts } from "@/lib/core-api/observation-work-orders";
 import { getExternalReconstructionContext, listExternalReconstructionSubmissions, resolveExternalWorkOrderExecutionContext } from "@/lib/core-api/external-reconstruction";
 import { getExternalRelativeVolumeReport, getSiteExternalRelativeVolumeReport, listSiteExternalVolumeHistory } from "@/lib/core-api/external-result-workflow";
@@ -137,14 +139,32 @@ export default async function FieldWorkOrderPage({ params, searchParams }: {
     return <div className="p-4 sm:p-5"><ErrorState message="관측 작업 원장을 불러오지 못했습니다." retryable /></div>;
   }
 
-  const [site, drafts, externalContext, workAreas, history] = await Promise.all([
+  const [site, drafts, externalContext, workAreas, history, identity] = await Promise.all([
     getSite(workOrder.siteId).catch(() => null),
     listReobservationDrafts(workOrder.workOrderId).catch(() => null),
     getExternalReconstructionContext(workOrder.workOrderId).catch(() => null),
     // 보관 구역 포함 — 과거 작업이 보관된 구역을 가리킬 수 있다.
     listWorkAreas(workOrder.siteId, { includeArchived: true }).catch(() => null),
     listSiteExternalVolumeHistory(workOrder.siteId, { limit: 20 }).catch(() => null),
+    // 사용 결정 재시도의 계정 연속성 비교값 — 서버에서 확인한 두 식별자의
+    // 비교값일 뿐 자격 증명이나 인가가 아니다. 신원 부재면 새 요청은 막히고
+    // 이미 동결된 재시도만 같은 키로 이어간다.
+    whoAmI().catch(() => null),
   ]);
+  // Core는 principal에 경로 안전 형식을 강제하지 않는다. 서버에서 정확한 두
+  // 식별자의 ASCII 비교값을 만들고, 원문 식별자는 클라이언트에 내보내지 않는다.
+  const accountIdentity = (() => {
+    const fingerprint = continuityFingerprint(identity);
+    const permissions = identity?.permissions;
+    const permissionsVerified = Array.isArray(permissions) && permissions.every((permission) => typeof permission === "string");
+    return fingerprint && permissionsVerified ? { fingerprint } : null;
+  })();
+  // OIDC-first 배포 경계: registry 발급(scoped) 운영자 신원에는 Core가 기존
+  // 사용 결정 경로(POST/GET use-decisions)를 allowlist 밖으로 닫는다. 이 화면이
+  // 그 버튼을 그대로 내놓으면 확정 403만 만든다. 신원 출처(registryScoped)는
+  // 서버가 확인한 사실이며 권한 추론이 아니다. 모호한 경우(값 없음/LEGACY)는
+  // 닫힘으로 표시하지 않고 기존 동작을 유지한다.
+  const legacyDecisionClosed = identity?.registryScoped === true;
   const externalExecutionContext = resolveExternalWorkOrderExecutionContext(workOrder, externalContext);
   const externalWorkflow = externalExecutionContext === "EXTERNAL_INGRESS" || externalExecutionContext === "EXTERNAL_REOBSERVATION_PLANNING";
   const planningBinding = externalExecutionContext === "EXTERNAL_REOBSERVATION_PLANNING"
@@ -210,15 +230,28 @@ export default async function FieldWorkOrderPage({ params, searchParams }: {
     : null;
   // 목록 실패를 빈 목록으로 보지 않는다 — 모름이면 등록 준비 단계로 속이지 않고
   // 목록 재확인을 안내한다. 결과·종료가 이미 확정된 상태는 그대로 둔다.
+  // anchor는 화면 내 실제 이동 대상과 같은 값만 둔다 — 상태 배너 아래 이동
+  // 링크가 그 앵커를 그대로 쓴다.
   const stage = submissionsUnknown && !workflowClosed && !ownResult
     ? {
       stage: "REGISTER" as const,
       label: "등록 상태 확인 필요",
-      detail: "산출물 등록 목록을 불러오지 못했습니다. 목록을 다시 확인한 뒤 이어가세요. 이 화면의 등록·검사·재시도 상태는 그대로 둡니다.",
+      detail: "산출물 등록 목록을 불러오지 못했습니다. 아래 이동에서 목록 다시 시도로 복구하세요. 목록이 복구돼도 상단 상태는 이전 정보일 수 있습니다. 화면을 새로고침하면 미제출 입력·파일 선택·동결된 요청이 사라지니, 진행 중인 입력·재시도가 있으면 먼저 마무리하세요.",
       tone: "warning" as const,
       anchor: "external-submissions",
     }
     : baseStage;
+  // 상태 배너의 다음 행동은 화면 내 이동과 같은 문구·같은 앵커를 쓴다.
+  // deriveExternalWorkOrderStage가 돌려주는 anchor는 지금까지 배너에서
+  // 버려졌고, 사용자는 다음 기록이 화면 어디에 있는지 직접 찾아야 했다.
+  const stageAnchorLabel =
+    stage?.anchor === "external-submissions"
+      ? workflowClosed ? "자료 검사 기록으로 이동" : "자료 등록·검사 기록으로 이동"
+      : stage?.anchor === "external-volume"
+        ? "비교 요청·제안 상태로 이동"
+        : stage?.anchor === "external-result"
+          ? "결과와 제안 결정으로 이동"
+          : null;
   const siteReturnHref = continuation?.workAreaId
     ? `/sites/${encodeURIComponent(workOrder.siteId)}?workAreaId=${encodeURIComponent(continuation.workAreaId)}`
     : `/sites/${encodeURIComponent(workOrder.siteId)}`;
@@ -267,6 +300,11 @@ export default async function FieldWorkOrderPage({ params, searchParams }: {
             <StateBadge label={stage?.label ?? status.label} tone={stage?.tone ?? status.tone} />
           </div>
           <p className="text-[13px] leading-5 text-ink-2">{stage?.detail ?? status.detail}</p>
+          {stage?.anchor && stageAnchorLabel && (
+            <Link href={`#${stage.anchor}`} className="tap-target w-fit text-[12.5px] font-semibold text-ink-2 underline underline-offset-2">
+              {stageAnchorLabel}
+            </Link>
+          )}
           {workOrder.statusReason && <p className="rounded-lg bg-high-bg px-3 py-2 text-[13px] text-high-ink">{workOrder.statusReason}</p>}
           {externalExecutionContext === "UNVERIFIED" && <p role="status" className="rounded-lg border border-line bg-sunk px-3 py-2 text-[12.5px] text-ink-2">작업 실행 유형을 확인하지 못했습니다. 관리형 실행 상태나 장비 동작을 표시하지 않습니다.</p>}
           {!externalWorkflow && externalExecutionContext !== "UNVERIFIED" && <p className="rounded-lg border border-line bg-sunk px-3 py-2 text-[12.5px] text-ink-2">이 작업에는 현재 플랫폼이 제공하는 외부 산출물 등록 흐름이 없습니다.</p>}
@@ -332,6 +370,8 @@ export default async function FieldWorkOrderPage({ params, searchParams }: {
           newIntentAllowed={!workflowClosed}
           initialReport={initialReport ?? undefined}
           workAreaNames={Object.fromEntries(areaNameById)}
+          accountIdentity={accountIdentity}
+          legacyDecisionClosed={legacyDecisionClosed}
         />}
 
         {pendingDrafts.length > 0 && (
@@ -361,6 +401,7 @@ export default async function FieldWorkOrderPage({ params, searchParams }: {
               principalId={session.principal.principalId}
               initialOperations={operations}
               canWrite={canOperate}
+              accountIdentity={accountIdentity}
             />
           </div>
         </details>}

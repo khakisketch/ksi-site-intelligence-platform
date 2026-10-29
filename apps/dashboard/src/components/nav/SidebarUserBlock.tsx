@@ -2,6 +2,7 @@ import Link from "next/link";
 
 import { logout } from "@/app/login/actions";
 import { whoAmI } from "@/lib/core-api/auth";
+import type { WhoAmIResponse } from "@/lib/core-api/types";
 import { ROLE_LABEL } from "@/lib/core-api/labels";
 
 /** 레일 하단 사용자 블록 — 이니셜 · 이름 · 역할 · 로그아웃(디자인 §0).
@@ -14,10 +15,10 @@ import { ROLE_LABEL } from "@/lib/core-api/labels";
  * 실제 역할은 httpOnly 쿠키의 bearer token 이 정하고 화면이 바꿀 수 있는 값이 아니다.
  * 여기서는 **현재 역할을 밝히는 것**까지만 한다(README "역할 · 세션" 항).
  */
-export async function SidebarUserBlock() {
-  let principal;
+export async function SidebarUserBlock({ snapshot }: { snapshot?: WhoAmIResponse | null } = {}) {
+  let principal = snapshot;
   try {
-    principal = await whoAmI();
+    if (principal === undefined) principal = await whoAmI();
   } catch {
     // 세션이 없거나 만료된 경우 — 여기서 재로그인 유도를 또 하지 않는다. 상단바가
     // 이미 그 자리를 갖고 있고(TopBar), 레일 하단까지 같은 문구를 겹치면 화면이
@@ -25,6 +26,7 @@ export async function SidebarUserBlock() {
     return null;
   }
 
+  if (!principal) return null;
   const roleLabel = principal.role ? ROLE_LABEL[principal.role] : principal.kind;
   const initial = principal.principalId.trim().charAt(0).toUpperCase() || "?";
 

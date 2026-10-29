@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import os
+from typing import Any
 
 import numpy as np
 import pytest
@@ -22,7 +23,7 @@ from ksi_processing_controller.external_delta_raster import (
 from rasterio.transform import from_origin
 
 
-def _fixture():
+def _fixture() -> tuple[DiffResult, RelativeVolumeNumericResultV2]:
     diff = DiffResult(
         diff_m=np.array([[2.0, 0.0], [-1.0, 0.0]], dtype=np.float64),
         valid=np.array([[True, False], [True, True]]),
@@ -59,7 +60,7 @@ def _fixture():
     return diff, numeric
 
 
-def _prepare(diff, numeric, **overrides):
+def _prepare(diff: DiffResult, numeric: RelativeVolumeNumericResultV2, **overrides: Any) -> Any:
     return prepare_external_delta_raster_v2(
         diff=diff,
         numeric_result=numeric,
@@ -72,7 +73,7 @@ def _prepare(diff, numeric, **overrides):
     )
 
 
-def test_emits_real_float64_geotiff_with_exact_cells_and_private_descriptor():
+def test_emits_real_float64_geotiff_with_exact_cells_and_private_descriptor() -> None:
     diff, numeric = _fixture()
     original = numeric.model_dump_json()
     with _prepare(diff, numeric) as output:
@@ -98,14 +99,14 @@ def test_emits_real_float64_geotiff_with_exact_cells_and_private_descriptor():
     assert numeric.model_dump_json() == original
 
 
-def test_same_array_and_numeric_identity_produce_identical_output_bytes():
+def test_same_array_and_numeric_identity_produce_identical_output_bytes() -> None:
     diff, numeric = _fixture()
     with _prepare(diff, numeric) as first, _prepare(diff, numeric) as second:
         assert first.sha256 == second.sha256
         assert first.size_bytes == second.size_bytes
 
 
-def test_rejects_different_array_even_when_aggregate_result_looks_plausible():
+def test_rejects_different_array_even_when_aggregate_result_looks_plausible() -> None:
     diff, numeric = _fixture()
     diff.diff_m[0, 0] = 5.0
     with (
@@ -116,7 +117,7 @@ def test_rejects_different_array_even_when_aggregate_result_looks_plausible():
 
 
 @pytest.mark.parametrize("change", ["mask", "nan", "bounds", "area"])
-def test_rejects_coverage_grid_or_finite_value_mismatch(change):
+def test_rejects_coverage_grid_or_finite_value_mismatch(change: str) -> None:
     diff, numeric = _fixture()
     if change == "mask":
         diff.valid[0, 0] = False
@@ -139,16 +140,16 @@ def test_rejects_coverage_grid_or_finite_value_mismatch(change):
         {"maximum_grid_cells": 0},
     ],
 )
-def test_resource_limits_are_explicit_and_fail_before_publication(limits):
+def test_resource_limits_are_explicit_and_fail_before_publication(limits: dict[str, Any]) -> None:
     diff, numeric = _fixture()
     with pytest.raises(DeltaRasterMeasurementError), _prepare(diff, numeric, **limits):
         pytest.fail("oversized output was exposed")
 
 
-def test_currentness_loss_before_native_work_never_exposes_an_output():
+def test_currentness_loss_before_native_work_never_exposes_an_output() -> None:
     diff, numeric = _fixture()
 
-    def revoked():
+    def revoked() -> None:
         raise RuntimeError("REVOKED")
 
     with (
@@ -158,7 +159,7 @@ def test_currentness_loss_before_native_work_never_exposes_an_output():
         pytest.fail("revoked operation was exposed")
 
 
-def test_sub_float32_precision_is_not_silently_removed():
+def test_sub_float32_precision_is_not_silently_removed() -> None:
     diff, numeric = _fixture()
     precise = float(np.nextafter(2.0, 3.0))
     diff.diff_m[0, 0] = precise

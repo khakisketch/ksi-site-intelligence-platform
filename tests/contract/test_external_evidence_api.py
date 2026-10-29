@@ -854,3 +854,398 @@ def test_natural_dedupe_returns_typed_storage_failure_when_journal_is_sealed(
         now=_NOW,
     )
     assert result.verdict is EvidenceVerdict.STORAGE_UNAVAILABLE
+
+
+@pytest.mark.parametrize("operation", ["upload-grant", "seal"])
+def test_unconfigured_local_evidence_storage_fails_closed_without_reservation_leak(
+    tmp_path: Path, operation: str
+) -> None:
+    import importlib.util
+    import sys
+
+    spec = importlib.util.spec_from_file_location(
+        "evidence_local_runner", Path(__file__).resolve().parents[2] / "scripts/run_core_dev.py"
+    )
+    assert spec is not None and spec.loader is not None
+    runner = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = runner
+    spec.loader.exec_module(runner)
+
+    client, storage, work_order_id = _client(tmp_path)
+    base = _base(work_order_id, _seal_external_revision(client, storage, work_order_id))
+    declared = client.post(base, headers=_headers(key="declare-unconfigured"), json=_intent())
+    assert declared.status_code == 201
+    ref = declared.json()["evidenceRef"]
+    store = cast(Any, client.app).state.external_evidence_store
+    before = list(store._journal.replay())
+    storage.__class__ = runner._UnavailableEvidenceStorage
+    safe = TestClient(client.app, raise_server_exceptions=False)
+    url = f"{base}/{ref}/{operation}"
+    assert safe.post(url, headers=_headers(_OTHER_TOKEN, key="foreign")).status_code == 404
+    first = safe.post(url, headers=_headers(key="unconfigured"))
+    assert first.status_code == 503, first.text
+    assert first.json() == {"detail": "STORAGE_UNAVAILABLE"}
+    second = safe.post(url, headers=_headers(key="unconfigured"))
+    assert second.status_code == 503
+    with ThreadPoolExecutor(max_workers=4) as executor:
+        responses = list(
+            executor.map(lambda _: safe.post(url, headers=_headers(key="unconfigured")), range(4))
+        )
+    assert all(response.status_code == 503 for response in responses)
+    assert not store._pending
+    assert list(store._journal.replay()) == before
+
+
+@pytest.mark.parametrize("operation", ["grant", "seal"])
+def test_unexpected_storage_failure_releases_waiter_without_hiding_error(
+    tmp_path: Path, operation: str
+) -> None:
+    from ksi_core.evidence import EvidenceStorageError
+
+    store, _, revision, principal, ref = _direct_evidence_context(tmp_path)
+    before = list(store._journal.replay())
+    entered, release, waiting = Event(), Event(), Event()
+
+    class FailingStorage(_Storage):
+        calls = 0
+
+        def fail(self) -> None:
+            self.calls += 1
+            if self.calls == 1:
+                entered.set()
+                assert release.wait(3)
+                raise RuntimeError("unexpected adapter failure")
+            raise EvidenceStorageError("unavailable")
+
+        def presigned_put_bound_digest(self, *args: Any, **kwargs: Any) -> Any:
+            self.fail()
+
+        def observe_object(self, *args: Any, **kwargs: Any) -> Any:
+            self.fail()
+
+    storage = FailingStorage()
+    method = getattr(store, operation)
+    kwargs = dict(
+        revision=revision, principal=principal, key="same-failure", storage=storage, now=_NOW
+    )
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        owner = executor.submit(method, ref, **kwargs)
+        assert entered.wait(3)
+        with store._lock:
+            pending = next(iter(store._pending.values()))
+            original_wait = pending.completed.wait
+
+            def instrumented_wait(timeout: float | None = None) -> bool:
+                waiting.set()
+                return original_wait(timeout)
+
+            pending.completed.wait = instrumented_wait
+        waiter = executor.submit(method, ref, **kwargs)
+        try:
+            assert waiting.wait(3)
+        finally:
+            release.set()
+        with pytest.raises(RuntimeError, match="unexpected adapter failure"):
+            owner.result(timeout=3)
+        assert waiter.result(timeout=3).verdict is EvidenceVerdict.STORAGE_UNAVAILABLE
+    assert not store._pending
+    assert list(store._journal.replay()) == before
+
+
+def test_invalid_observation_releases_waiter_before_any_append(tmp_path: Path) -> None:
+    from pydantic import ValidationError
+
+    store, _, revision, principal, ref = _direct_evidence_context(tmp_path)
+    item = store._items[ref]
+    before = list(store._journal.replay())
+    entered, release, waiting = Event(), Event(), Event()
+
+    class InvalidObservation(_Storage):
+        def observe_object(self, object_key: str) -> ObjectStorageObservation:
+            entered.set()
+            assert release.wait(3)
+            return ObjectStorageObservation(
+                object_key=object_key,
+                exists=True,
+                size_bytes=cast(Any, 0.5),  # runtime adapter metadata is not validated
+                sha256=item.declaration.declared_content_digest,
+                content_type=item.declaration.declared_content_type,
+            )
+
+    kwargs = dict(
+        revision=revision, principal=principal, key="invalid-observation",
+        storage=InvalidObservation(), now=_NOW,
+    )
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        owner = executor.submit(store.seal, ref, **kwargs)
+        assert entered.wait(3)
+        with store._lock:
+            pending = next(iter(store._pending.values()))
+            original_wait = pending.completed.wait
+
+            def instrumented_wait(timeout: float | None = None) -> bool:
+                waiting.set()
+                return original_wait(timeout)
+
+            pending.completed.wait = instrumented_wait
+        waiter = executor.submit(store.seal, ref, **kwargs)
+        try:
+            assert waiting.wait(3)
+            release.set()
+            with pytest.raises(ValidationError):
+                owner.result(timeout=3)
+            with pytest.raises(ValidationError):
+                waiter.result(timeout=3)
+        finally:
+            release.set()
+            with store._lock:
+                for key, reservation in list(store._pending.items()):
+                    store._release_locked({"key": key}, reservation)
+    assert not store._pending
+    assert list(store._journal.replay()) == before
+    store._journal.close()
+    reopened = ExternalEvidenceStore(DurableJournal(tmp_path / "external-evidence.jsonl"))
+    assert reopened._items[ref].manifest is None
+    reopened._journal.close()
+
+
+def test_seal_durable_append_projection_failure_recovers_on_restart(tmp_path: Path) -> None:
+    store, _, revision, principal, ref = _direct_evidence_context(tmp_path)
+    item = store._items[ref]
+    storage = _Storage()
+    storage.objects[item.object_key] = ObjectStorageObservation(
+        object_key=item.object_key,
+        exists=True,
+        size_bytes=5,
+        sha256=item.declaration.declared_content_digest,
+        content_type=item.declaration.declared_content_type,
+    )
+    before = list(store._journal.replay())
+    original_apply = store._apply
+
+    def fail_live_projection(raw: dict[str, Any]) -> None:
+        if raw["kind"] == "external-evidence-sealed":
+            raise RuntimeError("synthetic live projection failure")
+        original_apply(raw)
+
+    store._apply = fail_live_projection
+    kwargs = dict(revision=revision, principal=principal, key="projection-failure", now=_NOW)
+    with pytest.raises(RuntimeError, match="synthetic live projection failure"):
+        store.seal(ref, storage=storage, **kwargs)
+    assert len(store._journal.replay()) == len(before) + 1
+    assert store._items[ref].manifest is None
+    store._journal.close()
+
+    reopened = ExternalEvidenceStore(DurableJournal(tmp_path / "external-evidence.jsonl"))
+    assert reopened._items[ref].manifest is not None
+    assert reopened.seal(ref, storage=storage, **kwargs).verdict is EvidenceVerdict.SEALED
+    assert len(reopened._journal.replay()) == len(before) + 1
+    reopened._journal.close()
+
+
+@pytest.mark.parametrize("partial_apply", [False, True])
+def test_live_projection_failure_fails_closed_at_asgi_until_replay(
+    tmp_path: Path, partial_apply: bool
+) -> None:
+    client, storage, work_order_id = _client(tmp_path)
+    base = _base(work_order_id, _seal_external_revision(client, storage, work_order_id))
+    declared = client.post(base, headers=_headers(key="projection-declare"), json=_intent())
+    assert declared.status_code == 201
+    ref = declared.json()["evidenceRef"]
+    store = cast(Any, client.app).state.external_evidence_store
+    item = store._items[ref]
+    storage.objects[item.object_key] = ObjectStorageObservation(
+        item.object_key, True, 5, item.declaration.declared_content_digest,
+        item.declaration.declared_content_type,
+    )
+    before = list(store._journal.replay())
+    original_apply = store._apply
+    listeners: list[str] = []
+    store.bind_seal_listener(lambda sealed, now: listeners.append(sealed.evidence_ref))
+
+    def fail_live(raw: dict[str, Any]) -> None:
+        if raw["kind"] == "external-evidence-sealed":
+            if partial_apply:
+                original_apply(raw)
+            raise RuntimeError("synthetic projection failure")
+        original_apply(raw)
+
+    store._apply = fail_live
+    safe = TestClient(client.app, raise_server_exceptions=False)
+    url = f"{base}/{ref}/seal"
+    assert safe.post(url, headers=_headers(key="first")).status_code == 500
+    assert not listeners
+    assert len(store._journal.replay()) == len(before) + 1
+    assert safe.post(url, headers=_headers(_OTHER_TOKEN, key="foreign")).status_code == 404
+    assert safe.get(base).status_code == 401
+    assert safe.post(url, headers=_headers(key="different")).status_code == 503
+    assert safe.post(url, headers=_headers(key="first")).status_code == 503
+    assert safe.post(f"{base}/{ref}/upload-grant", headers=_headers(key="grant")).status_code == 503
+    assert safe.post(base, headers=_headers(key="new-declare"), json=_intent()).status_code == 503
+    assert safe.get(base, headers=_headers()).status_code == 503
+    assert len(store._journal.replay()) == len(before) + 1
+    with pytest.raises(ExternalEvidenceRecoveryError):
+        store.resolve_for_validation(ref)
+    with pytest.raises(ExternalEvidenceRecoveryError):
+        store.sealed_items_snapshot()
+    store._journal.close()
+    reopened = ExternalEvidenceStore(DurableJournal(tmp_path / "external-evidence.jsonl"))
+    assert reopened._items[ref].manifest is not None
+    assert len(reopened._journal.replay()) == len(before) + 1
+    reopened._journal.close()
+
+
+def test_projection_failure_wakes_waiter_and_rejects_inflight_grant(tmp_path: Path) -> None:
+    store, _, revision, principal, ref = _direct_evidence_context(tmp_path)
+    item = store._items[ref]
+    before = list(store._journal.replay())
+    seal_entered, seal_release, waiting = Event(), Event(), Event()
+    grant_entered, grant_release = Event(), Event()
+
+    class PausedStorage(_Storage):
+        def observe_object(self, object_key: str) -> ObjectStorageObservation:
+            seal_entered.set()
+            assert seal_release.wait(3)
+            return ObjectStorageObservation(
+                object_key, True, 5, item.declaration.declared_content_digest,
+                item.declaration.declared_content_type,
+            )
+
+        def presigned_put_bound_digest(self, *args: Any, **kwargs: Any) -> Any:
+            grant_entered.set()
+            assert grant_release.wait(3)
+            return super().presigned_put_bound_digest(*args, **kwargs)
+
+    storage = PausedStorage()
+    original_apply = store._apply
+
+    def fail_live(raw: dict[str, Any]) -> None:
+        if raw["kind"] == "external-evidence-sealed":
+            raise RuntimeError("synthetic projection failure")
+        original_apply(raw)
+
+    store._apply = fail_live
+    args = dict(revision=revision, principal=principal, storage=storage, now=_NOW)
+    with ThreadPoolExecutor(max_workers=3) as executor:
+        seal = executor.submit(store.seal, ref, key="same", **args)
+        assert seal_entered.wait(3)
+        with store._lock:
+            reservation = next(iter(store._pending.values()))
+            original_wait = reservation.completed.wait
+
+            def instrumented_wait(timeout: float | None = None) -> bool:
+                waiting.set()
+                return original_wait(timeout)
+
+            reservation.completed.wait = instrumented_wait
+        waiter = executor.submit(store.seal, ref, key="same", **args)
+        grant = executor.submit(store.grant, ref, key="other", **args)
+        try:
+            assert waiting.wait(3) and grant_entered.wait(3)
+            seal_release.set()
+            with pytest.raises(RuntimeError, match="synthetic projection failure"):
+                seal.result(timeout=3)
+            with pytest.raises(ExternalEvidenceRecoveryError):
+                waiter.result(timeout=3)
+            grant_release.set()
+            with pytest.raises(ExternalEvidenceRecoveryError):
+                grant.result(timeout=3)
+        finally:
+            seal_release.set()
+            grant_release.set()
+    assert not store._pending
+    assert len(store._journal.replay()) == len(before) + 1
+    store._journal.close()
+    reopened = ExternalEvidenceStore(DurableJournal(tmp_path / "external-evidence.jsonl"))
+    assert reopened._items[ref].manifest is not None
+    reopened._journal.close()
+
+
+@pytest.mark.parametrize("event", ["declare", "grant", "seal", "bind"])
+@pytest.mark.parametrize("partial_apply", [False, True])
+def test_each_projection_failure_requires_replay(
+    tmp_path: Path, event: str, partial_apply: bool
+) -> None:
+    store, storage, revision, principal, ref = _direct_evidence_context(tmp_path)
+    item = store._items[ref]
+    storage.objects[item.object_key] = ObjectStorageObservation(
+        item.object_key, True, 5, item.declaration.declared_content_digest,
+        item.declaration.declared_content_type,
+    )
+    before = list(store._journal.replay())
+    original_apply = store._apply
+    kind = {
+        "declare": "external-evidence-declared",
+        "grant": "external-evidence-grant-issued",
+        "seal": "external-evidence-sealed",
+        "bind": "external-evidence-idempotency-bound",
+    }[event]
+
+    def fail_live(raw: dict[str, Any]) -> None:
+        if raw["kind"] == kind:
+            if partial_apply:
+                original_apply(raw)
+            raise RuntimeError("projection fault")
+        original_apply(raw)
+
+    store._apply = fail_live
+    intent = ExternalEvidenceDeclarationIntent.model_validate(
+        _intent(b"new") if event == "declare" else _intent()
+    )
+    kwargs = dict(revision=revision, principal=principal, key="fault", now=_NOW)
+    with pytest.raises(RuntimeError, match="projection fault"):
+        if event in {"declare", "bind"}:
+            store.declare(intent, **kwargs)
+        elif event == "grant":
+            store.grant(ref, storage=storage, **kwargs)
+        else:
+            store.seal(ref, storage=storage, **kwargs)
+    assert len(store._journal.replay()) == len(before) + 1
+    with pytest.raises(ExternalEvidenceRecoveryError):
+        store.list(revision)
+    with pytest.raises(ExternalEvidenceRecoveryError):
+        store.is_declaration_retry(intent, revision=revision, principal=principal, key="fault")
+    with pytest.raises(ExternalEvidenceRecoveryError):
+        store.declare(intent, **kwargs)
+    store._journal.close()
+    reopened = ExternalEvidenceStore(
+        DurableJournal(tmp_path / "external-evidence.jsonl"), clock=lambda: _NOW
+    )
+    if event in {"declare", "bind"}:
+        assert reopened.declare(intent, **kwargs).verdict is EvidenceVerdict.DECLARED
+    elif event == "grant":
+        assert reopened.grant(ref, storage=storage, **kwargs).verdict is EvidenceVerdict.DECLARED
+    else:
+        assert reopened.seal(ref, storage=storage, **kwargs).verdict is EvidenceVerdict.SEALED
+    assert len(reopened._journal.replay()) == len(before) + 1
+    reopened._journal.close()
+
+
+def test_uncertain_journal_append_requires_replay_and_refuses_other_keys(tmp_path: Path) -> None:
+    from ksi_core.durable_journal import JournalSealedError
+
+    store, storage, revision, principal, ref = _direct_evidence_context(tmp_path)
+    item = store._items[ref]
+    storage.objects[item.object_key] = ObjectStorageObservation(
+        item.object_key, True, 5, item.declaration.declared_content_digest,
+        item.declaration.declared_content_type,
+    )
+    before = list(store._journal.replay())
+    original_append = store._journal.append
+
+    def append_then_fail(raw: Any) -> None:
+        original_append(raw)
+        raise JournalSealedError("synthetic uncertain append")
+
+    store._journal.append = append_then_fail
+    args = dict(revision=revision, principal=principal, storage=storage, now=_NOW)
+    result = store.seal(ref, key="first", **args)
+    assert result.verdict is EvidenceVerdict.STORAGE_UNAVAILABLE and result.item is None
+    with pytest.raises(ExternalEvidenceRecoveryError):
+        store.seal(ref, key="different", **args)
+    assert len(store._journal.replay()) == len(before) + 1
+    store._journal.close()
+    reopened = ExternalEvidenceStore(DurableJournal(tmp_path / "external-evidence.jsonl"))
+    assert reopened.seal(ref, key="first", **args).verdict is EvidenceVerdict.SEALED
+    assert len(reopened._journal.replay()) == len(before) + 1
+    reopened._journal.close()

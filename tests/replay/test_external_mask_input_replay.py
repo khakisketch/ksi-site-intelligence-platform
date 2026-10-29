@@ -5,6 +5,8 @@ from __future__ import annotations
 import hashlib
 import json
 from datetime import UTC, datetime
+from pathlib import Path
+from typing import Any
 
 import pytest
 from ksi_core.domains.external.ingress.external_mask_input_bytes import (
@@ -118,14 +120,28 @@ class _Authority:
     def __init__(self) -> None:
         self.live = True
 
-    def is_subject_current(self, *, subject, organization_id, site_id, work_area_id, now):
+    def is_subject_current(
+        self,
+        *,
+        subject: SealedExternalSubjectV1,
+        organization_id: str,
+        site_id: str,
+        work_area_id: str,
+        now: datetime,
+    ) -> bool:
         if not self.live:
             return False
         return subject in (_subject("parent"), _subject("baseline"))
 
     def fetch_baseline_anchor(
-        self, *, organization_id, site_id, work_area_id, baseline_subject, dsm_artifact_id
-    ):
+        self,
+        *,
+        organization_id: str,
+        site_id: str,
+        work_area_id: str,
+        baseline_subject: SealedExternalSubjectV1,
+        dsm_artifact_id: str,
+    ) -> BaselineDsmAnchor | None:
         if not self.live or dsm_artifact_id != "dsm-baseline":
             return None
         if baseline_subject != _subject("baseline"):
@@ -154,12 +170,12 @@ class _Activation:
     def is_profile_active(
         self,
         *,
-        profile_digest,
-        resource_envelope_digest,
-        contained_runtime_digest,
-        inspector_build_digest,
-        now,
-    ):
+        profile_digest: str,
+        resource_envelope_digest: str,
+        contained_runtime_digest: str,
+        inspector_build_digest: str,
+        now: datetime,
+    ) -> bool:
         return self.live and profile_digest == self._digest
 
 
@@ -167,7 +183,16 @@ def _content() -> bytes:
     return bytes(i % 251 for i in range(128))
 
 
-def _harness(tmp_path, observer: Principal | None = None):
+def _harness(
+    tmp_path: Path, observer: Principal | None = None
+) -> tuple[
+    ResourceEnvelopeV1,
+    MaskInspectionProfileV1,
+    ExternalMaskInputByteStore,
+    Any,
+    Any,
+    ExternalMaskInputStore,
+]:
     envelope = _envelope()
     profile = _profile(envelope)
     byte_store = ExternalMaskInputByteStore(
@@ -191,8 +216,13 @@ def _harness(tmp_path, observer: Principal | None = None):
 
 
 def _declare_and_seal(
-    store, byte_store, profile, content: bytes, *, seal_principal: Principal | None = None
-):
+    store: ExternalMaskInputStore,
+    byte_store: ExternalMaskInputByteStore,
+    profile: MaskInspectionProfileV1,
+    content: bytes,
+    *,
+    seal_principal: Principal | None = None,
+) -> Any:
     import hashlib as _hl
 
     sha = "sha256:" + _hl.sha256(content).hexdigest()
@@ -266,7 +296,7 @@ def _declare_and_seal(
     )
 
 
-def test_declare_seal_get_replay_roundtrip(tmp_path) -> None:
+def test_declare_seal_get_replay_roundtrip(tmp_path: Path) -> None:
     envelope, profile, byte_store, _, _, store = _harness(tmp_path)
     sealed = _declare_and_seal(store, byte_store, profile, _content())
     assert sealed.manifest_digest == sealed.canonical_digest()
@@ -314,7 +344,7 @@ def test_declare_seal_get_replay_roundtrip(tmp_path) -> None:
     assert replayed_record.manifest.manifest_digest == sealed.manifest_digest
 
 
-def test_fabricated_subject_rejected_and_scope_area_checked(tmp_path) -> None:
+def test_fabricated_subject_rejected_and_scope_area_checked(tmp_path: Path) -> None:
     _, profile, byte_store, authority, _, store = _harness(tmp_path)
     _declare_and_seal(store, byte_store, profile, _content())
     authority.live = False
@@ -357,7 +387,7 @@ def test_fabricated_subject_rejected_and_scope_area_checked(tmp_path) -> None:
     byte_store._journal.close()  # noqa: SLF001
 
 
-def test_stale_report_or_inactive_profile_fails_closed(tmp_path) -> None:
+def test_stale_report_or_inactive_profile_fails_closed(tmp_path: Path) -> None:
     _, profile, byte_store, _, activation, store = _harness(tmp_path)
     _declare_and_seal(store, byte_store, profile, _content())
     activation.live = False
@@ -402,7 +432,7 @@ def test_stale_report_or_inactive_profile_fails_closed(tmp_path) -> None:
     byte_store._journal.close()  # noqa: SLF001
 
 
-def test_tampered_journal_fails_closed_on_replay(tmp_path) -> None:
+def test_tampered_journal_fails_closed_on_replay(tmp_path: Path) -> None:
     envelope, profile, byte_store, _, _, store = _harness(tmp_path)
     _declare_and_seal(store, byte_store, profile, _content())
     journal_path = tmp_path / "mask-child.journal"
@@ -425,7 +455,7 @@ def test_tampered_journal_fails_closed_on_replay(tmp_path) -> None:
         )
 
 
-def test_replay_rejects_version_spoof_event_digest_tamper_and_unknown_kind(tmp_path) -> None:
+def test_replay_rejects_version_spoof_event_digest_tamper_and_unknown_kind(tmp_path: Path) -> None:
     import json as _json
 
     from ksi_core.domains.external.ingress.external_mask_input_store import (
@@ -454,7 +484,7 @@ def test_replay_rejects_version_spoof_event_digest_tamper_and_unknown_kind(tmp_p
     lines = journal_path.read_text().splitlines()
     assert len(lines) == 1
 
-    def _reopen(expect: str):
+    def _reopen(expect: str) -> None:
         with pytest.raises(_Recovery, match=expect):
             ExternalMaskInputStore(
                 DurableJournal(journal_path),
@@ -519,7 +549,7 @@ def _narrow_report(profile: MaskInspectionProfileV1) -> MaskObservationReportV1:
     ).sealed()
 
 
-def test_worker_seal_with_pinned_observer(tmp_path) -> None:
+def test_worker_seal_with_pinned_observer(tmp_path: Path) -> None:
     """The exact designated worker seals without SITES_WRITE; no grant is broadened."""
     _, profile, byte_store, _, _, store = _harness(tmp_path, observer=_designated_worker())
     sealed = _declare_and_seal(
@@ -537,7 +567,7 @@ def test_worker_seal_with_pinned_observer(tmp_path) -> None:
     byte_store._journal.close()  # noqa: SLF001
 
 
-def test_worker_seal_wrong_worker_denied(tmp_path) -> None:
+def test_worker_seal_wrong_worker_denied(tmp_path: Path) -> None:
     """Any other worker fails closed, even with the ANALYSIS_WORK permission."""
     _, profile, byte_store, _, _, store = _harness(tmp_path, observer=_designated_worker())
     store.declare(
@@ -571,7 +601,7 @@ def test_worker_seal_wrong_worker_denied(tmp_path) -> None:
     byte_store._journal.close()  # noqa: SLF001
 
 
-def test_worker_seal_denied_without_pin(tmp_path) -> None:
+def test_worker_seal_denied_without_pin(tmp_path: Path) -> None:
     """Without a pinned observer the worker seam stays closed (fail closed)."""
     _, profile, byte_store, _, _, store = _harness(tmp_path)
     store.declare(

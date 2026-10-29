@@ -155,17 +155,22 @@ export default async function SiteObservationDetailPage({
     return <ObservationDetailReadFailure siteId={siteId} error={error} subject="현장 정보" />;
   }
 
-  let projection: Awaited<ReturnType<typeof getSiteExternalRelativeVolumeReport>>;
-  let areas: Awaited<ReturnType<typeof listWorkAreas>>;
-  try {
-    [projection, areas] = await Promise.all([
-      getSiteExternalRelativeVolumeReport(siteId, reportRef),
-      listWorkAreas(siteId),
-    ]);
-  } catch (error) {
-    return <ObservationDetailReadFailure siteId={siteId} siteName={site.name} error={error} />;
+  // 작업구역 이름은 표시 보조일 뿐이다. 이름 조회가 실패해도 보관 결과는
+  // 가리지 않는다 — 이름 없는 행은 '작업구역'으로 표시하고, 이름 실패만 따로
+  // 알린다. 이름 목록에는 권한 없는 자료가 담기지 않으므로(실패 시 빈 목록)
+  // 노출이 없다.
+  const [projectionResult, areasResult] = await Promise.allSettled([
+    getSiteExternalRelativeVolumeReport(siteId, reportRef),
+    listWorkAreas(siteId),
+  ]);
+  if (projectionResult.status === "rejected") {
+    return <ObservationDetailReadFailure siteId={siteId} siteName={site.name} error={projectionResult.reason} />;
   }
-  const names = new Map(areas.workAreas.map((area) => [area.workAreaId, area.name]));
+  const projection = projectionResult.value;
+  const areaNamesUnavailable = areasResult.status === "rejected";
+  const names = new Map(
+    (areasResult.status === "fulfilled" ? areasResult.value.workAreas : []).map((area) => [area.workAreaId, area.name]),
+  );
   const resultProjection = projection.state === "AVAILABLE" ? projection.result ?? null : null;
   // A SINGLE_VOLUME result has no baseline pair or relative report detail; its exact
   // single report is re-verified below before it feeds share or successor facts.
@@ -225,6 +230,7 @@ export default async function SiteObservationDetailPage({
       </div>
       <div className="flex flex-wrap gap-2"><PrintReportButton /><Link href={`/sites/${encodeURIComponent(siteId)}/observations`} className="btn">관측 이력</Link></div>
     </header>
+    {areaNamesUnavailable && <p role="status" className="rounded-lg bg-sunk px-3 py-2 text-[12.5px] leading-5 text-ink-2">작업구역 이름을 불러오지 못했습니다. 이름이 없는 행은 작업구역으로 표시됩니다.</p>}
     <ExternalObservationHistory siteId={siteId} detailMode items={[{ reportRef, state: projection.state === "AVAILABLE" ? "AVAILABLE" : "HISTORICAL_SOURCE_UNAVAILABLE", result: projection.result ?? null }]} workAreaNames={names} />
     {detailReadError !== null && <ErrorState
       message={detailReadError instanceof CoreApiError && detailReadError.status === 403

@@ -1,6 +1,6 @@
 import "server-only";
 
-import { coreFetch } from "./client";
+import { coreFetch, coreFetchWithToken } from "./client";
 import type { ExternalSubmissionCandidate } from "../external-reconstruction-submission";
 import type { ExternalSubmissionCandidateV3 } from "../external-reconstruction-submission";
 
@@ -93,6 +93,43 @@ export function registerExternalReconstructionSubmissionV3(
   return coreFetch(`${base(workOrderId)}-v3`, { method: "POST", body: submission });
 }
 
+/**
+ * 같은 토큰으로 whoami와 V3 선언을 잇는 연속성 검사 경로 전용 — 토큰을 두 번
+ * 읽으면 검사와 변이 사이 세션 교체(TOCTOU)가 생긴다. 기존 호출부는 그대로 둔다.
+ */
+export function registerExternalReconstructionSubmissionV3WithToken(
+  workOrderId: string,
+  submission: ExternalSubmissionCandidateV3,
+  token: string,
+): Promise<ExternalRevisionView> {
+  return coreFetchWithToken(`${base(workOrderId)}-v3`, token, { method: "POST", body: submission });
+}
+
+/**
+ * 같은 토큰으로 whoami와 등록 맥락 읽기를 잇는 연속성 검사 경로 전용. 기존
+ * 호출부는 그대로 둔다.
+ */
+export function getExternalReconstructionContextWithToken(
+  workOrderId: string,
+  token: string,
+): Promise<ExternalReconstructionContext> {
+  return coreFetchWithToken<ExternalReconstructionContext>(
+    `/v1/observation-work-orders/${encodeURIComponent(workOrderId)}/external-reconstruction-context`,
+    token,
+  );
+}
+
+/**
+ * 같은 토큰으로 whoami와 등록 목록 읽기를 잇는 연속성 검사 경로 전용. 기존
+ * 호출부는 그대로 둔다.
+ */
+export async function listExternalReconstructionSubmissionsWithToken(
+  workOrderId: string,
+  token: string,
+): Promise<ExternalRevisionView[]> {
+  return (await coreFetchWithToken<{ submissions: ExternalRevisionView[] }>(base(workOrderId), token)).submissions;
+}
+
 export async function requestExternalReconstructionUploadGrants(
   workOrderId: string,
   submissionRef: string,
@@ -102,12 +139,38 @@ export async function requestExternalReconstructionUploadGrants(
   return (await coreFetch<{ grants: ExternalUploadGrant[] }>(path, { method: "POST" })).grants;
 }
 
+/**
+ * 같은 토큰으로 whoami와 업로드 승인을 잇는 연속성 검사 경로 전용 — 토큰을 두
+ * 번 읽으면 검사와 승인 사이 세션 교체(TOCTOU)가 생긴다. 기존 호출부는 그대로 둔다.
+ */
+export async function requestExternalReconstructionUploadGrantsWithToken(
+  workOrderId: string,
+  submissionRef: string,
+  revision: number,
+  token: string,
+): Promise<ExternalUploadGrant[]> {
+  const path = `${base(workOrderId)}/${encodeURIComponent(submissionRef)}/revisions/${revision}/upload-grants`;
+  return (await coreFetchWithToken<{ grants: ExternalUploadGrant[] }>(path, token, { method: "POST" })).grants;
+}
+
 export function sealExternalReconstructionSubmission(
   workOrderId: string,
   submissionRef: string,
   revision: number,
 ): Promise<ExternalRevisionView> {
   return coreFetch(`${base(workOrderId)}/${encodeURIComponent(submissionRef)}/revisions/${revision}/seal`, { method: "POST" });
+}
+
+/**
+ * 같은 토큰으로 whoami와 봉인을 잇는 연속성 검사 경로 전용. 기존 호출부는 그대로 둔다.
+ */
+export function sealExternalReconstructionSubmissionWithToken(
+  workOrderId: string,
+  submissionRef: string,
+  revision: number,
+  token: string,
+): Promise<ExternalRevisionView> {
+  return coreFetchWithToken(`${base(workOrderId)}/${encodeURIComponent(submissionRef)}/revisions/${revision}/seal`, token, { method: "POST" });
 }
 
 export type ExternalRevisionDetailView = {
@@ -272,20 +335,50 @@ export async function listExternalEvidence(workOrderId: string, submissionRef: s
 export function declareExternalEvidence(workOrderId: string, submissionRef: string, revision: number, intent: { targetDsmArtifactId: string; declaredContentDigest: string; declaredContentType: string; independenceBasis: string }, idempotencyKey: string): Promise<ExternalEvidenceView> {
   return coreFetch(evidenceBase(workOrderId, submissionRef, revision), { method: "POST", body: intent, headers: { "Idempotency-Key": idempotencyKey } });
 }
+/**
+ * 같은 토큰으로 whoami와 선언을 잇는 연속성 검사 경로 전용 — 토큰을 두 번
+ * 읽으면 검사와 변이 사이 세션 교체(TOCTOU)가 생긴다. 기존 호출부는 그대로 둔다.
+ */
+export function declareExternalEvidenceWithToken(workOrderId: string, submissionRef: string, revision: number, intent: { targetDsmArtifactId: string; declaredContentDigest: string; declaredContentType: string; independenceBasis: string }, idempotencyKey: string, token: string): Promise<ExternalEvidenceView> {
+  return coreFetchWithToken(evidenceBase(workOrderId, submissionRef, revision), token, { method: "POST", body: intent, headers: { "Idempotency-Key": idempotencyKey } });
+}
 export function grantExternalEvidenceUpload(workOrderId: string, submissionRef: string, revision: number, evidenceRef: string, idempotencyKey: string): Promise<ExternalEvidenceGrant> {
   return coreFetch(`${evidenceBase(workOrderId, submissionRef, revision)}/${encodeURIComponent(evidenceRef)}/upload-grant`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey } });
+}
+/** 같은 토큰으로 whoami와 업로드 승인을 잇는 연속성 검사 경로 전용. 기존 호출부는 그대로 둔다. */
+export function grantExternalEvidenceUploadWithToken(workOrderId: string, submissionRef: string, revision: number, evidenceRef: string, idempotencyKey: string, token: string): Promise<ExternalEvidenceGrant> {
+  return coreFetchWithToken(`${evidenceBase(workOrderId, submissionRef, revision)}/${encodeURIComponent(evidenceRef)}/upload-grant`, token, { method: "POST", headers: { "Idempotency-Key": idempotencyKey } });
 }
 export function sealExternalEvidence(workOrderId: string, submissionRef: string, revision: number, evidenceRef: string, idempotencyKey: string): Promise<ExternalEvidenceView> {
   return coreFetch(`${evidenceBase(workOrderId, submissionRef, revision)}/${encodeURIComponent(evidenceRef)}/seal`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey } });
 }
+/** 같은 토큰으로 whoami와 봉인을 잇는 연속성 검사 경로 전용. 기존 호출부는 그대로 둔다. */
+export function sealExternalEvidenceWithToken(workOrderId: string, submissionRef: string, revision: number, evidenceRef: string, idempotencyKey: string, token: string): Promise<ExternalEvidenceView> {
+  return coreFetchWithToken(`${evidenceBase(workOrderId, submissionRef, revision)}/${encodeURIComponent(evidenceRef)}/seal`, token, { method: "POST", headers: { "Idempotency-Key": idempotencyKey } });
+}
 export function requestExternalSingleUseDecision(workOrderId: string, submissionRef: string, revision: number, use: "DISPLAY" | "HEIGHT", idempotencyKey: string): Promise<{ decision: ExternalUseDecision }> {
   return coreFetch(`${decisionBase(workOrderId, submissionRef, revision)}/single`, { method: "POST", body: { use }, headers: { "Idempotency-Key": idempotencyKey } });
+}
+/**
+ * 같은 토큰으로 whoami와 결정을 잇는 연속성 검사 경로 전용 — 토큰을 두 번
+ * 읽으면 검사와 변이 사이 세션 교체(TOCTOU)가 생긴다. 기존 호출부는 그대로 둔다.
+ */
+export function requestExternalSingleUseDecisionWithToken(workOrderId: string, submissionRef: string, revision: number, use: "DISPLAY" | "HEIGHT", idempotencyKey: string, token: string): Promise<{ decision: ExternalUseDecision }> {
+  return coreFetchWithToken(`${decisionBase(workOrderId, submissionRef, revision)}/single`, token, { method: "POST", body: { use }, headers: { "Idempotency-Key": idempotencyKey } });
 }
 export function requestExternalSingleVolumeDecision(workOrderId: string, submissionRef: string, revision: number, zoneId: string, idempotencyKey: string): Promise<{ decision: ExternalUseDecision }> {
   return coreFetch(`${decisionBase(workOrderId, submissionRef, revision)}/single-volume`, { method: "POST", body: { zoneId }, headers: { "Idempotency-Key": idempotencyKey } });
 }
+/** 같은 토큰으로 whoami와 결정을 잇는 연속성 검사 경로 전용. 기존 호출부는 그대로 둔다. */
+export function requestExternalSingleVolumeDecisionWithToken(workOrderId: string, submissionRef: string, revision: number, zoneId: string, idempotencyKey: string, token: string): Promise<{ decision: ExternalUseDecision }> {
+  return coreFetchWithToken(`${decisionBase(workOrderId, submissionRef, revision)}/single-volume`, token, { method: "POST", body: { zoneId }, headers: { "Idempotency-Key": idempotencyKey } });
+}
 export function requestExternalPairUseDecision(workOrderId: string, submissionRef: string, revision: number, intent: { use: "VISUAL_COMPARISON" | "RELATIVE_VOLUME"; baselineWorkOrderId: string; baselineSubmissionRef: string; baselineRevision: number; zoneId?: string | null }, idempotencyKey: string): Promise<{ decision: ExternalUseDecision }> {
   return coreFetch(`${decisionBase(workOrderId, submissionRef, revision)}/pair`, { method: "POST", body: intent, headers: { "Idempotency-Key": idempotencyKey } });
+}
+/** 같은 토큰으로 whoami와 결정을 잇는 연속성 검사 경로 전용. 기존 호출부는 그대로 둔다. */
+export function requestExternalPairUseDecisionWithToken(workOrderId: string, submissionRef: string, revision: number, intent: { use: "VISUAL_COMPARISON" | "RELATIVE_VOLUME"; baselineWorkOrderId: string; baselineSubmissionRef: string; baselineRevision: number; zoneId?: string | null }, idempotencyKey: string, token: string): Promise<{ decision: ExternalUseDecision }> {
+  return coreFetchWithToken(`${decisionBase(workOrderId, submissionRef, revision)}/pair`, token, { method: "POST", body: intent, headers: { "Idempotency-Key": idempotencyKey } });
 }
 export function getExternalUseDecision(workOrderId: string, submissionRef: string, revision: number, decisionId: string): Promise<{ decision: ExternalUseDecision }> {
   return coreFetch(`${decisionBase(workOrderId, submissionRef, revision)}/${encodeURIComponent(decisionId)}`);

@@ -290,7 +290,7 @@ describe("exact analysis selector hints (no WorkOrder approximation)", () => {
     expect(resolved.current).toMatchObject({ workOrderId: "w-b", revision: 2 });
   });
 
-  it("leaves the form unset with a notice for non-candidates, wrong area, and ambiguity", () => {
+  it("preserves the one exact match with a visible reason instead of discarding both sides", () => {
     const missing = resolveExactAnalysisSelectorHints({
       candidates,
       workAreaId: "area-1",
@@ -299,9 +299,12 @@ describe("exact analysis selector hints (no WorkOrder approximation)", () => {
       hasPendingAttempt: false,
       hasAnalysisDeepLink: false,
     });
-    expect(missing.baseline).toBeNull();
+    // 정확히 맞은 쪽만 미리 고르고, 맞지 않은 쪽 사유를 그대로 밝힌다.
+    // 한쪽 미리 고름만으로는 요청할 수 없다.
+    expect(missing.baseline).toMatchObject({ workOrderId: "w-a", revision: 1 });
     expect(missing.current).toBeNull();
-    expect(missing.notice).toMatch(/확인하지 못했|직접 선택/);
+    expect(missing.notice).toContain("미리 골랐습니다");
+    expect(missing.notice).toMatch(/직접 선택/);
 
     const foreignArea = resolveExactAnalysisSelectorHints({
       candidates,
@@ -389,5 +392,39 @@ describe("exact analysis selector hints (no WorkOrder approximation)", () => {
       });
       expect(frozen).toEqual({ baseline: null, current: null, notice: null });
     }
+  });
+
+  it("preserves the exact side when the other side is malformed or ambiguous, without substituting", () => {
+    const malformedCurrent = resolveExactAnalysisSelectorHints({
+      candidates,
+      workAreaId: "area-1",
+      rawBaseline: { workOrderId: "w-a", submissionRef: SUB_A, revision: 1 },
+      rawCurrent: { workOrderId: "w-b", submissionRef: "not-a-ref", revision: 2 },
+      hasPendingAttempt: false,
+      hasAnalysisDeepLink: false,
+    });
+    expect(malformedCurrent.baseline).toMatchObject({ workOrderId: "w-a", submissionRef: SUB_A, revision: 1 });
+    expect(malformedCurrent.current).toBeNull();
+    expect(malformedCurrent.notice).toContain("미리 골랐습니다");
+    expect(malformedCurrent.notice).toContain("형식을 확인하지 못했습니다");
+
+    const ambiguousCandidates = [
+      { selector: { workOrderId: "w-a", submissionRef: SUB_A, revision: 1 }, workAreaIds: ["area-1"] },
+      { selector: { workOrderId: "w-a", submissionRef: SUB_A, revision: 1 }, workAreaIds: ["area-1", "area-9"] },
+      { selector: { workOrderId: "w-b", submissionRef: SUB_B, revision: 2 }, workAreaIds: ["area-1"] },
+    ];
+    const ambiguousBaseline = resolveExactAnalysisSelectorHints({
+      candidates: ambiguousCandidates,
+      workAreaId: "area-1",
+      rawBaseline: { workOrderId: "w-a", submissionRef: SUB_A, revision: 1 },
+      rawCurrent: { workOrderId: "w-b", submissionRef: SUB_B, revision: 2 },
+      hasPendingAttempt: false,
+      hasAnalysisDeepLink: false,
+    });
+    // 반대쪽이 모호해도 정확히 맞은 쪽을 다른 값으로 바꾸지 않는다.
+    expect(ambiguousBaseline.baseline).toBeNull();
+    expect(ambiguousBaseline.current).toMatchObject({ workOrderId: "w-b", revision: 2 });
+    expect(ambiguousBaseline.notice).toContain("미리 골랐습니다");
+    expect(ambiguousBaseline.notice).toMatch(/직접 선택/);
   });
 });

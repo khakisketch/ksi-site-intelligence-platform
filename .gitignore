@@ -36,7 +36,8 @@ __pycache__/
 # scripts/run_core_dev.py 로컬 개발 서버 durable 저장소 + 서명키 — dev 전용, 커밋하지 않는다.
 /.dev-data/
 
-# apps/dashboard (Next.js) 빌드 산출물·의존성
+# Node.js 로컬 의존성 및 apps/dashboard (Next.js) 빌드 산출물
+/node_modules/
 apps/dashboard/.mypy_cache/
 apps/dashboard/.next*/
 apps/dashboard/node_modules/
@@ -79,6 +80,9 @@ design/**/index.html
 # 디렉터리의 의도적 이미지 자산은 그대로 추적된다).
 /*.png
 /.playwright-mcp/
+# Playwright CLI의 로컬 브라우저 로그·캡처는 보존하되 저장소에 올리지 않는다.
+/.playwright-cli/
+/docs/design/.playwright-cli/
 
 # 디자인 프리뷰 세션 캡처(콘솔 로그·페이지 PNG/YML) — 로컬 전용 일회성 산출물이라
 # 커밋하지 않는다(docs/ 아래 남길 컷만 옮긴다).

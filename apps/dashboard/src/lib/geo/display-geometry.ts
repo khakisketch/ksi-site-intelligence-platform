@@ -162,3 +162,40 @@ export function toDisplayVertices(
   }
   return { ok: true, vertices };
 }
+
+export type SupportedWorkAreaShape = { id: string; name: string; positions: [number, number][] };
+export type UnsupportedWorkArea = { workAreaId: string; name: string; reason: string };
+
+/**
+ * 그릴 수 없는 구역의 정확한 이름·사유 목록 문구. 그릴 수 있는 구역이
+ * 하나도 없을 때도 같은 문구를 쓰므로, 원인이 좌표계가 아닐 때 좌표계
+ * 탓으로 돌리지 않는다. 기하를 꾸미지 않으며, 목록 선택을 막지 않는다.
+ */
+export function unsupportedAreasNote(unsupported: UnsupportedWorkArea[]): string | null {
+  if (unsupported.length === 0) return null;
+  return `지도에 표시되지 않은 구역 ${unsupported.length}개: `
+    + `${unsupported.map((item) => `${item.name}(${item.reason})`).join(" · ")} `
+    + "등록된 이름 목록에서는 모두 선택할 수 있으며, 좌표를 추정해 그리지 않습니다.";
+}
+
+/**
+ * 그릴 수 있는 구역과 지도에 올리지 못한 구역을 나눈다. 못 올린 구역도
+ * 이름·사유를 그대로 돌려주므로 호출자가 목록 선택을 막지 않고 누락을
+ * 알릴 수 있다. 기하를 꾸미지 않으며, 실패 사유는 표시 전용 문구다.
+ */
+export function partitionWorkAreaDisplay(
+  areas: { workAreaId: string; name: string; polygon: Record<string, unknown>; crs: string }[],
+): { supported: SupportedWorkAreaShape[]; unsupported: UnsupportedWorkArea[] } {
+  const supported: SupportedWorkAreaShape[] = [];
+  const unsupported: UnsupportedWorkArea[] = [];
+  for (const area of areas) {
+    const display = toDisplayVertices(area.polygon, area.crs);
+    if (display.ok) {
+      supported.push({ id: area.workAreaId, name: area.name,
+        positions: display.vertices.map((vertex) => [vertex.latDeg, vertex.lonDeg]) });
+    } else {
+      unsupported.push({ workAreaId: area.workAreaId, name: area.name, reason: display.reason });
+    }
+  }
+  return { supported, unsupported };
+}

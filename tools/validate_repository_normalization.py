@@ -194,6 +194,17 @@ def _check_source_patterns(
             continue
 
         probe = _source_pattern_probe(pattern)
+        # Git refuses a path *beneath* a symlink, even with --no-index. For a
+        # local generated-directory symlink, check the link itself instead:
+        # only an ignored link proves Git will not traverse/admit its target.
+        # Never resolve or read the target. If the link is not ignored or Git
+        # fails, retain the same fail-closed result as an ordinary probe.
+        parts = Path(probe).parts
+        for index in range(1, len(parts)):
+            prefix = Path(*parts[:index])
+            if (root / prefix).is_symlink():
+                probe = prefix.as_posix()
+                break
         try:
             result = subprocess.run(
                 ["git", "check-ignore", "--no-index", "--quiet", "--", probe],

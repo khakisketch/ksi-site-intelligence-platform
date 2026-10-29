@@ -4,7 +4,8 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { CoreApiError } from "@/lib/core-api/client";
 import { humanizeApiError } from "@/lib/core-api/labels";
-import { hasAllPermissions } from "@/lib/core-api/permissions";
+import { whoAmI } from "@/lib/core-api/auth";
+import { continuityFingerprint } from "@/lib/core-api/work-order-continuity";
 import { getObservationWorkOrder } from "@/lib/core-api/observation-work-orders";
 import { getSiteExternalRelativeVolumeReport } from "@/lib/core-api/external-result-workflow";
 import { getSite } from "@/lib/core-api/sites";
@@ -17,12 +18,19 @@ import { ExternalObservationCreateForm } from "./ExternalObservationCreateForm";
 
 async function loadNewObservation(siteId: string) {
   try {
-    const [site, areas, canCreate] = await Promise.all([
+    const [site, areas, identity] = await Promise.all([
       getSite(siteId),
       listWorkAreas(siteId),
-      hasAllPermissions("WORK_ORDERS_WRITE"),
+      whoAmI().catch(() => null),
     ]);
-    return { kind: "ready" as const, site, areas, canCreate };
+    // Core는 principal에 경로 안전 형식을 강제하지 않는다. 서버에서 정확한 두
+    // 식별자의 ASCII 비교값을 만들어 폼에 전달한다. 신원 부재는 생성 불가다.
+    const fingerprint = continuityFingerprint(identity);
+    const permissions = identity?.permissions;
+    const permissionsVerified = Array.isArray(permissions) && permissions.every((permission) => typeof permission === "string");
+    const accountIdentity = fingerprint && permissionsVerified ? { fingerprint } : null;
+    const canCreate = permissionsVerified && permissions.includes("WORK_ORDERS_WRITE");
+    return { kind: "ready" as const, site, areas, canCreate, accountIdentity };
   } catch (error) {
     if (error instanceof CoreApiError && error.status === 404) return { kind: "not-found" as const };
     return {
@@ -148,6 +156,9 @@ export default async function NewObservationPage({
   if (result.kind === "error") {
     return <div className="mx-auto flex max-w-2xl flex-col gap-4 p-4 sm:p-5"><ErrorState message={result.message} retryable /></div>;
   }
+  if (!result.accountIdentity) {
+    return <div className="mx-auto flex max-w-2xl flex-col gap-4 p-4 sm:p-5"><ErrorState message="계정을 확인하지 못해 관측 자료 등록을 시작할 수 없습니다. 연결과 로그인 상태를 확인한 뒤 다시 시도하세요." retryable /></div>;
+  }
   if (!result.canCreate) {
     return <div className="mx-auto flex max-w-2xl flex-col gap-4 p-4 sm:p-5"><EmptyState title="관측 자료를 등록할 권한이 없습니다" description="작업 등록 권한이 있는 계정으로 다시 시도하세요." action={{ label: "현장으로 돌아가기", href: `/sites/${encodeURIComponent(siteId)}` }} /></div>;
   }
@@ -178,5 +189,6 @@ export default async function NewObservationPage({
     suggestedName={repeatTemplate.suggestedName}
     templateNotice={repeatTemplate.notice}
     scopeNotice={scopeNotice}
+    accountIdentity={result.accountIdentity}
   />;
 }

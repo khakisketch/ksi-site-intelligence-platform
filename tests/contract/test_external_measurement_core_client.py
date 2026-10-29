@@ -1325,9 +1325,11 @@ def test_actual_core_evidence_router_claim_input_v2_and_measurement_parity(
     )
     store = ExternalEvidenceValidationStore(
         DurableJournal(tmp_path / "actual-evidence-router.jsonl"),
-        evidence=evidence_contract._Evidence(item),
+        evidence=evidence_contract._Evidence(item, coordinator=registry.coordinator),
         policy_registry=registry,
-        context_authority=evidence_contract._ContextAuthority(context),
+        context_authority=evidence_contract._ContextAuthority(
+            context, coordinator=registry.coordinator
+        ),
         input_capabilities=evidence_contract._InputCapabilities(),
         clock=lambda: now,
     )

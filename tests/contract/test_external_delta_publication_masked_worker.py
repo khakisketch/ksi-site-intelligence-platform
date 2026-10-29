@@ -14,20 +14,35 @@ from __future__ import annotations
 
 import hashlib
 import threading
+from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from typing import Any
 from urllib.parse import unquote
 
 import numpy as np
 import pytest
 import rasterio
+from fastapi.testclient import TestClient
+from ksi_core.domains.external.ingress.external_mask_input_store import (
+    BaselineDsmAnchor,
+)
+from ksi_core.domains.external.quantity.external_masked_calculation_store import (
+    MaskedAdmissionWitnessV3,
+)
+from ksi_core.identity.auth import Principal
 from ksi_domain.canonical_json import canonical_json_bytes
 from ksi_event_contracts.external_artifact_validation import (
+    ObservedVerticalReferenceV1,
     ResourceEnvelopeV1,
     SealedExternalSubjectV1,
 )
 from ksi_event_contracts.external_mask_input import MaskChildDeclarationV1
+from ksi_event_contracts.external_masked_execution import (
+    MaskedAdmissionDispositionV3,
+    MaskedAdmissionV3,
+)
 from ksi_event_contracts.external_masked_volume import (
     ExclusionMaskBindingV1,
     MaskedCalculationIdentityV3,
@@ -106,7 +121,7 @@ def _envelope() -> ResourceEnvelopeV1:
     ).sealed()
 
 
-def _write_geotiffs(tmp_path: Path):
+def _write_geotiffs(tmp_path: Path) -> tuple[Path, Path, Path]:
     """Actual synthetic DSM pair (compound CRS float64) plus a uint8 mask."""
     transform = from_origin(ORIGIN_X, ORIGIN_Y, 1.0, 1.0)
     baseline_values = np.full((4, 4), 100.0)
@@ -160,9 +175,7 @@ def _write_geotiffs(tmp_path: Path):
     return baseline_path, current_path, mask_path
 
 
-def _vertical():
-    from ksi_event_contracts.external_artifact_validation import ObservedVerticalReferenceV1
-
+def _vertical() -> ObservedVerticalReferenceV1:
     return ObservedVerticalReferenceV1(identifier="EPSG:5773", basis="EGM96 height")
 
 
@@ -253,14 +266,14 @@ def _source_identity(baseline_path: Path, current_path: Path) -> CalculationIden
     ).sealed()
 
 
-def _operator():
-    from ksi_core.identity.auth import Principal, PrincipalKind, Role
+def _operator() -> Principal:
+    from ksi_core.identity.auth import PrincipalKind, Role
 
     return Principal("operator-a", PrincipalKind.OPERATOR, Role.ADMIN, None, "org-a")
 
 
-def _worker():
-    from ksi_core.identity.auth import Principal, PrincipalKind
+def _worker() -> Principal:
+    from ksi_core.identity.auth import PrincipalKind
 
     return Principal("analysis-local-worker", PrincipalKind.ANALYSIS_WORKER, None, None, "org-a")
 
@@ -270,15 +283,15 @@ class _StrictEvidence:
 
     label = "synthetic-not-field"
 
-    def __init__(self, identity, envelope, manifest) -> None:
+    def __init__(
+        self, identity: MaskedCalculationIdentityV3, envelope: ResourceEnvelopeV1, manifest: Any
+    ) -> None:
         self._identity = identity
         self._envelope = envelope
         self._manifest_value = manifest
         self.live = True
 
-    def _admission(self, now):
-        from ksi_event_contracts.external_masked_execution import MaskedAdmissionV3
-
+    def _admission(self, now: datetime) -> MaskedAdmissionV3:
         identity = self._identity
         return MaskedAdmissionV3(
             admission_id="admission-1",
@@ -296,18 +309,19 @@ class _StrictEvidence:
             activation_digest=_digest("activation"),
             scope_digest=_digest("scope"),
             ai_egress_digest=_digest("egress"),
-            disposition="ADMIT_EVALUATED",
+            disposition=MaskedAdmissionDispositionV3.ADMIT_EVALUATED,
             reason_codes=("MASK_ADMITTED",),
             assessed_at=now - timedelta(seconds=1),
         ).sealed()
 
     def prepare_witness(
-        self, *, masked_calculation_identity_digest, organization_id, now, expected_admission=None
-    ):
-        from ksi_core.domains.external.quantity.external_masked_calculation_store import (
-            MaskedAdmissionWitnessV3,
-        )
-
+        self,
+        *,
+        masked_calculation_identity_digest: str,
+        organization_id: str,
+        now: datetime,
+        expected_admission: MaskedAdmissionV3 | None = None,
+    ) -> MaskedAdmissionWitnessV3 | None:
         if not self.live:
             return None
         if (
@@ -331,11 +345,9 @@ class _StrictEvidence:
             mask_manifest=self._manifest_value,
         )
 
-    def witness_is_current(self, *, witness, now):
-        from ksi_core.domains.external.quantity.external_masked_calculation_store import (
-            MaskedAdmissionWitnessV3,
-        )
-
+    def witness_is_current(
+        self, *, witness: MaskedAdmissionWitnessV3 | None, now: datetime
+    ) -> MaskedAdmissionWitnessV3 | None:
         if witness is None or not self.live:
             return None
         if not isinstance(witness, MaskedAdmissionWitnessV3):
@@ -352,7 +364,15 @@ class _StrictEgress:
 
     label = "synthetic-not-field"
 
-    def is_egress_allowed(self, *, organization_id, site_id, work_area_id, principal, now):
+    def is_egress_allowed(
+        self,
+        *,
+        organization_id: str,
+        site_id: str,
+        work_area_id: str,
+        principal: Principal,
+        now: datetime,
+    ) -> bool:
         return (
             principal.organization_id == organization_id == "org-a"
             and site_id == "site-a"
@@ -369,7 +389,7 @@ class _StrictReconstruction:
     def __init__(self, entries: dict[str, object]) -> None:
         self._entries = dict(entries)
 
-    def resolve_sealed_subject(self, subject):
+    def resolve_sealed_subject(self, subject: SealedExternalSubjectV1) -> object | None:
         return self._entries.get(subject.canonical_digest())
 
 
@@ -382,7 +402,7 @@ class _StrictObjectStorage:
         self._origin = origin.rstrip("/")
         self._objects = dict(objects)
 
-    def presigned_get(self, object_key: str, *, ttl):
+    def presigned_get(self, object_key: str, *, ttl: timedelta) -> str:
         from datetime import timedelta as _timedelta
 
         if object_key not in self._objects or not isinstance(ttl, _timedelta):
@@ -397,7 +417,7 @@ class _StrictObjectStorage:
 
 def _manifest_entry(
     *, artifact_id: str, observed_sha256: str, observed_size_bytes: int, object_key: str
-):
+) -> Any:
     from ksi_event_contracts.processing_artifact import ProcessingArtifactKind
 
     class _Entry:
@@ -419,7 +439,7 @@ def _manifest_entry(
     return _Revision()
 
 
-def _seal_mask_child(tmp_path: Path, *, now):
+def _seal_mask_child(tmp_path: Path, *, now: datetime) -> dict[str, Any]:
     """Genuine mask ingress: declare, grant, upload actual bytes, inspect, seal."""
     from ksi_core.domains.external.ingress.external_mask_input_bytes import (
         ExternalMaskInputByteStore,
@@ -469,16 +489,26 @@ def _seal_mask_child(tmp_path: Path, *, now):
             self.live = True
             self._baseline_bytes = baseline_path.read_bytes()
 
-        def is_subject_current(self, *, subject, organization_id, site_id, work_area_id, now):
+        def is_subject_current(
+            self,
+            *,
+            subject: SealedExternalSubjectV1,
+            organization_id: str,
+            site_id: str,
+            work_area_id: str,
+            now: datetime,
+        ) -> bool:
             return self.live and subject in (_subject("parent"), _subject("baseline"))
 
         def fetch_baseline_anchor(
-            self, *, organization_id, site_id, work_area_id, baseline_subject, dsm_artifact_id
-        ):
-            from ksi_core.domains.external.ingress.external_mask_input_store import (
-                BaselineDsmAnchor,
-            )
-
+            self,
+            *,
+            organization_id: str,
+            site_id: str,
+            work_area_id: str,
+            baseline_subject: SealedExternalSubjectV1,
+            dsm_artifact_id: str,
+        ) -> BaselineDsmAnchor | None:
             if not self.live or dsm_artifact_id != "dsm-baseline":
                 return None
             if baseline_subject != _subject("baseline"):
@@ -510,12 +540,12 @@ def _seal_mask_child(tmp_path: Path, *, now):
         def is_profile_active(
             self,
             *,
-            profile_digest,
-            resource_envelope_digest,
-            contained_runtime_digest,
-            inspector_build_digest,
-            now,
-        ):
+            profile_digest: str,
+            resource_envelope_digest: str,
+            contained_runtime_digest: str,
+            inspector_build_digest: str,
+            now: datetime,
+        ) -> bool:
             return self.live and profile_digest == self._digest
 
     byte_store = ExternalMaskInputByteStore(
@@ -612,7 +642,9 @@ def _seal_mask_child(tmp_path: Path, *, now):
     }
 
 
-def _masked_identity_from_manifest(*, baseline_path: Path, current_path: Path, manifest):
+def _masked_identity_from_manifest(
+    *, baseline_path: Path, current_path: Path, manifest: Any
+) -> MaskedCalculationIdentityV3:
 
     source = _source_identity(baseline_path, current_path)
     binding = ExclusionMaskBindingV1(
@@ -765,7 +797,7 @@ def test_masked_worker_input_contract_binds_exact_sources(tmp_path: Path) -> Non
             "expiresAt": (now + timedelta(seconds=60)).isoformat(),
         },
     )
-    wire = {
+    wire: dict[str, Any] = {
         "publicationId": "masked-pub-1",
         "organizationId": "org-a",
         "siteId": "site-a",
@@ -846,7 +878,15 @@ def test_driver_discovers_only_flavor_lane_and_never_leases_foreign(tmp_path: Pa
     from typing import get_args
 
     import httpx
-    from ksi_event_contracts.external_delta_publication_api import SourceVersion
+    from ksi_event_contracts.external_delta_publication_api import (
+        DeltaOutputObservationWireV1,
+        SourceVersion,
+    )
+    from ksi_event_contracts.external_delta_publication_worker import (
+        DeltaPublicationMaskedWorkerInputV1,
+        DeltaPublicationPendingPageV1,
+        DeltaPublicationWorkerInputV1,
+    )
     from ksi_processing_controller.external_delta_publication_driver import (
         _FLAVOR_SOURCE_VERSIONS,
         run_pending_delta_publications,
@@ -874,20 +914,33 @@ def test_driver_discovers_only_flavor_lane_and_never_leases_foreign(tmp_path: Pa
     V2 = "external-relative-volume-calculation-report.v2"
     V3 = "external-masked-volume-calculation-identity.v3"
 
-    class _StubCoreClient:
+    class _StubCoreClient(DeltaPublicationCoreClient):
         """Mimics the Core filter: honors the version query, nothing else."""
 
-        def __init__(self) -> None:
+        def __init__(
+            self,
+            *,
+            base_url: str = "http://127.0.0.1:9",
+            bearer_token: str = "unit-token",
+            maximum_response_bytes: int = 262_144,
+            request_timeout_seconds: float = 5.0,
+            transport: httpx.BaseTransport | None = None,
+        ) -> None:
+            super().__init__(
+                base_url=base_url,
+                bearer_token=bearer_token,
+                maximum_response_bytes=maximum_response_bytes,
+                request_timeout_seconds=request_timeout_seconds,
+                transport=transport,
+            )
             self.discover_calls: list[tuple[int, object]] = []
             self.lease_calls: list[str] = []
             self.failures: list[str] = []
             self.ids = {"v2-pub": V2, "v3-pub": V3}
 
-        def discover_pending(self, limit=50, source_contract_version=None):
-            from ksi_event_contracts.external_delta_publication_worker import (
-                DeltaPublicationPendingPageV1,
-            )
-
+        def discover_pending(
+            self, limit: int = 50, source_contract_version: SourceVersion | None = None
+        ) -> DeltaPublicationPendingPageV1:
             self.discover_calls.append((limit, source_contract_version))
             ids = [
                 pid
@@ -896,7 +949,9 @@ def test_driver_discovers_only_flavor_lane_and_never_leases_foreign(tmp_path: Pa
             ][:limit]
             return DeltaPublicationPendingPageV1(publication_ids=tuple(ids))
 
-        def acquire_lease(self, publication_id, *, worker_instance_id, lease_acquisition_id):
+        def acquire_lease(
+            self, publication_id: str, *, worker_instance_id: str, lease_acquisition_id: str
+        ) -> dict:
             self.lease_calls.append(publication_id)
             return {
                 "leaseGeneration": 1,
@@ -906,17 +961,55 @@ def test_driver_discovers_only_flavor_lane_and_never_leases_foreign(tmp_path: Pa
                 "status": "PENDING",
             }
 
-        def fetch_input(self, publication_id, *, worker_instance_id):
+        def fetch_input(
+            self, publication_id: str, *, worker_instance_id: str
+        ) -> DeltaPublicationWorkerInputV1:
             raise DeltaPublicationWorkerError("INPUT_BINDING_MISMATCH")
 
-        def fetch_masked_input(self, publication_id, *, worker_instance_id):
+        def fetch_masked_input(
+            self, publication_id: str, *, worker_instance_id: str
+        ) -> DeltaPublicationMaskedWorkerInputV1:
             raise DeltaPublicationWorkerError("INPUT_BINDING_MISMATCH")
 
-        def record_failure(self, publication_id, *, worker_instance_id, lease_generation, reason):
+        def record_failure(
+            self,
+            publication_id: str,
+            *,
+            worker_instance_id: str,
+            lease_generation: int,
+            reason: str,
+        ) -> None:
             self.failures.append(publication_id)
 
+        def fetch_mask_bytes(
+            self,
+            publication_id: str,
+            *,
+            worker_instance_id: str,
+            lease_generation: int,
+            expected_sha256: str,
+            expected_size_bytes: int,
+            mask_url: str,
+        ) -> bytes:
+            raise DeltaPublicationWorkerError("INPUT_BINDING_MISMATCH")
+
+        def post_observation(
+            self, publication_id: str, observation: DeltaOutputObservationWireV1
+        ) -> dict:
+            raise DeltaPublicationWorkerError("INPUT_BINDING_MISMATCH")
+
+        def upload_bytes(
+            self,
+            publication_id: str,
+            *,
+            worker_instance_id: str,
+            lease_generation: int,
+            payload: bytes,
+        ) -> dict:
+            raise DeltaPublicationWorkerError("INPUT_BINDING_MISMATCH")
+
         def close(self) -> None:
-            return None
+            super().close()
 
     work_dir = tmp_path / "drain-unit"
     work_dir.mkdir(mode=0o700)
@@ -999,7 +1092,9 @@ def test_driver_discovers_only_flavor_lane_and_never_leases_foreign(tmp_path: Pa
         default_client.close()
 
 
-def _genuine_original_report(tmp_path: Path, *, now):
+def _genuine_original_report(
+    tmp_path: Path, *, now: datetime
+) -> tuple[dict[str, Any], MaskedCalculationIdentityV3, Any]:
     """Genuine original V3 report from actual bytes via the pure worker path."""
     from ksi_processing_controller.external_masked_volume_measurement import (
         MaskedVolumeMeasuredV3,
@@ -1173,7 +1268,9 @@ def test_masked_reproduction_reproduces_original_report(tmp_path: Path) -> None:
     assert report.numeric_result.metrics.cut_m3 == pytest.approx(2.0)
 
 
-def _genuine_masked_completed(tmp_path: Path, *, now, coordinator=None):
+def _genuine_masked_completed(
+    tmp_path: Path, *, now: datetime, coordinator: Any = None
+) -> dict[str, Any]:
     """Real masked store to COMPLETED backed by strict test evidence."""
     from ksi_core.domains.external.quantity.external_masked_calculation_store import (
         ExternalMaskedCalculationStore,
@@ -1242,7 +1339,13 @@ def _genuine_masked_completed(tmp_path: Path, *, now, coordinator=None):
     }
 
 
-def _measure_original(sealed, identity, envelope, lease_expires_at, now):
+def _measure_original(
+    sealed: dict[str, Any],
+    identity: MaskedCalculationIdentityV3,
+    envelope: ResourceEnvelopeV1,
+    lease_expires_at: datetime,
+    now: datetime,
+) -> Any:
     from ksi_processing_controller.external_masked_volume_measurement import (
         MaskedVolumeMeasuredV3,
         measure_masked_volume_v3,
@@ -1267,7 +1370,13 @@ def _measure_original(sealed, identity, envelope, lease_expires_at, now):
     return outcome.report
 
 
-def _publication_lane(tmp_path: Path, *, lane, worker_principal, authority=None):
+def _publication_lane(
+    tmp_path: Path,
+    *,
+    lane: dict[str, Any],
+    worker_principal: Principal,
+    authority: Any = None,
+) -> tuple[Any, Any, Any]:
     """Real publication store wired to the genuine masked source adapter."""
     import hashlib as _hashlib
 
@@ -1349,6 +1458,9 @@ def test_masked_input_issuance_and_revocation_denied(tmp_path: Path) -> None:
         DeltaPublicationS3InputCapabilityIssuer,
         resolve_publication_masked_worker_input,
     )
+    from ksi_event_contracts.external_delta_publication_worker import (
+        DeltaPublicationMaskedWorkerInputV1,
+    )
 
     now = datetime.now(UTC)
     now_box = [now]
@@ -1418,7 +1530,11 @@ def test_masked_input_issuance_and_revocation_denied(tmp_path: Path) -> None:
         signing_clock=lambda: now_box[0],
     )
 
-    def _resolve(publication_id="masked-pub-1", instance="masked-instance-1", at=None):
+    def _resolve(
+        publication_id: str = "masked-pub-1",
+        instance: str = "masked-instance-1",
+        at: datetime | None = None,
+    ) -> DeltaPublicationMaskedWorkerInputV1 | None:
         return resolve_publication_masked_worker_input(
             store=store,
             material_resolver=genuine["adapter"],
@@ -1480,13 +1596,19 @@ def test_masked_input_issuance_and_revocation_denied(tmp_path: Path) -> None:
     assert _resolve() is None
 
 
-def _masked_publication_app(*, store, adapter, mask_manifests, mask_bytes, clock):
+def _masked_publication_app(
+    *,
+    store: Any,
+    adapter: Any,
+    mask_manifests: Any,
+    mask_bytes: Any,
+    clock: Callable[[], datetime],
+) -> tuple[TestClient, str, str]:
     """Test mount for the owned mask-bytes route (parent mounts it later)."""
     import hashlib as _hashlib
     import secrets as _secrets
 
     from fastapi import FastAPI
-    from fastapi.testclient import TestClient
     from ksi_core.domains.external.quantity.external_delta_mask_inputs import (
         build_external_delta_mask_input_router,
     )
@@ -1657,7 +1779,7 @@ def test_mask_bytes_route_serves_only_live_lease_holder(tmp_path: Path) -> None:
     path = "/v1/internal/delta-publication-uploads/masked-pub-route/mask-bytes"
     expected = genuine["sealed"]["mask_path"].read_bytes()
 
-    def _get(**kwargs):
+    def _get(**kwargs: str | int) -> Any:
         return http.get(path, headers=worker_headers, params=kwargs)
 
     good = _get(worker_instance_id="masked-instance-1", lease_generation=1)
@@ -1916,7 +2038,7 @@ def test_live_masked_run_from_human_create_without_known_id(tmp_path: Path) -> N
         }
 
         class _Handler(BaseHTTPRequestHandler):
-            def do_GET(self):  # noqa: N802
+            def do_GET(self) -> None:  # noqa: N802
                 if not self.path.startswith("/objects/"):
                     self.send_error(404)
                     return
@@ -1931,7 +2053,7 @@ def test_live_masked_run_from_human_create_without_known_id(tmp_path: Path) -> N
                 self.end_headers()
                 self.wfile.write(payload)
 
-            def log_message(self, *_a, **_k):
+            def log_message(self, *_a: Any, **_k: Any) -> None:
                 return
 
         object_server = ThreadingHTTPServer(("127.0.0.1", 0), _Handler)
@@ -2243,7 +2365,7 @@ def test_mixed_queue_driver_publishes_only_own_lane(tmp_path: Path) -> None:
     src = midentity.source_calculation_identity
 
     class _Handler(BaseHTTPRequestHandler):
-        def do_GET(self):  # noqa: N802
+        def do_GET(self) -> None:  # noqa: N802
             if not self.path.startswith("/objects/"):
                 self.send_error(404)
                 return
@@ -2262,7 +2384,7 @@ def test_mixed_queue_driver_publishes_only_own_lane(tmp_path: Path) -> None:
             self.end_headers()
             self.wfile.write(payload)
 
-        def log_message(self, *_a, **_k):
+        def log_message(self, *_a: Any, **_k: Any) -> None:
             return
 
     object_server = ThreadingHTTPServer(("127.0.0.1", 0), _Handler)
@@ -2550,11 +2672,16 @@ class _ScriptedDeltaAuthority:
             return False
         return self._script.pop(0)
 
-    def is_policy_current(self, *, policy_digest: str, now) -> bool:
+    def is_policy_current(self, *, policy_digest: str, now: datetime) -> bool:
         return self._next()
 
     def is_runtime_current(
-        self, *, now, worker_principal_id=None, publication_id=None, lease_generation=None
+        self,
+        *,
+        now: datetime,
+        worker_principal_id: str | None = None,
+        publication_id: str | None = None,
+        lease_generation: int | None = None,
     ) -> bool:
         return self._next()
 
@@ -2609,7 +2736,7 @@ def test_mask_bytes_denied_when_delta_authority_dies(tmp_path: Path) -> None:
     )
     assert lease is not None
 
-    def _resolve(cap=4_000_000):
+    def _resolve(cap: int = 4_000_000) -> bytes | None:
         return resolve_mask_bytes_for_lease(
             store=store,
             material_resolver=genuine["adapter"],

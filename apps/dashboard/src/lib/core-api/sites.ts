@@ -1,6 +1,6 @@
 import "server-only";
 
-import { coreFetch } from "./client";
+import { coreFetch, coreFetchWithToken } from "./client";
 import type {
   AoiVertex,
   DataResidency,
@@ -64,6 +64,24 @@ export async function registerSite(input: RegisterSiteInput): Promise<SiteView> 
     method: "POST",
     body: input,
   });
+  return body.site;
+}
+
+/**
+ * 같은 요청의 세션 토큰 하나로 연속성 검사와 변이를 잇는다 — 계정 연속성
+ * 가드(`route.ts`)가 토큰을 두 번 읽으면 검사와 Core 변이 사이 세션 교체
+ * (TOCTOU)가 생긴다. 호출부가 검사에 쓴 바로 그 토큰을 그대로 하위 변이에
+ * 쓴다. 기존 `registerSite` 동작은 그대로 둔다.
+ */
+export async function registerSiteWithToken(input: RegisterSiteInput, token: string): Promise<SiteView> {
+  const body = await coreFetchWithToken<{ site: SiteView }>(
+    "/v1/sites",
+    token,
+    {
+      method: "POST",
+      body: input,
+    },
+  );
   return body.site;
 }
 

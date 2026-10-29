@@ -54,6 +54,12 @@ targeted test -> broader software verification -> HIL/field gate when applicable
 
 The resulting responsibility model is:
 
+The additive external task handoff stays in Core (`domains/external/spatial_tasks.py`): bounded
+orchestration references only. It reuses existing Site/WorkArea/WorkOrder and Analysis authority;
+`services/analysis-mcp` is its scoped stdio adapter and `apps/dashboard` is the authenticated human
+selector. Shared DTOs remain in `packages/event-contracts`; no separate task service, geometry
+authority, computation engine or external-host configuration is introduced.
+
 ```text
 Operator
   -> Console / bounded MCP / external API consumer
@@ -164,7 +170,7 @@ their owner until an explicit cleanup task removes them.
 | Former `services/dji-gateway/` | Historical Gateway capability ports and receipts | No — historical | Not a current owner, transport or instruction entry | ARCHIVED (P3 Task 6 → `archive/acquisition-2026/services/dji-gateway/`, historical) |
 | `services/processing-controller/` | Processing — job workers, artifact measurement/upload | Yes | Reads Core work; workers measure, Core adjudicates | RETAIN |
 | `services/spatial-data-mcp/` | Bounded local stdio MCP adapter — six fixed tools over one configured Core origin | No (source-run adapter; no listener/deployment) | Reads Core AI delivery only; owns no bytes, grants, credentials, or device authority | RETAIN |
-| `services/analysis-mcp/` | Bounded local stdio Analysis adapter — seven fixed tools over Core, including calculation-free readiness | No (source-run adapter; no listener/deployment) | Same fixed V2 result/evidence records; no independent computation or authority | RETAIN |
+| `services/analysis-mcp/` | Bounded local stdio Analysis adapter —17 fixed tools over Core, including readiness, optional delta publication and same-task human selection/resume | No (source-run adapter; no listener/deployment) | Same fixed V2 result/evidence records; no independent computation, geometry, grants or authority | RETAIN |
 
 A new `services/` child must have its own independently managed listener, daemon/polling loop,
 health/readiness boundary, deployment configuration, or separately started worker entrypoint. Import

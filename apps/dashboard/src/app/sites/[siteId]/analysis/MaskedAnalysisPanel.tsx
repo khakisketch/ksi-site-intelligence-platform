@@ -1,5 +1,7 @@
 "use client";
 
+import { CoverageGridView } from "@/components/analysis/CoverageGridView";
+
 import { useEffect, useRef, useState } from "react";
 
 import { ResponsiveActionBoundary } from "@/components/responsive/ResponsiveActionBoundary";
@@ -815,6 +817,9 @@ export function MaskedAnalysisPanel({
         <div className="min-w-0"><dt className="text-[12px] font-semibold text-ink-muted">성토</dt><dd className="num mt-1 break-words text-[16px] font-bold">{formatVolume(report.numericResult.metrics.fillM3)}</dd></div>
         <div className="min-w-0"><dt className="text-[12px] font-semibold text-ink-muted">순변화</dt><dd className="num mt-1 break-words text-[16px] font-bold">{formatVolume(report.numericResult.metrics.netM3)}</dd></div>
       </dl>
+      {report.numericResult.metrics.uncertaintyM3 === null ? (
+        <p className="mt-2 text-[12px] leading-5 text-ink-2">불확실성 미기록 — 기록된 값이 없으므로 0으로 볼 수 없습니다. 검사점 평가와 별개입니다.</p>
+      ) : null}
       <dl className="mt-3 grid gap-2 text-[12px] text-ink-2 sm:grid-cols-2">
         <div><dt className="text-ink-muted">원본 선택 셀</dt><dd>{formatCountKo(report.numericResult.coverage.originalSelectedCellCount)} · {formatArea(report.numericResult.coverage.originalSelectedAreaM2)}</dd></div>
         <div><dt className="text-ink-muted">마스크 제외 셀</dt><dd>{formatCountKo(report.numericResult.coverage.maskExcludedCellCount)}</dd></div>
@@ -822,6 +827,10 @@ export function MaskedAnalysisPanel({
         <div><dt className="text-ink-muted">공통 유효 셀</dt><dd>{formatCountKo(report.numericResult.coverage.commonValidCellCount)} · 유효 커버리지 100%</dd></div>
       </dl>
       <p className="mt-2 text-[12px] leading-5 text-ink-muted">작업구역 구멍이 먼저 제외되고 마스크가 그 다음에 제외됩니다. 확인할 수 없는 셀은 없습니다.</p>
+      <details className="mt-3 text-xs text-ink-2">
+        <summary className="tap-target cursor-pointer font-semibold">V3 계산·마스크 제외 영역 보기</summary>
+        <CoverageGridView witness={report.numericResult.coverage} />
+      </details>
       {!report.numericResult.impact.unmaskedImpactKnown ? <div className="mt-3 rounded-md border border-line bg-sunk/50 px-3 py-2.5 text-[12.5px] leading-5 text-ink-2">
         <p className="font-semibold text-ink-1">제외 영역의 원래 수치는 확인할 수 없음</p>
         <p className="mt-1">원본 구역에 값이 없던 셀이 있어 마스크를 씌우지 않았을 때의 수치를 확정할 수 없습니다. 알 수 없는 값은 0으로 표시하지 않습니다.</p>

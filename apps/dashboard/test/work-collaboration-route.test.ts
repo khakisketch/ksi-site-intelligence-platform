@@ -1,8 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocked = vi.hoisted(() => ({ session: vi.fn(), assign: vi.fn() }));
-vi.mock("@/lib/core-api/session", () => ({ getSessionToken: mocked.session }));
-vi.mock("@/lib/core-api/observation-work-orders", () => ({ assignObservationWorkOrderToMe: mocked.assign }));
+vi.mock("@/lib/core-api/session", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/core-api/session")>();
+  return { ...actual, getSessionToken: mocked.session };
+});
+vi.mock("@/lib/core-api/observation-work-orders", () => ({ assignObservationWorkOrderToMeWithToken: mocked.assign }));
 
 import { POST } from "@/app/api/observation-work-orders/[workOrderId]/operations/assignment/route";
 
@@ -32,7 +35,7 @@ describe("member assignment BFF", () => {
       body: JSON.stringify({ expectedOperationsRevision: 2, action: "ASSIGN_TO_MEMBER", assigneePrincipalId: "operator-b" }),
     }) as never, context);
     expect(response.status).toBe(200);
-    expect(mocked.assign).toHaveBeenCalledWith("work-1", 2, "ASSIGN_TO_MEMBER", "assign-2", "operator-b");
+    expect(mocked.assign).toHaveBeenCalledWith("work-1", 2, "ASSIGN_TO_MEMBER", "assign-2", "token", "operator-b");
   });
 
   it("accepts the Core-compatible 255 character member id", async () => {
@@ -43,6 +46,6 @@ describe("member assignment BFF", () => {
       body: JSON.stringify({ expectedOperationsRevision: 2, action: "ASSIGN_TO_MEMBER", assigneePrincipalId: principalId }),
     }) as never, context);
     expect(response.status).toBe(200);
-    expect(mocked.assign).toHaveBeenCalledWith("work-1", 2, "ASSIGN_TO_MEMBER", "assign-3", principalId);
+    expect(mocked.assign).toHaveBeenCalledWith("work-1", 2, "ASSIGN_TO_MEMBER", "assign-3", "token", principalId);
   });
 });

@@ -53,9 +53,15 @@ def assemble_platform_app(
     masked_quantitative: MaskedQuantitativeLocalConfig | None = None,
     masked_dsm_byte_reader: Any | None = None,
     site_bootstrap_max_sites_per_org: int = _DEFAULT_MAX_BOOTSTRAP_SITES_PER_ORG,
+    registration_stopped: bool = False,
     expose_docs: bool = False,
 ) -> FastAPI:
-    """Build the platform graph, mount the external-only app, add runtime surfaces."""
+    """Build the platform graph and runtime surfaces.
+
+    ``registration_stopped`` is restart-only. It does not drain an earlier
+    writer or persist across restarts. Callers must quiesce and close the
+    previous writer before treating the new instance as a registration stop.
+    """
     if auth_registry is None:
         raise ValueError(
             "platform Core mounts no unauthenticated protected surface — auth_registry is required"
@@ -73,6 +79,7 @@ def assemble_platform_app(
         masked_quantitative=masked_quantitative,
         masked_dsm_byte_reader=masked_dsm_byte_reader,
         site_bootstrap_max_sites_per_org=site_bootstrap_max_sites_per_org,
+        registration_stopped=registration_stopped,
     )
     try:
         app = create_platform_app(

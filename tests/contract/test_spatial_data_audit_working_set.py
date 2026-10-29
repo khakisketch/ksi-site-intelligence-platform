@@ -8,10 +8,11 @@ from __future__ import annotations
 
 import json
 import os
+from collections.abc import Mapping
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any, Mapping, cast
+from typing import Any, cast
 from uuid import uuid4
 
 import pytest

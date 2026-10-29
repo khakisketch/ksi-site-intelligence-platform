@@ -3,6 +3,7 @@
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from types import SimpleNamespace
 from typing import Any, Literal
 from urllib.parse import quote
 
@@ -69,6 +70,28 @@ def _scoped_pending_items(
             or item.work_area_id in principal.allowed_work_area_ids
         )
     ]
+
+
+def _review_source_in_scope(
+    projector: Any, site_id: str, request: Any, report: Any, authority: Any, principal: Principal
+) -> bool:
+    """Apply the exact retained report scope to a review write witness.
+
+    The review receipt carries the same request/report/authority content as
+    the scope-gated report views, so the write path enforces the identical
+    `_history_source_in_scope` gate (provenance, site/zone, both subject
+    WorkOrders with their full granted-area subsets). Legacy unscoped
+    identities keep organization-filtered behavior, exactly like the read
+    join which skips the gate when no grants are set. The witness is the
+    already-resolved source — never a second provider lookup.
+    """
+    if principal.allowed_site_ids is None and principal.allowed_work_area_ids is None:
+        return True
+    return projector._history_source_in_scope(  # noqa: SLF001 -- same-module exact gate
+        site_id,
+        SimpleNamespace(request=request, report=report, execution_authority=authority),
+        principal,
+    )
 
 
 class ExternalResultReviewView(CamelModel):
@@ -1022,6 +1045,47 @@ def build_external_result_workflow_router(
             ) and service.work_orders.is_external_workflow_closed(
                 existing.source_work_order_id, organization_id=principal.organization_id
             ):
+                # Closed idempotent retry keeps the retained receipt, but only
+                # for a caller that still resolves the exact current source
+                # inside the caller's own grants — the same actor/currentness
+                # gate the live path enforces via resolve_current, plus the
+                # exact retained report scope the report views enforce. Without
+                # it any same-org operator could harvest another actor's
+                # retained review after closure, including baseline/zone rows
+                # their grants do not cover. The preflight runs outside the
+                # shared coordinator (it may do independent historical work),
+                # so the retained receipt and the preflighted source are
+                # rechecked under the coordinator — the same local guard
+                # review() applies before return/append. The recheck uses a
+                # fresh guard instant (the worker-input route's final guard
+                # does the same): a revocation or expiry landing between
+                # preflight and guard must deny, even though the preflight
+                # instant still resolves.
+                at = now()
+                source = service.reviews.preflight_current_source(
+                    existing, principal=principal, evaluated_at=at
+                )
+                if source is None:
+                    raise HTTPException(
+                        status_code=409, detail="EXTERNAL_RESULT_REVIEW_SOURCE_UNAVAILABLE"
+                    )
+                with service.coordinator.guarded_read():
+                    fresh = now()
+                    in_scope = _review_source_in_scope(
+                        projector,
+                        source.authority.site_id,
+                        source.request,
+                        source.report,
+                        source.authority,
+                        principal,
+                    )
+                    current = in_scope and service.reviews.local_source_is_current(
+                        existing, source, principal=principal, evaluated_at=fresh
+                    )
+                if not current:
+                    raise HTTPException(
+                        status_code=409, detail="EXTERNAL_RESULT_REVIEW_SOURCE_UNAVAILABLE"
+                    )
                 return ExternalResultReviewView(review=existing)
             resolved = resolver(
                 report_ref,
@@ -1029,6 +1093,18 @@ def build_external_result_workflow_router(
                 now=now(),
             )
             if resolved is None:
+                if (
+                    principal.allowed_site_ids is not None
+                    or principal.allowed_work_area_ids is not None
+                ):
+                    # No work order is known without a resolved report, so a
+                    # scoped caller cannot be grant-checked here — and the live
+                    # review gate below would resolve a report that lands
+                    # mid-request without any scope check. Fail closed with the
+                    # same 409; unscoped callers keep the existing behavior.
+                    raise HTTPException(
+                        status_code=409, detail="EXTERNAL_RESULT_REVIEW_SOURCE_UNAVAILABLE"
+                    )
                 receipt = service.reviews.review(
                     organization_id=principal.organization_id,
                     report_ref=report_ref,
@@ -1036,6 +1112,17 @@ def build_external_result_workflow_router(
                     evaluated_at=now(),
                 )
             else:
+                if not _review_source_in_scope(
+                    projector,
+                    resolved.execution_authority.site_id,
+                    resolved.request,
+                    resolved.report,
+                    resolved.execution_authority,
+                    principal,
+                ):
+                    raise HTTPException(
+                        status_code=409, detail="EXTERNAL_RESULT_REVIEW_SOURCE_UNAVAILABLE"
+                    )
                 with service.work_orders.guard_new_external_intent(
                     resolved.request.current_work_order_id,
                     organization_id=principal.organization_id,

@@ -59,7 +59,7 @@ describe("console shell boundary", () => {
     const viewerNav = readSource("src/components/nav/ViewerSiteNav.tsx");
     expect(sidebar).toContain("SiteContextNav");
     expect(sidebar).toContain("sites");
-    expect(layout).toContain("listSitesCached");
+    expect(layout).toContain("readRootShellSnapshot");
     expect(layout).toContain("sites={sidebarSites}");
     expect(layout).toContain("SiteListProvider");
     expect(viewerNav).toContain("SITE_CONTEXT_SECTIONS");

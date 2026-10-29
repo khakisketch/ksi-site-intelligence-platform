@@ -1,5 +1,6 @@
 import "server-only";
 
+import type { SiteView } from "@/lib/core-api/types";
 import { listSitesCached } from "@/lib/core-api/cached";
 
 import type { NavCounts } from "./DesktopSidebar";
@@ -8,8 +9,8 @@ import type { NavCounts } from "./DesktopSidebar";
  * 사이드바 배지용 건수. **실패는 0 이 아니라 미표시로 떨어진다** — 집계에 실패한 화면이
  * "할 일 없음"으로 보이는 게 이 제품에서 가장 나쁜 거짓말이다.
  */
-export async function getNavCounts(): Promise<NavCounts> {
-  const sites = await listSitesCached().catch(() => null);
+export async function getNavCounts(snapshot?: readonly SiteView[] | null): Promise<NavCounts> {
+  const sites = snapshot === undefined ? await listSitesCached().catch(() => null) : snapshot;
 
   return {
     sites: badge(sites?.length),

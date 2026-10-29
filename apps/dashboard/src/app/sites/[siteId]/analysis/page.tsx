@@ -50,21 +50,57 @@ export default async function SiteAnalysisPage({ params, searchParams }: {
     workOrderNames: Record<string, string>;
     analyses: Awaited<ReturnType<typeof listAnalyses>>;
     selectedDetail: Awaited<ReturnType<typeof getAnalysis>> | null;
-  } | null = null;
-  let childError: unknown;
-  let childStage: "lists" | "detail" = "lists";
-  try {
-    const [areas, observations, listedAnalyses, workOrders] = await Promise.all([
-      listWorkAreas(siteId),
-      listAnalysisObservations(siteId),
-      listAnalyses(siteId, { limit: 50 }),
-      listObservationWorkOrders(siteId).catch(() => null),
-    ]);
-    let detail: Awaited<ReturnType<typeof getAnalysis>> | null = null;
-    if (analysisId && !listedAnalyses.items.some((item) => item.analysisId === analysisId)) {
-      childStage = "detail";
+  };
+  // 목록 실패가 서로를 묻지 않게 각각 확인한다. 하나가 실패해도 확인할 수
+  // 있는 구역은 그대로 둔다. unavailable을 empty로 다루지 않는다.
+  const [areasSettled, observationsSettled, analysesSettled, workOrdersSettled] = await Promise.allSettled([
+    listWorkAreas(siteId),
+    listAnalysisObservations(siteId),
+    listAnalyses(siteId, { limit: 50 }),
+    listObservationWorkOrders(siteId),
+  ]);
+  const coreStatusOf = (settled: PromiseSettledResult<unknown>): number | null =>
+    settled.status === "rejected" && settled.reason instanceof CoreApiError ? settled.reason.status : null;
+  const areasValue = areasSettled.status === "fulfilled" ? areasSettled.value : null;
+  const observationsValue = observationsSettled.status === "fulfilled" ? observationsSettled.value : null;
+  const analysesValue = analysesSettled.status === "fulfilled" ? analysesSettled.value : null;
+  const workOrders = workOrdersSettled.status === "fulfilled" ? workOrdersSettled.value : null;
+  const areasStatus = coreStatusOf(areasSettled);
+  const observationsStatus = coreStatusOf(observationsSettled);
+  const analysesStatus = coreStatusOf(analysesSettled);
+  const workOrdersStatus = coreStatusOf(workOrdersSettled);
+  // 이력 실패는 기록 구역만의 상태로 둔다 — 요청서·다른 구역까지 닫지 않는다.
+  const historyState: "ready" | "denied" | "unconfirmed" | "failed" =
+    analysesValue !== null ? "ready"
+    : analysesStatus === 403 ? "denied"
+    : analysesStatus === 404 ? "unconfirmed"
+    : "failed";
+  const historyMessage: string | null =
+    historyState === "ready" ? null
+    : historyState === "denied" ? "현장 변화 분석 이력을 조회할 권한이 없습니다. 현장 담당자에게 변화 분석 기록 조회 권한을 요청하세요."
+    : historyState === "unconfirmed" ? "현장 변화 분석 이력을 확인할 수 없습니다. 현장 범위를 확인하거나 다시 불러오세요. 이 안내는 등록 자료의 상태를 판단하지 않습니다."
+    : "현장 변화 분석 이력을 불러오지 못했습니다. 다시 불러오면 최신 이력을 확인할 수 있습니다.";
+  // 목록을 읽지 못해 검증된 범위가 없을 때는 다듬은 값만 복귀 링크에 싣는다(기존).
+  const areasUnavailable = areasValue === null;
+  const observationsUnavailable = observationsValue === null;
+  // 관측-구역 연결(작업지시 귀속)을 확인하지 못하면 후보 귀속을 단정하지
+  // 않는다. 관측 목록은 읽혔어도 귀속 없이는 후보를 고를 수 없으므로 별도
+  // 상태로 둔다. 빈 작업지시 목록([])은 끊김이 아니라 확인된 빈 귀속이다.
+  const attributionUnavailable = workOrders === null;
+  const candidatesVerifiable = !observationsUnavailable && !attributionUnavailable;
+  let detail: Awaited<ReturnType<typeof getAnalysis>> | null = null;
+  let missingDetail = false;
+  if (analysisId && (analysesValue === null || !analysesValue.items.some((item) => item.analysisId === analysisId))) {
+    try {
       detail = await getAnalysis(siteId, analysisId);
+    } catch (error) {
+      // 깊은 연결 기록을 찾지 못하면 목록 보기로 돌린다. 그 밖의 상세 실패는
+      // 목록·요청서를 닫지 않고, 화면이 같은 기록을 다시 불러오게 둔다.
+      if (error instanceof CoreApiError && error.status === 404) missingDetail = true;
+      else detail = null;
     }
+  }
+  {
     const workAreasByOrder = new Map<string, string[]>();
     const workOrderNames: Record<string, string> = {};
     for (const order of workOrders ?? []) {
@@ -77,35 +113,40 @@ export default async function SiteAnalysisPage({ params, searchParams }: {
         : [];
       if (workAreaIds.length > 0) workAreasByOrder.set(order.workOrderId, workAreaIds);
     }
-    let unattributedObservationCount = 0;
-    const attributedObservations = observations.flatMap((observation) => {
+    const observationsList = observationsValue ?? [];
+    const attributedObservations = observationsList.flatMap((observation) => {
       const workAreaIds = workAreasByOrder.get(observation.selector.workOrderId);
-      if (!workAreaIds) {
-        unattributedObservationCount += 1;
-        return [];
-      }
+      if (!workAreaIds) return [];
       return [{ ...observation, workAreaIds }];
     });
-    loaded = { areas, observations, attributedObservations, unattributedObservationCount, workOrderNames, analyses: listedAnalyses, selectedDetail: detail };
-  } catch (error) {
-    childError = error;
+    // 목록을 확인하지 못했으면 연결 수치를 세지 않는다 — 귀속을 모르면
+    // 제외 수도 단정하지 않으므로 0으로 둔다(빈 단정이 아니다).
+    const unattributedObservationCount = observationsValue === null || workOrders === null
+      ? 0
+      : observationsList.length - attributedObservations.length;
+    loaded = {
+      areas: areasValue ?? { workAreas: [] },
+      observations: observationsValue ?? [],
+      attributedObservations,
+      unattributedObservationCount,
+      workOrderNames,
+      analyses: analysesValue ?? { siteId, items: [], nextCursor: null },
+      selectedDetail: detail,
+    };
   }
-  const unavailable = childStage === "lists" && childError instanceof CoreApiError && childError.status === 404;
-  const missingDetail = childStage === "detail" && childError instanceof CoreApiError && childError.status === 404;
-  const denied = childError instanceof CoreApiError && childError.status === 403;
-  const retryAfterSeconds = childError instanceof CoreApiError ? childError.retryAfterSeconds : undefined;
   const canCreate = session.principal.permissions.includes("SITES_WRITE");
   const hasDeepLink = typeof analysisId === "string" && analysisId.length > 0;
-  const journeyScope = loaded
-    ? resolveAnalysisScope({
+  const journeyScope = areasUnavailable
+    // 구역 목록을 모르면 쿼리 값을 믿고 고르지 않는다. 조용한 대체 선택도 두지 않는다.
+    ? { initialWorkAreaId: "", scopeNotice: null, invalidRequested: false }
+    : resolveAnalysisScope({
         areas: loaded.areas.workAreas.map((area) => ({ workAreaId: area.workAreaId, name: area.name, status: area.status })),
         rawWorkAreaId: single(query.workAreaId),
         hasPendingAttempt: false,
         hasAnalysisDeepLink: hasDeepLink,
-      })
-    : { initialWorkAreaId: "", scopeNotice: null, invalidRequested: false };
-  const deeplinkArea = loaded?.selectedDetail?.workAreaId
-    ?? (hasDeepLink ? loaded?.analyses.items.find((item) => item.analysisId === analysisId)?.workAreaId ?? "" : "");
+      });
+  const deeplinkArea = loaded.selectedDetail?.workAreaId
+    ?? (hasDeepLink ? loaded.analyses.items.find((item) => item.analysisId === analysisId)?.workAreaId ?? "" : "");
   const effectiveWorkAreaId = hasDeepLink ? (deeplinkArea ?? "") : journeyScope.initialWorkAreaId;
   // 정확한 선택자 인계 힌트 — 키가 하나라도 있으면 정확 모드다. 원문 값을
   // 그대로 넘기며(반복 배열을 첫 값으로 접지 않는다), 일부만 있거나 배열이면
@@ -115,8 +156,11 @@ export default async function SiteAnalysisPage({ params, searchParams }: {
     query.hintCurrentWorkOrderId, query.hintCurrentSubmissionRef, query.hintCurrentRevision,
   ] as const;
   const hintModeSupplied = hintKeys.some((value) => value !== undefined);
-  const exactHint = loaded
-    ? resolveExactAnalysisSelectorHints({
+  // 후보 목록·귀속을 확인하지 못했으면 힌트를 판정하지 않는다. 맞지
+  // 않는다고 단정하지 않고, 요청서의 목록 상태 안내가 그 자리를 대신한다.
+  const exactHint = !candidatesVerifiable
+    ? { baseline: null, current: null, notice: null }
+    : resolveExactAnalysisSelectorHints({
         candidates: loaded.attributedObservations,
         workAreaId: effectiveWorkAreaId,
         rawBaseline: hintKeys[0] !== undefined || hintKeys[1] !== undefined || hintKeys[2] !== undefined
@@ -135,17 +179,16 @@ export default async function SiteAnalysisPage({ params, searchParams }: {
           : undefined,
         hasPendingAttempt: false,
         hasAnalysisDeepLink: hasDeepLink,
-      })
-    : { baseline: null, current: null, notice: null };
-  const currentHint = loaded && !hintModeSupplied
-    ? resolveAnalysisCurrentHint({
+      });
+  const currentHint = !candidatesVerifiable || hintModeSupplied
+    ? { currentWorkOrderId: null, notice: null }
+    : resolveAnalysisCurrentHint({
         candidates: loaded.attributedObservations,
         workAreaId: effectiveWorkAreaId,
         rawCurrentWorkOrderId: query.currentWorkOrderId,
         hasPendingAttempt: false,
         hasAnalysisDeepLink: hasDeepLink,
-      })
-    : { currentWorkOrderId: null, notice: null };
+      });
   // 후보와 맞지 않은 인계 선택자도 화면에 그대로 보인다 — 미리 고를 수는
   // 없지만, 가져온 쌍이 무엇이었는지와 왜 고르지 않았는지를 밝힌다.
   // 형태 검증만 하며(정확도·적합성 판정 없음), 후보 목록과 대조하지 않는다.
@@ -236,12 +279,10 @@ export default async function SiteAnalysisPage({ params, searchParams }: {
   const visualReturnHref = visualContext && effectiveWorkAreaId
     ? visualBrowsingReturnHref(`/sites/${encodeURIComponent(siteId)}`, visualContext, effectiveWorkAreaId)
     : null;
-  // 목록을 읽지 못해 검증된 범위가 없을 때는 사용자가 가져온 쿼리를 그대로 믿지
-  // 않고 다듬은 값만 복귀 링크에 싣는다. 목적지(등록 자료)가 범위를 다시 검증해
-  // 닫히므로(모르는 구역은 실패 공지), 여기서 자료 유효성을 단정하지 않는다.
-  // 배열 쿼리는 단일 선택이 아니므로 싣지 않는다.
-  const rawWorkAreaId = typeof query.workAreaId === "string" ? query.workAreaId : undefined;
-  const fallbackScope = loaded ? effectiveWorkAreaId : (parseScopeId(rawWorkAreaId) ?? "");
+  // 목록 실패와 무관하게 검증된 구역 값만 복귀 링크에 싣는다. 비어 있으면
+  // 다듬은 단일 쿼리 값으로 복귀한다 — 받는 목록 화면이 범위를 다시 검증한다.
+  const fallbackScope = effectiveWorkAreaId
+    || (parseScopeId(typeof query.workAreaId === "string" ? query.workAreaId : undefined) ?? "");
   // 탐색에서 들고 온 관측 참조는 헤더 복귀용으로만 둔다. 분석 선택
   // (analysisId·currentWorkOrderId)과 frozen 결과 입력은 이 값을 읽지 않는다.
   // 현황으로 돌아가면 탐색 진입이 카탈로그와 재대조해 모르는 참조를 공지만 둔다.
@@ -266,7 +307,7 @@ export default async function SiteAnalysisPage({ params, searchParams }: {
           <p className="mt-1 max-w-2xl text-[13px] leading-6 text-ink-2">기준 자료와 비교할 자료를 고르고 변화량과 근거를 살펴보세요.</p>
         </div>
         <div className="flex flex-wrap items-center gap-2.5">
-          {loaded && (loaded.analyses.items.length > 0 || loaded.analyses.nextCursor) && (
+          {historyState === "ready" && !areasUnavailable && !observationsUnavailable && !attributionUnavailable && (loaded.analyses.items.length > 0 || loaded.analyses.nextCursor) && (
             <p aria-label="분석 요약" className="rounded-lg border border-line bg-sunk/40 px-3 py-1.5 text-[12px] text-ink-2">
               <span className="font-semibold text-ink-1">분석 기록 {loaded.analyses.items.length}{loaded.analyses.nextCursor ? "+" : ""}건</span>
               <span aria-hidden="true" className="mx-1.5 text-line-strong">·</span>
@@ -278,7 +319,13 @@ export default async function SiteAnalysisPage({ params, searchParams }: {
           <Link href={`/sites/${encodeURIComponent(siteId)}/observations`} className="tap-target inline-flex min-h-11 items-center text-[12px] font-semibold text-accent-text hover:underline">외부 비교 기록</Link>
         </div>
       </header>
-      {loaded ? <>
+      {/* 기록 구역·요청 구역은 서로의 실패에 닫히지 않는다. 각 구역이
+          확인할 수 없었던 목록을 밝히고, unavailable을 empty로 두지 않는다. */}
+      {missingDetail && <div className="flex flex-col gap-3">
+        <ErrorState message="선택한 분석 기록을 찾을 수 없거나 접근할 수 없습니다. 분석 목록에서 다른 기록을 확인하세요." tone="idle" />
+        <Link className="btn w-fit" href={fallbackScope ? `/sites/${encodeURIComponent(siteId)}/analysis?workAreaId=${encodeURIComponent(fallbackScope)}` : `/sites/${encodeURIComponent(siteId)}/analysis`}>분석 목록 보기</Link>
+      </div>}
+      <>
         {/* 기록이 있으면 결과 요약·이력이 먼저 보인다. 기록이 없으면 실제
             선택 폼이 먼저 오고, 시작 안내는 접힌 도움말로 뒤에 둔다. */}
         <AnalysisRequestPanel
@@ -295,7 +342,7 @@ export default async function SiteAnalysisPage({ params, searchParams }: {
           initialPage={loaded.analyses}
           initialSelectedDetail={loaded.selectedDetail}
           canCreate={canCreate}
-          initialAnalysisId={analysisId ?? null}
+          initialAnalysisId={missingDetail ? null : (analysisId ?? null)}
           initialWorkAreaId={effectiveWorkAreaId}
           initialCurrentWorkOrderId={currentHint.currentWorkOrderId}
           scopeNotice={journeyScope.scopeNotice}
@@ -308,8 +355,18 @@ export default async function SiteAnalysisPage({ params, searchParams }: {
           visualContext={visualContext && visualContext.workAreaId === effectiveWorkAreaId ? visualContext : null}
           visualReturnHref={visualReturnHref}
           visualContextNotice={visualContextNotice}
+          listsState={{
+            workAreas: areasUnavailable ? (areasStatus === 404 ? "unconfirmed" : areasStatus === 403 ? "denied" : "unavailable") : "ready",
+            observations: observationsUnavailable ? (observationsStatus === 404 ? "unconfirmed" : observationsStatus === 403 ? "denied" : "unavailable") : "ready",
+            workOrders: attributionUnavailable ? (workOrdersStatus === 404 ? "unconfirmed" : workOrdersStatus === 403 ? "denied" : "unavailable") : "ready",
+            history: historyState,
+            historyMessage,
+            historyRetryAfterSeconds: analysesSettled.status === "rejected" && analysesSettled.reason instanceof CoreApiError
+              ? (analysesSettled.reason.retryAfterSeconds ?? null)
+              : null,
+          }}
         />
-        {loaded.analyses.items.length === 0 && <AnalysisStartGuide
+        {historyState === "ready" && !areasUnavailable && !observationsUnavailable && !attributionUnavailable && loaded.analyses.items.length === 0 && <AnalysisStartGuide
           workAreaId={effectiveWorkAreaId || null}
           siteId={siteId}
           workAreaCount={loaded.areas.workAreas.length}
@@ -319,17 +376,7 @@ export default async function SiteAnalysisPage({ params, searchParams }: {
           canCreate={canCreate}
           compact={loaded.areas.workAreas.length > 0 && loaded.attributedObservations.length >= 2}
         />}
-      </> : <div className="flex flex-col gap-3">
-        <ErrorState message={denied ? "현장 변화 분석을 조회할 권한이 없습니다. 현장 담당자에게 변화 분석 기록 조회 권한을 요청하세요." : missingDetail ? "선택한 분석 기록을 찾을 수 없거나 접근할 수 없습니다. 분석 목록에서 다른 기록을 확인하세요." : unavailable ? "이 환경에서는 현장 변화 분석 기능을 사용할 수 없습니다. 등록 자료 자체의 문제가 아닙니다." : "현장 변화 분석 정보를 불러오지 못했습니다."} tone={denied ? "high" : unavailable || missingDetail ? "idle" : "crit"} retryable={!denied && !unavailable && !missingDetail} retryAfterSeconds={retryAfterSeconds} />
-        {missingDetail && <Link className="btn w-fit" href={fallbackScope ? `/sites/${encodeURIComponent(siteId)}/analysis?workAreaId=${encodeURIComponent(fallbackScope)}` : `/sites/${encodeURIComponent(siteId)}/analysis`}>분석 목록 보기</Link>}
-        {unavailable && <>
-          <p className="rounded-lg border border-line bg-surface px-4 py-2.5 text-[12px] leading-5 text-ink-2" role="status">분석 실행 환경이 준비되지 않아 계산 요청으로 이어지지 않습니다. 같은 구역의 등록 자료와 검사 상태는 확인할 수 있습니다.</p>
-          <nav className="flex flex-wrap gap-2" aria-label="분석 불가 시 다음 확인">
-            <Link className="btn" href={fallbackScope ? `/sites/${encodeURIComponent(siteId)}/spatial-assets?workAreaId=${encodeURIComponent(fallbackScope)}` : `/sites/${encodeURIComponent(siteId)}/spatial-assets`}>등록 자료 보기</Link>
-            <Link className="btn" href={fallbackScope ? `/sites/${encodeURIComponent(siteId)}?workAreaId=${encodeURIComponent(fallbackScope)}` : `/sites/${encodeURIComponent(siteId)}`}>현장 현황 보기</Link>
-          </nav>
-        </>}
-      </div>}
+      </>
     </div>
   </>;
 }

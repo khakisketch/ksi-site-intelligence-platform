@@ -167,6 +167,15 @@
       "migrationStatus": "RETAIN"
     },
     {
+      "sourceModule": "ksi_core.identity.browser_session_authority",
+      "activeCanonicalModule": "ksi_core.identity.browser_session_authority",
+      "activePath": "ksi_core/identity/browser_session_authority.py",
+      "plannedCanonicalModule": "ksi_core.identity.browser_session_authority",
+      "plannedPath": "ksi_core/identity/browser_session_authority.py",
+      "ownerBoundary": "identity",
+      "migrationStatus": "RETAIN"
+    },
+    {
       "sourceModule": "ksi_core.sites",
       "activeCanonicalModule": "ksi_core.domains.sites.sites",
       "activePath": "ksi_core/domains/sites/sites.py",
@@ -1457,6 +1466,258 @@
       "plannedCanonicalModule": "ksi_core.domains.external.delivery.metadata_response",
       "plannedPath": "ksi_core/domains/external/delivery/metadata_response.py",
       "ownerBoundary": "domains/external/delivery",
+      "migrationStatus": "T3_NEW_MODULE"
+    },
+    {
+      "sourceModule": "ksi_core.composition.masked_quantitative_graph",
+      "activeCanonicalModule": "ksi_core.composition.masked_quantitative_graph",
+      "activePath": "ksi_core/composition/masked_quantitative_graph.py",
+      "plannedCanonicalModule": "ksi_core.composition.masked_quantitative_graph",
+      "plannedPath": "ksi_core/composition/masked_quantitative_graph.py",
+      "ownerBoundary": "composition",
+      "migrationStatus": "T5_NEW_MODULE"
+    },
+    {
+      "sourceModule": "ksi_core.composition.quantitative_extension_graph",
+      "activeCanonicalModule": "ksi_core.composition.quantitative_extension_graph",
+      "activePath": "ksi_core/composition/quantitative_extension_graph.py",
+      "plannedCanonicalModule": "ksi_core.composition.quantitative_extension_graph",
+      "plannedPath": "ksi_core/composition/quantitative_extension_graph.py",
+      "ownerBoundary": "composition",
+      "migrationStatus": "T5_NEW_MODULE"
+    },
+    {
+      "sourceModule": "ksi_core.domains.external.delivery.audit_history_index",
+      "activeCanonicalModule": "ksi_core.domains.external.delivery.audit_history_index",
+      "activePath": "ksi_core/domains/external/delivery/audit_history_index.py",
+      "plannedCanonicalModule": "ksi_core.domains.external.delivery.audit_history_index",
+      "plannedPath": "ksi_core/domains/external/delivery/audit_history_index.py",
+      "ownerBoundary": "domains/external/delivery",
+      "migrationStatus": "T3_NEW_MODULE"
+    },
+    {
+      "sourceModule": "ksi_core.domains.external.delivery.audit_working_set",
+      "activeCanonicalModule": "ksi_core.domains.external.delivery.audit_working_set",
+      "activePath": "ksi_core/domains/external/delivery/audit_working_set.py",
+      "plannedCanonicalModule": "ksi_core.domains.external.delivery.audit_working_set",
+      "plannedPath": "ksi_core/domains/external/delivery/audit_working_set.py",
+      "ownerBoundary": "domains/external/delivery",
+      "migrationStatus": "T3_NEW_MODULE"
+    },
+    {
+      "sourceModule": "ksi_core.domains.external.delivery.display_derivative",
+      "activeCanonicalModule": "ksi_core.domains.external.delivery.display_derivative",
+      "activePath": "ksi_core/domains/external/delivery/display_derivative.py",
+      "plannedCanonicalModule": "ksi_core.domains.external.delivery.display_derivative",
+      "plannedPath": "ksi_core/domains/external/delivery/display_derivative.py",
+      "ownerBoundary": "domains/external/delivery",
+      "migrationStatus": "T3_NEW_MODULE"
+    },
+    {
+      "sourceModule": "ksi_core.domains.external.delivery.storage_child",
+      "activeCanonicalModule": "ksi_core.domains.external.delivery.storage_child",
+      "activePath": "ksi_core/domains/external/delivery/storage_child.py",
+      "plannedCanonicalModule": "ksi_core.domains.external.delivery.storage_child",
+      "plannedPath": "ksi_core/domains/external/delivery/storage_child.py",
+      "ownerBoundary": "domains/external/delivery",
+      "migrationStatus": "T3_NEW_MODULE"
+    },
+    {
+      "sourceModule": "ksi_core.domains.external.delivery.storage_child_work",
+      "activeCanonicalModule": "ksi_core.domains.external.delivery.storage_child_work",
+      "activePath": "ksi_core/domains/external/delivery/storage_child_work.py",
+      "plannedCanonicalModule": "ksi_core.domains.external.delivery.storage_child_work",
+      "plannedPath": "ksi_core/domains/external/delivery/storage_child_work.py",
+      "ownerBoundary": "domains/external/delivery",
+      "migrationStatus": "T3_NEW_MODULE"
+    },
+    {
+      "sourceModule": "ksi_core.domains.external.ingress.external_mask_input_api",
+      "activeCanonicalModule": "ksi_core.domains.external.ingress.external_mask_input_api",
+      "activePath": "ksi_core/domains/external/ingress/external_mask_input_api.py",
+      "plannedCanonicalModule": "ksi_core.domains.external.ingress.external_mask_input_api",
+      "plannedPath": "ksi_core/domains/external/ingress/external_mask_input_api.py",
+      "ownerBoundary": "domains/external/ingress",
+      "migrationStatus": "T3_NEW_MODULE"
+    },
+    {
+      "sourceModule": "ksi_core.domains.external.ingress.external_mask_input_bytes",
+      "activeCanonicalModule": "ksi_core.domains.external.ingress.external_mask_input_bytes",
+      "activePath": "ksi_core/domains/external/ingress/external_mask_input_bytes.py",
+      "plannedCanonicalModule": "ksi_core.domains.external.ingress.external_mask_input_bytes",
+      "plannedPath": "ksi_core/domains/external/ingress/external_mask_input_bytes.py",
+      "ownerBoundary": "domains/external/ingress",
+      "migrationStatus": "T3_NEW_MODULE"
+    },
+    {
+      "sourceModule": "ksi_core.domains.external.ingress.external_mask_input_bytes_io",
+      "activeCanonicalModule": "ksi_core.domains.external.ingress.external_mask_input_bytes_io",
+      "activePath": "ksi_core/domains/external/ingress/external_mask_input_bytes_io.py",
+      "plannedCanonicalModule": "ksi_core.domains.external.ingress.external_mask_input_bytes_io",
+      "plannedPath": "ksi_core/domains/external/ingress/external_mask_input_bytes_io.py",
+      "ownerBoundary": "domains/external/ingress",
+      "migrationStatus": "T3_NEW_MODULE"
+    },
+    {
+      "sourceModule": "ksi_core.domains.external.ingress.external_mask_input_core_adapters",
+      "activeCanonicalModule": "ksi_core.domains.external.ingress.external_mask_input_core_adapters",
+      "activePath": "ksi_core/domains/external/ingress/external_mask_input_core_adapters.py",
+      "plannedCanonicalModule": "ksi_core.domains.external.ingress.external_mask_input_core_adapters",
+      "plannedPath": "ksi_core/domains/external/ingress/external_mask_input_core_adapters.py",
+      "ownerBoundary": "domains/external/ingress",
+      "migrationStatus": "T3_NEW_MODULE"
+    },
+    {
+      "sourceModule": "ksi_core.domains.external.ingress.external_mask_input_store",
+      "activeCanonicalModule": "ksi_core.domains.external.ingress.external_mask_input_store",
+      "activePath": "ksi_core/domains/external/ingress/external_mask_input_store.py",
+      "plannedCanonicalModule": "ksi_core.domains.external.ingress.external_mask_input_store",
+      "plannedPath": "ksi_core/domains/external/ingress/external_mask_input_store.py",
+      "ownerBoundary": "domains/external/ingress",
+      "migrationStatus": "T3_NEW_MODULE"
+    },
+    {
+      "sourceModule": "ksi_core.domains.external.ingress.site_spatial_workspace",
+      "activeCanonicalModule": "ksi_core.domains.external.ingress.site_spatial_workspace",
+      "activePath": "ksi_core/domains/external/ingress/site_spatial_workspace.py",
+      "plannedCanonicalModule": "ksi_core.domains.external.ingress.site_spatial_workspace",
+      "plannedPath": "ksi_core/domains/external/ingress/site_spatial_workspace.py",
+      "ownerBoundary": "domains/external/ingress",
+      "migrationStatus": "T3_NEW_MODULE"
+    },
+    {
+      "sourceModule": "ksi_core.domains.external.ingress.spatial_asset_description",
+      "activeCanonicalModule": "ksi_core.domains.external.ingress.spatial_asset_description",
+      "activePath": "ksi_core/domains/external/ingress/spatial_asset_description.py",
+      "plannedCanonicalModule": "ksi_core.domains.external.ingress.spatial_asset_description",
+      "plannedPath": "ksi_core/domains/external/ingress/spatial_asset_description.py",
+      "ownerBoundary": "domains/external/ingress",
+      "migrationStatus": "T3_NEW_MODULE"
+    },
+    {
+      "sourceModule": "ksi_core.domains.external.quantity.external_delta_mask_inputs",
+      "activeCanonicalModule": "ksi_core.domains.external.quantity.external_delta_mask_inputs",
+      "activePath": "ksi_core/domains/external/quantity/external_delta_mask_inputs.py",
+      "plannedCanonicalModule": "ksi_core.domains.external.quantity.external_delta_mask_inputs",
+      "plannedPath": "ksi_core/domains/external/quantity/external_delta_mask_inputs.py",
+      "ownerBoundary": "domains/external/quantity",
+      "migrationStatus": "T3_NEW_MODULE"
+    },
+    {
+      "sourceModule": "ksi_core.domains.external.quantity.external_delta_output_observations",
+      "activeCanonicalModule": "ksi_core.domains.external.quantity.external_delta_output_observations",
+      "activePath": "ksi_core/domains/external/quantity/external_delta_output_observations.py",
+      "plannedCanonicalModule": "ksi_core.domains.external.quantity.external_delta_output_observations",
+      "plannedPath": "ksi_core/domains/external/quantity/external_delta_output_observations.py",
+      "ownerBoundary": "domains/external/quantity",
+      "migrationStatus": "T3_NEW_MODULE"
+    },
+    {
+      "sourceModule": "ksi_core.domains.external.quantity.external_delta_publication_api",
+      "activeCanonicalModule": "ksi_core.domains.external.quantity.external_delta_publication_api",
+      "activePath": "ksi_core/domains/external/quantity/external_delta_publication_api.py",
+      "plannedCanonicalModule": "ksi_core.domains.external.quantity.external_delta_publication_api",
+      "plannedPath": "ksi_core/domains/external/quantity/external_delta_publication_api.py",
+      "ownerBoundary": "domains/external/quantity",
+      "migrationStatus": "T3_NEW_MODULE"
+    },
+    {
+      "sourceModule": "ksi_core.domains.external.quantity.external_delta_publication_inputs",
+      "activeCanonicalModule": "ksi_core.domains.external.quantity.external_delta_publication_inputs",
+      "activePath": "ksi_core/domains/external/quantity/external_delta_publication_inputs.py",
+      "plannedCanonicalModule": "ksi_core.domains.external.quantity.external_delta_publication_inputs",
+      "plannedPath": "ksi_core/domains/external/quantity/external_delta_publication_inputs.py",
+      "ownerBoundary": "domains/external/quantity",
+      "migrationStatus": "T3_NEW_MODULE"
+    },
+    {
+      "sourceModule": "ksi_core.domains.external.quantity.external_delta_publications",
+      "activeCanonicalModule": "ksi_core.domains.external.quantity.external_delta_publications",
+      "activePath": "ksi_core/domains/external/quantity/external_delta_publications.py",
+      "plannedCanonicalModule": "ksi_core.domains.external.quantity.external_delta_publications",
+      "plannedPath": "ksi_core/domains/external/quantity/external_delta_publications.py",
+      "ownerBoundary": "domains/external/quantity",
+      "migrationStatus": "T3_NEW_MODULE"
+    },
+    {
+      "sourceModule": "ksi_core.domains.external.quantity.external_delta_source_adapters",
+      "activeCanonicalModule": "ksi_core.domains.external.quantity.external_delta_source_adapters",
+      "activePath": "ksi_core/domains/external/quantity/external_delta_source_adapters.py",
+      "plannedCanonicalModule": "ksi_core.domains.external.quantity.external_delta_source_adapters",
+      "plannedPath": "ksi_core/domains/external/quantity/external_delta_source_adapters.py",
+      "ownerBoundary": "domains/external/quantity",
+      "migrationStatus": "T3_NEW_MODULE"
+    },
+    {
+      "sourceModule": "ksi_core.domains.external.quantity.external_masked_calculation_api",
+      "activeCanonicalModule": "ksi_core.domains.external.quantity.external_masked_calculation_api",
+      "activePath": "ksi_core/domains/external/quantity/external_masked_calculation_api.py",
+      "plannedCanonicalModule": "ksi_core.domains.external.quantity.external_masked_calculation_api",
+      "plannedPath": "ksi_core/domains/external/quantity/external_masked_calculation_api.py",
+      "ownerBoundary": "domains/external/quantity",
+      "migrationStatus": "T3_NEW_MODULE"
+    },
+    {
+      "sourceModule": "ksi_core.domains.external.quantity.external_masked_calculation_core_adapters",
+      "activeCanonicalModule": "ksi_core.domains.external.quantity.external_masked_calculation_core_adapters",
+      "activePath": "ksi_core/domains/external/quantity/external_masked_calculation_core_adapters.py",
+      "plannedCanonicalModule": "ksi_core.domains.external.quantity.external_masked_calculation_core_adapters",
+      "plannedPath": "ksi_core/domains/external/quantity/external_masked_calculation_core_adapters.py",
+      "ownerBoundary": "domains/external/quantity",
+      "migrationStatus": "T3_NEW_MODULE"
+    },
+    {
+      "sourceModule": "ksi_core.domains.external.quantity.external_masked_calculation_store",
+      "activeCanonicalModule": "ksi_core.domains.external.quantity.external_masked_calculation_store",
+      "activePath": "ksi_core/domains/external/quantity/external_masked_calculation_store.py",
+      "plannedCanonicalModule": "ksi_core.domains.external.quantity.external_masked_calculation_store",
+      "plannedPath": "ksi_core/domains/external/quantity/external_masked_calculation_store.py",
+      "ownerBoundary": "domains/external/quantity",
+      "migrationStatus": "T3_NEW_MODULE"
+    },
+    {
+      "sourceModule": "ksi_core.domains.external.quantity.external_masked_delta_source_adapter",
+      "activeCanonicalModule": "ksi_core.domains.external.quantity.external_masked_delta_source_adapter",
+      "activePath": "ksi_core/domains/external/quantity/external_masked_delta_source_adapter.py",
+      "plannedCanonicalModule": "ksi_core.domains.external.quantity.external_masked_delta_source_adapter",
+      "plannedPath": "ksi_core/domains/external/quantity/external_masked_delta_source_adapter.py",
+      "ownerBoundary": "domains/external/quantity",
+      "migrationStatus": "T3_NEW_MODULE"
+    },
+    {
+      "sourceModule": "ksi_core.domains.external.quantity.external_masked_input_capabilities",
+      "activeCanonicalModule": "ksi_core.domains.external.quantity.external_masked_input_capabilities",
+      "activePath": "ksi_core/domains/external/quantity/external_masked_input_capabilities.py",
+      "plannedCanonicalModule": "ksi_core.domains.external.quantity.external_masked_input_capabilities",
+      "plannedPath": "ksi_core/domains/external/quantity/external_masked_input_capabilities.py",
+      "ownerBoundary": "domains/external/quantity",
+      "migrationStatus": "T3_NEW_MODULE"
+    },
+    {
+      "sourceModule": "ksi_core.domains.external.quantity.external_quantitative_extension_activation",
+      "activeCanonicalModule": "ksi_core.domains.external.quantity.external_quantitative_extension_activation",
+      "activePath": "ksi_core/domains/external/quantity/external_quantitative_extension_activation.py",
+      "plannedCanonicalModule": "ksi_core.domains.external.quantity.external_quantitative_extension_activation",
+      "plannedPath": "ksi_core/domains/external/quantity/external_quantitative_extension_activation.py",
+      "ownerBoundary": "domains/external/quantity",
+      "migrationStatus": "T3_NEW_MODULE"
+    },
+    {
+      "sourceModule": "ksi_core.domains.external.spatial_tasks",
+      "activeCanonicalModule": "ksi_core.domains.external.spatial_tasks",
+      "activePath": "ksi_core/domains/external/spatial_tasks.py",
+      "plannedCanonicalModule": "ksi_core.domains.external.spatial_tasks",
+      "plannedPath": "ksi_core/domains/external/spatial_tasks.py",
+      "ownerBoundary": "domains/external",
+      "migrationStatus": "T3_NEW_MODULE"
+    },
+    {
+      "sourceModule": "ksi_core.domains.external.quantity.masked_quantitative_wiring",
+      "activeCanonicalModule": "ksi_core.domains.external.quantity.masked_quantitative_wiring",
+      "activePath": "ksi_core/domains/external/quantity/masked_quantitative_wiring.py",
+      "plannedCanonicalModule": "ksi_core.domains.external.quantity.masked_quantitative_wiring",
+      "plannedPath": "ksi_core/domains/external/quantity/masked_quantitative_wiring.py",
+      "ownerBoundary": "domains/external/quantity",
       "migrationStatus": "T3_NEW_MODULE"
     }
   ]

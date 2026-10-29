@@ -193,6 +193,60 @@ describe("Site detail start guidance", () => {
     expect(screen.getByText("work-1").closest("details")).toBeTruthy();
   });
 
+  it("explains the site work ledger and links a permitted first registration on the actual work-orders route", async () => {
+    mocked.permissions.mockImplementation(async (permission: string) => permission === "WORK_ORDERS_WRITE");
+    mocked.orders.mockResolvedValue([]);
+    render(await SiteDetailPage({ params: Promise.resolve({ siteId: "site-1" }), searchParams: Promise.resolve({ section: "work-orders" }) }));
+    expect(screen.getByText(/이 현장의 관측 작업과 진행 상태/)).toBeTruthy();
+    expect(screen.getByRole("link", { name: "등록 자료 보기" }).getAttribute("href")).toBe("/sites/site-1/spatial-assets");
+    const registration = screen.getByText("관측 자료 등록").closest("a")!;
+    expect(registration.getAttribute("href")).toBe("/sites/site-1/observations/new");
+    expect(registration.parentElement?.className).toContain("hidden lg:contents");
+    expect(screen.getByText("관측 자료 등록은 노트북 이상의 화면에서 진행하세요.")).toBeTruthy();
+    expect(screen.getByText("등록된 관측 작업이 없습니다")).toBeTruthy();
+  });
+
+  it("offers work-area review rather than registration when no active area exists", async () => {
+    mocked.permissions.mockImplementation(async (permission: string) => permission === "WORK_ORDERS_WRITE");
+    mocked.areas.mockResolvedValue({ workAreas: [] });
+    mocked.orders.mockResolvedValue([]);
+    render(await SiteDetailPage({ params: Promise.resolve({ siteId: "site-1" }), searchParams: Promise.resolve({ section: "work-orders" }) }));
+    expect(screen.getByRole("link", { name: "작업구역 확인" }).getAttribute("href")).toBe("/sites/site-1/work-areas");
+    expect(screen.queryByText("관측 자료 등록")).toBeNull();
+  });
+
+  it("carries only a validated active area into the work-record registration action", async () => {
+    mocked.permissions.mockImplementation(async (permission: string) => permission === "WORK_ORDERS_WRITE");
+    mocked.orders.mockResolvedValue([]);
+    render(await SiteDetailPage({ params: Promise.resolve({ siteId: "site-1" }), searchParams: Promise.resolve({ section: "work-orders", workAreaId: "area-1" }) }));
+    expect(screen.getByText("관측 자료 등록").closest("a")?.getAttribute("href")).toBe("/sites/site-1/observations/new?workAreaId=area-1");
+    expect(mocked.header.mock.calls[0][0].workOrderRecordOwnsAction).toBe(true);
+    cleanup();
+    render(await SiteDetailPage({ params: Promise.resolve({ siteId: "site-1" }), searchParams: Promise.resolve({ section: "work-orders", workAreaId: "unknown" }) }));
+    expect(screen.getByText("관측 자료 등록").closest("a")?.getAttribute("href")).toBe("/sites/site-1/observations/new");
+  });
+
+  it("keeps work and area failures and unverified permission distinct from empty records", async () => {
+    mocked.permissions.mockRejectedValue(new Error("identity unavailable"));
+    mocked.areas.mockRejectedValue(new Error("areas unavailable"));
+    mocked.orders.mockRejectedValue(new Error("orders unavailable"));
+    render(await SiteDetailPage({ params: Promise.resolve({ siteId: "site-1" }), searchParams: Promise.resolve({ section: "work-orders" }) }));
+    expect(screen.getByText("관측 작업을 불러오지 못했습니다.")).toBeTruthy();
+    expect(screen.getByText(/작업구역을 확인하지 못했습니다/)).toBeTruthy();
+    expect(screen.getByText(/등록 권한이 없거나 확인되지 않았습니다/)).toBeTruthy();
+    expect(screen.queryByText("등록된 관측 작업이 없습니다")).toBeNull();
+    expect(screen.queryByText("관측 자료 등록")).toBeNull();
+  });
+
+  it("keeps the ledger readable without exposing registration when permission is not established", async () => {
+    mocked.orders.mockResolvedValue([]);
+    render(await SiteDetailPage({ params: Promise.resolve({ siteId: "site-1" }), searchParams: Promise.resolve({ section: "work-orders" }) }));
+    expect(screen.getByText("등록된 관측 작업이 없습니다")).toBeTruthy();
+    expect(screen.getByRole("link", { name: "등록 자료 보기" })).toBeTruthy();
+    expect(screen.queryByText("관측 자료 등록")).toBeNull();
+    expect(screen.getByText(/등록 권한이 없거나 확인되지 않았습니다/)).toBeTruthy();
+  });
+
   it("passes the latest result report time rather than assuming history order or capture time", async () => {
     mocked.history.mockResolvedValue({ items: [
       { result: { reportedAt: "2026-10-01T10:00:00Z" } },

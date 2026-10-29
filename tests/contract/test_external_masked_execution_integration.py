@@ -106,7 +106,7 @@ def _envelope() -> ResourceEnvelopeV1:
     ).sealed()
 
 
-def _write_geotiffs(tmp_path: Path):
+def _write_geotiffs(tmp_path: Path) -> tuple[Path, Path, Path]:
     """Write synthetic baseline/current float64 DSMs plus a uint8 binary mask."""
     transform = from_origin(ORIGIN_X, ORIGIN_Y, 1.0, 1.0)
     baseline_values = np.full((4, 4), 100.0)

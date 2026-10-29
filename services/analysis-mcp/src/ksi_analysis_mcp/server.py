@@ -21,6 +21,10 @@ from .delta_publications import MAX_DELTA_BYTES_RESPONSE_BYTES
 
 _READ_TOOLS = frozenset(
     {
+        "ksi_list_spatial_task_sites",
+        "ksi_get_spatial_task",
+        "ksi_get_spatial_task_options",
+        "ksi_check_spatial_task",
         "ksi_list_analysis_observations",
         "ksi_list_analyses",
         "ksi_check_analysis_readiness",
@@ -35,6 +39,36 @@ _STRUCTURED_CEILINGS = {
     "ksi_read_delta_publication_bytes": MAX_DELTA_BYTES_RESPONSE_BYTES,
 }
 _TOOL_DESCRIPTIONS = {
+    "ksi_list_spatial_task_sites": (
+        "Find named Sites within provisioned scope and AI consent; page with nextOffset."
+    ),
+    "ksi_create_spatial_task": (
+        "Start/resume a durable user task. Use CLARIFY only for ambiguous purpose; OBSERVED_CHANGE "
+        "means two-observation terrain change, never design remaining quantity or today's target. "
+        "Reuse an explicitly shared area/pair. Otherwise return selectionHref on the configured "
+        "Console origin (not Core) for authenticated map selection; the link grants no access."
+    ),
+    "ksi_get_spatial_task": (
+        "Resume the SAME task after Console selection or when the user says selection is done. "
+        "Read saved purpose, area, observations and linked Core result. No coordinate copying."
+    ),
+    "ksi_get_spatial_task_options": (
+        "Read named allowed areas and dated observations for this task. Page observations "
+        "with nextOffset. Ask only about ambiguity; do not invent IDs, dates or coordinates."
+    ),
+    "ksi_select_spatial_task": (
+        "Save explicitly chosen purpose/area/ordered observation pair with expectedRevision. "
+        "Full replacement: retain existing inputs deliberately. AI proposals are drafts; "
+        "do not guess ambiguous boundaries. Unsupported purposes stay unsupported."
+    ),
+    "ksi_check_spatial_task": (
+        "Fresh read-only Core readiness for the saved selection; never execution permission."
+    ),
+    "ksi_run_spatial_task": (
+        "Run the user's observed-change task with saved exact selections and expectedRevision. "
+        "Core rechecks scope, consent, activation and analysis conditions. Reuse taskId on retry; "
+        "Inspect blockers/result and evidence; never invent quantities or settlement accuracy."
+    ),
     "ksi_list_analysis_observations": (
         "List registered selectable observation revisions for one supplied Site; "
         "this does not make a suitability judgment."
@@ -105,7 +139,9 @@ def build_server(client: CoreAnalysisClient) -> Server[dict[str, Any]]:
         "ksi-analysis-mcp",
         version="0.0.1",
         instructions=(
-            "Use only the ten KSI Analysis tools with explicit Site and WorkArea identifiers. "
+            "Use closed KSI tools. Start with named scoped Sites and a durable task when "
+            "the user does not know IDs. Preserve taskId across authenticated Console selection. "
+            "No embedded map is advertised; hosts without UI support use selectionHref and resume. "
             "The six established tools keep their frozen shapes; ksi_check_analysis_readiness "
             "is the additive read-only preflight. The three delta-publication tools are "
             "closed additive external-consumer reads/creates that pass opaque worker bytes "

@@ -76,6 +76,15 @@ describe("unified site header", () => {
     expect(html).not.toContain("관측 작업 기록");
   });
 
+  it("leaves observation registration to the work-order record, while preserving distinct header actions", () => {
+    const workOrders = headerHtml({ tab: "work-orders", canCreateWorkOrder: true, canEditAoi: true, workOrderRecordOwnsAction: true });
+    expect(workOrders).not.toContain('href="/sites/site-1/observations/new"');
+    const results = headerHtml({ tab: "results", canCreateWorkOrder: true, canEditAoi: true });
+    expect(results).toContain('href="/sites/site-1/observations/new"');
+    const areaManagement = headerHtml({ tab: "work-orders", canCreateWorkOrder: false, canEditAoi: true, workOrderRecordOwnsAction: true });
+    expect(areaManagement).toContain(">작업구역 설정</a>");
+  });
+
   it("drops unverified scope instead of inventing query parameters", () => {
     const html = headerHtml({});
     expect(html).toContain("/sites/site-1/spatial-assets");

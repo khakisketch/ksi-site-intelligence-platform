@@ -99,6 +99,14 @@ def masked_inspection_runtime_digest(profile: MaskInspectionProfileV1) -> str:
     )
 
 
+class MaskSourceNotAdmitted(RuntimeError):
+    """A known source cannot yield masked admission (blocked or lane-closed)."""
+
+    def __init__(self, reason: str) -> None:
+        self.reason = reason
+        super().__init__(reason)
+
+
 def _transform_digest(
     transform: tuple[float, float, float, float, float, float],
 ) -> str:
@@ -370,5 +378,6 @@ class CoreMaskProfileActivation(MaskProfileActivationPort):
 __all__ = [
     "CoreMaskProfileActivation",
     "CoreMaskReconstructionAuthority",
+    "MaskSourceNotAdmitted",
     "masked_inspection_runtime_digest",
 ]

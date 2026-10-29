@@ -21,7 +21,11 @@ from uuid import uuid4
 
 from analysis_api_local_fixture import build_local_analysis_api_fixture
 from fastapi.testclient import TestClient
-from ksi_event_contracts.external_analysis_api import AnalysisReadinessViewV1
+from ksi_event_contracts.external_analysis_api import (
+    AnalysisObservationSelectorV1,
+    AnalysisReadinessViewV1,
+    AnalysisSuitabilityStateV1,
+)
 
 
 def _selectors(fixture: Any) -> dict[str, Any]:
@@ -106,6 +110,7 @@ def test_readiness_api_mcp_parity_and_pure_read_only(tmp_path: Path) -> None:
         # MCP tool arguments and result models accept the exact HTTP contract.
         from ksi_analysis_mcp.core_client import (
             TOOL_RESULT_MODELS,
+            ReadinessArguments,
             validate_tool_arguments,
         )
 
@@ -113,6 +118,7 @@ def test_readiness_api_mcp_parity_and_pure_read_only(tmp_path: Path) -> None:
             "ksi_check_analysis_readiness",
             {"siteId": fixture.site_id, "workAreaId": fixture.work_area_id, **body},
         )
+        assert isinstance(parsed, ReadinessArguments)
         assert parsed.site_id == fixture.site_id
         TOOL_RESULT_MODELS["ksi_check_analysis_readiness"].model_validate(payload)
 
@@ -335,7 +341,9 @@ def test_readiness_currentness_replay_and_provisional_semantics(tmp_path: Path) 
         assert admitted.json()["suitabilityState"] == "EVALUATED"
 
         context = fixture._retained_contexts[0]  # noqa: SLF001
-        fixture.revoke_evidence_context(context.context_digest)
+        context_digest = context.context_digest
+        assert context_digest is not None
+        fixture.revoke_evidence_context(context_digest)
         moved = client.post(path, headers=fixture.operator_headers(), json=body)
         assert moved.json()["suitabilityState"] == "BLOCKED"
         assert moved.json()["blockers"] == [
@@ -346,7 +354,7 @@ def test_readiness_currentness_replay_and_provisional_semantics(tmp_path: Path) 
                 "detail": None,
             }
         ]
-        fixture.restore_evidence_context(context.context_digest)
+        fixture.restore_evidence_context(context_digest)
         restored = client.post(path, headers=fixture.operator_headers(), json=body)
         assert _without_checked_at(restored.json()) == _without_checked_at(admitted.json())
 
@@ -724,10 +732,18 @@ def test_readiness_mcp_tool_calls_core_route_with_typed_parity_and_denied_egress
     canned = AnalysisReadinessViewV1(
         site_id="site-a",
         work_area_id="area-a",
-        baseline={"workOrderId": "wo-b", "submissionRef": "ers-v1-" + "a" * 64, "revision": 1},
-        current={"workOrderId": "wo-c", "submissionRef": "ers-v1-" + "b" * 64, "revision": 1},
-        suitability_state="EVALUATED",
-        blockers=[],
+        baseline=AnalysisObservationSelectorV1(
+            work_order_id="wo-b",
+            submission_ref="ers-v1-" + "a" * 64,
+            revision=1,
+        ),
+        current=AnalysisObservationSelectorV1(
+            work_order_id="wo-c",
+            submission_ref="ers-v1-" + "b" * 64,
+            revision=1,
+        ),
+        suitability_state=AnalysisSuitabilityStateV1.EVALUATED,
+        blockers=(),
         checked_at=datetime(2026, 10, 25, tzinfo=UTC),
         calculation_identity_digest="sha256:" + "c" * 64,
     ).model_dump(by_alias=True, mode="json")
@@ -937,6 +953,8 @@ def test_readiness_snapshot_is_coherent_under_concurrent_evidence_mutation(
         assert admitted.json()["suitabilityState"] == "EVALUATED"
         before = _journal_bytes(fixture)
         context = fixture._retained_contexts[0]  # noqa: SLF001
+        context_digest = context.context_digest
+        assert context_digest is not None
         stop = threading.Event()
         failures: list[BaseException] = []
 
@@ -955,8 +973,8 @@ def test_readiness_snapshot_is_coherent_under_concurrent_evidence_mutation(
         with ThreadPoolExecutor(max_workers=4) as pool:
             workers = [pool.submit(hammer) for _ in range(4)]
             for _ in range(10):
-                fixture.revoke_evidence_context(context.context_digest)
-                fixture.restore_evidence_context(context.context_digest)
+                fixture.revoke_evidence_context(context_digest)
+                fixture.restore_evidence_context(context_digest)
             stop.set()
             for worker in workers:
                 worker.result(timeout=120)

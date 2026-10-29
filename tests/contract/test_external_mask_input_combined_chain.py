@@ -39,7 +39,10 @@ from ksi_event_contracts.external_mask_input import (
     MaskChildDeclarationV1,
     MaskInspectionProfileV1,
 )
-from ksi_event_contracts.external_masked_execution import MaskedAdmissionV3
+from ksi_event_contracts.external_masked_execution import (
+    MaskedAdmissionDispositionV3,
+    MaskedAdmissionV3,
+)
 from ksi_event_contracts.external_masked_volume import (
     ExclusionMaskBindingV1,
     MaskedCalculationIdentityV3,
@@ -137,7 +140,7 @@ def _worker() -> Principal:
     return Principal("analysis-worker-1", PrincipalKind.ANALYSIS_WORKER, None, None, "org-a")
 
 
-def _write_geotiffs(tmp_path: Path):
+def _write_geotiffs(tmp_path: Path) -> tuple[Path, Path, Path]:
     transform = from_origin(ORIGIN_X, ORIGIN_Y, 1.0, 1.0)
     baseline_values = np.full((4, 4), 100.0)
     diff = np.zeros((4, 4), dtype=np.float64)
@@ -193,22 +196,38 @@ def _write_geotiffs(tmp_path: Path):
 class _Authority:
     label = "synthetic-not-field"
 
+    _baseline_bytes: bytes | None = None
+
     def __init__(self) -> None:
         self.live = True
 
-    def is_subject_current(self, *, subject, organization_id, site_id, work_area_id, now):
+    def is_subject_current(
+        self,
+        *,
+        subject: SealedExternalSubjectV1,
+        organization_id: str,
+        site_id: str,
+        work_area_id: str,
+        now: datetime,
+    ) -> bool:
         if not self.live:
             return False
         return subject in (_subject("parent"), _subject("baseline"))
 
     def fetch_baseline_anchor(
-        self, *, organization_id, site_id, work_area_id, baseline_subject, dsm_artifact_id
-    ):
+        self,
+        *,
+        organization_id: str,
+        site_id: str,
+        work_area_id: str,
+        baseline_subject: SealedExternalSubjectV1,
+        dsm_artifact_id: str,
+    ) -> BaselineDsmAnchor | None:
         if not self.live or dsm_artifact_id != "dsm-baseline":
             return None
         if baseline_subject != _subject("baseline"):
             return None
-        baseline_bytes = getattr(self, "_baseline_bytes", None)
+        baseline_bytes = self._baseline_bytes
         if baseline_bytes is None:
             return None
         return BaselineDsmAnchor(
@@ -237,12 +256,12 @@ class _Activation:
     def is_profile_active(
         self,
         *,
-        profile_digest,
-        resource_envelope_digest,
-        contained_runtime_digest,
-        inspector_build_digest,
-        now,
-    ):
+        profile_digest: str,
+        resource_envelope_digest: str,
+        contained_runtime_digest: str,
+        inspector_build_digest: str,
+        now: datetime,
+    ) -> bool:
         return self.live and profile_digest == self._digest
 
 
@@ -282,7 +301,7 @@ class _IngressBackedEvidence(MaskedAdmissionEvidencePort):
             activation_digest=_digest("activation"),
             scope_digest=_digest("scope"),
             ai_egress_digest=_digest("egress"),
-            disposition="ADMIT_EVALUATED",
+            disposition=MaskedAdmissionDispositionV3.ADMIT_EVALUATED,
             reason_codes=("MASK_ADMITTED",),
             assessed_at=now - timedelta(seconds=1),
         ).sealed()
@@ -290,11 +309,11 @@ class _IngressBackedEvidence(MaskedAdmissionEvidencePort):
     def prepare_witness(
         self,
         *,
-        masked_calculation_identity_digest,
-        organization_id,
-        now,
-        expected_admission=None,
-    ):
+        masked_calculation_identity_digest: str,
+        organization_id: str,
+        now: datetime,
+        expected_admission: MaskedAdmissionV3 | None = None,
+    ) -> MaskedAdmissionWitnessV3 | None:
         if not self.live or organization_id != "org-a":
             return None
         if masked_calculation_identity_digest != self._identity.canonical_digest():
@@ -321,7 +340,9 @@ class _IngressBackedEvidence(MaskedAdmissionEvidencePort):
             mask_manifest=record.manifest,
         )
 
-    def witness_is_current(self, *, witness, now):
+    def witness_is_current(
+        self, *, witness: MaskedAdmissionWitnessV3, now: datetime
+    ) -> MaskedAdmissionWitnessV3 | None:
         if witness is None or not self.live:
             return None
         if witness.source_identity.canonical_digest() != self._identity.canonical_digest():

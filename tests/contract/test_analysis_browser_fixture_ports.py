@@ -4,11 +4,12 @@ from __future__ import annotations
 import importlib.util
 import sys
 from pathlib import Path
+from types import ModuleType
 
 import pytest
 
 
-def _runner():
+def _runner() -> ModuleType:
     source = Path(__file__).resolve().parents[2] / "apps/dashboard/analysis-e2e/run_core_fixture.py"
     spec = importlib.util.spec_from_file_location("fixture_ports_test_runner", source)
     assert spec is not None and spec.loader is not None
@@ -18,7 +19,9 @@ def _runner():
 
 
 @pytest.mark.parametrize("offset", [0, 1, 1000])
-def test_fixture_accepts_only_a_complete_explicit_loopback_port_set(monkeypatch, offset):
+def test_fixture_accepts_only_a_complete_explicit_loopback_port_set(
+    monkeypatch: pytest.MonkeyPatch, offset: int
+) -> None:
     monkeypatch.setattr(sys, "argv", ["fixture", "--data-dir", "/unused",
         "--run-id", "0" * 64, "--client-secret-file", "/unused/secret",
         "--dashboard-origin", f"http://localhost:{3231 + offset}",
@@ -36,7 +39,9 @@ def test_fixture_accepts_only_a_complete_explicit_loopback_port_set(monkeypatch,
     ["--port-offset", "-1"],
     ["--port-offset", "1001"],
 ])
-def test_fixture_rejects_foreign_origin_or_partial_port_migration(monkeypatch, extra):
+def test_fixture_rejects_foreign_origin_or_partial_port_migration(
+    monkeypatch: pytest.MonkeyPatch, extra: list[str]
+) -> None:
     monkeypatch.setattr(sys, "argv", ["fixture", "--data-dir", "/unused",
         "--run-id", "0" * 64, "--client-secret-file", "/unused/secret",
         "--dashboard-origin", "http://localhost:3231", *extra])

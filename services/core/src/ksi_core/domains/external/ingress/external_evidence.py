@@ -15,6 +15,7 @@ from enum import StrEnum
 from typing import Any, Protocol
 
 from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException
+from fastapi.responses import JSONResponse
 from ksi_domain.canonical_json import canonical_json_bytes
 from ksi_event_contracts.external_artifact_validation import SealedExternalSubjectV1
 from ksi_event_contracts.external_evidence import (
@@ -206,6 +207,7 @@ class ExternalEvidenceStore:
         self._natural: dict[str, str] = {}
         self._idempotency: dict[str, tuple[str, str]] = {}
         self._pending: dict[str, _PendingBinding] = {}
+        self._recovery_required = False
         self._seal_listeners: list[Callable[[EvidenceItem, datetime], object]] = []
         self._lock = threading.RLock()
         try:
@@ -222,11 +224,13 @@ class ExternalEvidenceStore:
     def bind_seal_listener(self, listener: Callable[[EvidenceItem, datetime], object]) -> None:
         """Bind additive post-commit validation issuance without ingress authority."""
         with self._lock:
+            self._require_current_locked()
             self._seal_listeners.append(listener)
 
     def sealed_items_snapshot(self) -> tuple[EvidenceItem, ...]:
         """Return retained seals for restart reconciliation only."""
         with self._lock:
+            self._require_current_locked()
             return tuple(item for item in self._items.values() if item.manifest is not None)
 
     def _apply(self, raw: dict[str, Any]) -> None:
@@ -495,9 +499,23 @@ class ExternalEvidenceStore:
         trial._apply(raw)
 
     def _append_projected(self, raw: dict[str, Any]) -> None:
-        self._prevalidate(raw)
-        self._journal.append(raw)
-        self._apply(raw)
+        self._require_current_locked()
+        try:
+            self._prevalidate(raw)
+            self._journal.append(raw)
+            self._apply(raw)
+        except BaseException:
+            # The append may have reached durable storage even if it raised.
+            # Never serve or mutate this projection until a fresh replay.
+            self._recovery_required = True
+            pending, self._pending = self._pending, {}
+            for reservation in pending.values():
+                reservation.completed.set()
+            raise
+
+    def _require_current_locked(self) -> None:
+        if self._recovery_required:
+            raise ExternalEvidenceRecoveryError("evidence projection requires restart and replay")
 
     def _fresh_now(self, not_before: datetime) -> datetime:
         fresh_now = self._clock()
@@ -620,6 +638,7 @@ class ExternalEvidenceStore:
         _, _, evidence_ref, object_key = self._derived_declaration_ids(declaration)
         while True:
             with self._coordinator.mutation(), self._lock:
+                self._require_current_locked()
                 existing_ref = self._natural.get(natural)
                 target_ref = existing_ref or evidence_ref
                 state, pending = self._reserve_locked(binding, target_ref)
@@ -684,11 +703,13 @@ class ExternalEvidenceStore:
             key,
         )
         with self._lock:
+            self._require_current_locked()
             existing = self._idempotency.get(binding["key"])
         return existing is not None and existing[0] == binding["fingerprint"]
 
     def list(self, revision: ExternalReconstructionRevision) -> tuple[EvidenceItem, ...]:
         with self._lock:
+            self._require_current_locked()
             return tuple(
                 item
                 for item in self._items.values()
@@ -708,12 +729,25 @@ class ExternalEvidenceStore:
         current lease before a byte binding can be issued.
         """
         with self._lock:
+            self._require_current_locked()
             item = self._items.get(evidence_ref)
             return item if item is not None and item.manifest is not None else None
+
+    def locally_matches(self, evidence_ref: str, item: EvidenceItem) -> bool:
+        """Check retained evidence under the shared currentness coordinator; no I/O."""
+        with self._lock:
+            self._require_current_locked()
+            return self._items.get(evidence_ref) == item and item.manifest is not None
+
+    def assert_locally_available(self) -> None:
+        """Require a trustworthy local projection without performing external I/O."""
+        with self._lock:
+            self._require_current_locked()
 
     def _scoped(
         self, evidence_ref: str, revision: ExternalReconstructionRevision
     ) -> EvidenceItem | None:
+        self._require_current_locked()
         item = self._items.get(evidence_ref)
         return (
             item
@@ -773,11 +807,14 @@ class ExternalEvidenceStore:
             assert state == "owner"
         fresh_now = self._fresh_now(now)
         if fresh_now >= expires:
-            if owner_pending is not None:
-                with self._lock:
+            with self._lock:
+                self._require_current_locked()
+                if owner_pending is not None:
                     self._release_locked(binding, owner_pending)
             return EvidenceResult(EvidenceVerdict.EXPIRED, snapshot)
         try:
+            if not isinstance(storage, DigestBoundEvidenceStorage):
+                raise EvidenceStorageError("Digest-bound evidence storage is unavailable")
             capability = storage.presigned_put_bound_digest(
                 snapshot.object_key,
                 content_type=snapshot.declaration.declared_content_type,
@@ -785,11 +822,17 @@ class ExternalEvidenceStore:
                 ttl=expires - fresh_now,
             )
         except EvidenceStorageError:
+            with self._lock:
+                self._require_current_locked()
+                if owner_pending is not None:
+                    self._release_locked(binding, owner_pending)
+            return EvidenceResult(EvidenceVerdict.STORAGE_UNAVAILABLE, snapshot)
+        except BaseException:
             if owner_pending is not None:
                 with self._lock:
                     self._release_locked(binding, owner_pending)
-            return EvidenceResult(EvidenceVerdict.STORAGE_UNAVAILABLE, snapshot)
-        with self._lock:
+            raise
+        with self._coordinator.mutation(), self._lock:
             item = self._scoped(evidence_ref, revision)
             if item is None:
                 if owner_pending is not None:
@@ -816,7 +859,7 @@ class ExternalEvidenceStore:
                     self._append_projected(raw)
                 except JournalSealedError:
                     self._release_locked(binding, owner_pending)
-                    return EvidenceResult(EvidenceVerdict.STORAGE_UNAVAILABLE, item)
+                    return EvidenceResult(EvidenceVerdict.STORAGE_UNAVAILABLE)
                 self._release_locked(binding, owner_pending)
                 item = self._items[evidence_ref]
             return EvidenceResult(
@@ -840,7 +883,7 @@ class ExternalEvidenceStore:
         scope = {"evidenceRef": evidence_ref, "revision": revision.submission.revision}
         binding = self._binding(principal, "seal", scope, {}, key)
         while True:
-            with self._lock:
+            with self._coordinator.mutation(), self._lock:
                 item = self._scoped(evidence_ref, revision)
                 if item is None:
                     return EvidenceResult(EvidenceVerdict.NOT_FOUND)
@@ -863,7 +906,7 @@ class ExternalEvidenceStore:
                             self._append_projected(raw)
                         except JournalSealedError:
                             self._release_locked(binding, pending)
-                            return EvidenceResult(EvidenceVerdict.STORAGE_UNAVAILABLE, item)
+                            return EvidenceResult(EvidenceVerdict.STORAGE_UNAVAILABLE)
                         self._release_locked(binding, pending)
                     return EvidenceResult(EvidenceVerdict.SEALED, item)
                 elif state == "committed":
@@ -875,41 +918,55 @@ class ExternalEvidenceStore:
             pending.completed.wait()
         assert pending is not None
         try:
+            if not isinstance(storage, ObjectStorageObservationPort):
+                raise EvidenceStorageError("Evidence observation storage is unavailable")
             observed = storage.observe_object(snapshot.object_key)
         except EvidenceStorageError:
             with self._lock:
+                self._require_current_locked()
                 self._release_locked(binding, pending)
             return EvidenceResult(EvidenceVerdict.STORAGE_UNAVAILABLE, snapshot)
-        if not observed.exists:
+        except BaseException:
             with self._lock:
                 self._release_locked(binding, pending)
-            return EvidenceResult(EvidenceVerdict.OBSERVATION_MISSING, snapshot)
-        if (
-            observed.object_key != snapshot.object_key
-            or observed.sha256 != snapshot.declaration.declared_content_digest
-            or observed.content_type != snapshot.declaration.declared_content_type
-            or observed.size_bytes is None
-            or observed.size_bytes <= 0
-        ):
+            raise
+        try:
+            if not observed.exists:
+                with self._lock:
+                    self._require_current_locked()
+                    self._release_locked(binding, pending)
+                return EvidenceResult(EvidenceVerdict.OBSERVATION_MISSING, snapshot)
+            if (
+                observed.object_key != snapshot.object_key
+                or observed.sha256 != snapshot.declaration.declared_content_digest
+                or observed.content_type != snapshot.declaration.declared_content_type
+                or observed.size_bytes is None
+                or observed.size_bytes <= 0
+            ):
+                with self._lock:
+                    self._require_current_locked()
+                    self._release_locked(binding, pending)
+                return EvidenceResult(EvidenceVerdict.OBSERVATION_MISMATCH, snapshot)
+            assert snapshot.declaration.declaration_digest is not None
+            manifest = ExternalEvidenceManifestV1(
+                evidence_manifest_id="external-evidence-manifest-"
+                + hashlib.sha256(snapshot.evidence_ref.encode()).hexdigest()[:32],
+                evidence_id=snapshot.evidence_id,
+                declaration_digest=snapshot.declaration.declaration_digest,
+                subject=snapshot.declaration.subject,
+                subject_digest=snapshot.declaration.subject_digest,
+                target_dsm_artifact_id=snapshot.declaration.target_dsm_artifact_id,
+                target_dsm_observed_sha256=snapshot.declaration.target_dsm_observed_sha256,
+                observed_object_digest=observed.sha256,
+                observed_size_bytes=observed.size_bytes,
+                observed_content_type=observed.content_type,
+                server_object_key=snapshot.object_key,
+                observed_at=now,
+            ).sealed()
+        except BaseException:
             with self._lock:
                 self._release_locked(binding, pending)
-            return EvidenceResult(EvidenceVerdict.OBSERVATION_MISMATCH, snapshot)
-        assert snapshot.declaration.declaration_digest is not None
-        manifest = ExternalEvidenceManifestV1(
-            evidence_manifest_id="external-evidence-manifest-"
-            + hashlib.sha256(snapshot.evidence_ref.encode()).hexdigest()[:32],
-            evidence_id=snapshot.evidence_id,
-            declaration_digest=snapshot.declaration.declaration_digest,
-            subject=snapshot.declaration.subject,
-            subject_digest=snapshot.declaration.subject_digest,
-            target_dsm_artifact_id=snapshot.declaration.target_dsm_artifact_id,
-            target_dsm_observed_sha256=snapshot.declaration.target_dsm_observed_sha256,
-            observed_object_digest=observed.sha256,
-            observed_size_bytes=observed.size_bytes,
-            observed_content_type=observed.content_type,
-            server_object_key=snapshot.object_key,
-            observed_at=now,
-        ).sealed()
+            raise
         with self._coordinator.mutation(), self._lock:
             item = self._scoped(evidence_ref, revision)
             if item is None:
@@ -936,7 +993,7 @@ class ExternalEvidenceStore:
                 self._append_projected(raw)
             except JournalSealedError:
                 self._release_locked(binding, pending)
-                return EvidenceResult(EvidenceVerdict.STORAGE_UNAVAILABLE, item)
+                return EvidenceResult(EvidenceVerdict.STORAGE_UNAVAILABLE)
             self._release_locked(binding, pending)
             sealed = self._items[evidence_ref]
             listeners = tuple(self._seal_listeners) if newly_sealed else ()
@@ -1031,6 +1088,10 @@ def mount_external_evidence(
     storage: Any,
     terminal_records: ExternalEvidenceTerminalRecordProjectionPort | None = None,
 ) -> None:
+    @app.exception_handler(ExternalEvidenceRecoveryError)
+    async def evidence_recovery_required(_request: Any, _exc: Exception) -> JSONResponse:
+        return JSONResponse(status_code=503, content={"detail": "STORAGE_UNAVAILABLE"})
+
     router = APIRouter(prefix="/v1/observation-work-orders", tags=["external-evidence"])
     read = require_permission(Permission.SITES_READ)
     write = require_permission(Permission.SITES_WRITE)

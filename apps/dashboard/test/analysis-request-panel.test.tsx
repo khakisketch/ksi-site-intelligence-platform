@@ -2,7 +2,7 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-const router = vi.hoisted(() => ({ replace: vi.fn() }));
+const router = vi.hoisted(() => ({ replace: vi.fn(), refresh: vi.fn() }));
 vi.mock("next/navigation", () => ({ useRouter: () => router }));
 
 import { AnalysisRequestPanel } from "@/app/sites/[siteId]/analysis/AnalysisRequestPanel";
@@ -169,6 +169,84 @@ afterEach(() => {
 });
 
 describe("analysis V2 panel", () => {
+  it.each([null, "analysis-1"])("surfaces a restored pending request before a long history (deep link: %s) and retries the frozen input", async (initialAnalysisId) => {
+    const body = { baseline: observations[0]!.selector, current: observations[1]!.selector };
+    sessionStorage.setItem("ksi.analysis.pending.v2:org-1:operator-1:site-1", JSON.stringify({
+      version: 2, ...scope, siteId: "site-1",
+      attempt: { key: "analysis-existing-attempt", workAreaId: "area-1", body, activationBlockCode: null },
+    }));
+    const fetchMock = vi.fn().mockResolvedValue(json({ error: "temporary" }, 503));
+    vi.stubGlobal("fetch", fetchMock);
+    renderPanel({ initialPage: listPage(Array.from({ length: 20 }, (_, i) => `analysis-${i + 1}`)), initialAnalysisId, canCreate: true });
+    const notice = await screen.findByRole("region", { name: "보류 요청 안내" });
+    const history = screen.getByRole("region", { name: "변화 분석 이력" });
+    const request = screen.getByRole("region", { name: "새 변화 분석 요청" });
+    expect(notice.compareDocumentPosition(history) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(history.compareDocumentPosition(request) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(within(notice).getByRole("link", { name: "보류 요청 이어가기" }).getAttribute("href")).toBe("#new-analysis-request");
+    expect((screen.getByLabelText("기준 관측") as HTMLSelectElement).value).toBe("0");
+    expect((screen.getByLabelText("현재 관측") as HTMLSelectElement).value).toBe("1");
+    fireEvent.click(screen.getByRole("button", { name: "다시 시도" }));
+    await waitFor(() => expect(fetchMock.mock.calls.some(([, init]) => init?.method === "POST")).toBe(true));
+    const init = fetchMock.mock.calls.find(([, options]) => options?.method === "POST")![1]!;
+    expect(init.headers["Idempotency-Key"]).toBe("analysis-existing-attempt");
+    expect(JSON.parse(init.body)).toEqual(body);
+  });
+
+  it.each([0, 20])("keeps form, focus and order while submitting with %i prior records", async (count) => {
+    let resolvePost!: (response: Response) => void;
+    const post = new Promise<Response>((resolve) => { resolvePost = resolve; });
+    vi.stubGlobal("fetch", vi.fn((_input, init) => init?.method === "POST" ? post : Promise.resolve(json(detail()))));
+    renderPanel({ initialPage: listPage(Array.from({ length: count }, (_, i) => `analysis-${i + 1}`)), initialSelectedDetail: count ? detail() : null, initialAnalysisId: null, canCreate: true });
+    fireEvent.change(screen.getByLabelText("작업구역"), { target: { value: "area-1" } });
+    fireEvent.change(screen.getByLabelText("기준 관측"), { target: { value: "0" } });
+    fireEvent.change(screen.getByLabelText("현재 관측"), { target: { value: "1" } });
+    const request = screen.getByRole("region", { name: "새 변화 분석 요청" });
+    const summary = within(request).getByText("선택지 표시 방법");
+    if (count) expect(screen.getByRole("region", { name: "변화 분석 이력" }).compareDocumentPosition(request) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "변화 분석 요청" }));
+    summary.focus();
+    expect(document.activeElement).toBe(summary);
+    const created = detail("analysis-created", "QUEUED");
+    resolvePost(json(created, 202));
+    await screen.findByText(/요청이 접수됐습니다/);
+    expect(screen.getByRole("region", { name: "새 변화 분석 요청" })).toBe(request);
+    expect(document.activeElement).toBe(summary);
+    expect(screen.getByRole("region", { name: "변화 분석 이력" }).compareDocumentPosition(request) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect((screen.getByLabelText("기준 관측") as HTMLSelectElement).value).toBe("0");
+    expect((screen.getByLabelText("현재 관측") as HTMLSelectElement).value).toBe("1");
+  });
+
+  it("names a confirmed blocked suitability separately from an unknown state", () => {
+    const blocked = { ...detail(), suitabilityState: "BLOCKED" as const };
+    vi.stubGlobal("fetch", vi.fn());
+    renderPanel({ initialSelectedDetail: blocked });
+    const resultRegion = screen.getByRole("region", { name: /계산 결과/ });
+    expect(within(resultRegion).getByText(/현재 적합성은 차단되었습니다/)).toBeTruthy();
+    expect(within(resultRegion).queryByText(/적합성 상태를 확인하지 못했습니다/)).toBeNull();
+  });
+
+  it("keeps an unrecognized suitability distinct from a confirmed block", () => {
+    const unknown = { ...detail(), suitabilityState: "FUTURE_STATE" as AnalysisView["suitabilityState"] };
+    vi.stubGlobal("fetch", vi.fn());
+    renderPanel({ initialSelectedDetail: unknown });
+    const resultRegion = screen.getByRole("region", { name: /계산 결과/ });
+    expect(within(resultRegion).getByText(/적합성 상태를 확인하지 못했습니다/)).toBeTruthy();
+    expect(within(resultRegion).queryByText(/현재 적합성은 차단되었습니다/)).toBeNull();
+  });
+  it("prioritizes the recorded result before the separate request and keeps the accuracy limit beside its numbers", () => {
+    vi.stubGlobal("fetch", vi.fn());
+    renderPanel({ canCreate: true });
+    const history = screen.getByRole("region", { name: "변화 분석 이력" });
+    const request = screen.getByRole("region", { name: "새 변화 분석 요청" });
+    expect(history.compareDocumentPosition(request) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.getByRole("link", { name: "새 변화 분석 요청으로 이동" }).getAttribute("href")).toBe("#new-analysis-request");
+    const resultRegion = within(history).getByRole("region", { name: /계산 결과/ });
+    expect(within(resultRegion).getByText(/독립 정확도 평가는 아직 확인되지 않았습니다/)).toBeTruthy();
+    expect(within(resultRegion).getByText("절토")).toBeTruthy();
+    expect(within(history).getByText("실행 상태")).toBeTruthy();
+    expect(within(history).getByText("적합성 상태")).toBeTruthy();
+  });
   it("bridges the exact selected record into the shared workspace result mode", () => {
     vi.stubGlobal("fetch", vi.fn());
     const context = { workAreaId: "area-1", visualAAssetRef: `ksa-v1-${"a".repeat(64)}`, visualBAssetRef: `ksa-v1-${"b".repeat(64)}` };
@@ -297,6 +375,24 @@ describe("analysis V2 panel", () => {
     expect(within(metricsRegion).getByText("20 m³")).toBeTruthy();
     expect(within(metricsRegion).getByText("순변화")).toBeTruthy();
     expect(within(metricsRegion).getByText("8 m³")).toBeTruthy();
+  });
+
+  it("distinguishes result landmarks for analyses created in the same minute", () => {
+    vi.stubGlobal("fetch", vi.fn());
+    const first = "analysis-v1-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1";
+    const second = "analysis-v1-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa2";
+    renderPanel({
+      initialPage: listPage([first, second]),
+      initialAnalysisId: first,
+      initialSelectedDetail: detail(first),
+    });
+
+    const regions = screen.getAllByRole("region", { name: /^계산 결과/ });
+    expect(regions).toHaveLength(2);
+    const names = regions.map((region) => region.getAttribute("aria-label"));
+    expect(new Set(names).size).toBe(2);
+    expect(names.some((name) => name?.includes(first))).toBe(true);
+    expect(names.some((name) => name?.includes(second))).toBe(true);
   });
 
   it("shows one neutral notice for a shared-epoch continuation when capture time is unavailable", () => {
@@ -608,6 +704,25 @@ describe("analysis V2 panel", () => {
     expect(screen.getByText("정확도 미확인")).toBeTruthy();
   });
 
+  it.each([
+    ["EVALUATED", /독립 평가 근거가 있습니다/],
+    ["PROVISIONAL_ACCURACY_UNVERIFIED", /독립 정확도 평가는 아직 확인되지 않았습니다/],
+    ["REASSESSMENT_REQUIRED", /현재 적합성은 재평가가 필요합니다/],
+    ["REMEDIATION_REQUIRED", /평가 보완이 필요합니다/],
+    ["BLOCKED", /현재 적합성은 차단되었습니다/],
+  ] as const)("states the projected suitability truthfully beside a recorded numeric result (%s)", (suitability, pattern) => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(json(detail())));
+    const current = { ...detail(), suitabilityState: suitability };
+    const page = listPage(["analysis-1"]);
+    page.items[0] = { ...page.items[0]!, suitabilityState: suitability };
+    renderPanel({ initialPage: page, initialSelectedDetail: current });
+
+    // 상태별 한 줄은 다르지만 수치는 그대로 둔다 — 문구가 수치를 바꾸지 않는다.
+    const card = within(screen.getByText("분석 ID · analysis-1").closest("article")!);
+    expect(card.getByText(pattern)).toBeTruthy();
+    expect(card.getByText("result-core-1")).toBeTruthy();
+  });
+
   it("shows 미검토 to viewers without exposing a write action", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(json(detail())));
     renderPanel({ canCreate: false });
@@ -823,6 +938,236 @@ describe("analysis V2 panel", () => {
     renderPanel(props);
     expect(await screen.findByText("중단된 요청이 있습니다. 다시 시도하면 같은 요청 식별자로 Core에 확인합니다.")).toBeTruthy();
     expect(screen.queryByText(/보류된 요청은 변화 분석 실행 활성화가 복구되기 전에는 처리되지 않습니다/)).toBeNull();
+  });
+
+  it.each([
+    [401, /세션이 만료되어 요청을 보내지 못했습니다/, true],
+    [403, /변화 분석 요청 권한이 없습니다/, false],
+    [409, /같은 요청 식별자로 다른 요청이 이미 접수되어 있습니다/, false],
+  ] as const)("keeps the pending idempotent attempt and explains submit failure %s without leaking server detail", async (status, message, needsLogin) => {
+    const created = detail("analysis-created", "QUEUED");
+    created.suitabilityState = "PROVISIONAL_ACCURACY_UNVERIFIED";
+    created.result = null;
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(json({ code: "FORBIDDEN_BY_POLICY", detail: "internal-only" }, status))
+      .mockResolvedValueOnce(json(created, 202));
+    vi.stubGlobal("fetch", fetchMock);
+    renderPanel({ initialPage: listPage([]), initialSelectedDetail: null, initialAnalysisId: null, canCreate: true });
+
+    fireEvent.change(screen.getByLabelText("작업구역"), { target: { value: "area-1" } });
+    fireEvent.change(screen.getByLabelText("기준 관측"), { target: { value: "0" } });
+    fireEvent.change(screen.getByLabelText("현재 관측"), { target: { value: "1" } });
+    fireEvent.click(screen.getByRole("button", { name: "변화 분석 요청" }));
+
+    expect(await screen.findByText(message)).toBeTruthy();
+    // 서버 원문(code·detail)은 그대로 두지 않는다.
+    expect(screen.queryByText(/FORBIDDEN_BY_POLICY|internal-only/)).toBeNull();
+    if (needsLogin) {
+      const login = screen.getByRole("link", { name: "다시 로그인" });
+      expect(login.getAttribute("href")).toMatch(/^\/login\?next=/);
+    } else {
+      expect(screen.queryByRole("link", { name: "다시 로그인" })).toBeNull();
+    }
+    // 보류 시도는 유지되며 같은 멱등 키로 다시 확인한다.
+    expect(screen.getByRole("button", { name: "다시 시도" })).toBeTruthy();
+    const stored = JSON.parse(sessionStorage.getItem("ksi.analysis.pending.v2:org-1:operator-1:site-1") ?? "null");
+    expect(stored.attempt.key).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "다시 시도" }));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    expect(fetchMock.mock.calls[1]?.[1]?.headers["Idempotency-Key"]).toBe(fetchMock.mock.calls[0]?.[1]?.headers["Idempotency-Key"]);
+    expect(screen.getByText("분석 ID · analysis-created")).toBeTruthy();
+  });
+
+  it("blocks new picks while candidate lists are unavailable without claiming an empty area", () => {
+    renderPanel({
+      canCreate: true,
+      initialPage: listPage([]),
+      initialSelectedDetail: null,
+      initialAnalysisId: null,
+      initialWorkAreaId: "area-1",
+      listsState: { workAreas: "ready", observations: "unavailable", workOrders: "ready", history: "ready" },
+    });
+
+    expect(screen.getByText("목록을 확인할 수 없습니다")).toBeTruthy();
+    expect(screen.queryByText("이 구역의 분석 후보가 없습니다")).toBeNull();
+    // 선택 폼 대신 목록 상태 블록이 그 자리를 대신한다 — 고를 것이 없으니
+    // 선택지 자체를 두지 않는다.
+    expect(screen.queryByLabelText("기준 관측")).toBeNull();
+    expect(screen.queryByLabelText("현재 관측")).toBeNull();
+    expect(screen.queryByRole("button", { name: "변화 분석 요청" })).toBeNull();
+    expect(screen.getByRole("button", { name: "목록 다시 불러오기" })).toBeTruthy();
+
+    cleanup();
+    renderPanel({
+      canCreate: true,
+      initialPage: listPage([]),
+      initialSelectedDetail: null,
+      initialAnalysisId: null,
+      listsState: { workAreas: "ready", observations: "unavailable", workOrders: "ready", history: "ready" },
+    });
+    // 구역을 고르기 전에는 폼이 보이지만 고를 수 없고, 같은 상태 안내가 있다.
+    expect(screen.getByText("목록을 확인할 수 없습니다")).toBeTruthy();
+    expect((screen.getByLabelText("작업구역") as HTMLSelectElement).disabled).toBe(false);
+    expect((screen.getByLabelText("기준 관측") as HTMLSelectElement).disabled).toBe(true);
+    expect((screen.getByRole("button", { name: "변화 분석 요청" }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it.each(["denied", "unconfirmed", "unavailable"] as const)("explains %s candidate lists and preserves scoped recovery", (state) => {
+    renderPanel({ canCreate: true, initialPage: listPage([]), initialSelectedDetail: null, initialAnalysisId: null,
+      initialWorkAreaId: "area-1", listsState: { workAreas: "ready", observations: state, workOrders: "ready", history: "ready" } });
+    expect(screen.getByText(state === "denied" ? /관측 목록을 조회할 권한이 없습니다/ : state === "unconfirmed" ? /관측 목록을 확인할 수 없습니다/ : /관측 목록을 불러오지 못했습니다/)).toBeTruthy();
+    expect(screen.queryByText("이 구역의 분석 후보가 없습니다")).toBeNull();
+    expect(screen.queryByRole("button", { name: "변화 분석 요청" })).toBeNull();
+    expect(screen.getByRole("link", { name: "등록 자료와 검사 상태 확인" }).getAttribute("href")).toBe("/sites/site-1/spatial-assets?workAreaId=area-1");
+    expect(screen.getByRole("link", { name: "작업공간으로 돌아가기" }).getAttribute("href")).toBe("/sites/site-1?workAreaId=area-1");
+    fireEvent.click(screen.getByRole("button", { name: "목록 다시 불러오기" }));
+    expect(router.refresh).toHaveBeenCalled();
+  });
+
+  it("offers scopeless returns when candidate lists fail before area selection", () => {
+    renderPanel({ canCreate: true, initialPage: listPage([]), initialSelectedDetail: null, initialAnalysisId: null,
+      initialWorkAreaId: "", listsState: { workAreas: "denied", observations: "ready", workOrders: "ready", history: "ready" } });
+    expect(screen.getByText(/작업구역 목록을 조회할 권한이 없습니다/)).toBeTruthy();
+    expect(screen.getByRole("link", { name: "등록 자료 보기" }).getAttribute("href")).toBe("/sites/site-1/spatial-assets");
+    expect(screen.getByRole("link", { name: "현장 현황 보기" }).getAttribute("href")).toBe("/sites/site-1");
+  });
+
+  it("offers scoped exits when history is unconfirmed without asserting empty history", () => {
+    renderPanel({ canCreate: false, initialPage: listPage([]), initialSelectedDetail: null, initialAnalysisId: null,
+      initialWorkAreaId: "area-1", listsState: { workAreas: "ready", observations: "ready", workOrders: "ready", history: "unconfirmed", historyMessage: "현장 변화 분석 이력을 확인할 수 없습니다. 현장 범위를 확인하거나 다시 불러오세요. 이 안내는 등록 자료의 상태를 판단하지 않습니다." } });
+    expect(screen.getByRole("alert").textContent).toContain("등록 자료의 상태를 판단하지 않습니다");
+    expect(screen.queryByText(/아직 변화 분석 요청이 없습니다/)).toBeNull();
+    expect(screen.getByRole("link", { name: "등록 자료 보기" }).getAttribute("href")).toBe("/sites/site-1/spatial-assets?workAreaId=area-1");
+    expect(screen.getByRole("link", { name: "현장 현황 보기" }).getAttribute("href")).toBe("/sites/site-1?workAreaId=area-1");
+  });
+
+  it("names the broken attribution link instead of claiming an empty area", () => {
+    renderPanel({
+      canCreate: true,
+      initialPage: listPage([]),
+      initialSelectedDetail: null,
+      initialAnalysisId: null,
+      initialWorkAreaId: "area-1",
+      observations: [],
+      siteObservations: observations,
+      listsState: { workAreas: "ready", observations: "ready", workOrders: "unavailable", history: "ready" },
+    });
+
+    // 귀속 끊김은 후보 없음이 아니다 — 어느 연결이 끊겼는지를 밝힌다.
+    expect(screen.getByText(/연결 정보를 확인할 수 없어/)).toBeTruthy();
+    expect(screen.queryByText("이 구역의 분석 후보가 없습니다")).toBeNull();
+    expect(screen.queryByRole("button", { name: "변화 분석 요청" })).toBeNull();
+    expect(screen.getByRole("button", { name: "목록 다시 불러오기" })).toBeTruthy();
+  });
+
+  it("disables candidate picks with a truthful notice when only attribution is unavailable", () => {
+    renderPanel({
+      canCreate: true,
+      initialPage: listPage([]),
+      initialSelectedDetail: null,
+      initialAnalysisId: null,
+      observations: [],
+      siteObservations: observations,
+      listsState: { workAreas: "ready", observations: "ready", workOrders: "unavailable", history: "ready" },
+    });
+
+    expect(screen.getByText(/연결 정보를 불러오지 못했습니다/)).toBeTruthy();
+    expect((screen.getByLabelText("작업구역") as HTMLSelectElement).disabled).toBe(false);
+    expect((screen.getByLabelText("기준 관측") as HTMLSelectElement).disabled).toBe(true);
+    expect((screen.getByRole("button", { name: "변화 분석 요청" }) as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.queryByText("이 구역의 분석 후보가 없습니다")).toBeNull();
+  });
+
+  it("shows the verified empty message when a failed history recovers empty", async () => {
+    const network = vi.fn(async (input: RequestInfo | URL) => {
+      const url = typeof input === "string" ? input : input.toString();
+      if (url.includes("/analyses?")) return json(listPage([]));
+      return json(reviewPage());
+    });
+    vi.stubGlobal("fetch", network);
+    renderPanel({
+      canCreate: true,
+      workAreas: [],
+      observations: [],
+      initialPage: listPage([]),
+      initialSelectedDetail: null,
+      initialAnalysisId: null,
+      listsState: { workAreas: "ready", observations: "ready", workOrders: "ready", history: "failed", historyMessage: "현장 변화 분석 이력을 불러오지 못했습니다. 다시 불러오면 최신 이력을 확인할 수 있습니다." },
+    });
+
+    expect(screen.getByText("분석 이력을 확인할 수 없습니다")).toBeTruthy();
+    expect(screen.queryByText(/아직 변화 분석 요청이 없습니다/)).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "이력 다시 불러오기" }));
+    await waitFor(() => expect(screen.queryByText("분석 이력을 확인할 수 없습니다")).toBeNull());
+    // 다시 불러와서 읽은 빈 목록은 확인된 빈 이력이다 — 빈 안내를 둔다.
+    expect(screen.getByText(/이 현장에는 아직 변화 분석 요청이 없습니다/)).toBeTruthy();
+  });
+
+  it("holds the history retry while the server asked to wait", () => {
+    renderPanel({
+      canCreate: false,
+      initialPage: listPage([]),
+      initialSelectedDetail: null,
+      initialAnalysisId: null,
+      listsState: { workAreas: "ready", observations: "ready", workOrders: "ready", history: "failed", historyMessage: "현장 변화 분석 이력을 불러오지 못했습니다.", historyRetryAfterSeconds: 90 },
+    });
+
+    const retry = screen.getByRole("button", { name: /초 후 다시 시도/ });
+    expect(retry.textContent).toContain("90초 후 다시 시도");
+    expect((retry as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("shows a denied history as record-section state and never an empty-history claim", () => {
+    renderPanel({
+      canCreate: true,
+      initialPage: listPage([]),
+      initialSelectedDetail: null,
+      initialAnalysisId: null,
+      listsState: { workAreas: "ready", observations: "ready", workOrders: "ready", history: "denied", historyMessage: "현장 변화 분석 이력을 조회할 권한이 없습니다. 현장 담당자에게 변화 분석 기록 조회 권한을 요청하세요." },
+    });
+
+    expect(screen.getByText("분석 이력을 확인할 수 없습니다")).toBeTruthy();
+    expect(screen.getByText(/변화 분석 기록 조회 권한을 요청하세요/)).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "이력 다시 불러오기" })).toBeNull();
+    expect(screen.queryByText(/아직 변화 분석 요청이 없습니다/)).toBeNull();
+  });
+
+  it("recovers the history section with a client refetch after a transient history failure", async () => {
+    const network = vi.fn(async (input: RequestInfo | URL) => {
+      const url = typeof input === "string" ? input : input.toString();
+      if (url.includes("/analyses?")) return json(listPage(["analysis-1"]));
+      if (/\/analyses\/analysis-1$/.test(url)) return json(detail());
+      return json(reviewPage());
+    });
+    vi.stubGlobal("fetch", network);
+    renderPanel({
+      canCreate: false,
+      listsState: { workAreas: "ready", observations: "ready", workOrders: "ready", history: "failed", historyMessage: "현장 변화 분석 이력을 불러오지 못했습니다. 다시 불러오면 최신 이력을 확인할 수 있습니다." },
+    });
+
+    expect(screen.getByText("분석 이력을 확인할 수 없습니다")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "이력 다시 불러오기" }));
+    await waitFor(() => expect(screen.queryByText("분석 이력을 확인할 수 없습니다")).toBeNull());
+    expect(network).toHaveBeenCalled();
+  });
+
+  it("offers a list retry from the alert when loading the next history page fails", async () => {
+    let fail = true;
+    const network = vi.fn(async (input: RequestInfo | URL) => {
+      const url = typeof input === "string" ? input : input.toString();
+      if (url.includes("/analyses?")) return fail ? json({ error: "busy" }, 503) : json(listPage(["analysis-1"]));
+      return json(reviewPage());
+    });
+    vi.stubGlobal("fetch", network);
+    renderPanel({ initialPage: listPage([], "older-cursor"), initialSelectedDetail: null, initialAnalysisId: null, canCreate: false });
+
+    fireEvent.click(screen.getByRole("button", { name: "다음 변화 분석 보기" }));
+    expect(await screen.findByRole("alert")).toBeTruthy();
+    expect(screen.queryByText(/현재 페이지에 변화 분석 요청이 없습니다/)).toBeNull();
+    fail = false;
+    fireEvent.click(screen.getByRole("button", { name: "목록 다시 불러오기" }));
+    await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
+    expect(screen.getByText("분석 ID · analysis-1")).toBeTruthy();
   });
 
   it("continues to restore strictly shaped version 1 pending attempts as generic", async () => {

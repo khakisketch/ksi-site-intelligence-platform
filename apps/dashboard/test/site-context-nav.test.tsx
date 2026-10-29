@@ -42,6 +42,22 @@ describe("site context in the desktop rail", () => {
     expect(within(nav).getByRole("link", { name: "결과" }).getAttribute("href")).toBe("/sites/site-1/analysis");
   });
 
+  it("explains each destination in the menu without changing its accessible name or route", () => {
+    navigation.pathname = "/sites/site-1";
+    render(<SiteContextNav sites={sites} />);
+    const nav = screen.getByRole("navigation", { name: "현재 현장 메뉴" });
+    for (const [name, hint] of [
+      ["작업공간", "구역과 관측 시점 보기"],
+      ["자료", "등록 자료와 검사 상태"],
+      ["관측 작업", "이 현장의 작업 기록"],
+      ["결과", "분석 기록과 결과 확인"],
+    ]) {
+      const link = within(nav).getByRole("link", { name, description: hint });
+      expect(link.textContent).toContain(hint);
+    }
+    expect(within(nav).getByRole("link", { name: "관측 작업" }).getAttribute("href")).toBe("/sites/site-1?section=work-orders");
+  });
+
   it("keeps the section when switching to another site", () => {
     render(<SiteContextNav sites={sites} />);
     fireEvent.click(screen.getByRole("button", { name: /현장 변경: Floreat public sample/ }));

@@ -4,6 +4,7 @@ import { whoAmI } from "./auth";
 import { CoreApiError } from "./client";
 import { MissingSessionError } from "./session";
 import type { Permission, WhoAmIResponse } from "./types";
+import { continuityFingerprint } from "./work-order-continuity";
 
 /**
  * 로그인 주체가 주어진 권한을 전부 가지고 있는지 확인한다. 세션이 없거나 무효면 false —
@@ -70,9 +71,15 @@ export async function getSiteRegistrationMode(): Promise<SiteRegistrationMode> {
  *
  * INV-060(fail-closed): 셋 중 어느 경우에도 쓰기 계약·RBAC 은 바뀌지 않으며,
  * 이 함수는 읽기 판정만 한다. getSiteRegistrationMode 는 그대로 둔다(호환).
+ *
+ * `accountFingerprint`는 이 페이지를 렌더한 세션의 서버 확인 신원 지문이다 —
+ * 현장 등록 재시도의 계정 연속성 가드가 같은 탭의 원래 신원과 대조하는 재료다.
+ * 자격 증명·인가가 아니며 Core 계약·권한을 바꾸지 않는다. 신원을 확인할 수
+ * 없으면(allowed인데 지문 계산 실패) null이며, 호출자는 이전 계약(보호 없음)
+ * 으로 동작한다.
  */
 export type SiteRegistrationAvailability =
-  | { status: "allowed"; mode: Exclude<SiteRegistrationMode, "DENIED"> }
+  | { status: "allowed"; mode: Exclude<SiteRegistrationMode, "DENIED">; accountFingerprint?: string | null }
   | { status: "denied" }
   | { status: "unavailable" };
 
@@ -89,5 +96,6 @@ export async function getSiteRegistrationAvailability(): Promise<SiteRegistratio
     return { status: "unavailable" };
   }
   const mode = resolveSiteRegistrationMode(principal);
-  return mode === "DENIED" ? { status: "denied" } : { status: "allowed", mode };
+  if (mode === "DENIED") return { status: "denied" };
+  return { status: "allowed", mode, accountFingerprint: continuityFingerprint(principal) };
 }

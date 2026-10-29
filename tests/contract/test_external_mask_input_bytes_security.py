@@ -10,11 +10,14 @@ import hashlib
 import json
 import os
 from datetime import UTC, datetime
+from pathlib import Path
+from typing import Any
 
 import pytest
 from ksi_core.domains.external.ingress.external_mask_input_bytes import (
     ExternalMaskInputByteStore,
     MaskByteStoreRecoveryError,
+    MaskInputUploadGrant,
 )
 from ksi_core.foundation.currentness import ExternalAuthorityCurrentnessCoordinator
 from ksi_core.foundation.durable_journal import DurableJournal
@@ -58,7 +61,7 @@ def _operator() -> Principal:
     return Principal("operator-a", PrincipalKind.OPERATOR, Role.ADMIN, None, "org-a")
 
 
-def _store(tmp_path, name: str = "bytes") -> ExternalMaskInputByteStore:
+def _store(tmp_path: Path, name: str = "bytes") -> ExternalMaskInputByteStore:
     return ExternalMaskInputByteStore(
         DurableJournal(tmp_path / f"{name}.journal"),
         tmp_path / name,
@@ -68,7 +71,9 @@ def _store(tmp_path, name: str = "bytes") -> ExternalMaskInputByteStore:
     )
 
 
-def _grant(store: ExternalMaskInputByteStore, data: bytes, child: str = "child-1"):
+def _grant(
+    store: ExternalMaskInputByteStore, data: bytes, child: str = "child-1"
+) -> MaskInputUploadGrant:
     return store.issue_grant(
         principal=_operator(),
         organization_id="org-a",
@@ -83,7 +88,7 @@ def _grant(store: ExternalMaskInputByteStore, data: bytes, child: str = "child-1
     )
 
 
-def test_oversized_declared_bytes_rejected_at_grant_time(tmp_path) -> None:
+def test_oversized_declared_bytes_rejected_at_grant_time(tmp_path: Path) -> None:
     """The declared cap is enforced before any upload bytes exist."""
     store = _store(tmp_path)
     with pytest.raises(ValueError, match="finite byte cap"):
@@ -101,7 +106,7 @@ def test_oversized_declared_bytes_rejected_at_grant_time(tmp_path) -> None:
         )
 
 
-def test_sealed_overwrite_rejected_and_original_bytes_intact(tmp_path) -> None:
+def test_sealed_overwrite_rejected_and_original_bytes_intact(tmp_path: Path) -> None:
     store = _store(tmp_path)
     first = bytes(i % 251 for i in range(64))
     grant = _grant(store, first)
@@ -140,7 +145,7 @@ def test_sealed_overwrite_rejected_and_original_bytes_intact(tmp_path) -> None:
     store._journal.close()  # noqa: SLF001
 
 
-def test_subject_ambiguity_rejected_at_grant(tmp_path) -> None:
+def test_subject_ambiguity_rejected_at_grant(tmp_path: Path) -> None:
     """One object key binds exactly one subject: a second subject fails."""
     store = _store(tmp_path)
     data = b"y" * 32
@@ -161,7 +166,7 @@ def test_subject_ambiguity_rejected_at_grant(tmp_path) -> None:
     store._journal.close()  # noqa: SLF001
 
 
-def test_unknown_grant_complete_rejected(tmp_path) -> None:
+def test_unknown_grant_complete_rejected(tmp_path: Path) -> None:
     store = _store(tmp_path)
     with pytest.raises(ValueError, match="unknown"):
         store.complete_upload(
@@ -170,7 +175,7 @@ def test_unknown_grant_complete_rejected(tmp_path) -> None:
     store._journal.close()  # noqa: SLF001
 
 
-def test_symlink_post_seal_tamper_fails_proof(tmp_path) -> None:
+def test_symlink_post_seal_tamper_fails_proof(tmp_path: Path) -> None:
     store = _store(tmp_path)
     data = bytes(7 for _ in range(32))
     grant = _grant(store, data)
@@ -197,7 +202,7 @@ def test_symlink_post_seal_tamper_fails_proof(tmp_path) -> None:
     store._journal.close()  # noqa: SLF001
 
 
-def test_hardlink_post_seal_tamper_fails_proof(tmp_path) -> None:
+def test_hardlink_post_seal_tamper_fails_proof(tmp_path: Path) -> None:
     store = _store(tmp_path)
     data = bytes(9 for _ in range(32))
     grant = _grant(store, data)
@@ -232,7 +237,7 @@ def test_hardlink_post_seal_tamper_fails_proof(tmp_path) -> None:
     store._journal.close()  # noqa: SLF001
 
 
-def test_non_private_root_rejected(tmp_path) -> None:
+def test_non_private_root_rejected(tmp_path: Path) -> None:
     root = tmp_path / "wide-bytes"
     root.mkdir(mode=0o755)
     with pytest.raises(ValueError, match="private 0700"):
@@ -249,7 +254,13 @@ def _journal_event_digest(raw: dict) -> str:
     return "sha256:" + hashlib.sha256(canonical_json_bytes(raw)).hexdigest()
 
 
-def _write_grant_journal(path, *, grant_id="grant-1", sha=None, size=16) -> None:
+def _write_grant_journal(
+    path: Path,
+    *,
+    grant_id: str = "grant-1",
+    sha: str | None = None,
+    size: int = 16,
+) -> None:
     sha = sha or _digest(b"q" * size)
     event = {
         "kind": "external-mask-input-grant-issued.v1",
@@ -273,7 +284,7 @@ def _write_grant_journal(path, *, grant_id="grant-1", sha=None, size=16) -> None
     path.write_text(json.dumps(event, ensure_ascii=True, separators=(",", ":")) + "\n")
 
 
-def test_replay_rejects_unknown_grant_seal(tmp_path) -> None:
+def test_replay_rejects_unknown_grant_seal(tmp_path: Path) -> None:
     journal_path = tmp_path / "bytes.journal"
     _write_grant_journal(journal_path)
     lines = journal_path.read_text().splitlines()
@@ -308,7 +319,7 @@ def test_replay_rejects_unknown_grant_seal(tmp_path) -> None:
         )
 
 
-def test_replay_rejects_divergent_seal_and_tampered_digest(tmp_path) -> None:
+def test_replay_rejects_divergent_seal_and_tampered_digest(tmp_path: Path) -> None:
     import json as _json
 
     journal_path = tmp_path / "bytes.journal"
@@ -354,7 +365,7 @@ def test_replay_rejects_divergent_seal_and_tampered_digest(tmp_path) -> None:
         )
 
 
-def test_replay_rejects_version_spoof_and_bool_size(tmp_path) -> None:
+def test_replay_rejects_version_spoof_and_bool_size(tmp_path: Path) -> None:
     import json as _json
 
     journal_path = tmp_path / "bytes.journal"
@@ -374,7 +385,9 @@ def test_replay_rejects_version_spoof_and_bool_size(tmp_path) -> None:
         )
 
 
-def _sealed_fixture(tmp_path, name: str = "bytes") -> tuple[ExternalMaskInputByteStore, bytes]:
+def _sealed_fixture(
+    tmp_path: Path, name: str = "bytes"
+) -> tuple[ExternalMaskInputByteStore, bytes]:
     """Seal 256 deterministic bytes and return the store plus the bytes."""
     store = _store(tmp_path, name)
     data = bytes(i % 251 for i in range(256))
@@ -383,7 +396,7 @@ def _sealed_fixture(tmp_path, name: str = "bytes") -> tuple[ExternalMaskInputByt
     return store, data
 
 
-def _proof_kwargs() -> dict:
+def _proof_kwargs() -> dict[str, Any]:
     return {
         "organization_id": "org-a",
         "site_id": "site-a",
@@ -393,7 +406,7 @@ def _proof_kwargs() -> dict:
     }
 
 
-def test_root_ancestor_symlink_rejected(tmp_path) -> None:
+def test_root_ancestor_symlink_rejected(tmp_path: Path) -> None:
     """A symlinked ancestor anywhere above the root fails closed at pin time."""
     real = tmp_path / "real"
     real.mkdir(mode=0o700)
@@ -409,7 +422,7 @@ def test_root_ancestor_symlink_rejected(tmp_path) -> None:
         )
 
 
-def test_root_group_writable_ancestor_rejected_unless_sticky(tmp_path) -> None:
+def test_root_group_writable_ancestor_rejected_unless_sticky(tmp_path: Path) -> None:
     """Group/other-writable ancestors fail closed; sticky+owned is the only pass."""
     farm = tmp_path / "farm"
     farm.mkdir(mode=0o700)
@@ -433,7 +446,7 @@ def test_root_group_writable_ancestor_rejected_unless_sticky(tmp_path) -> None:
     store.close()
 
 
-def test_root_wrong_mode_rejected(tmp_path) -> None:
+def test_root_wrong_mode_rejected(tmp_path: Path) -> None:
     root = tmp_path / "wide-bytes"
     root.mkdir(mode=0o700)
     root.chmod(0o755)
@@ -447,7 +460,7 @@ def test_root_wrong_mode_rejected(tmp_path) -> None:
         )
 
 
-def test_object_subdir_wrong_mode_rejected(tmp_path) -> None:
+def test_object_subdir_wrong_mode_rejected(tmp_path: Path) -> None:
     store, _ = _sealed_fixture(tmp_path)
     leaf = tmp_path / "bytes" / "org-a" / "site-a" / "child-1"
     leaf.chmod(0o755)
@@ -462,7 +475,7 @@ def test_object_subdir_wrong_mode_rejected(tmp_path) -> None:
     store.close()
 
 
-def test_object_file_uid_shift_rejected(monkeypatch, tmp_path) -> None:
+def test_object_file_uid_shift_rejected(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """Files not owned by the caller fail closed, even with correct bytes."""
     import os as _os
 
@@ -476,7 +489,7 @@ def test_object_file_uid_shift_rejected(monkeypatch, tmp_path) -> None:
     store.close()
 
 
-def test_replacing_root_between_ops_keeps_pinned_view(tmp_path) -> None:
+def test_replacing_root_between_ops_keeps_pinned_view(tmp_path: Path) -> None:
     """Swapping the root path cannot redirect a pinned store; new pins fail."""
     store, data = _sealed_fixture(tmp_path, "pinned")
     root = tmp_path / "pinned"
@@ -517,7 +530,7 @@ def test_replacing_root_between_ops_keeps_pinned_view(tmp_path) -> None:
     store.close()
 
 
-def test_read_slice_trusted_window_and_bounds(tmp_path) -> None:
+def test_read_slice_trusted_window_and_bounds(tmp_path: Path) -> None:
     store, data = _sealed_fixture(tmp_path)
     assert store.read_slice(offset=10, length=20, **_proof_kwargs()) == data[10:30]
     assert store.read_slice(offset=0, length=len(data), **_proof_kwargs()) == data
@@ -542,7 +555,7 @@ def test_read_slice_trusted_window_and_bounds(tmp_path) -> None:
     store.close()
 
 
-def test_read_slice_detects_post_seal_tamper(tmp_path) -> None:
+def test_read_slice_detects_post_seal_tamper(tmp_path: Path) -> None:
     store, data = _sealed_fixture(tmp_path)
     target = store.sealed_object_path(
         organization_id="org-a",
@@ -559,7 +572,7 @@ def test_read_slice_detects_post_seal_tamper(tmp_path) -> None:
     store.close()
 
 
-def test_read_slice_uses_no_absolute_open(tmp_path, monkeypatch) -> None:
+def test_read_slice_uses_no_absolute_open(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Window reads must never open an absolute path after the sealed proof."""
     import os as _real_os
 
@@ -567,7 +580,7 @@ def test_read_slice_uses_no_absolute_open(tmp_path, monkeypatch) -> None:
     opened: list[str] = []
     real_open = _real_os.open
 
-    def _spy(path, *args, **kwargs):
+    def _spy(path: Any, *args: Any, **kwargs: Any) -> Any:
         if isinstance(path, (str, bytes)):
             text = path.decode() if isinstance(path, bytes) else path
             if isinstance(text, str) and text.startswith("/"):
@@ -585,7 +598,7 @@ def test_read_slice_uses_no_absolute_open(tmp_path, monkeypatch) -> None:
     store.close()
 
 
-def test_close_is_idempotent_and_blocks_ops(tmp_path) -> None:
+def test_close_is_idempotent_and_blocks_ops(tmp_path: Path) -> None:
     store, data = _sealed_fixture(tmp_path)
     store.close()
     store.close()
@@ -615,7 +628,7 @@ def test_close_is_idempotent_and_blocks_ops(tmp_path) -> None:
         )
 
 
-def test_journal_replay_after_restart_with_pinned_root(tmp_path) -> None:
+def test_journal_replay_after_restart_with_pinned_root(tmp_path: Path) -> None:
     store, data = _sealed_fixture(tmp_path, name="restart")
     store.close()
     store._journal.close()  # noqa: SLF001 - release the journal flock for reopen

@@ -5,8 +5,9 @@ exposes six fixed tools over one configured Core origin and projects only
 Core-evidenced, acknowledged responses. It owns no device authority, no
 raster bytes, no grant/credential issuance, and no listener. Checkout contract
 tests use the source tree by default. Wheel/sdist builds and the installed
-console/SDK flow have also been verified in a separately authorized, isolated
-test environment. This repository does not install the adapter into a shared
+console/SDK flow, including the local mutation preflight below, have also been
+verified in a private local test environment with generated data. This
+repository does not install the adapter into a shared
 environment or AI-host configuration, or publish/deploy it. See
 `docs/ops/SPATIAL_DATA_MCP_SOFTWARE_EVIDENCE.md` for the exact verification scope.
 
@@ -62,6 +63,21 @@ Reads are read-only, create/cancel are idempotent mutations. The get tool
 returns the exact Core job plus a deterministic file reference only for a
 `COMPLETED`+`AVAILABLE` receipt; every other retained history shape returns
 the job with a null reference and never promises bytes.
+
+Before create, the adapter requires an acknowledged, scope-checked asset-list
+read; before cancel, it requires an acknowledged read of that exact job. Both
+the read and the POST use the same token snapshot from that invocation. A
+failed preflight sends no POST; a successful one is not a grant and Core still
+checks current consent and permissions for the mutation. Token rotation is
+picked up on the next invocation. This binds token bytes, not any independent
+server-side remapping of those bytes to a different principal.
+
+Each mutation now needs two sequential Core exchanges and an additional
+metadata audit. The configured total deadline and response-byte limit must
+cover the preflight as well as the POST; an unavailable or oversized preflight
+fails before mutation. If the POST response is lost, its outcome is unknown:
+retry the same request body and idempotency key, or the same cancellation,
+instead of silently starting a replacement request.
 
 Start: `ksi-spatial-data-mcp --config=/absolute/protected.json`.
 stdout carries MCP frames only; a frame that cannot fit the owner budget

@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
+from typing import Any, NoReturn
 
 import pytest
 from analysis_api_local_fixture import (
@@ -13,6 +15,8 @@ from analysis_api_local_fixture import (
     _RetainedPolicyAuthority,
     _workflow,
 )
+from fastapi import FastAPI
+from ksi_core.composition.masked_quantitative_graph import MaskedQuantitativeLocalConfig
 from ksi_core.composition.platform_assembly import assemble_platform_app
 from ksi_core.composition.quantitative_extension_graph import DeltaPublicationLocalConfig
 from ksi_core.domains.external.quantity.analysis_activation_authority import _runtime_digest
@@ -22,11 +26,18 @@ from ksi_core.domains.external.quantity.external_relative_volume_analysis import
 )
 from ksi_core.foundation.durable_journal import DurableJournal, JournalSealedError
 from ksi_core.identity.auth import AuthRegistry, Principal, PrincipalKind
+from ksi_event_contracts.external_artifact_validation import ResourceEnvelopeV1
 from test_external_analysis_http_integration import _local_graph_config
 from test_external_quantitative_extension_activation import _unsigned, _write_files
 
 
-def _assemble(root, *, enabled, invalid_signature=False, with_masked=False):
+def _assemble(
+    root: Path,
+    *,
+    enabled: bool,
+    invalid_signature: bool = False,
+    with_masked: bool = False,
+) -> tuple[FastAPI, list[DurableJournal], DeltaPublicationLocalConfig]:
     root.mkdir(mode=0o700, parents=True)
     now = datetime(2026, 10, 26, 12, tzinfo=UTC)
     workflow, _, envelope, _ = _workflow(
@@ -84,7 +95,7 @@ def _assemble(root, *, enabled, invalid_signature=False, with_masked=False):
         config = replace(config, mask_core_origin="http://127.0.0.1:8047")
     opened = []
 
-    def journal(name):
+    def journal(name: str) -> DurableJournal:
         item = DurableJournal(root / name)
         opened.append(item)
         return item
@@ -108,8 +119,12 @@ def _assemble(root, *, enabled, invalid_signature=False, with_masked=False):
         raise
 
 
-def _masked_config(root, envelope, worker, now):
-    from ksi_core.composition.masked_quantitative_graph import MaskedQuantitativeLocalConfig
+def _masked_config(
+    root: Path,
+    envelope: ResourceEnvelopeV1,
+    worker: Principal,
+    now: datetime,
+) -> MaskedQuantitativeLocalConfig:
     from ksi_core.domains.external.quantity.external_masked_calculation_core_adapters import (
         masked_execution_runtime_digest,
     )
@@ -152,7 +167,9 @@ def _masked_config(root, envelope, worker, now):
     )
 
 
-def test_new_routes_are_absent_without_explicit_delta_graph_even_when_keys_exist(tmp_path):
+def test_new_routes_are_absent_without_explicit_delta_graph_even_when_keys_exist(
+    tmp_path: Path,
+) -> None:
     app, opened, config = _assemble(tmp_path / "default", enabled=False)
     try:
         assert not any("delta-publication" in path for path in app.openapi()["paths"])
@@ -168,7 +185,9 @@ def test_new_routes_are_absent_without_explicit_delta_graph_even_when_keys_exist
             item.close()
 
 
-def test_explicit_new_purpose_signature_mounts_only_exact_common_participants(tmp_path):
+def test_explicit_new_purpose_signature_mounts_only_exact_common_participants(
+    tmp_path: Path,
+) -> None:
     from fastapi.testclient import TestClient
 
     app, opened, config = _assemble(tmp_path / "enabled", enabled=True)
@@ -189,7 +208,9 @@ def test_explicit_new_purpose_signature_mounts_only_exact_common_participants(tm
             item.close()
 
 
-def test_wrong_runtime_pin_cannot_mount_by_reusing_old_analysis_configuration(tmp_path):
+def test_wrong_runtime_pin_cannot_mount_by_reusing_old_analysis_configuration(
+    tmp_path: Path,
+) -> None:
     with pytest.raises(ValueError, match="purpose-bound"):
         _assemble(tmp_path / "wrong-runtime", enabled=True, invalid_signature=True)
 
@@ -206,8 +227,8 @@ def test_wrong_runtime_pin_cannot_mount_by_reusing_old_analysis_configuration(tm
     ],
 )
 def test_mask_byte_origin_is_explicit_and_cannot_contain_paths_credentials_or_remote_plaintext(
-    tmp_path, origin
-):
+    tmp_path: Path, origin: str
+) -> None:
     app, opened, config = _assemble(tmp_path / "origin-validation", enabled=False)
     try:
         with pytest.raises(ValueError, match="pinned Core origin"):
@@ -217,7 +238,9 @@ def test_mask_byte_origin_is_explicit_and_cannot_contain_paths_credentials_or_re
             handle.close()
 
 
-def test_failed_optional_boot_closes_only_its_new_journal_handles(tmp_path, monkeypatch):
+def test_failed_optional_boot_closes_only_its_new_journal_handles(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     import ksi_core.composition.quantitative_extension_graph as graph
 
     app, opened, config = _assemble(tmp_path / "existing", enabled=True)
@@ -225,12 +248,12 @@ def test_failed_optional_boot_closes_only_its_new_journal_handles(tmp_path, monk
     failed_root.mkdir(mode=0o700)
     new_handles = []
 
-    def journal(name):
+    def journal(name: str) -> DurableJournal:
         handle = DurableJournal(failed_root / name)
         new_handles.append(handle)
         return handle
 
-    def reject_store(*args, **kwargs):
+    def reject_store(*args: Any, **kwargs: Any) -> NoReturn:
         raise ValueError("synthetic construction rejection")
 
     monkeypatch.setattr(graph, "ExternalDeltaPublicationStore", reject_store)
@@ -260,7 +283,9 @@ def test_failed_optional_boot_closes_only_its_new_journal_handles(tmp_path, monk
             handle.close()
 
 
-def test_both_optional_lanes_use_exact_common_sources_but_separate_signed_purposes(tmp_path):
+def test_both_optional_lanes_use_exact_common_sources_but_separate_signed_purposes(
+    tmp_path: Path,
+) -> None:
     from fastapi.testclient import TestClient
     from ksi_core.domains.external.quantity.external_masked_delta_source_adapter import (
         CoreVersionedDeltaSourceAdapter,
@@ -285,18 +310,20 @@ def test_both_optional_lanes_use_exact_common_sources_but_separate_signed_purpos
             handle.close()
 
 
-def test_later_delta_boot_failure_closes_already_built_mask_byte_descriptors(tmp_path, monkeypatch):
+def test_later_delta_boot_failure_closes_already_built_mask_byte_descriptors(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     import ksi_core.composition.platform_graph as graph
 
     captured = []
     build_masked = graph.build_masked_quantitative_wiring
 
-    def capture_masked(**kwargs):
+    def capture_masked(**kwargs: Any) -> Any:
         wiring = build_masked(**kwargs)
         captured.append(wiring)
         return wiring
 
-    def fail_delta(**kwargs):
+    def fail_delta(**kwargs: Any) -> NoReturn:
         raise ValueError("synthetic later delta boot failure")
 
     monkeypatch.setattr(graph, "build_masked_quantitative_wiring", capture_masked)
@@ -308,7 +335,9 @@ def test_later_delta_boot_failure_closes_already_built_mask_byte_descriptors(tmp
     assert captured[0].byte_store._closed
 
 
-def test_seeded_dsm_fixture_does_not_end_the_optional_lane_lifespan_before_serving(tmp_path):
+def test_seeded_dsm_fixture_does_not_end_the_optional_lane_lifespan_before_serving(
+    tmp_path: Path,
+) -> None:
     from analysis_api_local_fixture import _envelope, build_local_analysis_api_fixture
     from fastapi.testclient import TestClient
 

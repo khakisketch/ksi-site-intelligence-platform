@@ -40,23 +40,32 @@ export default async function SiteObservationHistoryPage({
     if (error instanceof CoreApiError && error.status === 404) notFound();
     return <div className="mx-auto max-w-5xl p-4 sm:p-5"><ErrorState message="외부 비교 기록을 불러오지 못했습니다." retryable /></div>;
   }
-  let loaded: {
-    history: Awaited<ReturnType<typeof listSiteExternalVolumeHistory>>;
-    areas: Awaited<ReturnType<typeof listWorkAreas>>;
-  } | null = null;
+  // 작업구역 이름은 표시 보조일 뿐이다. 이름 조회가 실패해도 이력은 가리지
+  // 않는다 — 이름 없는 행은 '작업구역'으로 표시하고, 이름 실패만 따로 알린다.
+  // 이름 목록에는 권한 없는 자료가 담기지 않으므로(실패 시 빈 목록) 노출이 없다.
+  let history: Awaited<ReturnType<typeof listSiteExternalVolumeHistory>> | null = null;
+  let areas: Awaited<ReturnType<typeof listWorkAreas>> | null = null;
   let denied = false;
   let retryAfterSeconds: number | undefined;
-  try {
-    const [history, areas] = await Promise.all([
-      listSiteExternalVolumeHistory(siteId, { after, limit: 50 }),
-      listWorkAreas(siteId),
-    ]);
-    loaded = { history, areas };
-  } catch (error) {
+  let areaNamesUnavailable = false;
+  const [historyResult, areasResult] = await Promise.allSettled([
+    listSiteExternalVolumeHistory(siteId, { after, limit: 50 }),
+    listWorkAreas(siteId),
+  ]);
+  if (historyResult.status === "fulfilled") {
+    history = historyResult.value;
+  } else {
+    const error = historyResult.reason;
     denied = error instanceof CoreApiError && error.status === 403;
     retryAfterSeconds = error instanceof CoreApiError ? error.retryAfterSeconds : undefined;
   }
-  const names = new Map(loaded?.areas.workAreas.map((area) => [area.workAreaId, area.name]));
+  if (areasResult.status === "fulfilled") {
+    areas = areasResult.value;
+  } else if (history !== null) {
+    areaNamesUnavailable = true;
+  }
+  const loaded = history !== null ? { history, areas } : null;
+  const names = new Map(loaded?.areas?.workAreas.map((area) => [area.workAreaId, area.name]) ?? []);
   return <div className="flex flex-col">
     <SiteHeader
       site={site}
@@ -70,8 +79,10 @@ export default async function SiteObservationHistoryPage({
         <div>
           <h2 className="mt-1 text-[22px] font-bold tracking-tight">외부 비교 기록</h2>
           <p className="mt-1 text-[13px] leading-5 text-ink-2">별도로 등록된 외부 비교 결과입니다. 시스템에서 계산한 지형 변화는 분석·검토에서 확인하세요. 두 기록은 서로 다른 결과입니다.</p>
+          <p className="mt-1 text-[13px] leading-5 text-ink-2">관측 작업의 진행 상태는 현장 작업 기록에서, 제출 파일의 보관·검사 사실은 등록 자료에서 확인하세요.</p>
         </div>
       </header>
+      {areaNamesUnavailable && <p role="status" className="rounded-lg bg-sunk px-3 py-2 text-[12.5px] leading-5 text-ink-2">작업구역 이름을 불러오지 못했습니다. 이름이 없는 행은 작업구역으로 표시됩니다.</p>}
       {loaded ? <ExternalObservationHistory siteId={siteId} items={loaded.history.items} workAreaNames={names} /> :
         <ErrorState message={denied ? "외부 비교 기록을 조회할 권한이 없습니다. 현장 담당자에게 조회 권한을 요청하세요." : "외부 비교 기록을 불러오지 못했습니다."} tone={denied ? "high" : "crit"} retryable={!denied} retryAfterSeconds={retryAfterSeconds} />}
       {loaded?.history.nextCursor && <Link className="btn w-fit" href={`/sites/${encodeURIComponent(siteId)}/observations?after=${encodeURIComponent(loaded.history.nextCursor)}`}>이전 결과 더 보기</Link>}

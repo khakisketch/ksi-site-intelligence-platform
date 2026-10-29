@@ -31,7 +31,7 @@ vi.mock("@/lib/core-api/session", () => ({
   getSessionToken: mocked.session,
   MissingSessionError: mocked.MissingSessionError,
 }));
-vi.mock("@/lib/core-api/sites", () => ({ registerSite: mocked.register }));
+vi.mock("@/lib/core-api/sites", () => ({ registerSiteWithToken: mocked.register }));
 
 import { POST as postSite } from "@/app/api/sites/route";
 import {
@@ -189,7 +189,8 @@ describe("F-01 BFF /api/sites", () => {
     };
     const response = await postSite(request(body) as never);
     expect(response.status).toBe(201);
-    expect(mocked.register).toHaveBeenCalledWith(body);
+    expect(mocked.register).toHaveBeenCalledWith(body, "token");
+    expect(mocked.session).toHaveBeenCalledTimes(1);
   });
 
   it("세션 검증이 본문 파싱보다 먼저다 — 무인증+깨진 JSON 도 401", async () => {

@@ -7,6 +7,9 @@ The fixture's incumbent DSM inspection authority remains explicitly test-scoped.
 from __future__ import annotations
 
 import json
+from collections.abc import Iterator
+from pathlib import Path
+from typing import Any
 
 import pytest
 from ksi_core.domains.external.quantity.external_masked_delta_source_adapter import (
@@ -17,7 +20,7 @@ from test_external_mask_input_genuine_adapters import NOW, _run_genuine_chain
 
 
 @pytest.fixture
-def graph(tmp_path):
+def graph(tmp_path: Path) -> Iterator[dict[str, Any]]:
     result = _run_genuine_chain(tmp_path, current_nan_at=(0, 1))
     yield result
     result["byte_store"].close()
@@ -36,7 +39,7 @@ def graph(tmp_path):
         result[key]._journal.close()
 
 
-def _args(result):
+def _args(result: dict[str, Any]) -> dict[str, Any]:
     identity, numeric = result["identity"], result["numeric"]
     return {
         "organization_id": identity.organization_id,
@@ -49,7 +52,9 @@ def _args(result):
     }
 
 
-def test_masked_source_resolves_without_any_completed_v2_numeric_and_keeps_unknown_impact(graph):
+def test_masked_source_resolves_without_any_completed_v2_numeric_and_keeps_unknown_impact(
+    graph: dict[str, Any],
+) -> None:
     adapter = CoreMaskedDeltaSourceAdapter(
         calculations=graph["calc"], coordinator=graph["coordinator"]
     )
@@ -82,7 +87,9 @@ def test_masked_source_resolves_without_any_completed_v2_numeric_and_keeps_unkno
         "source_coverage_witness_digest",
     ],
 )
-def test_masked_source_cannot_borrow_another_scope_or_result(graph, field):
+def test_masked_source_cannot_borrow_another_scope_or_result(
+    graph: dict[str, Any], field: str
+) -> None:
     adapter = CoreMaskedDeltaSourceAdapter(
         calculations=graph["calc"], coordinator=graph["coordinator"]
     )
@@ -90,7 +97,9 @@ def test_masked_source_cannot_borrow_another_scope_or_result(graph, field):
     assert adapter.resolve_current_source(**{**_args(graph), field: value}) is None
 
 
-def test_masked_source_is_no_longer_current_when_the_actual_activation_key_is_revoked(graph):
+def test_masked_source_is_no_longer_current_when_the_actual_activation_key_is_revoked(
+    graph: dict[str, Any],
+) -> None:
     adapter = CoreMaskedDeltaSourceAdapter(
         calculations=graph["calc"], coordinator=graph["coordinator"]
     )
@@ -102,7 +111,9 @@ def test_masked_source_is_no_longer_current_when_the_actual_activation_key_is_re
     assert adapter.resolve_current_source(**_args(graph)) is None
 
 
-def test_masked_source_cannot_be_mounted_with_an_unrelated_currentness_coordinator(graph):
+def test_masked_source_cannot_be_mounted_with_an_unrelated_currentness_coordinator(
+    graph: dict[str, Any],
+) -> None:
     with pytest.raises(ValueError, match="exact common"):
         CoreMaskedDeltaSourceAdapter(
             calculations=graph["calc"], coordinator=ExternalAuthorityCurrentnessCoordinator()

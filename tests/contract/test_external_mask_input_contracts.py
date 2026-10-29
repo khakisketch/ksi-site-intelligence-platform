@@ -184,7 +184,7 @@ def test_declaration_rejects_url_artifact_and_accepts_baseline_parent() -> None:
 def test_manifest_rejects_bool_literals_and_bad_grid() -> None:
     profile = _profile(_digest("envelope"))
     base = _manifest(profile.canonical_digest()).model_dump(by_alias=True)
-    base["bandCount"] = True  # type: ignore[dict-assign]
+    base["bandCount"] = True
     base["manifestDigest"] = None
     with pytest.raises(ValueError, match="boolean"):
         MaskObservedManifestV1.model_validate(base)
@@ -208,7 +208,7 @@ def test_profile_requires_explicit_contained_binding() -> None:
             worker_build_digest=_digest("build"),
             dependency_lock_digest=_digest("lock"),
             mask_grammar_digest=_digest("mask-grammar-v1"),
-            mask_convention="UINT8_SINGLE_BAND_BINARY_0_KEEP_1_EXCLUDE_V1",  # type: ignore[arg-type]
+            mask_convention="UINT8_SINGLE_BAND_BINARY_0_KEEP_1_EXCLUDE_V1",
             mask_nodata_rule="ALLOW",  # type: ignore[arg-type]
             resource_envelope_digest=_digest("envelope"),
         )

@@ -2,6 +2,8 @@
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
+
 const mockedCore = vi.hoisted(() => ({
   listSitesCached: vi.fn(),
   whoAmI: vi.fn(),
@@ -151,6 +153,44 @@ function mockAnalysisReads(options: {
     });
   }
 }
+
+describe("Home 현장 조회 범위", () => {
+  it("빈 목록은 조직의 첫 실행이 아니라 현재 계정에서 보이는 범위로 설명한다", async () => {
+    mockWorld([]);
+    render(await HomePage());
+    expect(screen.getByText("볼 수 있는 현장 0곳")).toBeTruthy();
+    expect(screen.getByText("현재 계정에서 볼 수 있는 현장이 없습니다")).toBeTruthy();
+    expect(screen.getByText("찾는 현장이 이미 있다면 관리자에게 이 계정의 현장 접근 권한을 확인해 주세요.")).toBeTruthy();
+    expect(screen.getByRole("link", { name: "현장 목록" }).getAttribute("href")).toBe("/sites");
+    expect(screen.queryByText("아직 등록된 현장이 없습니다")).toBeNull();
+  });
+
+  it("목록 조회 오류는 빈 목록으로 표시하지 않는다", async () => {
+    mockWorld([]);
+    mockedCore.listSitesCached.mockRejectedValue(new Error("Core unavailable"));
+    render(await HomePage());
+    expect(screen.queryByText("현재 계정에서 볼 수 있는 현장이 없습니다")).toBeNull();
+    expect(screen.getByText("볼 수 있는 현장 —")).toBeTruthy();
+  });
+
+  it("등록 권한이 확인된 계정에는 현장 등록 경로를 제공한다", async () => {
+    mockWorld([]);
+    mockedCore.whoAmI.mockResolvedValue({
+      principalId: "operator", organizationId: "org-local", registryScoped: true,
+      permissions: ["SITES_WRITE"], capabilities: ["SITE_BOOTSTRAP"],
+    });
+    render(await HomePage());
+    expect(screen.getByRole("link", { name: "현장 등록" }).getAttribute("href")).toBe("/sites/new");
+  });
+
+  it("등록 권한 조회가 실패하면 거부라고 단정하지 않고 목록으로 안내한다", async () => {
+    mockWorld([]);
+    mockedCore.whoAmI.mockRejectedValue(new Error("identity unavailable"));
+    render(await HomePage());
+    expect(screen.getByRole("link", { name: "현장 목록" }).getAttribute("href")).toBe("/sites");
+    expect(screen.queryByText("현장 등록 권한이 없습니다")).toBeNull();
+  });
+});
 
 describe("Home 분석-검토 읽기 완전성 (D1 unknown-not-0)", () => {
   beforeEach(() => {

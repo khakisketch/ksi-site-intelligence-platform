@@ -150,6 +150,17 @@ def _site_bootstrap_max_sites_per_org_env() -> int:
     return value
 
 
+def _registration_stopped_env() -> bool:
+    """Restart-only stop; absent/false preserves ordinary registration."""
+    name = "KSI_CORE_REGISTRATION_STOPPED"
+    raw = os.environ.get(name)
+    if raw is None or raw == "false":
+        return False
+    if raw == "true":
+        return True
+    raise RuntimeError(f"{name} must be exactly 'true' or 'false'")
+
+
 def _expose_docs_env() -> bool:
     """``KSI_CORE_EXPOSE_DOCS`` — 기본 ``False``(dev 는 기본 True 와 대칭적으로 반대).
 

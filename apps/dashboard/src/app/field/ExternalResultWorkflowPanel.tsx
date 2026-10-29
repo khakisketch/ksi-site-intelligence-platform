@@ -38,7 +38,14 @@ export type ExternalRelativeVolumeDecision = {
 
 type Phase = "idle" | "loading" | "ready" | "error";
 type BusyOperation = "issue";
-type FrozenIssue = { decisionId: string; decisionDigest: string; idempotencyKey: string };
+/**
+ * 동결된 발급 시도. 같은 키·내용의 재시도만 허용한다.
+ * workOrderId는 원래 발급 대상 작업의 일부다. 실제 페이지 탐색에서는 바깥
+ * 패널이 workOrderId 키로 통째로 다시 마운트되어 인메모리 보관 시도가
+ * 사라진다(새로고침·이탈 시 소멸 안내와 일치). 이 바인딩은 직접 prop 전환
+ * 경로에서 다른 작업 URL로 옛 키·내용이 재전송되는 것을 막는 방어선이다.
+ */
+type FrozenIssue = { decisionId: string; decisionDigest: string; idempotencyKey: string; workOrderId: string };
 
 const AUTO_REQUEST_REFRESH_DELAY_MS = 5_000;
 const AUTO_REQUEST_REFRESH_BUDGET = 6;
@@ -373,6 +380,7 @@ function SingleVolumeWorkflow({
   canApprovePermission,
   workAreaNames,
   onApproved,
+  legacyDecisionClosed = false,
 }: {
   workOrderId: string;
   decision: ExternalRelativeVolumeDecision | null;
@@ -382,6 +390,13 @@ function SingleVolumeWorkflow({
   canApprovePermission: boolean;
   workAreaNames: Readonly<Record<string, string>>;
   /**
+   * OIDC-first 배포 경계: registry 발급(scoped) 신원에는 Core가 체적 측정
+   * 발급(issue) 경로를 allowlist 밖으로 닫는다. 참이면 확정 403이 되는 발급
+   * 요청 버튼·안내를 내놓지 않고, 목록·결과·검토 읽기와 허용된 검토 기록은
+   * 그대로 둔다.
+   */
+  legacyDecisionClosed?: boolean;
+  /**
    * Core approved the proposal and bound a successor. The parent finishes the approval
    * (work list refresh, navigation) and must stop as soon as `signal` is aborted, which
    * happens when this attempt is retired.
@@ -390,6 +405,9 @@ function SingleVolumeWorkflow({
 }) {
   const scope = useRef(0);
   const activeMutation = useRef<AbortController | null>(null);
+  // React가 busy/보관 상태를 확정하기 전에 같은 핸들러가 겹쳐도 한 번만
+  // 보내는 동기식 발급 잠금. busy는 화면 표시용이고, 이 잠금이 정확성을 맡는다.
+  const dispatchLock = useRef(false);
   const listAbort = useRef<AbortController | null>(null);
   const singleReloadAbort = useRef<AbortController | null>(null);
   const [listPhase, setListPhase] = useState<Phase>("loading");
@@ -413,11 +431,25 @@ function SingleVolumeWorkflow({
   const [report, setReport] = useState<ExternalSingleVolumeReportView | null>(null);
   const [reportPhase, setReportPhase] = useState<Phase>("idle");
   const [busy, setBusy] = useState(false);
-  const [issueAttempt, setIssueAttempt] = useState<FrozenIssue | null>(null);
+  // 같은 키 재시도·확인을 같은 식별자로 묶기 위한 동결 시도 보관함. 결과가
+  // 모호한 시도만 남긴다 — 확정 거부(검증 실패)는 기록이 생기지 않으므로
+  // 버리고, 성공은 기록으로 확정한다. 선택이 바뀌어도 지우지 않는다:
+  // 늦게 도착한 응답은 도착 시점의 실제 선택과 비교한다.
+  const [retained, setRetained] = useState<Record<string, { attempt: FrozenIssue; outcome: "unknown" | "known" }>>({});
+  const [pendingIssueConfirm, setPendingIssueConfirm] = useState<{ decisionId: string; decisionDigest: string } | null>(null);
+  // 렌더 시점의 최신 결정을 가리킨다. 비동기 응답 처리에서 오래된 클로저의
+  // 결정과 비교하지 않는다. effect에서만 갱신한다(렌더 중 ref 쓰기 금지).
+  const latestDecision = useRef(decision);
+  useEffect(() => {
+    latestDecision.current = decision;
+  });
   const [message, setMessage] = useState<string | null>(null);
   const requestsPath = `/api/observation-work-orders/${encodeURIComponent(workOrderId)}/single-volume-requests`;
-  const canIssue = canIssuePermission && (newIntentAllowed || issueAttempt !== null);
-  const decisionIdentity = decision ? `${decision.decisionId}|${decision.decisionDigest}` : "";
+  const currentSingleDecisionKey = decision ? `${decision.decisionId}|${decision.decisionDigest}` : null;
+  // 업무 종료 상태에서는 보관된 동일 시도를 정확히 되살리는 경우에만 발급한다.
+  // 관련 없는 오래된 시도가 새 결정의 버튼을 켜면 안 된다.
+  const canIssue = canIssuePermission
+    && (newIntentAllowed || (currentSingleDecisionKey !== null && currentSingleDecisionKey in retained));
 
   const loadList = useCallback(async () => {
     listAbort.current?.abort();
@@ -535,18 +567,32 @@ function SingleVolumeWorkflow({
     };
   }, [requestsPath, selectedRef, selectionGeneration]);
 
+  // 선택이 바뀌어도 진행 중인 발급을 중단하거나 동결된 시도를 버리지 않는다.
+  // 늦게 도착한 응답은 도착 시점의 실제 선택과 비교해 현재 선택과 다른
+  // 조건의 기록으로 둔갑시키지 않는다. 작업이 바뀌면 발급 범위를 무효화하고
+  // 진행 중 요청을 중단한다. 보관된 시도는 지우지 않는다 — 이전 요청의
+  // 모호함은 취소로 단정하지 않고 그대로 알린다.
+  /* eslint-disable react-hooks/set-state-in-effect -- 작업 전환에 동반된 발급 범위 무효화·대기 해제, workOrderId 변경마다 1회 */
   useEffect(() => {
     scope.current += 1;
-    const decisionScope = scope.current;
     activeMutation.current?.abort();
     activeMutation.current = null;
-    void Promise.resolve().then(() => {
-      if (scope.current !== decisionScope) return;
-      setBusy(false);
-      setIssueAttempt(null);
-      setMessage(null);
-    });
-  }, [decisionIdentity]);
+    listAbort.current?.abort();
+    listAbort.current = null;
+    singleReloadAbort.current?.abort();
+    singleReloadAbort.current = null;
+    setPendingIssueConfirm(null);
+    setBusy(false);
+  }, [workOrderId]);
+  /* eslint-enable react-hooks/set-state-in-effect */
+
+  // 확인·응답 안내는 고정한 발급 대상에만 묶인다. 선택이 바뀌면 보관함
+  // 안내가 이어받고, 여기서는 묵은 문구만 비운다.
+  const singleDecisionKey = decision ? `${decision.decisionId}|${decision.decisionDigest}` : null;
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- 선택 변경에 동반된 발급 안내 1회 초기화, 보관함은 유지
+    setMessage(null);
+  }, [singleDecisionKey]);
 
   useEffect(() => () => {
     activeMutation.current?.abort();
@@ -567,20 +613,18 @@ function SingleVolumeWorkflow({
     setSelectedRef(requestRef);
   };
 
-  const issue = async () => {
-    if (!decision || decision.verdict !== "ELIGIBLE" || !canIssue || busy) return;
-    let attempt = issueAttempt;
-    const matchesDecision = attempt?.decisionId === decision.decisionId
-      && attempt.decisionDigest === decision.decisionDigest;
-    if (!newIntentAllowed && !matchesDecision) {
-      setMessage("업무 종료 상태에서는 새 단일 시점 체적 측정을 요청할 수 없습니다.");
-      return;
-    }
-    if (!matchesDecision) {
-      attempt = { decisionId: decision.decisionId, decisionDigest: decision.decisionDigest, idempotencyKey: makeKey() };
-      setIssueAttempt(attempt);
-    }
-    if (!attempt) return;
+  // 기록이 확정된 시도는 보관함에서 푼다. 모호한 시도는 절대 버리지
+  // 않는다 — 400 거부조차 Core 전달일 수 있어 기록 여부를 단정할 수 없다.
+  const resolveRetained = (key: string) => {
+    setRetained((previous) => {
+      if (!(key in previous)) return previous;
+      if (previous[key].outcome === "known") return previous;
+      return { ...previous, [key]: { ...previous[key], outcome: "known" } };
+    });
+  };
+
+  const postSingleIssue = async (attempt: FrozenIssue) => {
+    const key = `${attempt.decisionId}|${attempt.decisionDigest}`;
     activeMutation.current?.abort();
     const controller = new AbortController();
     activeMutation.current = controller;
@@ -589,7 +633,7 @@ function SingleVolumeWorkflow({
     setBusy(true);
     setMessage(null);
     try {
-      const value = await responseJson<{ verdict: string; request: unknown; detail: string | null }>(await fetch(requestsPath, {
+      const value = await responseJson<{ verdict: string; request: unknown; detail: string | null }>(await fetch(`/api/observation-work-orders/${encodeURIComponent(attempt.workOrderId)}/single-volume-requests`, {
         method: "POST",
         headers: { "content-type": "application/json", "idempotency-key": attempt.idempotencyKey },
         body: JSON.stringify({ decisionRef: attempt.decisionId }),
@@ -597,17 +641,89 @@ function SingleVolumeWorkflow({
       }));
       if (!owns()) return;
       if (!isKnownRequestView(value.request)) throw new Error(value.request === null ? (value.detail ?? value.verdict) : UNKNOWN_REQUEST_STATUS);
-      selectRequest(value.request.requestRef);
-      setMessage("단일 시점 체적 측정을 요청했습니다.");
+      // 기록이 확정됐다 — 같은 키의 재시딩 필요 없으니 보관함에서 푼다.
+      resolveRetained(key);
+      const current = latestDecision.current;
+      if (current && `${current.decisionId}|${current.decisionDigest}` === key) {
+        selectRequest(value.request.requestRef);
+        setMessage("단일 시점 체적 측정을 요청했습니다.");
+      } else {
+        // 현재 선택과 다른 조건의 기록이다. 자동 선택하지 않고 목록에서 확인한다.
+        setMessage("요청이 접수되었습니다. 현재 선택과 다른 조건의 요청이므로 목록에서 확인하세요.");
+      }
       void loadList();
     } catch (error) {
-      if (!isAbort(error) && owns()) setMessage(singleIssueFailureMessage(error));
+      if (isAbort(error) || !owns()) return;
+      if (
+        error instanceof WorkflowResponseError && error.status === 400 &&
+        error.message === "INVALID_EXTERNAL_SINGLE_VOLUME_INTENT"
+      ) {
+        // BFF 400 코드는 Core 전달 오류를 그대로 옮길 수 있어 로컬 사전
+        // 거부 증명이 되지 않는다. 첫 전송이라도 기록 여부를 단정하지 않고
+        // 원래 시도·키·내용을 유지한 채 목록 확인을 안내한다.
+        setMessage("체적 측정 요청이 거부되어 결과를 확인하지 못했습니다. 기록되었는지 확인할 수 없으니 아래 목록에서 먼저 확인하세요. 같은 선택에서는 같은 요청으로 다시 시도할 수 있습니다.");
+        return;
+      }
+      // 그 외 실패는 모호하다 — 동결된 시도를 유지하고 같은 키로 재시도한다.
+      setMessage(singleIssueFailureMessage(error));
     } finally {
       if (activeMutation.current === controller) {
         activeMutation.current = null;
         if (scope.current === requestScope) setBusy(false);
       }
     }
+  };
+
+  const issue = async (confirmed = false) => {
+    if (dispatchLock.current) return;
+    dispatchLock.current = true;
+    try {
+      const current = latestDecision.current;
+      if (!current || current.verdict !== "ELIGIBLE" || !canIssue || busy) return;
+      if (legacyDecisionClosed) {
+        setMessage("이 화면의 단일 시점 체적 측정 요청은 현재 계정의 배포 범위에 열려 있지 않습니다. 기존 체적 측정 요청 목록과 결과·검토 기록은 그대로 볼 수 있습니다.");
+        return;
+      }
+      const key = `${current.decisionId}|${current.decisionDigest}`;
+      if (retained[key]) {
+        if (retained[key].attempt.workOrderId !== workOrderId) {
+          // 보관된 시도는 원래 작업의 것이다. 다른 작업 URL로는 절대 다시
+          // 보내지 않는다. 취소로 단정하지 않고 원래 작업에서의 재시도를 안내한다.
+          setMessage("이전 작업에서 시작한 요청은 이 작업에서 다시 보낼 수 없습니다. 원래 작업 화면에서 같은 선택으로 다시 시도하거나, 목록에서 확인하세요.");
+          return;
+        }
+        // 같은 조건의 재시도 — 새 키를 만들지 않는다.
+        setPendingIssueConfirm(null);
+        await postSingleIssue(retained[key].attempt);
+        return;
+      }
+      if (!newIntentAllowed) {
+        setMessage("업무 종료 상태에서는 새 단일 시점 체적 측정을 요청할 수 없습니다.");
+        return;
+      }
+      const uncertainOther = Object.entries(retained).some(([otherKey, entry]) => otherKey !== key && entry.outcome === "unknown");
+      const confirmedForIntent = confirmed && pendingIssueConfirm !== null
+        && `${pendingIssueConfirm.decisionId}|${pendingIssueConfirm.decisionDigest}` === key;
+      if (uncertainOther && !confirmedForIntent) {
+        // 확정되지 않은 이전 시도가 있으면 새 키를 만들지 않는다. 확인 블록이
+        // 경고 문구를 들고 있으므로 공용 안내는 비워 둔다.
+        setPendingIssueConfirm({ decisionId: current.decisionId, decisionDigest: current.decisionDigest });
+        return;
+      }
+      setPendingIssueConfirm(null);
+      const attempt: FrozenIssue = { decisionId: current.decisionId, decisionDigest: current.decisionDigest, idempotencyKey: makeKey(), workOrderId };
+      setRetained((previous) => ({ ...previous, [key]: { attempt, outcome: "unknown" } }));
+      await postSingleIssue(attempt);
+    } finally {
+      dispatchLock.current = false;
+    }
+  };
+
+  const confirmSingleIssue = () => {
+    const pending = pendingIssueConfirm;
+    if (!pending) return;
+    // 확인은 본 조건에 대해서만 유효하다. 선택이 바뀌었으면 새 조건으로 다시 경고한다.
+    void issue(true);
   };
 
   // Re-reads the exact retained single report after Core records a review or a
@@ -652,10 +768,16 @@ function SingleVolumeWorkflow({
     if (selectedRef && singleReportId) void reloadSingleReport(singleReportId, selectedRef);
   }, [reloadSingleReport, selectedRef, singleReportId]);
 
+  // 확인 대화상자는 현재 선택과 묶인 새 의도에 대해서만 보여준다. 선택이
+  // 바뀌면 보관함의 같은 키 재시도 안내가 대신 이어진다.
+  const pendingSingleKey = pendingIssueConfirm ? `${pendingIssueConfirm.decisionId}|${pendingIssueConfirm.decisionDigest}` : null;
+  const currentSingleKey = decision ? `${decision.decisionId}|${decision.decisionDigest}` : null;
   return (
     <div className="flex flex-col gap-2 rounded-lg border border-line p-3">
       <h3 className="font-semibold">단일 시점 체적 측정</h3>
-      {!decision ? (
+      {legacyDecisionClosed ? (
+        <p role="status" className="text-ink-2">이 화면의 단일 시점 체적 측정 요청은 현재 계정의 배포 범위에 열려 있지 않습니다. 기존 체적 측정 요청 목록과 결과·검토 기록은 아래에서 그대로 볼 수 있습니다.</p>
+      ) : !decision ? (
         <p className="text-ink-2">{newIntentAllowed ? "현재 선택에서 단일 시점 체적 결정을 요청하세요." : "업무 종료된 작업입니다. 기존 체적 측정 기록만 확인할 수 있습니다."}</p>
       ) : decision.verdict !== "ELIGIBLE" ? (
         <ExternalUseBlockerCard
@@ -674,6 +796,25 @@ function SingleVolumeWorkflow({
       ) : (
         <ActionUnavailable label="단일 시점 체적 측정 요청" description="단일 시점 체적 측정 요청에는 현장 쓰기 권한이 필요합니다. 권한 있는 담당자에게 요청하세요." />
       )}
+      {currentSingleKey !== null && retained[currentSingleKey]?.outcome === "unknown" && (
+        <p role="status" className="rounded-lg border border-line bg-sunk px-3 py-2 text-ink-2">이 선택의 단일 시점 체적 측정 요청 결과를 아직 확인하지 못했습니다. 목록에서 확인하거나 같은 선택으로 다시 시도하세요. 화면을 벗어나거나 새로고침하면 이 복구 정보가 사라집니다.</p>
+      )}
+      {pendingIssueConfirm && pendingSingleKey !== null && pendingSingleKey === currentSingleKey && (
+        <div role="alert" className="flex flex-col gap-2 rounded-lg border border-line bg-sunk px-3 py-2">
+          <p>이전 요청의 결과를 확인하지 못했습니다. 새로 요청하면 다른 요청 기록이 생길 수 있습니다. 목록에서 이미 만들어졌는지 먼저 확인하세요.</p>
+          <div className="flex flex-wrap gap-2">
+            <ResponsiveActionBoundary action="EXTERNAL_RECONSTRUCTION_MUTATION" reason="단일 시점 체적 측정 요청은 노트북 이상의 화면에서 진행합니다.">
+              <button className="btn" disabled={busy} onClick={() => confirmSingleIssue()}>새 요청 계속</button>
+            </ResponsiveActionBoundary>
+            <button className="btn" onClick={() => setPendingIssueConfirm(null)}>유지</button>
+          </div>
+        </div>
+      )}
+      {Object.entries(retained).filter(([key, entry]) => entry.outcome === "unknown" && key !== currentSingleKey).map(([key]) => (
+        <div key={key} role="status" className="flex flex-col gap-2 rounded-lg border border-line bg-sunk px-3 py-2">
+          <p>이전 단일 시점 체적 측정 요청의 결과를 확인하지 못했습니다(결정 식별자 끝자리 {key.split("|")[0].slice(-8)}). 원래 선택으로 돌아오면 같은 요청으로 다시 시도할 수 있습니다. 아래 목록에서 이미 만들어졌는지 먼저 확인하세요. 화면을 벗어나거나 새로고침하면 이 시도는 사라집니다.</p>
+        </div>
+      ))}
 
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h4 className="font-semibold">체적 측정 요청 목록</h4>
@@ -725,6 +866,7 @@ export function ExternalResultWorkflowPanel({
   initialReport,
   workAreaNames = {},
   newIntentAllowed = true,
+  legacyDecisionClosed = false,
 }: {
   workOrderId: string;
   siteId: string;
@@ -739,10 +881,20 @@ export function ExternalResultWorkflowPanel({
   /** Names resolved through the current principal's Site-scoped work-area read. */
   workAreaNames?: Readonly<Record<string, string>>;
   newIntentAllowed?: boolean;
+  /**
+   * OIDC-first 배포 경계: registry 발급(scoped) 신원에는 Core가 비교 발급
+   * (issue) 경로를 allowlist 밖으로 닫는다. 참이면 확정 403이 되는 발급
+   * 요청 버튼·안내를 내놓지 않고, 목록·결과·검토 읽기와 허용된 검토 기록은
+   * 그대로 둔다.
+   */
+  legacyDecisionClosed?: boolean;
 }) {
   const router = useRouter();
   const scope = useRef(0);
   const activeMutation = useRef<AbortController | null>(null);
+  // React가 busy/보관 상태를 확정하기 전에 같은 핸들러가 겹쳐도 한 번만
+  // 보내는 동기식 발급 잠금. busy는 화면 표시용이고, 이 잠금이 정확성을 맡는다.
+  const dispatchLock = useRef(false);
   const listAbort = useRef<AbortController | null>(null);
   const requestAbort = useRef<AbortController | null>(null);
   const reportAbort = useRef<AbortController | null>(null);
@@ -765,7 +917,18 @@ export function ExternalResultWorkflowPanel({
   const [report, setReport] = useState<ExternalRelativeVolumeReportView | null>(initialReport?.view ?? null);
   const [reportPhase, setReportPhase] = useState<Phase>(initialReport ? "ready" : "idle");
   const [busy, setBusy] = useState<BusyOperation | null>(null);
-  const [issueAttempt, setIssueAttempt] = useState<FrozenIssue | null>(null);
+  // 같은 키 재시도·확인을 같은 식별자로 묶기 위한 동결 시도 보관함. 결과가
+  // 모호한 시도만 남긴다 — 확정 거부(검증 실패)는 기록이 생기지 않으므로
+  // 버리고, 성공은 기록으로 확정한다. 선택이 바뀌어도 지우지 않는다:
+  // 늦게 도착한 응답은 도착 시점의 실제 선택과 비교한다.
+  const [retained, setRetained] = useState<Record<string, { attempt: FrozenIssue; outcome: "unknown" | "known" }>>({});
+  const [pendingIssueConfirm, setPendingIssueConfirm] = useState<{ decisionId: string; decisionDigest: string } | null>(null);
+  // 렌더 시점의 최신 결정을 가리킨다. 비동기 응답 처리에서 오래된 클로저의
+  // 결정과 비교하지 않는다. effect에서만 갱신한다(렌더 중 ref 쓰기 금지).
+  const latestDecision = useRef(decision);
+  useEffect(() => {
+    latestDecision.current = decision;
+  });
   const [reportWorkAreaName, setReportWorkAreaName] = useState<string | null>(initialReport?.workAreaName ?? null);
   const [message, setMessage] = useState<string | null>(null);
   const [worklistNotice, setWorklistNotice] = useState<string | null>(null);
@@ -776,9 +939,11 @@ export function ExternalResultWorkflowPanel({
   const hasApprovalPermission = permissions.includes("REOBSERVATION_APPROVE");
   // Issuing, proposing, and approving have retained idempotency attempts. A
   // closed task may reconcile that exact durable request, but cannot begin a
-  // replacement intent.
-  const canIssue = hasIssuePermission && (newIntentAllowed || issueAttempt !== null);
-  const decisionIdentity = decision ? `${decision.decisionId}|${decision.decisionDigest}` : "";
+  // replacement intent. The retained match must be the exact current decision —
+  // an unrelated old attempt never enables a new decision's button.
+  const currentRelativeDecisionKey = decision ? `${decision.decisionId}|${decision.decisionDigest}` : null;
+  const canIssue = hasIssuePermission
+    && (newIntentAllowed || (currentRelativeDecisionKey !== null && currentRelativeDecisionKey in retained));
 
   useEffect(() => {
     let active = true;
@@ -968,19 +1133,28 @@ export function ExternalResultWorkflowPanel({
     return () => controller.abort();
   }, [loadReport, selectedRequestRef, selectionGeneration, workOrderId]);
 
+  // 선택이 바뀌어도 진행 중인 발급을 중단하거나 동결된 시도를 버리지 않는다.
+  // 늦게 도착한 응답은 도착 시점의 실제 선택과 비교해 현재 선택과 다른
+  // 조건의 기록으로 둔갑시키지 않는다. 작업이 바뀌면 발급 범위를 무효화하고
+  // 진행 중 요청을 중단한다. 보관된 시도는 지우지 않는다 — 이전 요청의
+  // 모호함은 취소로 단정하지 않고 그대로 알린다.
+  /* eslint-disable react-hooks/set-state-in-effect -- 작업 전환에 동반된 발급 범위 무효화·대기 해제, workOrderId 변경마다 1회 */
   useEffect(() => {
     scope.current += 1;
-    const decisionScope = scope.current;
-    const controller = activeMutation.current;
+    activeMutation.current?.abort();
     activeMutation.current = null;
-    controller?.abort();
-    void Promise.resolve().then(() => {
-      if (scope.current !== decisionScope) return;
-      setBusy(null);
-      setIssueAttempt(null);
-      setMessage(null);
-    });
-  }, [decisionIdentity]);
+    setPendingIssueConfirm(null);
+    setBusy(null);
+  }, [workOrderId]);
+  /* eslint-enable react-hooks/set-state-in-effect */
+
+  // 확인·응답 안내는 고정한 발급 대상에만 묶인다. 선택이 바뀌면 보관함
+  // 안내가 이어받고, 여기서는 묵은 문구만 비운다.
+  const relativeDecisionKey = decision ? `${decision.decisionId}|${decision.decisionDigest}` : null;
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- 선택 변경에 동반된 발급 안내 1회 초기화, 보관함은 유지
+    setMessage(null);
+  }, [relativeDecisionKey]);
 
   useEffect(() => () => {
     activeMutation.current?.abort();
@@ -1027,25 +1201,23 @@ export function ExternalResultWorkflowPanel({
     setSelectedRequestRef(requestRef);
   };
 
-  const issue = async () => {
-    if (!decision || decision.verdict !== "ELIGIBLE" || !canIssue || busy) return;
-    let attempt = issueAttempt;
-    const matchesDecision = attempt?.decisionId === decision.decisionId
-      && attempt.decisionDigest === decision.decisionDigest;
-    if (!newIntentAllowed && !matchesDecision) {
-      setMessage("업무 종료 상태에서는 새 상대 물량 비교를 요청할 수 없습니다.");
-      return;
-    }
-    if (!matchesDecision) {
-      attempt = { decisionId: decision.decisionId, decisionDigest: decision.decisionDigest, idempotencyKey: makeKey() };
-      setIssueAttempt(attempt);
-    }
-    if (!attempt) return;
+  // 기록이 확정된 시도는 보관함에서 푼다. 모호한 시도는 절대 버리지
+  // 않는다 — 400 거부조차 Core 전달일 수 있어 기록 여부를 단정할 수 없다.
+  const resolveRetained = (key: string) => {
+    setRetained((previous) => {
+      if (!(key in previous)) return previous;
+      if (previous[key].outcome === "known") return previous;
+      return { ...previous, [key]: { ...previous[key], outcome: "known" } };
+    });
+  };
+
+  const postRelativeIssue = async (attempt: FrozenIssue) => {
+    const key = `${attempt.decisionId}|${attempt.decisionDigest}`;
     const { controller, requestScope } = beginMutation("issue");
     setMessage(null);
     try {
       const response = await fetch(
-        `/api/observation-work-orders/${encodeURIComponent(workOrderId)}/relative-volume-requests`,
+        `/api/observation-work-orders/${encodeURIComponent(attempt.workOrderId)}/relative-volume-requests`,
         {
           method: "POST",
           headers: { "content-type": "application/json", "idempotency-key": attempt.idempotencyKey },
@@ -1056,14 +1228,86 @@ export function ExternalResultWorkflowPanel({
       const value = await responseJson<{ verdict: string; request: unknown; detail: string | null }>(response);
       if (!ownsMutation(controller, requestScope)) return;
       if (!isKnownRequestView(value.request)) throw new Error(value.request === null ? (value.detail ?? value.verdict) : UNKNOWN_REQUEST_STATUS);
-      selectRequest(value.request.requestRef);
-      setMessage("외부 상대 물량 비교를 요청했습니다.");
+      // 기록이 확정됐다 — 같은 키의 재시딩 필요 없으니 보관함에서 푼다.
+      resolveRetained(key);
+      const current = latestDecision.current;
+      if (current && `${current.decisionId}|${current.decisionDigest}` === key) {
+        selectRequest(value.request.requestRef);
+        setMessage("외부 상대 물량 비교를 요청했습니다.");
+      } else {
+        // 현재 선택과 다른 조건의 기록이다. 자동 선택하지 않고 목록에서 확인한다.
+        setMessage("요청이 접수되었습니다. 현재 선택과 다른 조건의 요청이므로 목록에서 확인하세요.");
+      }
       void loadWorklist();
     } catch (error) {
-      if (!isAbort(error) && ownsMutation(controller, requestScope)) setMessage(issueFailureMessage(error));
+      if (isAbort(error) || !ownsMutation(controller, requestScope)) return;
+      if (
+        error instanceof WorkflowResponseError && error.status === 400 &&
+        error.message === "INVALID_EXTERNAL_RELATIVE_VOLUME_INTENT"
+      ) {
+        // BFF 400 코드는 Core 전달 오류를 그대로 옮길 수 있어 로컬 사전
+        // 거부 증명이 되지 않는다. 첫 전송이라도 기록 여부를 단정하지 않고
+        // 원래 시도·키·내용을 유지한 채 목록 확인을 안내한다.
+        setMessage("비교 요청이 거부되어 결과를 확인하지 못했습니다. 기록되었는지 확인할 수 없으니 아래 목록에서 먼저 확인하세요. 같은 선택에서는 같은 요청으로 다시 시도할 수 있습니다.");
+        return;
+      }
+      // 그 외 실패는 모호하다 — 동결된 시도를 유지하고 같은 키로 재시도한다.
+      setMessage(issueFailureMessage(error));
     } finally {
       finishMutation(controller, requestScope);
     }
+  };
+
+  const issue = async (confirmed = false) => {
+    if (dispatchLock.current) return;
+    dispatchLock.current = true;
+    try {
+      const current = latestDecision.current;
+      if (!current || current.verdict !== "ELIGIBLE" || !canIssue || busy) return;
+      if (legacyDecisionClosed) {
+        setMessage("이 화면의 상대 물량 비교 요청은 현재 계정의 배포 범위에 열려 있지 않습니다. 기존 비교 요청 목록과 결과·검토 기록은 그대로 볼 수 있습니다. 새로운 두 시점 관측 변화 분석은 현장의 분석 화면에서 진행합니다.");
+        return;
+      }
+      const key = `${current.decisionId}|${current.decisionDigest}`;
+      if (retained[key]) {
+        if (retained[key].attempt.workOrderId !== workOrderId) {
+          // 보관된 시도는 원래 작업의 것이다. 다른 작업 URL로는 절대 다시
+          // 보내지 않는다. 취소로 단정하지 않고 원래 작업에서의 재시도를 안내한다.
+          setMessage("이전 작업에서 시작한 비교 요청은 이 작업에서 다시 보낼 수 없습니다. 원래 작업 화면에서 같은 선택으로 다시 시도하거나, 목록에서 확인하세요.");
+          return;
+        }
+        // 같은 조건의 재시도 — 새 키를 만들지 않는다.
+        setPendingIssueConfirm(null);
+        await postRelativeIssue(retained[key].attempt);
+        return;
+      }
+      if (!newIntentAllowed) {
+        setMessage("업무 종료 상태에서는 새 상대 물량 비교를 요청할 수 없습니다.");
+        return;
+      }
+      const uncertainOther = Object.entries(retained).some(([otherKey, entry]) => otherKey !== key && entry.outcome === "unknown");
+      const confirmedForIntent = confirmed && pendingIssueConfirm !== null
+        && `${pendingIssueConfirm.decisionId}|${pendingIssueConfirm.decisionDigest}` === key;
+      if (uncertainOther && !confirmedForIntent) {
+        // 확정되지 않은 이전 시도가 있으면 새 키를 만들지 않는다. 확인 블록이
+        // 경고 문구를 들고 있으므로 공용 안내는 비워 둔다.
+        setPendingIssueConfirm({ decisionId: current.decisionId, decisionDigest: current.decisionDigest });
+        return;
+      }
+      setPendingIssueConfirm(null);
+      const attempt: FrozenIssue = { decisionId: current.decisionId, decisionDigest: current.decisionDigest, idempotencyKey: makeKey(), workOrderId };
+      setRetained((previous) => ({ ...previous, [key]: { attempt, outcome: "unknown" } }));
+      await postRelativeIssue(attempt);
+    } finally {
+      dispatchLock.current = false;
+    }
+  };
+
+  const confirmRelativeIssue = () => {
+    const pending = pendingIssueConfirm;
+    if (!pending) return;
+    // 확인은 본 조건에 대해서만 유효하다. 선택이 바뀌었으면 새 조건으로 다시 경고한다.
+    void issue(true);
   };
 
   const refreshActualWorklist = async (
@@ -1098,6 +1342,10 @@ export function ExternalResultWorkflowPanel({
     router.push(`/field/work-orders/${encodeURIComponent(receipt.successorWorkOrderId)}`);
   };
 
+  // 확인 대화상자는 현재 선택과 묶인 새 의도에 대해서만 보여준다. 선택이
+  // 바뀌면 보관함의 같은 키 재시도 안내가 대신 이어진다.
+  const pendingRelativeKey = pendingIssueConfirm ? `${pendingIssueConfirm.decisionId}|${pendingIssueConfirm.decisionDigest}` : null;
+  const currentRelativeKey = decision ? `${decision.decisionId}|${decision.decisionDigest}` : null;
   return (
     <section id="external-volume" className="flex flex-col gap-3 rounded-xl border border-line bg-surface p-4 text-[13px]">
       <div>
@@ -1106,7 +1354,12 @@ export function ExternalResultWorkflowPanel({
       </div>
       {!newIntentAllowed && <p className="rounded-lg border border-line bg-sunk px-3 py-2 leading-5 text-ink-2">업무 종료 상태입니다. 새 비교·검토·재관측 요청은 시작할 수 없지만, 기존 요청과 결과는 계속 확인할 수 있습니다.</p>}
 
-      {!decision ? (
+      {legacyDecisionClosed ? (
+        <div role="status" className="flex flex-col gap-2">
+          <p className="text-ink-2">이 화면의 상대 물량 비교 요청은 현재 계정의 배포 범위에 열려 있지 않습니다. 기존 비교 요청 목록과 결과·검토 기록은 아래에서 그대로 볼 수 있습니다. 새로운 두 시점 관측 변화 분석은 현장의 분석 화면에서 진행합니다.</p>
+          <a className="btn w-fit" href={`/sites/${encodeURIComponent(siteId)}/analysis`}>분석 화면 열기</a>
+        </div>
+      ) : !decision ? (
         <p>{newIntentAllowed ? "현재 선택에서 상대 물량 비교를 요청하세요." : "업무 종료된 작업입니다. 기존 비교 결과와 요청 기록만 확인할 수 있습니다."}</p>
       ) : decision.verdict !== "ELIGIBLE" ? (
         <ExternalUseBlockerCard
@@ -1125,6 +1378,25 @@ export function ExternalResultWorkflowPanel({
       ) : (
         <ActionUnavailable label="상대 물량 비교 요청" description="상대 물량 비교 요청에는 현장 쓰기 권한이 필요합니다. 권한 있는 담당자에게 요청하세요." />
       )}
+      {currentRelativeKey !== null && retained[currentRelativeKey]?.outcome === "unknown" && (
+        <p role="status" className="rounded-lg border border-line bg-sunk px-3 py-2 text-ink-2">이 선택의 상대 물량 비교 요청 결과를 아직 확인하지 못했습니다. 목록에서 확인하거나 같은 선택으로 다시 시도하세요. 화면을 벗어나거나 새로고침하면 이 복구 정보가 사라집니다.</p>
+      )}
+      {pendingIssueConfirm && pendingRelativeKey !== null && pendingRelativeKey === currentRelativeKey && (
+        <div role="alert" className="flex flex-col gap-2 rounded-lg border border-line bg-sunk px-3 py-2">
+          <p>이전 요청의 결과를 확인하지 못했습니다. 새로 요청하면 다른 요청 기록이 생길 수 있습니다. 목록에서 이미 만들어졌는지 먼저 확인하세요.</p>
+          <div className="flex flex-wrap gap-2">
+            <ResponsiveActionBoundary action="EXTERNAL_RECONSTRUCTION_MUTATION" reason="외부 상대 물량 비교 요청은 노트북 이상의 화면에서 진행합니다.">
+              <button className="btn" disabled={busy !== null} onClick={() => confirmRelativeIssue()}>새 요청 계속</button>
+            </ResponsiveActionBoundary>
+            <button className="btn" onClick={() => setPendingIssueConfirm(null)}>유지</button>
+          </div>
+        </div>
+      )}
+      {Object.entries(retained).filter(([key, entry]) => entry.outcome === "unknown" && key !== currentRelativeKey).map(([key]) => (
+        <div key={key} role="status" className="flex flex-col gap-2 rounded-lg border border-line bg-sunk px-3 py-2">
+          <p>이전 상대 물량 비교 요청의 결과를 확인하지 못했습니다(결정 식별자 끝자리 {key.split("|")[0].slice(-8)}). 원래 선택으로 돌아오면 같은 요청으로 다시 시도할 수 있습니다. 아래 목록에서 이미 만들어졌는지 먼저 확인하세요. 화면을 벗어나거나 새로고침하면 이 시도는 사라집니다.</p>
+        </div>
+      ))}
 
       <div className="rounded-lg border border-line p-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
@@ -1165,7 +1437,6 @@ export function ExternalResultWorkflowPanel({
       </>}
 
       {singleVolumeDecision !== undefined && <SingleVolumeWorkflow
-        key={workOrderId}
         workOrderId={workOrderId}
         decision={singleVolumeDecision}
         canIssuePermission={hasIssuePermission}
@@ -1174,6 +1445,7 @@ export function ExternalResultWorkflowPanel({
         canApprovePermission={hasApprovalPermission}
         workAreaNames={workAreaNames}
         onApproved={handleApproved}
+        legacyDecisionClosed={legacyDecisionClosed}
       />}
 
       {message && <p role="status">{message}</p>}

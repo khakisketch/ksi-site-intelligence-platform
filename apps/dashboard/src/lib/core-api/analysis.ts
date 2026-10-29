@@ -287,8 +287,8 @@ export function listAnalyses(
   });
 }
 
-export function getAnalysis(siteId: string, analysisId: string): Promise<AnalysisView> {
-  return coreFetch(`/v2/sites/${encodeURIComponent(siteId)}/analyses/${encodeURIComponent(analysisId)}`);
+export function getAnalysis(siteId: string, analysisId: string, options: { signal?: AbortSignal } = {}): Promise<AnalysisView> {
+  return coreFetch(`/v2/sites/${encodeURIComponent(siteId)}/analyses/${encodeURIComponent(analysisId)}`, options);
 }
 
 export function getAnalysisResult(siteId: string, analysisId: string): Promise<AnalysisView> {
@@ -332,11 +332,11 @@ export function createAnalysisReview(
 export function getAnalysisEvidence(
   siteId: string,
   analysisId: string,
-  options: { limit?: number; cursor?: string | null } = {},
+  options: { limit?: number; cursor?: string | null; signal?: AbortSignal } = {},
 ): Promise<AnalysisEvidencePage> {
   return coreFetch(
     `/v2/sites/${encodeURIComponent(siteId)}/analyses/${encodeURIComponent(analysisId)}/evidence`,
-    { query: { limit: options.limit ?? 32, cursor: options.cursor ?? undefined } },
+    { query: { limit: options.limit ?? 32, cursor: options.cursor ?? undefined }, ...(options.signal ? { signal: options.signal } : {}) },
   );
 }
 

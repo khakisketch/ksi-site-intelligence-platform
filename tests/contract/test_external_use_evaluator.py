@@ -164,6 +164,13 @@ class _Evidence:
         del evidence_ref
         return None
 
+    def locally_matches(self, evidence_ref: str, item: object) -> bool:
+        del evidence_ref, item
+        return False
+
+    def assert_locally_available(self) -> None:
+        pass
+
 
 class _SyntheticHistoryVerifier:
     """Fixture-only source verifier; production assembly uses Core resolvers."""

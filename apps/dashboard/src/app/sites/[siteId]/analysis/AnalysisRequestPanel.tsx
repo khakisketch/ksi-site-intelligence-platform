@@ -3,6 +3,7 @@
 import type { DeltaExportDeliveryConfig } from "@/lib/delta-export-config";
 import { AnalysisDeltaPublication } from "./AnalysisDeltaPublication";
 import { AnalysisMaskedCalculation } from "./AnalysisMaskedCalculation";
+import { AnalysisCoverage } from "@/components/analysis/AnalysisCoverage";
 
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import Link from "next/link";
@@ -308,7 +309,32 @@ function suitabilityLabel(state: AnalysisView["suitabilityState"]) {
     EVALUATED: { label: "평가 근거 있음", tone: "positive" },
     REASSESSMENT_REQUIRED: { label: "재평가 필요", tone: "warning" },
   } as const;
-  return labels[state];
+  return labels[state] ?? { label: "확인 불가", tone: "neutral" as const };
+}
+
+/**
+ * 수치 결과 옆 적합성 한 줄 — Core가 투영한 현재 적합성 상태를 그대로 밝힌다.
+ * Core는 수치 결과를 PROVISIONAL·EVALUATED에서만 싣지만, 화면은 다른 상태가
+ * 와도 "아직 확인되지 않음"으로 뭉개지 않는다. 실패·보완·재평가·차단은
+ * 미확인과 다른 사실이므로(계약의 provisional/evaluated/remediation 구분과
+ * Core _view의 suitability 투영) 각각 있는 그대로 둔다. 역사적 수치·스냅샷을
+ * 바꾸거나 접근 정책을 건드리지 않는다.
+ */
+function suitabilityResultNote(state: AnalysisView["suitabilityState"]): string {
+  switch (state) {
+    case "EVALUATED":
+      return "독립 평가 근거가 있습니다. 이 기록은 물량 정확도 보증, 측량 승인 또는 정산 사용 승인을 뜻하지 않습니다.";
+    case "PROVISIONAL_ACCURACY_UNVERIFIED":
+      return "독립 정확도 평가는 아직 확인되지 않았습니다. 이 기록은 물량 정확도 보증, 측량 승인 또는 정산 사용 승인을 뜻하지 않습니다.";
+    case "REASSESSMENT_REQUIRED":
+      return "이 기록의 현재 적합성은 재평가가 필요합니다. 표시된 수치는 기록된 계산 값이며, 재평가 전에는 물량 정확도 보증, 측량 승인 또는 정산 사용 승인을 뜻하지 않습니다.";
+    case "REMEDIATION_REQUIRED":
+      return "이 기록은 평가 보완이 필요합니다. 표시된 수치를 확정된 결과로 쓰지 마세요. 물량 정확도 보증, 측량 승인 또는 정산 사용 승인을 뜻하지 않습니다.";
+    case "BLOCKED":
+      return "이 기록의 현재 적합성은 차단되었습니다. 표시된 수치를 확정된 결과로 쓰지 마세요. 물량 정확도 보증, 측량 승인 또는 정산 사용 승인을 뜻하지 않습니다.";
+    default:
+      return "이 기록의 적합성 상태를 확인하지 못했습니다. 표시된 수치를 확정된 결과로 쓰지 마세요. 물량 정확도 보증, 측량 승인 또는 정산 사용 승인을 뜻하지 않습니다.";
+  }
 }
 
 function analysisCodeLabel(code: string): string {
@@ -350,16 +376,29 @@ function MetricSummary({ summary, detail }: { summary: AnalysisListRow; detail: 
   const result = detail?.result;
   const metrics = result?.metrics ?? summary.metrics;
   if (!metrics) return null;
-  // 같은 날 여러 기록이 있어도 랜드마크 이름이 겹치지 않게 생성 시각을 붙인다
-  // (같은 이름의 랜드마크가 둘 이상이면 화면 낭독기에서 구분할 수 없다).
-  const label = `계산 결과 · ${formatKoreanDateTime(summary.createdAt, { dateStyle: "medium", timeStyle: "short" })}`;
+  // 기록된 불확실성 — 계산·추론하지 않고 기록된 값 그대로 둔다.
+  // null은 기록된 값이 없다는 뜻이며 0으로 볼 수 없다. 실제가 0인지,
+  // 오차 범위가 있는지 단정하지 않으며 검사점 평가와 별개다. EVALUATED여도
+  // 알려진 불확도로 읽지 않는다. 0은 기록된 수치이므로 null과 구분한다.
+  // metrics가 없을 때(로딩·오류·미생성)는 이 줄을 두지 않는다.
+  const uncertaintyKnown = typeof metrics.uncertaintyM3 === "number" && Number.isFinite(metrics.uncertaintyM3);
+  const uncertaintyUnknown = metrics.uncertaintyM3 === null;
+  // 분 단위 생성 시각은 같을 수 있다. 이미 카드의 처리 상세에 표시되는 전체
+  // 분석 ID도 붙여 같은 이름의 랜드마크를 화면 낭독기에서 혼동하지 않게 한다.
+  const label = `계산 결과 · ${formatKoreanDateTime(summary.createdAt, { dateStyle: "medium", timeStyle: "short" })} · 분석 ID ${summary.analysisId}`;
   return <section className="border-t border-line px-4 py-3" aria-label={label}>
     <h3 className="text-[13px] font-bold">계산 결과</h3>
-    <dl className="mt-2 grid gap-2 border-t border-line pt-2 sm:grid-cols-3 sm:gap-3">
+    <p className="mt-1 text-[12px] leading-5 text-ink-2">{suitabilityResultNote(detail?.suitabilityState ?? summary.suitabilityState)}</p>
+    <dl className="mt-2 grid grid-cols-2 gap-3 border-t border-line pt-2 sm:grid-cols-3">
       <div className="min-w-0"><dt className="text-[12px] font-semibold text-ink-muted">절토</dt><dd className="num mt-1 break-words text-[16px] font-bold">{formatNumber(metrics.cutM3, "m³")}</dd></div>
       <div className="min-w-0"><dt className="text-[12px] font-semibold text-ink-muted">성토</dt><dd className="num mt-1 break-words text-[16px] font-bold">{formatNumber(metrics.fillM3, "m³")}</dd></div>
       <div className="min-w-0"><dt className="text-[12px] font-semibold text-ink-muted">순변화</dt><dd className="num mt-1 break-words text-[16px] font-bold">{formatNumber(metrics.netM3, "m³")}</dd></div>
     </dl>
+    {uncertaintyUnknown ? (
+      <p className="mt-2 text-[12px] leading-5 text-ink-2">불확실성 미기록 — 기록된 값이 없으므로 0으로 볼 수 없습니다. 검사점 평가와 별개입니다.</p>
+    ) : uncertaintyKnown ? (
+      <p className="num mt-2 break-words text-[12px] leading-5 text-ink-2">불확실성 ±{formatNumber(metrics.uncertaintyM3 as number, "m³")} (기록값)</p>
+    ) : null}
     {result && <>
       <dl className="mt-3 grid gap-2 text-[12px] text-ink-2 sm:grid-cols-2">
         <div><dt className="text-ink-muted">선택 면적</dt><dd>{formatNumber(result.coverage.selectedAreaM2, "m²")}</dd></div>
@@ -368,8 +407,8 @@ function MetricSummary({ summary, detail }: { summary: AnalysisListRow; detail: 
         <div><dt className="text-ink-muted">공통 유효 셀</dt><dd>{formatCountKo(result.coverage.commonValidCellCount)}</dd></div>
       </dl>
       <p className="mt-2 text-[12px] leading-5 text-ink-muted">임계값 {formatNumber(metrics.thresholdM, "m")}: 높이 차이 기준으로 제외된 셀 {formatCountKo(result.coverage.thresholdExcludedCellCount)}개. 공통 유효 영역은 두 관측에서 유효한 셀로 별도 제한됩니다.</p>
+      <AnalysisCoverage detail={detail} />
       <ResultIdentity result={result} />
-      <p className="mt-2 text-[12px] leading-5 text-ink-muted">{detail.suitabilityState === "EVALUATED" ? "독립 평가 근거가 있습니다. 이 기록은 물량 정확도 보증, 측량 승인 또는 정산 사용 승인을 뜻하지 않습니다." : "독립 정확도 평가는 아직 확인되지 않았습니다. 이 기록은 물량 정확도 보증, 측량 승인 또는 정산 사용 승인을 뜻하지 않습니다."}</p>
       {result.limitationCodes.length > 0 && <IssueCodeList codes={result.limitationCodes} />}
     </>}
     {!result && summary.limitationCount > 0 && <p className="mt-2 text-[12px] text-ink-muted">제한 코드 {summary.limitationCount}개 · 상세에서 확인</p>}
@@ -567,7 +606,7 @@ function AnalysisCard({ summary, detail, selected, onSelect, evidencePages, site
       <button type="button" className={`btn ${primary ? "btn-primary" : ""}`} onClick={onSelect} aria-current={selected ? "page" : undefined}>이 변화 분석 보기</button>
     </div>
     {detail && <NewerObservationNotice siteId={siteId} detail={detail} summaryNewerSiblingIds={summary.newerSiblingAnalysisIds} observations={observations} siteObservations={siteObservations} analyses={newerAnalyses} />}
-      <div className="grid gap-2 border-t border-line px-4 py-3 sm:grid-cols-2"><div><p className="mb-1 text-[12px] text-ink-muted">실행 상태</p><StateBadge label={execution.label} tone={execution.tone} /></div><div><p className="mb-1 text-[12px] text-ink-muted">적합성 상태</p><StateBadge label={suitability.label} tone={suitability.tone} /></div>{summary.executionState === "COMPLETED" && summary.suitabilityState === "REASSESSMENT_REQUIRED" && <p className="rounded-md bg-high-bg px-3 py-2 text-[12.5px] leading-5 text-high-ink sm:col-span-2">계산은 완료됐습니다. 현장 적합성은 재평가가 필요합니다.</p>}{summary.executionState === "FAILED" && <p className="rounded-md bg-crit-bg px-3 py-2 text-[12.5px] leading-5 text-crit-ink sm:col-span-2">{detail?.blockers.length ? "Core의 실패 사유와 필요한 조치를 아래에서 확인하세요. 원인을 확인하기 전에는 같은 요청을 반복하지 마세요." : canCreate ? "Core가 변화 분석을 완료하지 못했습니다. 아래 상세의 실패 사유를 검토하고 자료 또는 운영 담당자와 해결 여부를 확인하세요. 결과를 0으로 해석하거나 같은 요청을 바로 반복하지 마세요." : "Core가 변화 분석을 완료하지 못했습니다. 현장 변화 분석 담당자에게 실패 사유와 근거 검토를 요청하세요."}</p>}</div>
+      <div className="grid grid-cols-2 gap-2 border-t border-line px-4 py-3"><div className="min-w-0"><p className="mb-1 text-[12px] text-ink-muted">실행 상태</p><StateBadge label={execution.label} tone={execution.tone} /></div><div className="min-w-0"><p className="mb-1 text-[12px] text-ink-muted">적합성 상태</p><StateBadge label={suitability.label} tone={suitability.tone} /></div>{summary.executionState === "COMPLETED" && summary.suitabilityState === "REASSESSMENT_REQUIRED" && <p className="col-span-2 rounded-md bg-high-bg px-3 py-2 text-[12.5px] leading-5 text-high-ink">계산은 완료됐습니다. 현장 적합성은 재평가가 필요합니다.</p>}{summary.executionState === "FAILED" && <p className="col-span-2 rounded-md bg-crit-bg px-3 py-2 text-[12.5px] leading-5 text-crit-ink">{detail?.blockers.length ? "Core의 실패 사유와 필요한 조치를 아래에서 확인하세요. 원인을 확인하기 전에는 같은 요청을 반복하지 마세요." : canCreate ? "Core가 변화 분석을 완료하지 못했습니다. 아래 상세의 실패 사유를 검토하고 자료 또는 운영 담당자와 해결 여부를 확인하세요. 결과를 0으로 해석하거나 같은 요청을 바로 반복하지 마세요." : "Core가 변화 분석을 완료하지 못했습니다. 현장 변화 분석 담당자에게 실패 사유와 근거 검토를 요청하세요."}</p>}</div>
     {detail?.blockers.length ? <section className="border-t border-line px-4 py-3" aria-label="확인 및 보완"><h3 className="text-[13px] font-bold">확인 및 보완</h3><ul className="mt-2 space-y-2">{detail.blockers.map((blocker, index) => <AnalysisBlockerItem key={`${blocker.code}-${index}`} blocker={blocker} siteId={siteId} workAreaId={workAreaId} />)}</ul></section> : null}
     {detail ? <MetricSummary summary={summary} detail={detail} /> : !selected && summary.metrics ? <MetricSummary summary={summary} detail={null} /> : null}
     {selected && detail?.executionState === "COMPLETED" && detail.result && <AnalysisDeltaPublication
@@ -687,6 +726,27 @@ function analysisReviewLoadError(status: number): string {
   if (status === 409) return "변화 분석 기록이 갱신되었습니다. 상세를 다시 불러오세요.";
   if (status === 503) return "검토 상태 저장소를 사용할 수 없습니다. 잠시 후 다시 시도하세요.";
   return "검토 상태를 불러오지 못했습니다.";
+}
+
+/**
+ * 요청 제출 실패 안내 — 세션·권한·충돌은 조건 확인과 같은 기준으로 밝힌다.
+ * 보류 시도(멱등 키·동결 선택자)는 어떤 실패에서도 여기서 지우지 않는다.
+ * 호출자가 같은 요청 식별자로 다시 확인하거나 직접 취소한다.
+ */
+function submitRequestError(status: number): { message: string; needsReLogin: boolean } {
+  if (status === 401) return {
+    message: "세션이 만료되어 요청을 보내지 못했습니다. 다시 로그인한 뒤 보류 요청에서 같은 요청 식별자로 다시 시도하세요.",
+    needsReLogin: true,
+  };
+  if (status === 403) return {
+    message: "변화 분석 요청 권한이 없습니다. 현장 쓰기 권한이 있는 담당자에게 요청하세요. 보류 요청은 유지되며 권한 확인 뒤 같은 요청 식별자로 다시 시도할 수 있습니다.",
+    needsReLogin: false,
+  };
+  if (status === 409) return {
+    message: "같은 요청 식별자로 다른 요청이 이미 접수되어 있습니다. 보류 요청을 취소하고 기준·현재 선택을 다시 확인하세요.",
+    needsReLogin: false,
+  };
+  return { message: "요청을 다시 시도하세요.", needsReLogin: false };
 }
 
 function reviewUrl(siteId: string, analysisId: string) {
@@ -1195,6 +1255,7 @@ export function AnalysisRequestPanel({
   catalogPair = null,
   deltaExportConfig = null,
   maskUploadBudgetBytes = null,
+  listsState = null,
 }: {
   siteId: string;
   workAreas: readonly { workAreaId: string; name: string }[];
@@ -1238,6 +1299,23 @@ export function AnalysisRequestPanel({
   visualContextNotice?: string | null;
   deltaExportConfig?: DeltaExportDeliveryConfig | null;
   maskUploadBudgetBytes?: number | null;
+  /**
+   * 서버에서 확인하지 못한 목록 — unavailable을 empty로 다루지 않기 위한 명시 상태.
+   * 없으면(기존 호출) 모두 ready로 본다.
+   */
+  listsState?: {
+    workAreas: "ready" | "unavailable" | "unconfirmed" | "denied";
+    observations: "ready" | "unavailable" | "unconfirmed" | "denied";
+    /**
+     * 관측-작업구역 귀속(작업지시 목록) 확인 상태. unavailable이면 귀속을
+     * 모르므로 후보 있음/없음을 단정하지 않는다. 빈 목록([])은 ready다.
+     */
+    workOrders: "ready" | "unavailable" | "unconfirmed" | "denied";
+    history: "ready" | "denied" | "unconfirmed" | "failed";
+    historyMessage?: string | null;
+    /** Core이 돌려준 재시도 대기(초). 있으면 그 전에는 다시 불러오지 않는다. */
+    historyRetryAfterSeconds?: number | null;
+  } | null;
 }) {
   const router = useRouter();
   const firstPage = fromListPage(initialPage);
@@ -1297,11 +1375,30 @@ export function AnalysisRequestPanel({
   const [attempt, setAttempt] = useState<Attempt | null>(null);
   const [activationBlock, setActivationBlock] = useState<ActivationBlockCode | null>(null);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<{ analysisId: string | null; message: string } | null>(null);
+  const [error, setError] = useState<{ analysisId: string | null; message: string; reLoginHref?: string } | null>(null);
   const [detailLoadingId, setDetailLoadingId] = useState<string | null>(null);
   const [listLoading, setListLoading] = useState(false);
   const [listLoadError, setListLoadError] = useState(false);
   const [listRestartRequired, setListRestartRequired] = useState(false);
+  // 서버 이력 실패 뒤 클라이언트 다시 불러오기로 회복했는지 — 회복되면
+  // 서버 상태 안내를 거두고 읽은 이력을 그대로 둔다.
+  const [historyRecovered, setHistoryRecovered] = useState(false);
+  // Core이 돌려준 재시도 대기(초). 대기 중에는 다시 불러오기를 눌게 두지 않는다.
+  // 첫 렌더는 lazy 초기값으로, 이후 서버 상태 변경은 보류 시도 복원과 같은
+  // 지연 동기화로 둔다(동기 setState가 아니다).
+  const historyRetryAfterSeconds = listsState?.history === "failed" ? (listsState?.historyRetryAfterSeconds ?? null) : null;
+  const [historyRetryWait, setHistoryRetryWait] = useState<number | null>(() =>
+    historyRetryAfterSeconds !== null && historyRetryAfterSeconds > 0 ? historyRetryAfterSeconds : null);
+  useEffect(() => {
+    if (historyRetryAfterSeconds === null || historyRetryAfterSeconds <= 0 || historyRecovered) return;
+    const id = setTimeout(() => setHistoryRetryWait(historyRetryAfterSeconds), 0);
+    return () => clearTimeout(id);
+  }, [historyRetryAfterSeconds, historyRecovered]);
+  useEffect(() => {
+    if (historyRetryWait === null || historyRetryWait <= 0) return;
+    const id = setTimeout(() => setHistoryRetryWait((wait) => (wait !== null && wait > 0 ? wait - 1 : wait)), 1000);
+    return () => clearTimeout(id);
+  }, [historyRetryWait]);
   const [evidence, setEvidence] = useState<LoadedEvidence | null>(null);
   const [evidenceLoading, setEvidenceLoading] = useState(false);
   const [evidenceRestartRequired, setEvidenceRestartRequired] = useState(false);
@@ -1392,7 +1489,14 @@ export function AnalysisRequestPanel({
   const pairBlocked = isKnownBadPairSelection(pairIssue.kind);
   // 보류 재시도(attempt)는 고정된 selector·멱등 키로만 다시 보낸다. 새 조합의
   // 시간 판독 게이트는 보류 재시도 경로에 적용하지 않는다.
-  const canSubmit = !busy && (attempt !== null || (selectionReady && !pairBlocked));
+  // 후보 목록을 확인하지 못했으면 새 선택 제출을 열지 않는다 — 보류 재시도는
+  // Core가 같은 식별자·동결 선택자를 다시 판정하므로 회복 경로로 둔다.
+  const workAreasReady = (listsState?.workAreas ?? "ready") === "ready";
+  const observationsReady = (listsState?.observations ?? "ready") === "ready";
+  const attributionReady = (listsState?.workOrders ?? "ready") === "ready";
+  const historyReady = (listsState?.history ?? "ready") === "ready";
+  const candidatesReady = workAreasReady && observationsReady && attributionReady;
+  const canSubmit = !busy && (attempt !== null || (selectionReady && !pairBlocked && candidatesReady));
   const latestRow = pages[0]?.items[0] ?? null;
   const latestNextAction = !latestRow
     ? ""
@@ -1632,6 +1736,8 @@ export function AnalysisRequestPanel({
       }
       if (!mountedRef.current || controller.signal.aborted || listGeneration.current !== generation) return;
       setPagesAndRef(() => [loaded.page]);
+      // 이력 구역 실패 뒤 다시 불러오기로 읽었으면 서버 상태 안내를 거둔다.
+      setHistoryRecovered(true);
       // A completed execution can lose current numeric suitability without changing
       // its execution state. Retire contradicted cached detail before awaiting I/O.
       const invalidIds = new Set(loaded.page.items.filter((row) => {
@@ -1692,6 +1798,7 @@ export function AnalysisRequestPanel({
       }
       if (!mountedRef.current || listGeneration.current !== generation) return;
       setPagesAndRef((current) => [...current, loaded.page]);
+      setHistoryRecovered(true);
       setListLoadError(false);
     } catch (loadError) {
       if (!(loadError instanceof DOMException && loadError.name === "AbortError") && mountedRef.current && listGeneration.current === generation) {
@@ -1837,7 +1944,20 @@ export function AnalysisRequestPanel({
         setError({ analysisId: null, message: activationBlockMessages[blockedBy] });
         return;
       }
-      if (!response.ok || !isAnalysisView(value)) throw new Error("요청을 다시 시도하세요.");
+      if (!response.ok || !isAnalysisView(value)) {
+        const failure = submitRequestError(response.status);
+        // 401·403·409는 재시도 안내가 다르다. 그 밖은 기존 일반 문구를 둔다.
+        // 어떤 실패에서도 보류 시도를 여기서 지우지 않는다 — 호출자가 같은
+        // 요청 식별자로 다시 확인하거나 직접 취소한다.
+        if (response.status === 401 || response.status === 403 || response.status === 409) {
+          const reLoginHref = failure.needsReLogin && typeof window !== "undefined"
+            ? `/login?next=${encodeURIComponent(safeNextPath(`${window.location.pathname}${window.location.search}`))}`
+            : undefined;
+          setError({ analysisId: null, message: failure.message, reLoginHref });
+          return;
+        }
+        throw new Error(failure.message);
+      }
       if (!clearPendingAttempt(attemptScope)) throw new Error("요청은 접수됐지만 재시도 기록을 제거하지 못했습니다. 같은 요청으로 다시 확인하세요.");
       setAttempt(null);
       upsertDetail(value);
@@ -1914,12 +2034,14 @@ export function AnalysisRequestPanel({
   // 후보가 없으면 빈 선택지를 요구 조건처럼 두지 않는다 — 가져온 쌍과 실제
   // 다음 행동을 밝힌다. Core 판정·권한·입력 계약은 바꾸지 않는다. 보류 중인
   // 요청이 있으면 그 이어가기가 우선이다.
-  const noCandidateForArea = Boolean(workAreaId) && scopedObservations.length === 0 && !attempt;
+  const noCandidateForArea = Boolean(workAreaId) && observationsReady && attributionReady && scopedObservations.length === 0 && !attempt;
+  // 목록을 확인하지 못했으면 후보 없음으로 단정하지 않는다. 보류 재시도는
+  // 목록과 무관하게 Core가 같은 식별자·동결 선택자를 다시 판정하므로 막지 않는다.
+  const listsBlockedForArea = Boolean(workAreaId) && !candidatesReady && !attempt;
 
-  // 둘러보기 쌍(visualContext)만으로는 새 요청을 먼저 두지 않는다 — 기록·차단
-  // 사유·수치가 먼저다. 새 요청서가 먼저 오는 것은 명시적 요청 진입일 때뿐이다:
-  // 정확한 선택자 힌트(일치·불일치 공지 포함) 또는 보류 중인 요청 식별자.
-  // 머리 결과 이동은 힌트·앵커를 싣지 않으므로 기록 우선이 된다.
+  // 명시적 요청 진입만 폼을 먼저 둔다. 비동기로 복원되거나 제출 중 생기는
+  // attempt는 폼을 이동시키지 않는다. 대신 이력 앞의 안내에서 이어갈 수 있다.
+  // 기록 딥링크와 일반 결과 진입은 기록 우선이다.
   const draftFirst = !initialAnalysisId && Boolean(exactHintNotice || initialBaselineSelector || initialCurrentSelector);
   // 가져온 쌍의 표시 — 형태 검증만 된 가져온 값이다. 이 현장·조직 범위에서
   // 확인한 작업명과 후보 대조 사실만 밝힌다. 범위 밖 값은 기록으로 검증하지
@@ -1936,10 +2058,34 @@ export function AnalysisRequestPanel({
         scopedName: typeof scopedName === "string" ? scopedName : null,
       };
     });
+  const listFailureDetails = listsState && (
+    <>
+      {!workAreasReady && <p>{listsState.workAreas === "denied" ? "작업구역 목록을 조회할 권한이 없습니다. 현장 담당자에게 조회 권한을 요청하세요." : listsState.workAreas === "unconfirmed" ? "작업구역 목록을 확인할 수 없습니다. 현장 범위를 확인하거나 다시 불러오세요." : "작업구역 목록을 불러오지 못했습니다."}</p>}
+      {!observationsReady && <p>{listsState.observations === "denied" ? "관측 목록을 조회할 권한이 없습니다. 현장 담당자에게 조회 권한을 요청하세요." : listsState.observations === "unconfirmed" ? "관측 목록을 확인할 수 없습니다. 현장 범위를 확인하거나 다시 불러오세요." : "관측 목록을 불러오지 못했습니다."}</p>}
+      {!attributionReady && <p>{listsState.workOrders === "denied" ? "관측과 작업구역의 연결 정보를 조회할 권한이 없습니다. 현장 담당자에게 조회 권한을 요청하세요." : listsState.workOrders === "unconfirmed" ? "관측과 작업구역의 연결 정보를 확인할 수 없습니다. 현장 범위를 확인하거나 다시 불러오세요." : "관측과 작업구역의 연결 정보를 불러오지 못했습니다."}</p>}
+    </>
+  );
+  // 목록 실패로 구역 후보를 보여줄 수 없을 때는 후보 없음으로 단정하지 않는다.
+  const listsBlockedBlock = listsBlockedForArea && (
+    <div className="mt-4 rounded-lg border border-line bg-sunk/50 px-4 py-3">
+      <p className="text-[13.5px] font-bold">목록을 확인할 수 없습니다</p>
+      <p className="mt-1 text-[12.5px] leading-5 text-ink-2">
+        {!attributionReady && workAreasReady && observationsReady
+          ? "관측과 작업구역의 연결 정보를 확인할 수 없어 이 구역의 분석 후보를 보여줄 수 없습니다. 후보가 없다는 뜻이 아닙니다. 목록을 다시 불러온 뒤 이어가세요."
+          : "작업구역·관측 목록을 확인할 수 없어 이 구역의 분석 후보를 보여줄 수 없습니다. 후보가 없다는 뜻이 아닙니다. 목록을 다시 불러온 뒤 이어가세요."}
+      </p>
+      <div className="mt-1 text-[12.5px] leading-5 text-ink-2">{listFailureDetails}</div>
+      <div className="mt-2.5 flex flex-wrap gap-2">
+        <button type="button" className="btn min-h-11" onClick={() => router.refresh()}>목록 다시 불러오기</button>
+        <Link className="btn min-h-11" href={`/sites/${encodeURIComponent(siteId)}/spatial-assets?workAreaId=${encodeURIComponent(workAreaId)}`}>등록 자료와 검사 상태 확인</Link>
+        <Link className="btn min-h-11" href={`/sites/${encodeURIComponent(siteId)}?workAreaId=${encodeURIComponent(workAreaId)}`}>작업공간으로 돌아가기</Link>
+        {visualReturnHref && <Link className="btn min-h-11" href={visualReturnHref}>독립 보기로 돌아가기</Link>}
+      </div>
+    </div>
+  );
   const noCandidateBlock = noCandidateForArea && (
     <div className="mt-4 rounded-lg border border-line bg-sunk/50 px-4 py-3">
-      <p className="text-[13.5px] font-bold">이 구역의 분석 후보가 없습니다</p>
-      <p className="mt-1 text-[12.5px] leading-5 text-ink-2">
+      <p className="text-[13.5px] font-bold">이 구역의 분석 후보가 없습니다</p>      <p className="mt-1 text-[12.5px] leading-5 text-ink-2">
         이 작업구역에서 요청 입력과 정확히 맞는 분석 후보가 없습니다. 빈 선택지는 요구 조건이 아니므로 고를 것이 없습니다. 후보가 없다는 것은 관측이 부적합하다는 판정이 아닙니다.
       </p>
       {broughtSides.length > 0 && (
@@ -2057,8 +2203,20 @@ export function AnalysisRequestPanel({
       )}
       {scopeNotice && !attempt && <p role="status" className="mt-2 rounded-md border border-line bg-sunk/50 px-3 py-2 text-[11.5px] leading-5 text-ink-2">{scopeNotice}</p>}
       {currentHintNotice && !attempt && <p role="status" className="mt-2 rounded-md border border-line bg-sunk/50 px-3 py-2 text-[11.5px] leading-5 text-ink-2">{currentHintNotice} <Link className="font-semibold text-accent-text underline" href={`/sites/${encodeURIComponent(siteId)}/spatial-assets${workAreaId ? `?workAreaId=${encodeURIComponent(workAreaId)}` : ""}`}>등록 자료와 검사 상태 확인</Link></p>}
+      {listsState && (!workAreasReady || !observationsReady || !attributionReady) && !listsBlockedForArea && (
+        <div role="status" className="mt-2 rounded-md border border-line bg-sunk/50 px-3 py-2 text-[11.5px] leading-5 text-ink-2">
+          <p className="font-semibold">목록을 확인할 수 없습니다</p>
+          {listFailureDetails}
+          <p className="mt-0.5">목록을 다시 불러오면 확인된 범위에서 이어갈 수 있습니다. 보류 중인 요청이 있으면 같은 요청 식별자로 다시 확인할 수 있습니다.</p>
+          <button type="button" className="btn mt-1.5 min-h-10" onClick={() => router.refresh()}>목록 다시 불러오기</button>
+          <nav className="mt-2 flex flex-wrap gap-2" aria-label="목록 조회 불가 시 다음 확인">
+            <Link className="btn min-h-11" href={`/sites/${encodeURIComponent(siteId)}/spatial-assets${workAreaId ? `?workAreaId=${encodeURIComponent(workAreaId)}` : ""}`}>등록 자료 보기</Link>
+            <Link className="btn min-h-11" href={`/sites/${encodeURIComponent(siteId)}${workAreaId ? `?workAreaId=${encodeURIComponent(workAreaId)}` : ""}`}>현장 현황 보기</Link>
+          </nav>
+        </div>
+      )}
       {showCatalogInspect && catalogInspectBlock}
-      {noCandidateForArea ? (showCatalogInspect ? null : noCandidateBlock) : (<>
+      {listsBlockedForArea ? listsBlockedBlock : noCandidateForArea ? (showCatalogInspect ? null : noCandidateBlock) : (<>
       <form className="mt-4 grid gap-3 lg:grid-cols-2" noValidate onSubmit={(event) => { event.preventDefault(); void submit(); }}>
       {showCatalogInspect && scopedObservations.length > 0 && (
         <p role="status" className="rounded-md border border-line bg-sunk/50 px-3 py-2 text-[11.5px] leading-5 text-ink-2 lg:col-span-2">
@@ -2066,19 +2224,19 @@ export function AnalysisRequestPanel({
         </p>
       )}
         <label className="min-w-0 text-[12.5px] font-semibold lg:col-span-2">작업구역
-          <select className="input mt-1 w-full" value={workAreaId} disabled={busy} onChange={(event) => { if (discardAttempt()) { setJustCreatedId(null); setWorkAreaId(event.target.value); setBaselineIndex(""); setCurrentIndex(""); setBaselineTouched(false); setAreaSwitchNotice("작업구역이 바뀌어 기준·현재 선택을 모두 지웠습니다. 바뀐 구역의 후보에서 다시 고르세요."); } }}>
+          <select className="input mt-1 w-full" value={workAreaId} disabled={busy || !workAreasReady} onChange={(event) => { if (discardAttempt()) { setJustCreatedId(null); setWorkAreaId(event.target.value); setBaselineIndex(""); setCurrentIndex(""); setBaselineTouched(false); setAreaSwitchNotice("작업구역이 바뀌어 기준·현재 선택을 모두 지웠습니다. 바뀐 구역의 후보에서 다시 고르세요."); } }}>
             <option value="">작업구역 선택</option>
             {workAreas.map((area) => <option key={area.workAreaId} value={area.workAreaId}>{area.name}</option>)}
           </select>
         </label>
         <label className="min-w-0 text-[12.5px] font-semibold">기준 관측
-          <select className="input mt-1 w-full" value={baselineIndex} disabled={busy || !workAreaId} onChange={(event) => { if (discardAttempt()) { setJustCreatedId(null); setBaselineIndex(event.target.value); setBaselineTouched(true); setAreaSwitchNotice(null); } }}>
+          <select className="input mt-1 w-full" value={baselineIndex} disabled={busy || !workAreaId || !observationsReady} onChange={(event) => { if (discardAttempt()) { setJustCreatedId(null); setBaselineIndex(event.target.value); setBaselineTouched(true); setAreaSwitchNotice(null); } }}>
             <option value="">{workAreaId ? "기준 관측 선택" : "먼저 작업구역 선택"}</option>
             {scopedObservations.map(({ item, index }) => <option key={`${item.observationEpochId}-${index}`} value={index}>{choiceLabelByIndex.get(String(index))}</option>)}
           </select>
         </label>
         <label className="min-w-0 text-[12.5px] font-semibold">현재 관측
-          <select className="input mt-1 w-full" value={currentIndex} disabled={busy || !workAreaId} onChange={(event) => {
+          <select className="input mt-1 w-full" value={currentIndex} disabled={busy || !workAreaId || !observationsReady} onChange={(event) => {
             if (!discardAttempt()) return;
             const value = event.target.value;
             setJustCreatedId(null); setCurrentIndex(value);
@@ -2177,8 +2335,11 @@ export function AnalysisRequestPanel({
 
   // 기록이 없을 때의 빈 이력 안내 — 실제로 고를 후보가 있으면(첫 사용
   // 동선) 목록 위가 아니라 접힌 시작 안내에 맡기고, 여기서는 두지 않는다.
+  // 이력을 확인하지 못했거나 깊은 연결로 들어왔을 때는 빈 단정을 두지 않는다.
   const hasChoosablePair = workAreas.length > 0 && observations.length >= 2;
-  const emptyHistoryNotice = rows.length === 0 && !listLoading && !listLoadError && !hasChoosablePair ? (
+  // 클라이언트 다시 불러오기로 읽은 빈 목록은 확인된 빈 이력이다 — 빈 안내를 둔다.
+  const historyEffectiveReady = historyReady || historyRecovered;
+  const emptyHistoryNotice = historyEffectiveReady && initialAnalysisId === null && rows.length === 0 && !listLoading && !listLoadError && !hasChoosablePair ? (
     <p className="rounded-lg border border-line bg-surface px-4 py-3 text-[13px] leading-5 text-ink-2">{nextListCursor
       ? "현재 페이지에 변화 분석 요청이 없습니다. 다음 페이지를 불러와 나머지 이력을 확인하세요."
       : canCreate
@@ -2188,9 +2349,23 @@ export function AnalysisRequestPanel({
   // 이력이 하나라도 있거나 목록을 읽는 중·실패·다음 쪽이 있으면 기록 열을
   // 둔다. 완전히 비었을 때는 왼쪽 빈 열을 두지 않고 요청 열만 한 줄로 둔다.
   const recordsActive = rows.length > 0 || listLoading || listLoadError || nextListCursor !== null;
+  // 이력 조회 실패는 기록 구역만의 상태로 둔다 — 요청서·다른 구역까지 닫지
+  // 않으며, 실패를 빈 이력으로 말하지 않는다. 다시 불러오기로 읽으면 거둔다.
+  const historyErrorBlock = !historyReady && !historyRecovered && (
+    <div role="alert" className="rounded-lg border border-line bg-surface px-4 py-3">
+      <p className="text-[13px] font-bold">분석 이력을 확인할 수 없습니다</p>
+      <p className="mt-1 text-[12.5px] leading-5 text-ink-2">{listsState?.historyMessage ?? "현장 변화 분석 이력을 불러오지 못했습니다."}</p>
+      {(listsState?.history === "failed" || listsState?.history === "unconfirmed") && <div className="mt-2"><button type="button" className="btn min-h-11" disabled={listLoading || (historyRetryWait ?? 0) > 0} onClick={() => void refreshAnalyses()}>{(historyRetryWait ?? 0) > 0 ? `${historyRetryWait}초 후 다시 시도` : listLoading ? "이력 불러오는 중" : "이력 다시 불러오기"}</button></div>}
+      {listsState?.history === "unconfirmed" && <nav className="mt-2 flex flex-wrap gap-2" aria-label="이력 조회 불가 시 다음 확인">
+        <Link className="btn min-h-11" href={workAreaId ? `/sites/${encodeURIComponent(siteId)}/spatial-assets?workAreaId=${encodeURIComponent(workAreaId)}` : `/sites/${encodeURIComponent(siteId)}/spatial-assets`}>등록 자료 보기</Link>
+        <Link className="btn min-h-11" href={workAreaId ? `/sites/${encodeURIComponent(siteId)}?workAreaId=${encodeURIComponent(workAreaId)}` : `/sites/${encodeURIComponent(siteId)}`}>현장 현황 보기</Link>
+      </nav>}
+    </div>
+  );
 
   const recordsColumn = (
     <div className="flex min-w-0 flex-col gap-3">
+      {historyErrorBlock}
       {latestRow && <section aria-label="최근 변화 분석 요약" className="rounded-xl border border-line bg-surface px-4 py-3.5">
         <div className="flex flex-wrap items-baseline justify-between gap-2">
           <p className="text-[13px] leading-5 text-ink-2">
@@ -2209,19 +2384,18 @@ export function AnalysisRequestPanel({
           const baseline = observations.find((option) => sameSelector(option.selector, selectedDetail.baseline));
           const current = observations.find((option) => sameSelector(option.selector, selectedDetail.current));
           if (!baseline || !current) {
-            return <p className="mt-1 text-[12px] leading-5 text-ink-2">계산 입력 · 원래 입력을 현재 목록에서 확인할 수 없습니다. 기록은 그대로 둡니다.</p>;
+            return <p className="mt-1 text-[12px] leading-5 text-ink-2">선택한 기록의 계산 입력 · 원래 입력을 현재 목록에서 확인할 수 없습니다. 기록은 그대로 둡니다.</p>;
           }
           const [baselineLabel, currentLabel] = observationChoiceLabels([baseline, current], workOrderNames);
           return <p className="mt-1 break-words text-[12px] leading-5 text-ink-2">
-            계산 입력 · 기준 {baselineLabel} · 현재 {currentLabel}
+            선택한 기록의 계산 입력 · 기준 {baselineLabel} · 현재 {currentLabel}
           </p>;
         })()}
         <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-line pt-2">
           <a href="#analysis-history" className="inline-flex min-h-10 items-center text-[12px] font-semibold text-accent-text hover:underline">변화 분석 이력으로 이동</a>
-          {canCreate && <a href="#new-analysis-request" className="inline-flex min-h-10 items-center text-[12px] font-semibold text-accent-text hover:underline">{attempt ? "보류 요청 이어가기" : "새 변화 분석 요청으로 이동"}</a>}
+          {canCreate && !attempt && <a href="#new-analysis-request" className="inline-flex min-h-10 items-center text-[12px] font-semibold text-accent-text hover:underline">새 변화 분석 요청으로 이동</a>}
           {workspaceBridgeControls}
         </div>
-        {attempt && <p role="status" className="mt-1 text-[12px] text-ink-2">중단된 요청이 남아 있습니다. 보류 요청에서 같은 요청 식별자로 확인하거나 취소할 수 있습니다.</p>}
       </section>}
       {!latestRow && workspaceBridgeControls && (
         <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
@@ -2231,7 +2405,7 @@ export function AnalysisRequestPanel({
       {selectedId && !selectedDetail && detailLoadingId === selectedId && <p role="status" className="rounded-lg border border-line bg-surface px-4 py-3 text-[12.5px]">변화 분석 상세를 불러오는 중입니다.</p>}
       {selectedDetail && <AnalysisRecordReuse record={selectedDetail} evidencePages={selectedEvidencePages}
         inputLabels={{ baseline: workOrderNames[selectedDetail.baseline.workOrderId], current: workOrderNames[selectedDetail.current.workOrderId] }} />}
-      <section id="analysis-history" className="flex flex-col gap-3" aria-label="변화 분석 이력">
+      {recordsActive && <section id="analysis-history" className="flex flex-col gap-3" aria-label="변화 분석 이력">
         {selectedDetail && visualContext && visualReturnHref && (
           <div className="rounded-lg border border-line bg-sunk/40 px-4 py-2.5 text-[12px] leading-5 text-ink-2">
             <span className="font-bold text-ink-1">탐색 중 자료와 이 결과의 계산 입력 구분</span>
@@ -2275,14 +2449,15 @@ export function AnalysisRequestPanel({
         />)}
         {rows.length === 0 && listLoading && <p role="status" className="rounded-lg border border-line bg-surface px-4 py-3 text-[13px] text-ink-2">변화 분석 목록을 불러오는 중입니다.</p>}
         {emptyHistoryNotice}
-      </section>
+      </section>}
+      {!recordsActive && emptyHistoryNotice}
       {lastEvidencePage?.nextCursor && <div className="flex justify-center"><button type="button" className="btn" disabled={evidenceLoading} onClick={loadNextEvidence}>{evidenceLoading ? "근거 불러오는 중" : "다음 근거 보기"}</button></div>}
       {nextListCursor && <div className="flex justify-center"><button type="button" className="btn" disabled={listLoading} onClick={() => void loadMoreAnalyses()}>{listLoading ? "변화 분석 목록 불러오는 중" : "다음 변화 분석 보기"}</button></div>}
     </div>
   );
 
   const requestColumn = (
-    <div className="flex min-w-0 flex-col gap-3 xl:sticky xl:top-4">
+    <div className="flex min-w-0 flex-col gap-3">
       {!canCreate && <ActionUnavailable label="새 변화 분석 요청" description="새 변화 분석 요청은 권한 있는 현장 담당자가 진행해야 합니다. 필요한 작업구역과 관측을 담당자에게 알려 주세요." />}
       {requestSection}
     </div>
@@ -2295,21 +2470,20 @@ export function AnalysisRequestPanel({
     </nav>}
     {showError && <div role="alert" className="rounded-lg border border-crit bg-crit-bg px-4 py-3 text-[12.5px] text-crit-ink">
       <span>{error.message}</span>
+      {error.reLoginHref && <Link className="btn ml-2" href={error.reLoginHref}>다시 로그인</Link>}
       {error.analysisId === selectedId && selectedId && <button type="button" className="btn ml-2" disabled={detailLoadingId === selectedId} onClick={() => void refreshDetail(selectedId, ++detailGeneration.current)}>{detailLoadingId === selectedId ? "상세 불러오는 중" : "변화 분석 상세 다시 불러오기"}</button>}
+      {listLoadError && !listRestartRequired && <button type="button" className="btn ml-2" disabled={listLoading} onClick={() => void refreshAnalyses()}>{listLoading ? "목록 불러오는 중" : "목록 다시 불러오기"}</button>}
       {listRestartRequired && <button type="button" className="btn ml-2" disabled={listLoading} onClick={() => void restartAnalyses()}>{listLoading ? "목록 불러오는 중" : "목록 처음부터 다시 불러오기"}</button>}
       {evidenceRestartRequired && <button type="button" className="btn ml-2" disabled={evidenceLoading} onClick={restartEvidence}>{evidenceLoading ? "근거 불러오는 중" : "근거 처음부터 다시 불러오기"}</button>}
     </div>}
-    {recordsActive ? (
-      <div className="grid min-w-0 grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.45fr)_minmax(360px,1fr)] xl:items-start">
-        {draftFirst && requestColumn}
-        {recordsColumn}
-        {!draftFirst && requestColumn}
-      </div>
-    ) : (
-      <div className="flex min-w-0 flex-col gap-4">
-        {emptyHistoryNotice}
-        {requestColumn}
-      </div>
-    )}
+    <div aria-live="polite" className="contents">{attempt && !busy && recordsActive && <section aria-label="보류 요청 안내" className="rounded-lg border border-line bg-surface px-4 py-3 text-[13px] leading-5">
+      <p>중단된 요청이 남아 있습니다. 같은 요청 식별자와 선택으로 확인하거나 취소할 수 있습니다.</p>
+      {canCreate && <a href="#new-analysis-request" className="inline-flex min-h-11 items-center font-semibold text-accent-text hover:underline">보류 요청 이어가기</a>}
+    </section>}</div>
+    <div className="flex min-w-0 flex-col gap-6">
+      {draftFirst && requestColumn}
+      {recordsColumn}
+      {!draftFirst && requestColumn}
+    </div>
   </div>;
 }

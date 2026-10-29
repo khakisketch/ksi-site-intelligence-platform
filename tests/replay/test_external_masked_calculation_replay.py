@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 
 import pytest
 from ksi_core.domains.external.quantity.external_masked_calculation_store import (
@@ -22,6 +23,7 @@ from ksi_event_contracts.external_artifact_validation import (
 )
 from ksi_event_contracts.external_mask_input import MaskObservedManifestV1
 from ksi_event_contracts.external_masked_execution import (
+    MaskedAdmissionDispositionV3,
     MaskedAdmissionV3,
 )
 from ksi_event_contracts.external_masked_volume import (
@@ -271,7 +273,7 @@ class _StrictEvidence(MaskedAdmissionEvidencePort):
             activation_digest=_digest("activation"),
             scope_digest=_digest("scope"),
             ai_egress_digest=_digest("egress"),
-            disposition="ADMIT_EVALUATED",
+            disposition=MaskedAdmissionDispositionV3.ADMIT_EVALUATED,
             reason_codes=("MASK_ADMITTED",),
             assessed_at=now - timedelta(seconds=1),
         ).sealed()
@@ -309,8 +311,13 @@ class _StrictEvidence(MaskedAdmissionEvidencePort):
         ).sealed()
 
     def prepare_witness(
-        self, *, masked_calculation_identity_digest, organization_id, now, expected_admission=None
-    ):
+        self,
+        *,
+        masked_calculation_identity_digest: str,
+        organization_id: str,
+        now: datetime,
+        expected_admission: MaskedAdmissionV3 | None = None,
+    ) -> MaskedAdmissionWitnessV3 | None:
         if not self.live:
             return None
         if (
@@ -331,7 +338,9 @@ class _StrictEvidence(MaskedAdmissionEvidencePort):
             admission=admission, source_identity=self._identity, mask_manifest=self._manifest()
         )
 
-    def witness_is_current(self, *, witness, now):
+    def witness_is_current(
+        self, *, witness: MaskedAdmissionWitnessV3, now: datetime
+    ) -> MaskedAdmissionWitnessV3 | None:
         if witness is None or not self.live:
             return None
         if witness.source_identity.canonical_digest() != self._identity.canonical_digest():
@@ -349,7 +358,7 @@ def _worker() -> Principal:
     return Principal("analysis-worker-1", PrincipalKind.ANALYSIS_WORKER, None, None, "org-a")
 
 
-def _store(tmp_path, evidence) -> ExternalMaskedCalculationStore:
+def _store(tmp_path: Path, evidence: MaskedAdmissionEvidencePort) -> ExternalMaskedCalculationStore:
     return ExternalMaskedCalculationStore(
         DurableJournal(tmp_path / "masked-calc.journal"),
         evidence=evidence,
@@ -428,7 +437,7 @@ def _sealed_report(
     ).sealed()
 
 
-def test_issue_lease_report_current_and_replay(tmp_path) -> None:
+def test_issue_lease_report_current_and_replay(tmp_path: Path) -> None:
     identity = _masked_identity()
     evidence = _StrictEvidence(identity)
     store = _store(tmp_path, evidence)
@@ -498,7 +507,7 @@ def test_issue_lease_report_current_and_replay(tmp_path) -> None:
     assert replayed_current is not None and replayed_current.disposition == "AVAILABLE"
 
 
-def test_stale_fence_and_retry_exhaustion_fail_closed(tmp_path) -> None:
+def test_stale_fence_and_retry_exhaustion_fail_closed(tmp_path: Path) -> None:
     identity = _masked_identity()
     evidence = _StrictEvidence(identity)
     store = _store(tmp_path, evidence)
@@ -537,7 +546,7 @@ def test_stale_fence_and_retry_exhaustion_fail_closed(tmp_path) -> None:
     assert renewed is not None and renewed.lease_expires_at > attempt.lease_expires_at
 
 
-def test_missing_activation_and_revoked_currentness_block_issue(tmp_path) -> None:
+def test_missing_activation_and_revoked_currentness_block_issue(tmp_path: Path) -> None:
     identity = _masked_identity()
     evidence = _StrictEvidence(identity)
     evidence.live = False
@@ -553,7 +562,7 @@ def test_missing_activation_and_revoked_currentness_block_issue(tmp_path) -> Non
         )
 
 
-def test_tampered_journal_replay_fails_closed(tmp_path) -> None:
+def test_tampered_journal_replay_fails_closed(tmp_path: Path) -> None:
     identity = _masked_identity()
     evidence = _StrictEvidence(identity)
     store = _store(tmp_path, evidence)
@@ -585,7 +594,7 @@ def test_tampered_journal_replay_fails_closed(tmp_path) -> None:
         )
 
 
-def test_report_with_wrong_attempt_rejected_and_cancel_terminal(tmp_path) -> None:
+def test_report_with_wrong_attempt_rejected_and_cancel_terminal(tmp_path: Path) -> None:
     identity = _masked_identity()
     evidence = _StrictEvidence(identity)
     store = _store(tmp_path, evidence)
@@ -650,7 +659,7 @@ def test_report_with_wrong_attempt_rejected_and_cancel_terminal(tmp_path) -> Non
     assert replayed_current is not None and replayed_current.disposition.value == "CANCELED"
 
 
-def test_resolve_completed_source_binds_exact_report_and_fresh_witness(tmp_path) -> None:
+def test_resolve_completed_source_binds_exact_report_and_fresh_witness(tmp_path: Path) -> None:
     identity = _masked_identity()
     evidence = _StrictEvidence(identity)
     store = _store(tmp_path, evidence)
@@ -723,7 +732,7 @@ def _second_worker() -> Principal:
     return Principal("analysis-worker-2", PrincipalKind.ANALYSIS_WORKER, None, None, "org-a")
 
 
-def test_designated_worker_ctor_pin_and_property(tmp_path) -> None:
+def test_designated_worker_ctor_pin_and_property(tmp_path: Path) -> None:
     identity = _masked_identity()
     evidence = _StrictEvidence(identity)
     bad_principals = [
@@ -738,7 +747,7 @@ def test_designated_worker_ctor_pin_and_property(tmp_path) -> None:
                 DurableJournal(tmp_path / f"bad-{index}.journal"),
                 evidence=evidence,
                 resource_envelope=_envelope(),
-                designated_worker=bad,
+                designated_worker=bad,  # type: ignore[arg-type]
                 coordinator=ExternalAuthorityCurrentnessCoordinator(),
             )
     store = _store(tmp_path, evidence)
@@ -747,7 +756,7 @@ def test_designated_worker_ctor_pin_and_property(tmp_path) -> None:
     assert store.designated_worker.organization_id == "org-a"
 
 
-def test_issue_binds_designated_worker_not_human_issuer(tmp_path) -> None:
+def test_issue_binds_designated_worker_not_human_issuer(tmp_path: Path) -> None:
     identity = _masked_identity()
     store = _store(tmp_path, _StrictEvidence(identity))
     store.bind_constructed_identity(principal=_operator(), identity=identity, now=NOW)
@@ -762,7 +771,7 @@ def test_issue_binds_designated_worker_not_human_issuer(tmp_path) -> None:
     assert issued.authorization.worker_principal_id != "operator-a"
 
 
-def test_second_worker_rejected_without_journal_growth(tmp_path) -> None:
+def test_second_worker_rejected_without_journal_growth(tmp_path: Path) -> None:
     identity = _masked_identity()
     journal_path = tmp_path / "masked-calc.journal"
     store = _store(tmp_path, _StrictEvidence(identity))
@@ -812,7 +821,7 @@ def test_second_worker_rejected_without_journal_growth(tmp_path) -> None:
     assert len(journal_path.read_bytes().splitlines()) == len(before.splitlines()) + 1
 
 
-def test_rotated_worker_config_cannot_execute_old_record(tmp_path) -> None:
+def test_rotated_worker_config_cannot_execute_old_record(tmp_path: Path) -> None:
     identity = _masked_identity()
     journal_path = tmp_path / "masked-calc.journal"
     store = _store(tmp_path, _StrictEvidence(identity))

@@ -270,6 +270,18 @@ class CoreSpatialDataClient:
     async def _create_request(
         self, parsed: CreateArguments, *, token: str, deadline: float
     ) -> dict[str, Any]:
+        # Same-token-bytes preflight before any POST: the same invocation
+        # token bytes are sent on an acknowledged asset-list read first.
+        # This observes a machine-channel ack at preflight time only; it
+        # does not bind the POST to the preflight's server-side principal.
+        # Core captures expected identity anew on each HTTP request and
+        # re-resolves the same bytes per request, so the POST still carries
+        # the full body/retry key for Core to recheck current PREPARE
+        # rights, consent and grant independently; any preflight denial
+        # fails closed with no POST.
+        await self._preflight_create_ack(parsed, token=token, deadline=deadline)
+        if asyncio.get_running_loop().time() >= deadline:
+            raise CoreAdapterError("CORE_TIMEOUT")
         try:
             body = {
                 "assetRef": parsed.asset_ref,
@@ -337,10 +349,90 @@ class CoreSpatialDataClient:
             raise CoreAdapterError("INVALID_CORE_RESPONSE") from exc
         return validated.model_dump(by_alias=True, mode="json")
 
+    async def _preflight_create_ack(
+        self, parsed: CreateArguments, *, token: str, deadline: float
+    ) -> None:
+        """Observe a machine-channel ack before any create POST.
+
+        One acknowledged asset LIST (limit 1, same site/work-area) sends
+        the EXACT same invocation token bytes (never a re-read that could
+        rotate mid-invocation, never a cached or process-global bearer).
+        Only an acknowledged (``x-ksi-spatial-data-ai-egress: ALLOWED``)
+        typed page passes; the body is discarded. The list checks bearer
+        kind, scope and current consent without requiring the exact asset
+        grant, so a revoked/missing grant still surfaces intact from the
+        POST itself (``GRANT_REQUIRED``/``ACCESS_REVOKED`` with actionable
+        remediation) instead of being masked as a non-disclosing asset
+        ``NOT_FOUND``. Any denial, missing ack, oversized frame, deadline
+        expiry or scope mismatch raises without any POST, so a statically
+        misconfigured human/other token fails closed here. This guarantees
+        token-bytes equality across the two requests, not server-side
+        principal continuity: Core derives expected identity per request
+        from that request's own authentication and re-resolves the same
+        bytes, so only Core's POST-time recheck authorizes the mutation.
+        """
+        result = await self._request_validated(
+            "GET",
+            self._assets_path(parsed.site_id, parsed.work_area_id) + "?limit=1",
+            TOOL_RESULT_MODELS["ksi_list_spatial_data_assets"],
+            token=token,
+            deadline=deadline,
+        )
+        items = result.get("items")
+        if type(items) is not list or len(items) > 1:
+            raise CoreAdapterError("INVALID_CORE_RESPONSE")
+        for item in items:
+            if (
+                type(item) is not dict
+                or item.get("siteId") != parsed.site_id
+                or item.get("workAreaId") != parsed.work_area_id
+            ):
+                raise CoreAdapterError("INVALID_CORE_RESPONSE")
+        self._check_cursor(result.get("nextCursor"))
+
+    async def _preflight_cancel_ack(
+        self, parsed: JobArguments, *, token: str, deadline: float
+    ) -> None:
+        """Observe a machine-channel ack before any cancel POST.
+
+        One GET of the exact job sends the EXACT same invocation token
+        bytes; only an acknowledged typed job view for this
+        site/work-area/jobId passes; the body is discarded. Readable
+        terminal history (CANCELED/COMPLETED/FAILED/EXPIRED) still acks,
+        so idempotent cancel and REPORT_CONFLICT semantics stay on Core.
+        Any denial, missing ack, oversized frame, deadline expiry or scope
+        mismatch raises without any POST. Like create, this guarantees
+        token-bytes equality, not server-side principal continuity across
+        the two requests.
+        """
+        job = await self._request_validated(
+            "GET",
+            self._request_detail_path(parsed.site_id, parsed.work_area_id, parsed.job_id),
+            SpatialDataJobViewV1,
+            token=token,
+            deadline=deadline,
+        )
+        self._check_returned_budgets(job.get("siteId"), job.get("workAreaId"), job.get("jobId"))
+        if (
+            job.get("siteId") != parsed.site_id
+            or job.get("workAreaId") != parsed.work_area_id
+            or job.get("jobId") != parsed.job_id
+        ):
+            raise CoreAdapterError("INVALID_CORE_RESPONSE")
+
     async def _cancel_request(
         self, parsed: JobArguments, *, token: str, deadline: float
     ) -> dict[str, Any]:
         # No automatic recreate and no replacement key: one scoped cancel only.
+        # Same-token-bytes preflight first: the same invocation token bytes
+        # are sent on an acknowledged job read before any POST. This observes
+        # the machine channel at preflight time; only Core's POST-time
+        # recheck authorizes the cancel. Terminal/idempotent semantics stay
+        # on Core: a CANCELED preflight still POSTs for the idempotent view;
+        # COMPLETED/FAILED/EXPIRED still POST for REPORT_CONFLICT.
+        await self._preflight_cancel_ack(parsed, token=token, deadline=deadline)
+        if asyncio.get_running_loop().time() >= deadline:
+            raise CoreAdapterError("CORE_TIMEOUT")
         result = await self._request_validated(
             "POST",
             self._cancel_path(parsed.site_id, parsed.work_area_id, parsed.job_id),

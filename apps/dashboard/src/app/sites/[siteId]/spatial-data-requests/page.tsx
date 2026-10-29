@@ -34,6 +34,7 @@ import {
   isSupportedDataKind,
 } from "@/lib/operator-language";
 
+import { ResponsiveActionBoundary } from "@/components/responsive/ResponsiveActionBoundary";
 import { SpatialDataRequestActions } from "./SpatialDataRequestActions";
 import { SpatialDataReceiptPreview } from "./SpatialDataReceiptPreview";
 import { WorkAreaHistorySelect } from "./WorkAreaHistorySelect";
@@ -75,6 +76,27 @@ function pageHref(siteId: string, workAreaId: string, values: { cursor?: string;
   if (values.cursor) query.set("cursor", values.cursor);
   if (values.requestId) query.set("requestId", values.requestId);
   return `/sites/${encodeURIComponent(siteId)}/spatial-data-requests?${query.toString()}`;
+}
+
+/** 목록 구분용 짧은 식별자 — 앞 8자리·끝 4자리. 전체 ID는 펼침·상세·링크 이름에 그대로 둔다. */
+function shortRequestId(jobId: string): string {
+  if (jobId.length <= 12) return jobId;
+  const head = jobId.slice(7, 15);
+  const tail = jobId.slice(-4);
+  if (head.length === 8 && tail.length === 4) return `${head}…${tail}`;
+  return jobId.slice(-8);
+}
+
+/**
+ * 충돌 해소용 전체 ID 접미사를 제목에서 분리한다.
+ * helper가 동명·동시각 충돌 때 붙인 ` · 요청 <전체 ID>`를 본문 제목과 구분
+ * 표시용 짧은 구분자로 나누기 위한 표시 전용 분리이며, 식별자 판정·권한·
+ * 범위를 바꾸지 않는다. 접미사가 없으면 제목 그대로 둔다.
+ */
+function splitRequestTitle(title: string, jobId: string): { base: string; collided: boolean } {
+  const suffix = ` · 요청 ${jobId}`;
+  if (title.endsWith(suffix)) return { base: title.slice(0, -suffix.length), collided: true };
+  return { base: title, collided: false };
 }
 
 function stateBadge(state: SpatialDataExecutionState) {
@@ -121,8 +143,30 @@ function formatTuple(values: readonly number[] | undefined): string {
   return `[${values.map((value) => formatNumberKo(value, 4)).join(", ")}]`;
 }
 
+/** Core SpatialDataReceiptV1.output_size_bytes 계약: PositiveInt. 0·음수·소수·NaN·안전정수 밖은 양성 기록이 아니다. */
+function isRecordedSize(value: number): boolean {
+  return Number.isSafeInteger(value) && value >= 1;
+}
+
 function exactBytes(value: number): string {
-  return Number.isSafeInteger(value) && value >= 0 ? formatBytesKo(value) : "정확한 크기 표시 불가";
+  return isRecordedSize(value) ? formatBytesKo(value) : "정확한 크기 표시 불가";
+}
+
+/**
+ * 목록 행의 완료 크기 한 줄 — 상세 진입 없이 상태와 크기를 함께 읽는다.
+ *
+ * - COMPLETED이면서 목록 기록의 receipt가 같은 요청 ID에 묶였을 때만 크기를 말한다.
+ * - 값은 준비 당시 기록 바이트이며 누적 사용량이나 비용이 아니다.
+ * - 미완료·누락·불일치에는 크기를 단정하지 않고 아무것도 표시하지 않으며,
+ *   묶인 기록의 비정상 값(0·음수·소수·NaN·안전정수 밖 포함)은 기존 "정확한 크기 표시 불가"를 그대로 쓴다.
+ */
+function receiptSizeText(item: SpatialDataJobView): string | null {
+  if (item.executionState !== "COMPLETED") return null;
+  const receipt = item.receipt;
+  if (receipt == null || receipt.jobId !== item.jobId) return null;
+  const sizeText = exactBytes(receipt.outputSizeBytes);
+  if (sizeText === "정확한 크기 표시 불가") return sizeText;
+  return `${sizeText} · 준비 당시 기록`;
 }
 
 function ReceiptFacts({ receipt }: { receipt: SpatialDataReceipt }) {
@@ -130,13 +174,13 @@ function ReceiptFacts({ receipt }: { receipt: SpatialDataReceipt }) {
     <div className="flex flex-wrap items-start justify-between gap-2 border-b border-line pb-3">
       <div>
         <h3 className="text-[15px] font-bold">준비된 출력 정보</h3>
-        <p className="mt-1 text-[11.5px] text-ink-muted">COMPLETED 요청의 출력·공간 사실. 이 출력 정보는 정확도 평가나 현장 적합성 판정이 아닙니다.</p>
+        <p className="mt-1 text-[11.5px] text-ink-muted">선택한 요청의 준비 당시 출력·공간 기록입니다. 정확도 평가나 현장 적합성 판정이 아닙니다.</p>
       </div>
       {receipt.receiptDigest && <span className="max-w-full break-all font-mono text-[10.5px] text-ink-muted">출력 정보 {receipt.receiptDigest}</span>}
     </div>
     <dl className="mt-4 grid gap-x-5 gap-y-3 sm:grid-cols-2 lg:grid-cols-3">
       <Fact label="산출물 종류" value={receipt.artifactKind} mono />
-      <Fact label="출력 크기" value={exactBytes(receipt.outputSizeBytes)} />
+      <Fact label="준비 당시 파일 크기" value={exactBytes(receipt.outputSizeBytes)} />
       <Fact label="출력 파일 확인값(SHA-256)" value={receipt.outputSha256} mono />
       <Fact label="픽셀 창(파일 좌표 순서)" value={formatTuple(receipt.pixelWindow)} mono />
       <Fact label="출력 픽셀 크기" value={`${formatCountKo(receipt.width)} × ${formatCountKo(receipt.height)} pixels`} />
@@ -147,6 +191,7 @@ function ReceiptFacts({ receipt }: { receipt: SpatialDataReceipt }) {
       <Fact label="준비 시각" value={formatKoreanDateTime(receipt.preparedAt, { dateStyle: "medium", timeStyle: "short" })} />
       <Fact label="정확도 평가" value="수행하지 않음 (accuracyAssessed=false)" />
     </dl>
+    <p className="mt-3 text-[11.5px] leading-5 text-ink-muted">이 크기는 준비 당시 기록이며 현재 보관량·실제 전송량·연산 사용량·비용을 뜻하지 않습니다.</p>
     <div className="mt-4 grid gap-3 border-t border-line pt-4 sm:grid-cols-2">
       <div><p className="text-[11px] text-ink-muted">Attribution</p><p className="mt-1 break-words text-[12.5px] leading-5 text-ink-2">{receipt.attribution}</p></div>
       <div><p className="text-[11px] text-ink-muted">Modification notice</p><p className="mt-1 break-words text-[12.5px] leading-5 text-ink-2">{receipt.modificationNotice}</p></div>
@@ -182,9 +227,10 @@ function RequestDetail({
   return <section className="flex flex-col gap-4 rounded-xl border border-line bg-surface p-4 sm:p-5">
     <header className="flex flex-col gap-3 border-b border-line pb-4 sm:flex-row sm:items-start sm:justify-between">
       <div className="min-w-0">
-        <p className="text-[11px] font-semibold uppercase tracking-wide text-ink-muted">선택한 요청</p>
+        <p className="text-[11px] font-semibold uppercase tracking-wide text-ink-muted">선택한 요청 · 구분 #{shortRequestId(item.jobId)}</p>
         <h2 className="mt-1 text-[16px] font-bold tracking-tight break-keep">{dataRequestTitle(item.createdAt)}</h2>
-        <p className="mt-1 text-[12.5px] text-ink-2">{workAreaName} · {formatKoreanDateTime(item.createdAt, { dateStyle: "medium", timeStyle: "short" })} 요청 기록 생성</p>
+        <p className="mt-1 break-words text-[12.5px] text-ink-2">{workAreaName} · {formatKoreanDateTime(item.createdAt, { dateStyle: "medium", timeStyle: "short" })} 요청 기록 생성{assetInfo ? ` · ${dataKindLabel(assetInfo.kind)}` : ""}</p>
+        <p className="mt-0.5 break-all font-mono text-[10.5px] text-ink-muted">요청 ID 전체는 처리 상세에서 확인 · 짧은 구분 #{shortRequestId(item.jobId)} (앞 8자리·끝 4자리)</p>
       </div>
       <div className="flex flex-wrap items-center gap-2">{stateBadge(item.executionState)}{availabilityText(item.availability)}</div>
     </header>
@@ -239,7 +285,9 @@ function RequestDetail({
       fileHref={fileHref}
     />}
 
-    {active && <SpatialDataRequestActions siteId={siteId} workAreaId={item.workAreaId} requestId={item.jobId} canCancel={canCancel} />}
+    {active && canCancel
+      ? <ResponsiveActionBoundary action="SPATIAL_DATA_REQUEST" reason="요청 취소는 노트북 이상의 화면에서 진행하세요. 준비 상태는 모바일에서도 확인할 수 있습니다."><SpatialDataRequestActions siteId={siteId} workAreaId={item.workAreaId} requestId={item.jobId} canCancel={canCancel} /></ResponsiveActionBoundary>
+      : active && <SpatialDataRequestActions siteId={siteId} workAreaId={item.workAreaId} requestId={item.jobId} canCancel={canCancel} />}
     <Link className="btn min-h-11 w-fit" href={backHref}>요청 목록으로 돌아가기</Link>
   </section>;
 }
@@ -253,6 +301,7 @@ function RequestRow({
   title,
   sourceLine,
   rawSourceKind,
+  shortAmbiguous,
 }: {
   item: SpatialDataJobView;
   siteId: string;
@@ -262,23 +311,33 @@ function RequestRow({
   title: string;
   sourceLine: string;
   rawSourceKind: string | null;
+  shortAmbiguous?: boolean;
 }) {
   const href = pageHref(siteId, workAreaId, { cursor, requestId: item.jobId });
+  const sizeLine = receiptSizeText(item);
+  const { base: baseTitle, collided } = splitRequestTitle(title, item.jobId);
+  const shortId = shortRequestId(item.jobId);
+  // 접근 이름에는 전체 ID를 그대로 둔다. 짧은 구분이 겹쳐도 screen reader와
+  // 링크 목적지가 달라지며, 본문은 짧은 버튼을 유지한다.
+  const detailName = `${baseTitle} · 요청 ID ${item.jobId} 상세 보기 (짧은 구분 #${shortId})`;
   return <li className={`grid gap-3 px-4 py-4 sm:grid-cols-[minmax(0,1.35fr)_minmax(135px,0.8fr)_minmax(145px,0.8fr)_minmax(145px,0.9fr)] sm:items-center ${selected ? "bg-sunk/70" : "bg-surface"}`}>
     <div className="min-w-0">
-      <p className="mb-1 text-[10.5px] text-ink-muted sm:hidden">요청</p>
-      <Link href={href} aria-current={selected ? "page" : undefined} className="tap-target inline-block min-h-8 w-full break-words text-left text-[13px] font-semibold text-accent-text hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent">
-        {title}
-      </Link>
+      <p className="mb-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[10.5px] text-ink-muted"><span>요청</span><span aria-hidden="true">·</span><span>구분 #{shortId}{collided ? " · 같은 시각 다른 요청" : ""}{shortAmbiguous ? " · 짧은 구분도 같음" : ""}{selected ? " · 현재 선택됨" : ""}</span></p>
+      <p className="break-words text-left text-[13px] font-semibold text-ink-1">
+        {baseTitle}
+      </p>
       <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 sm:hidden">
         {stateBadge(item.executionState)}
         {availabilityText(item.availability)}
       </div>
+      {sizeLine != null && <p className="mt-1 text-[11.5px] text-ink-2 sm:hidden">{sizeLine}</p>}
       <p className="mt-1 break-words text-[11.5px] text-ink-2">{sourceLine}</p>
+      <p className="mt-2"><Link href={href} aria-current={selected ? "page" : undefined} aria-label={detailName} className="tap-target inline-flex min-h-11 items-center rounded-md border border-line-strong bg-surface px-3 text-[12.5px] font-semibold text-ink-1 hover:bg-sunk focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent sm:min-h-9">상세 보기</Link></p>
       <details className="mt-1 text-[11.5px]">
         <summary className="tap-target cursor-pointer font-semibold text-ink-muted">요청·원본 처리 상세 보기</summary>
         <div className="mt-1 flex flex-col gap-0.5 break-all border-l-2 border-line pl-2 text-ink-2">
           <p>요청 ID · {item.jobId}</p>
+          <p>요청 구분 · #{shortId}{collided ? " · 같은 시각 다른 요청과 전체 ID로 구분" : ""}{shortAmbiguous ? " · 짧은 구분도 같아 전체 ID로 구분" : ""}</p>
           {rawSourceKind && <p>원본 종류(원문) · {rawSourceKind}</p>}
           <p>원본 assetRef · {item.assetRef}</p>
         </div>
@@ -288,9 +347,12 @@ function RequestRow({
       <p className="mb-1 text-[10.5px] text-ink-muted sm:hidden">생성 시각</p>
       <p className="text-[12px] text-ink-2">{formatKoreanDateTime(item.createdAt, { dateStyle: "medium", timeStyle: "short" })}</p>
     </div>
-    <div className="hidden flex-wrap items-center gap-x-2 gap-y-1 sm:flex">
-      {stateBadge(item.executionState)}
-      {availabilityText(item.availability)}
+    <div className="hidden sm:block">
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+        {stateBadge(item.executionState)}
+        {availabilityText(item.availability)}
+      </div>
+      {sizeLine != null && <p className="mt-1 text-[11.5px] text-ink-2">{sizeLine}</p>}
     </div>
     <div className="min-w-0">
       <p className="mb-1 text-[10.5px] text-ink-muted sm:hidden">처리 사유</p>
@@ -466,6 +528,14 @@ export default async function SpatialDataRequestsPage({
   const inScopeItems = page?.items.filter((item) => item.siteId === siteId && item.workAreaId === workAreaId) ?? [];
   const invalidStateItems = inScopeItems.filter((item) => !isSpatialDataExecutionState(item.executionState) || !isSpatialDataAvailability(item.availability));
   const scopedItems = inScopeItems.filter((item) => isSpatialDataExecutionState(item.executionState) && isSpatialDataAvailability(item.availability));
+  // 크기 안내 문구는 실제 표시 행과 같은 ID 게이트를 통과한 유효 크기 기록이 있을 때만 둔다.
+  // REQUEST_ID_PATTERN에 실패한 항목은 목록에 숨겨지므로 안내만 남지 않게 한다.
+  const hasRecordedSize = scopedItems.some((item) =>
+    REQUEST_ID_PATTERN.test(item.jobId)
+    && item.executionState === "COMPLETED"
+    && item.receipt != null
+    && item.receipt.jobId === item.jobId
+    && isRecordedSize(item.receipt.outputSizeBytes));
   const mismatchedItems = page?.items.filter((item) => item.siteId !== siteId || item.workAreaId !== workAreaId) ?? [];
   const detailMatchesScope = detail !== null && requestId !== undefined && detail.jobId === requestId && detail.siteId === siteId && detail.workAreaId === workAreaId && isSpatialDataExecutionState(detail.executionState) && isSpatialDataAvailability(detail.availability);
   const backHref = workAreaId ? pageHref(siteId, workAreaId, { cursor }) : basePath;
@@ -477,6 +547,14 @@ export default async function SpatialDataRequestsPage({
     catalogInfo,
     selectedArea?.name ?? workAreaId ?? "",
   );
+  // 짧은 구분(앞 8·끝 4)이 같은 행이 둘 이상이면 본문 구분이 겹친다.
+  // 전체 ID·링크 목적지는 그대로 두고, 겹침 사실만 표시한다.
+  const shortIdCounts = new Map<string, number>();
+  for (const item of scopedItems) {
+    if (!REQUEST_ID_PATTERN.test(item.jobId)) continue;
+    const short = shortRequestId(item.jobId);
+    shortIdCounts.set(short, (shortIdCounts.get(short) ?? 0) + 1);
+  }
 
   const frame = <SiteHeader
     site={site}
@@ -517,7 +595,7 @@ export default async function SpatialDataRequestsPage({
 
       <section className="overflow-hidden rounded-xl border border-line bg-surface">
         <header className="flex flex-wrap items-end justify-between gap-2 border-b border-line px-4 py-3">
-          <div><h2 className="text-[15px] font-bold">요청 이력</h2><p className="mt-1 text-[11.5px] text-ink-muted">현재 페이지 {formatCountKo(scopedItems.length)}건 · 생성 시각은 Core 기록</p></div>
+          <div><h2 className="text-[15px] font-bold">요청 이력</h2><p className="mt-1 text-[11.5px] text-ink-muted">현재 페이지 {formatCountKo(scopedItems.length)}건 · 생성 시각은 Core 기록{hasRecordedSize ? " · 크기는 준비 당시 개별 파일 크기이며 누적 사용량이나 비용이 아닙니다" : ""}</p></div>
           <span className="text-[11px] text-ink-muted">최신 상태를 다시 조회하려면 페이지를 새로 고치세요.</span>
         </header>
         {scopedItems.length === 0
@@ -535,10 +613,10 @@ export default async function SpatialDataRequestsPage({
               : undefined}
           /></div>
           : <>
-            <div className="hidden border-b border-line bg-sunk/60 px-4 py-2 text-[10.5px] font-semibold text-ink-muted sm:grid sm:grid-cols-[minmax(0,1.35fr)_minmax(135px,0.8fr)_minmax(145px,0.8fr)_minmax(145px,0.9fr)]"><span>요청</span><span>생성 시각</span><span>상태 · 접근 가능 여부</span><span>처리 사유</span></div>
+            <div className="hidden border-b border-line bg-sunk/60 px-4 py-2 text-[10.5px] font-semibold text-ink-muted sm:grid sm:grid-cols-[minmax(0,1.35fr)_minmax(135px,0.8fr)_minmax(145px,0.8fr)_minmax(145px,0.9fr)]"><span>요청</span><span>생성 시각</span><span>상태 · 접근 가능 여부 · 준비 당시 크기</span><span>처리 사유</span></div>
             <ul className="divide-y divide-line">
               {scopedItems.map((item, position) => REQUEST_ID_PATTERN.test(item.jobId)
-                ? <RequestRow key={item.jobId} item={item} siteId={siteId} workAreaId={workAreaId} cursor={cursor} selected={requestId === item.jobId} title={rowPresentations[position]!.title} sourceLine={rowPresentations[position]!.sourceLine} rawSourceKind={rowPresentations[position]!.rawSourceKind} />
+                ? <RequestRow key={item.jobId} item={item} siteId={siteId} workAreaId={workAreaId} cursor={cursor} selected={requestId === item.jobId} title={rowPresentations[position]!.title} sourceLine={rowPresentations[position]!.sourceLine} rawSourceKind={rowPresentations[position]!.rawSourceKind} shortAmbiguous={(shortIdCounts.get(shortRequestId(item.jobId)) ?? 0) > 1} />
                 : <li key={String(item.jobId)} className="p-4"><ErrorState message="Core 응답에 유효하지 않은 요청 ID가 있어 해당 항목을 숨겼습니다." tone="high" /></li>)}
             </ul>
           </>}

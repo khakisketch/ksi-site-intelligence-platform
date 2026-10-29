@@ -932,6 +932,7 @@ def build_external_single_volume_router(
         request_ref: str,
         principal: Principal = Depends(require_permission(Permission.SITES_READ)),  # noqa: B008
     ) -> ExternalRelativeVolumeRequestView:
+        _require_scoped_work_order(work_orders, principal, work_order_id)
         record = store.get(request_ref, organization_id=principal.organization_id)
         if record is None or record.request.current_work_order_id != work_order_id:
             raise HTTPException(status_code=404, detail=_NOT_FOUND_DETAIL)

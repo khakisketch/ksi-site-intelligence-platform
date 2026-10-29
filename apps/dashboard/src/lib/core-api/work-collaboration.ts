@@ -1,6 +1,6 @@
 import "server-only";
 
-import { coreFetch } from "./client";
+import { coreFetch, coreFetchWithToken } from "./client";
 
 export type WorkRosterRoleHint = "ADMIN" | "FIELD_OPERATOR" | "VIEWER";
 export type WorkRosterStatus = "ACTIVE" | "INACTIVE";
@@ -60,6 +60,23 @@ export async function updateOrganizationWorkRosterMember(
   idempotencyKey: string,
 ): Promise<OrganizationWorkRosterMember> {
   return coreFetch<OrganizationWorkRosterMember>(`/v1/organization-work-roster/${encodeURIComponent(principalId)}`, {
+    method: "PUT",
+    body: input,
+    headers: { "Idempotency-Key": idempotencyKey },
+  });
+}
+
+/**
+ * 같은 요청의 세션 토큰 하나로 Core whoami 연속성 검사와 변이를 잇는 경로 전용 —
+ * 토큰을 두 번 읽으면 검사와 변이 사이 세션 교체(TOCTOU)가 생긴다. 기존 호출부는 그대로 둔다.
+ */
+export async function updateOrganizationWorkRosterMemberWithToken(
+  principalId: string,
+  input: UpdateOrganizationWorkRosterMemberInput,
+  idempotencyKey: string,
+  token: string,
+): Promise<OrganizationWorkRosterMember> {
+  return coreFetchWithToken<OrganizationWorkRosterMember>(`/v1/organization-work-roster/${encodeURIComponent(principalId)}`, token, {
     method: "PUT",
     body: input,
     headers: { "Idempotency-Key": idempotencyKey },

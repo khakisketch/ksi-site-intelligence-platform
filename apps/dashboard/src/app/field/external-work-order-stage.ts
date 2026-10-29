@@ -74,7 +74,7 @@ export function deriveExternalWorkOrderStage(input: ExternalStageInput): Externa
   if (input.registeredSubmissionCount > 0) {
     return {
       stage: "SEAL",
-      label: "업로드와 봉인 완료",
+      label: "업로드·봉인 필요",
       detail: "등록한 산출물의 파일 업로드를 마치고 봉인해야 검사가 시작됩니다.",
       tone: "progress",
       anchor: "external-submissions",

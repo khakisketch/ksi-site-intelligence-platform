@@ -66,9 +66,11 @@ from ksi_event_contracts.external_masked_worker import (
 )
 from starlette.concurrency import run_in_threadpool
 
-from ksi_core.composition.masked_quantitative_graph import MaskedQuantitativeWiring
 from ksi_core.domains.external.quantity.external_delta_publication_inputs import (
     DeltaPublicationS3InputCapabilityIssuer,
+)
+from ksi_core.domains.external.quantity.masked_quantitative_wiring import (
+    MaskedQuantitativeWiring,
 )
 from ksi_core.identity.auth import (
     Permission,

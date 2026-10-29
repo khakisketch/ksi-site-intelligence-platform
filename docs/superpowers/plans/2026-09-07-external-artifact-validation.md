@@ -1068,7 +1068,10 @@ Bearing per item (local only; external remainder named, not closed):
 - EXT-VAL-06: designated-principal mounted Core/worker workflow verified at
   synthetic local scope (task-owned loopback Core/issuer/Console). The
   release-evidence run on a prepared host stays BLOCKED per the 2026-09-18
-  owner deferral above. This item is what keeps the slice open.
+  owner deferral above. The original packet said this host gate kept the slice
+  open; that conflicted with the owner deferral and is corrected here. The
+  release gate is separate from slice acceptance, and this packet does not
+  decide the still-pending slice review.
 - EXT-VAL-07: backend 372 contract/replay/integration tests (unchanged, not
   relabeled as rerun), Dashboard 2,429/233, MCP/official-SDK stdio 17/17,
   mypy 34 modules, Ruff clean; SIE reconciliation + follow-ups recorded.
@@ -1079,3 +1082,14 @@ Still open after this packet: AX-5..AX-7 (no specs; direction check needed
 after the viewer-first reconstruction), boot-hazard degraded boot (spec in
 proposal/review), EXT-VAL-06 release-evidence run, and this slice acceptance
 review itself.
+
+### 2026-10-27 current-code correction — degraded boot is not an open implementation
+
+The preceding packet's degraded-boot proposal/review wording was stale. The owning
+`2026-10-15-external-authority-degraded-boot.md` §6 already records approval and implementation
+of expired/future snapshot, staged catalog-binding and signing-key time gates. Current source and
+`tests/contract/test_platform_core_production.py` were rechecked: the seven selected boot/binding/
+signature/key-window tests pass (26 unrelated tests deselected; log
+`/tmp/opencode/degraded-boot-revalidation-20261027.log`). No runtime/credential change or new boot
+implementation was needed. AX-5..7 direction reconciliation, prepared-host release evidence and
+slice acceptance remain distinct open items; this correction does not close the slice.

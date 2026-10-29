@@ -30,6 +30,9 @@ export function WizardShell({
   nextLabel = "다음",
   nextDisabled = false,
   nextPending = false,
+  preservePendingFocus = false,
+  focusStepChanges = true,
+  draftStatusText,
   /** 다음 버튼이 비활성일 때 무엇을 채워야 하는지 말한다(F16) — 값이 있고
    * `nextDisabled`일 때만 보인다. */
   nextDisabledReason,
@@ -54,6 +57,10 @@ export function WizardShell({
   nextLabel?: string;
   nextDisabled?: boolean;
   nextPending?: boolean;
+  preservePendingFocus?: boolean;
+  focusStepChanges?: boolean;
+  /** 자동 저장이 실패한 경우 등 기본 저장 안내를 대체한다. */
+  draftStatusText?: string;
   nextDisabledReason?: string;
   error?: React.ReactNode;
   origin?: React.ReactNode;
@@ -69,8 +76,8 @@ export function WizardShell({
   useEffect(() => {
     if (previousStep.current === currentStep) return;
     previousStep.current = currentStep;
-    contentRef.current?.focus();
-  }, [currentStep]);
+    if (focusStepChanges) contentRef.current?.focus();
+  }, [currentStep, focusStepChanges]);
 
   return (
     <div className={layout === "steps" ? "console-page !max-w-[960px]" : `flex w-full flex-col gap-4 p-4 sm:p-5 lg:grid lg:grid-cols-[230px_minmax(0,1fr)] lg:items-start ${aside ? "xl:grid-cols-[230px_minmax(0,1fr)_320px]" : "max-w-[1200px]"}`}>
@@ -129,8 +136,8 @@ export function WizardShell({
         {/* 초안 자동 저장은 이미 동작하지만 **말해 준 적이 없었다** — 여러 단계를
             채우는 화면에서 "나가면 날아가나"는 실제로 사람을 붙잡아 두는 불안이다. */}
         <p className="flex items-center gap-2 rounded-md border border-line bg-sunk px-2.5 py-2 text-[11.5px] break-keep text-ink-2">
-          <span aria-hidden="true" className="size-1.5 flex-none rounded-full bg-safe" />
-          임시저장됨 · 지금 나가도 입력이 남습니다
+          {draftStatusText === undefined && <span aria-hidden="true" className="size-1.5 flex-none rounded-full bg-safe" />}
+          {draftStatusText ?? "임시저장됨 · 지금 나가도 입력이 남습니다"}
         </p>
 
         <div>
@@ -205,13 +212,14 @@ export function WizardShell({
             이전
           </button>
           <span className="text-[12px] break-keep text-ink-muted">
-            {totalSteps}단계 중 {currentStep + 1}단계 · 입력 내용은 자동 저장됩니다
+            {totalSteps}단계 중 {currentStep + 1}단계 · {draftStatusText ?? "입력 내용은 자동 저장됩니다"}
           </span>
           <button
             type="button"
-            onClick={onNext}
-            disabled={nextDisabled || nextPending}
-            className="btn btn-primary ml-auto"
+            onClick={() => { if (!nextPending && !nextDisabled) onNext(); }}
+            disabled={nextPending && preservePendingFocus ? false : nextDisabled || nextPending}
+            aria-disabled={nextPending && preservePendingFocus ? true : undefined}
+            className={`btn btn-primary ml-auto ${nextPending && preservePendingFocus ? "opacity-60 cursor-not-allowed" : ""}`}
           >
             {nextPending ? "처리 중…" : nextLabel}
           </button>

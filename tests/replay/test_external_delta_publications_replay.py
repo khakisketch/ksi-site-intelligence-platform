@@ -12,6 +12,7 @@ import io
 import json
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import Any, Literal
 
 import pytest
 from ksi_core.domains.external.quantity.external_delta_publications import (
@@ -33,8 +34,12 @@ GRID_ROWS = 4
 GRID_COLUMNS = 4
 TRANSFORM = (1.0, 0.0, 100.0, 0.0, -1.0, 200.0)
 BOUNDS = (100.0, 196.0, 104.0, 200.0)
-V2_CONTRACT = "external-relative-volume-calculation-report.v2"
-V3_CONTRACT = "external-masked-volume-calculation-identity.v3"
+V2_CONTRACT: Literal[
+    "external-relative-volume-calculation-report.v2"
+] = "external-relative-volume-calculation-report.v2"
+V3_CONTRACT: Literal[
+    "external-masked-volume-calculation-identity.v3"
+] = "external-masked-volume-calculation-identity.v3"
 
 
 def _digest(marker: str) -> str:
@@ -70,21 +75,37 @@ def _worker(org: str = "org-a", principal_id: str = "analysis-worker-1") -> Prin
 
 
 class _FakeSource:
-    def __init__(self, version: str = V3_CONTRACT) -> None:
+    def __init__(
+        self,
+        version: Literal[
+            "external-relative-volume-calculation-report.v2",
+            "external-masked-volume-calculation-identity.v3",
+        ] = V3_CONTRACT,
+    ) -> None:
         self.version = version
         self.live = True
 
-    def resolve_current_source(self, **kwargs):  # type: ignore[no-untyped-def]
+    def resolve_current_source(
+        self,
+        *,
+        organization_id: str,
+        site_id: str,
+        work_area_id: str,
+        source_calculation_identity_digest: str,
+        source_numeric_result_identity_digest: str,
+        source_coverage_witness_digest: str,
+        now: datetime,
+    ) -> DeltaSourceWitness | None:
         if not self.live:
             return None
         return DeltaSourceWitness(
-            organization_id=kwargs["organization_id"],
-            site_id=kwargs["site_id"],
-            work_area_id=kwargs["work_area_id"],
-            source_contract_version=self.version,  # type: ignore[arg-type]
-            source_calculation_identity_digest=kwargs["source_calculation_identity_digest"],
-            source_numeric_result_identity_digest=kwargs["source_numeric_result_identity_digest"],
-            source_coverage_witness_digest=kwargs["source_coverage_witness_digest"],
+            organization_id=organization_id,
+            site_id=site_id,
+            work_area_id=work_area_id,
+            source_contract_version=self.version,
+            source_calculation_identity_digest=source_calculation_identity_digest,
+            source_numeric_result_identity_digest=source_numeric_result_identity_digest,
+            source_coverage_witness_digest=source_coverage_witness_digest,
             grid_rows=GRID_ROWS,
             grid_columns=GRID_COLUMNS,
             transform=TRANSFORM,
@@ -103,20 +124,35 @@ class _FakeAuthority:
     def is_policy_current(self, *, policy_digest: str, now: datetime) -> bool:
         return self.policy_current
 
-    def is_runtime_current(self, **kwargs):  # type: ignore[no-untyped-def]
+    def is_runtime_current(
+        self,
+        *,
+        now: datetime,
+        worker_principal_id: str | None = None,
+        publication_id: str | None = None,
+        lease_generation: int | None = None,
+    ) -> bool:
         return self.runtime_current
 
 
 class _FakeEgress:
-    def is_egress_allowed(self, **kwargs):  # type: ignore[no-untyped-def]
+    def is_egress_allowed(
+        self,
+        *,
+        organization_id: str,
+        site_id: str,
+        work_area_id: str,
+        principal: Principal,
+        now: datetime,
+    ) -> bool:
         return True
 
 
 class _FakeObservations:
     def __init__(self) -> None:
-        self._bound = {}
+        self._bound: dict[tuple[str, str, str, int], DeltaOutputObservation] = {}
 
-    def bind(self, observation) -> None:  # type: ignore[no-untyped-def]
+    def bind(self, observation: DeltaOutputObservation) -> None:
         self._bound[
             (
                 observation.publication_id,
@@ -126,13 +162,22 @@ class _FakeObservations:
             )
         ] = observation
 
-    def resolve_output_observation(self, **kwargs):  # type: ignore[no-untyped-def]
+    def resolve_output_observation(
+        self,
+        *,
+        organization_id: str,
+        publication_id: str,
+        worker_principal_id: str,
+        worker_instance_id: str,
+        lease_generation: int,
+        now: datetime,
+    ) -> DeltaOutputObservation | None:
         return self._bound.get(
             (
-                kwargs["publication_id"],
-                kwargs["worker_principal_id"],
-                kwargs["worker_instance_id"],
-                kwargs["lease_generation"],
+                publication_id,
+                worker_principal_id,
+                worker_instance_id,
+                lease_generation,
             )
         )
 
@@ -150,7 +195,14 @@ def _policy() -> DeltaPublicationPolicy:
     )
 
 
-def _open(tmp_path: Path, source=None, authority=None, clock=None, observations=None, policy=None):  # type: ignore[no-untyped-def]
+def _open(
+    tmp_path: Path,
+    source: Any = None,
+    authority: Any = None,
+    clock: Any = None,
+    observations: Any = None,
+    policy: DeltaPublicationPolicy | None = None,
+) -> tuple[ExternalDeltaPublicationStore, _FakeObservations]:
     fake_observations = observations or _FakeObservations()
     store = ExternalDeltaPublicationStore(
         DurableJournal(tmp_path / "delta-publications.jsonl"),
@@ -166,7 +218,7 @@ def _open(tmp_path: Path, source=None, authority=None, clock=None, observations=
     return store, fake_observations
 
 
-def _intent_kwargs(**overrides):  # type: ignore[no-untyped-def]
+def _intent_kwargs(**overrides: Any) -> dict[str, Any]:
     fields = {
         "publication_id": "pub-01",
         "site_id": "site-a",
@@ -188,7 +240,7 @@ def _intent_kwargs(**overrides):  # type: ignore[no-untyped-def]
     return fields
 
 
-def _sub(tmp_path, name):  # type: ignore[no-untyped-def]
+def _sub(tmp_path: Path, name: str) -> Path:
     """Owner-private 0700 test subdir: the byte-root gate rejects lax ancestors."""
     path = tmp_path / name
     path.mkdir(mode=0o700, parents=True, exist_ok=True)
@@ -199,7 +251,7 @@ def _payload(size: int = 1_024) -> bytes:
     return bytes(i % 256 for i in range(size))
 
 
-def _observation(payload: bytes):  # type: ignore[no-untyped-def]
+def _observation(payload: bytes) -> DeltaOutputObservation:
     return DeltaOutputObservation(
         organization_id="org-a",
         site_id="site-a",

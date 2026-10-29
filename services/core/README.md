@@ -2,6 +2,57 @@
 
 KSI Core: scoped identity, Site/WorkArea, external observations, policy, jobs, results, evidence and audit.
 
+## Restart-only registration recovery stop
+
+For the normal platform production factory, `KSI_CORE_REGISTRATION_STOPPED` is
+an optional startup setting: absent or the exact string `false` leaves normal
+behavior unchanged; the exact string `true`
+refuses new Site and WorkArea registrations (including replacements) at Core's
+stores. Other values refuse startup. Reads and authorized replays of already
+committed bootstrap requests remain available. Site AOI changes, WorkArea
+archive, and unrelated writes are not stopped. This is not an HTTP control and
+does not erase or reconcile an uncertain browser request.
+
+For an authorized recovery, stop admitting writes to the old writer, drain all
+in-flight work, and verify its journal handles are closed before starting the
+guarded writer on the **same authoritative journals**. Explicitly set the stop
+again on every restart. Use source-bound, isolated synthetic instances and
+generated data to test registration refusals; never send a valid registration
+request to authoritative data as a canary. If the wrong writer or setting is
+active, that request could create a real Site or WorkArea.
+
+For a live cutover, use approved non-mutating deployment/instance and
+configuration evidence to identify the running binary, configured stop, the
+authoritative journal set and every possible writer; authorized reads may be
+checked without changing data. Such evidence is not a harmless functional proof
+that every live route and instance enforces the stop. No such live proof is
+established here; if writer coverage or effective enforcement cannot be
+established, keep registration unavailable and escalate. Reconcile pending
+originals before resuming writes. This setting is not persistent or fleet-wide:
+all independently writable instances and data stores
+must be accounted for. Older Core binaries ignore it; rolling back Core to one
+of them is unsafe. The development runner does not read this setting; local
+assemblies must explicitly pass `registration_stopped=True` instead. This
+documentation neither activates the setting nor grants deployment authorization.
+
+## Additive external spatial-task handoff
+
+The explicit platform graph with Analysis wiring mounts `/v1/spatial-task-sites` and
+`/v1/sites/{site_id}/spatial-tasks` plus scoped read/options/selection/readiness/run routes.
+`domains/external/spatial_tasks.py` owns the bounded7-day task journal and optimistic revisions;
+existing WorkArea stores own geometry and the exact existing Analysis facade owns readiness,
+calculation and results. A durable selection reservation makes Analysis-append/task-link crashes
+resumable through the same existing idempotency record. No generic chat runtime or new numerical
+authority is added. Without Analysis wiring the task journal/routes do not open.
+
+Every call rechecks authenticated organization/Site/area/selector scope, permissions and machine
+AI-egress consent. Human selection is further limited by the creator's original scope ceiling;
+links are identifiers, not grants. No new credentials, authorization provisioning, external host
+configuration or deployment is performed. See `services/analysis-mcp/README.md` for the concrete
+workflow, `contracts/schemas/external-spatial-task.v1.json` for DTOs and the existing Console work
+record for local evidence/limits. Rollback to the previous binary leaves this additive journal
+unopened; retain it for forward replay. No existing record/schema is dropped or rewritten.
+
 ## P3 Task 5 — Core acquisition closure (archive boundary)
 
 The managed acquisition set retired to `archive/acquisition-2026/` (git-tracked,

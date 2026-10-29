@@ -24,6 +24,151 @@ class FakeWorker {
   postMessage(request: { id: string }) { void request; }
 }
 
+// 서버 확인 계정 비교값 — 합성 신원이며 실제 고객·운영자 신원이 아니다.
+// BFF 연속성 가드 동작을 검증하는 테스트는 합성 409로 통제 응답임을 밝힌다.
+const continuity = { fingerprint: `v1-${"c".repeat(64)}` };
+const ECHO_REF = `ers-v1-${"d".repeat(64)}`;
+
+// 합성 성공 echo — 요청 본문을 그대로 돌려받아 Core 화면 모양으로 감싼다.
+// 실제 Core/BFF 계약 검증이 아니라 화면의 echo 대조 분기를 통과시키는 최소
+// 합성이며, 여기에 없는 필드·상태는 각 테스트가 명시적으로 바꾼다.
+type EchoArtifact = { artifactId: string; kind: string; declaredSha256: string; declaredSizeBytes: number; fileName: string; declaredCrs: string | null };
+type EchoBody = {
+  submissionId: string; expectedEpochId: string; submittedAt: string | null;
+  producerKnowledge: unknown; softwareName: unknown; softwareVersion: unknown; sourceNote: unknown;
+  captureBasis: unknown; captureStartedAt: unknown; captureEndedAt: unknown; captureDate: unknown;
+  originalRetentionLocus: unknown; originalRetentionDetail: unknown;
+  upstreamSource: unknown; derivativeExport: unknown;
+  artifacts: EchoArtifact[];
+};
+// 합성 봉인 식별자 — 실제 Core/BFF 계약 검증이 아니라 화면의 echo 대조 분기를
+// 통과시키는 최소 합성이다. 제출 digest와 manifest digest가 같은 값을 가리켜야
+// 한다는 결속 자체는 실제 계약과 같다.
+const TEST_DIGEST = `sha256:${"e".repeat(64)}`;
+// 합성 manifest 식별 다이제스트 — 실제 Core canonical 계산이 아니라 화면의
+// manifestDigest 표면(문자열·패턴) 대조를 통과시키는 최소 합성이다. 제출
+// digest와 다른 값으로 두어 두 결속이 별개 필드임을 드러낸다.
+const TEST_MANIFEST_DIGEST = `sha256:${"d".repeat(64)}`;
+// manifest 결속 대조용 최소 합성 — 대조하는 결속 필드(계약 리터럴·제출 묶음·
+// 버전·epoch·관측 entries)만 실으며, 대조하지 않는 서버 발급 값은 합성 자리표시다.
+function manifestFor(body: { submissionId: string; expectedEpochId: string; artifacts: { artifactId: string; kind: string; declaredSha256: string; declaredSizeBytes: number }[] }, submissionDigest: string) {
+  return {
+    contractVersion: "external-reconstruction-manifest.v1",
+    manifestId: "eman-v1-synthetic",
+    submissionId: body.submissionId,
+    submissionRevision: 1,
+    organizationId: "org-synthetic",
+    siteId: "site-synthetic",
+    observationEpochId: body.expectedEpochId,
+    observedAt: "2026-10-28T00:00:00Z",
+    observedByService: "processing-synthetic",
+    entries: body.artifacts.map((artifact) => ({
+      artifactId: artifact.artifactId,
+      kind: artifact.kind,
+      objectKey: `external-reconstruction/v1/synthetic-${artifact.kind}`,
+      observedSha256: artifact.declaredSha256,
+      observedSizeBytes: artifact.declaredSizeBytes,
+      observedContentType: "application/octet-stream",
+    })),
+    manifestDigest: TEST_MANIFEST_DIGEST,
+    submissionDigest,
+  };
+}
+function echoDeclaration(body: EchoBody, submissionRef: string = ECHO_REF) {
+  return {
+    submissionRef,
+    state: "REGISTERED",
+    submission: {
+      submissionId: body.submissionId, revision: 1, observationEpochId: body.expectedEpochId,
+      submittedAt: body.submittedAt,
+      producerDeclaration: {
+        producerKnowledge: body.producerKnowledge, softwareName: body.softwareName,
+        softwareVersion: body.softwareVersion, sourceNote: body.sourceNote,
+      },
+      inputDeclaration: {
+        captureBasis: body.captureBasis, captureStartedAt: body.captureStartedAt,
+        captureEndedAt: body.captureEndedAt, captureDate: body.captureDate,
+        originalRetentionLocus: body.originalRetentionLocus, originalRetentionDetail: body.originalRetentionDetail,
+        upstreamSource: body.upstreamSource, derivativeExport: body.derivativeExport,
+      },
+      artifacts: body.artifacts,
+      // Core revision 화면은 봉인 전부터 sealed 제출을 싣는다.
+      submissionDigest: TEST_DIGEST,
+    },
+  };
+}
+function echoSeal(body: EchoBody, submissionRef: string = ECHO_REF) {
+  return {
+    submissionRef,
+    state: "SEALED",
+    submission: {
+      submissionId: body.submissionId, revision: 1, observationEpochId: body.expectedEpochId,
+      submittedAt: body.submittedAt,
+      producerDeclaration: {
+        producerKnowledge: body.producerKnowledge, softwareName: body.softwareName,
+        softwareVersion: body.softwareVersion, sourceNote: body.sourceNote,
+      },
+      inputDeclaration: {
+        captureBasis: body.captureBasis, captureStartedAt: body.captureStartedAt,
+        captureEndedAt: body.captureEndedAt, captureDate: body.captureDate,
+        originalRetentionLocus: body.originalRetentionLocus, originalRetentionDetail: body.originalRetentionDetail,
+        upstreamSource: body.upstreamSource, derivativeExport: body.derivativeExport,
+      },
+      artifacts: body.artifacts,
+      submissionDigest: TEST_DIGEST,
+    },
+    manifest: manifestFor(body, TEST_DIGEST),
+  };
+}
+// 유지 제출 기록 기반 봉인 echo — retained 제출과 같은 결속으로 감싼다.
+// 합성 409/불명 응답 double이 아니며, 성공 경로에서만 쓴다: 제출 digest와
+// manifest digest를 같은 합성값으로 묶는다.
+function sealedEchoFor(registered: { submissionRef: string; submission: Record<string, unknown> }) {
+  const submission = registered.submission;
+  const artifacts = ((submission as { artifacts?: unknown }).artifacts as EchoArtifact[] | undefined) ?? [];
+  const normalizedArtifacts = artifacts.map((artifact) => ({
+    artifactId: (artifact as Record<string, unknown>).artifactId,
+    kind: (artifact as Record<string, unknown>).kind,
+    declaredSha256: (artifact as Record<string, unknown>).declaredSha256,
+    declaredSizeBytes: (artifact as Record<string, unknown>).declaredSizeBytes,
+    fileName: (artifact as Record<string, unknown>).fileName,
+    declaredCrs: typeof (artifact as Record<string, unknown>).declaredCrs === "string"
+      ? (artifact as Record<string, unknown>).declaredCrs as string
+      : null,
+  })) as EchoArtifact[];
+  return {
+    submissionRef: registered.submissionRef,
+    state: "SEALED",
+    submission: {
+      submissionId: (submission as { submissionId?: unknown }).submissionId,
+      revision: (submission as { revision?: unknown }).revision,
+      observationEpochId: (submission as { observationEpochId?: unknown }).observationEpochId,
+      submittedAt: (submission as { submittedAt?: unknown }).submittedAt ?? null,
+      producerDeclaration: (submission as { producerDeclaration?: unknown }).producerDeclaration ?? null,
+      inputDeclaration: (submission as { inputDeclaration?: unknown }).inputDeclaration ?? null,
+      artifacts: normalizedArtifacts,
+      submissionDigest: TEST_DIGEST,
+    },
+    manifest: manifestFor(
+      {
+        submissionId: (submission as { submissionId?: unknown }).submissionId as string,
+        expectedEpochId: submission.observationEpochId as string,
+        artifacts: normalizedArtifacts,
+      } as EchoBody,
+      TEST_DIGEST,
+    ),
+  };
+}
+const BOTH_GRANTS = { grants: [
+  { artifactId: "ortho", uploadUrl: "https://upload.test/ortho", requiredHeaders: {} },
+  { artifactId: "dsm", uploadUrl: "https://upload.test/dsm", requiredHeaders: {} },
+] };
+// 단일 슬롯 동결의 계약-정확 grant 응답 — Core는 저장 bindings와 1:1로 grant를
+// 만들므로 결속된 산출물 집합과 정확히 같아야 한다.
+const ORTHO_GRANT = { grants: [
+  { artifactId: "ortho", uploadUrl: "https://upload.test/ortho", requiredHeaders: {} },
+] };
+
 beforeEach(() => {
   vi.stubGlobal("fetch", fetchMock);
   vi.stubGlobal("Worker", FakeWorker);
@@ -191,7 +336,7 @@ describe("ExternalReconstructionPanel", () => {
   });
 
   it("distinguishes an empty list from a list failure", async () => {
-    const { rerender } = render(<ExternalReconstructionPanel workOrderId="work-1" expectedEpochId="epoch-1" canWrite />);
+    const { rerender } = render(<ExternalReconstructionPanel workOrderId="work-1" expectedEpochId="epoch-1" canWrite accountIdentity={continuity} />);
     expect(await screen.findByText("아직 등록된 관측 자료가 없습니다.")).toBeTruthy();
     expect(screen.getByText(/자료를 등록하면 파일 제출과 검사 상태를 이곳에서 확인할 수 있습니다/)).toBeTruthy();
     fetchMock.mockImplementation((url: string) =>
@@ -199,7 +344,7 @@ describe("ExternalReconstructionPanel", () => {
         ? Promise.reject(new Error("offline"))
         : Promise.resolve({ ok: true, json: async () => ({ submissions: [], items: [] }) }),
     );
-    rerender(<ExternalReconstructionPanel workOrderId="work-2" expectedEpochId="epoch-1" canWrite />);
+    rerender(<ExternalReconstructionPanel workOrderId="work-2" expectedEpochId="epoch-1" canWrite accountIdentity={continuity} />);
     expect(await screen.findByText("등록 목록을 불러오지 못했습니다.")).toBeTruthy();
     expect(screen.queryByText("아직 등록된 관측 자료가 없습니다.")).toBeNull();
   });
@@ -214,7 +359,7 @@ describe("ExternalReconstructionPanel", () => {
   });
 
   it("terminates an active hash worker when the panel unmounts", async () => {
-    const { unmount } = render(<ExternalReconstructionPanel workOrderId="work-1" expectedEpochId="epoch-1" canWrite />);
+    const { unmount } = render(<ExternalReconstructionPanel workOrderId="work-1" expectedEpochId="epoch-1" canWrite accountIdentity={continuity} />);
     await screen.findByText("아직 등록된 관측 자료가 없습니다.");
     const file = new File(["raster"], "ortho.tif", { type: "application/octet-stream" });
     fireEvent.change(screen.getByLabelText("정사영상 GeoTIFF"), { target: { files: [file] } });
@@ -223,7 +368,7 @@ describe("ExternalReconstructionPanel", () => {
     expect(FakeWorker.instances[0].terminate).toHaveBeenCalledTimes(1);
   });
   it("cancels only the active client hash", async () => {
-    render(<ExternalReconstructionPanel workOrderId="work-1" expectedEpochId="epoch-1" canWrite />);
+    render(<ExternalReconstructionPanel workOrderId="work-1" expectedEpochId="epoch-1" canWrite accountIdentity={continuity} />);
     await screen.findByText("아직 등록된 관측 자료가 없습니다.");
     fireEvent.change(screen.getByLabelText("정사영상 GeoTIFF"), { target: { files: [new File(["raster"], "ortho.tif")] } });
     await waitFor(() => expect(screen.getByRole("button", { name: "파일 확인 취소" })).toBeTruthy());
@@ -234,7 +379,7 @@ describe("ExternalReconstructionPanel", () => {
 
   it("offers resume only for a registered server revision", async () => {
     fetchMock.mockResolvedValue({ ok: true, json: async () => ({ submissions: [{ submissionRef: "opaque", state: "REGISTERED", submission: { revision: 1, producerDeclaration: { softwareName: "ODM", softwareVersion: "1" }, artifacts: [{ artifactId: "ortho", kind: "ortho", fileName: "ortho.tif", declaredSha256: "a".repeat(64), declaredSizeBytes: 1 }] } }] }) });
-    render(<ExternalReconstructionPanel workOrderId="work-1" expectedEpochId="epoch-1" canWrite />);
+    render(<ExternalReconstructionPanel workOrderId="work-1" expectedEpochId="epoch-1" canWrite accountIdentity={continuity} />);
     fireEvent.click(await screen.findByRole("button", { name: "등록 이어하기" }));
     expect(screen.getByText("저장된 신고 · 재구성 소프트웨어: ODM 1")).toBeTruthy();
     expect(screen.queryByLabelText("재구성 소프트웨어 이름")).toBeNull();
@@ -243,7 +388,7 @@ describe("ExternalReconstructionPanel", () => {
 
   it("blocks a fresh registration after closure while preserving a registered declaration continuation", async () => {
     fetchMock.mockResolvedValue({ ok: true, json: async () => ({ submissions: [{ submissionRef: "opaque", state: "REGISTERED", submission: { revision: 1, producerDeclaration: { softwareName: "ODM", softwareVersion: "1" }, artifacts: [{ artifactId: "ortho", kind: "ortho", fileName: "ortho.tif", declaredSha256: "a".repeat(64), declaredSizeBytes: 1 }] } }] }) });
-    render(<ExternalReconstructionPanel workOrderId="work-1" expectedEpochId="epoch-1" canWrite newIntentAllowed={false} />);
+    render(<ExternalReconstructionPanel workOrderId="work-1" expectedEpochId="epoch-1" canWrite newIntentAllowed={false} accountIdentity={continuity} />);
 
     expect(await screen.findByText(/업무 종료 상태입니다. 새 산출물 등록은 시작할 수 없지만/)).toBeTruthy();
     expect((screen.getByLabelText("정사영상 GeoTIFF") as HTMLInputElement).disabled).toBe(true);
@@ -254,7 +399,7 @@ describe("ExternalReconstructionPanel", () => {
 
   it("keeps a registered resume action inside the desktop mutation boundary while the list remains readable", async () => {
     fetchMock.mockResolvedValue({ ok: true, json: async () => ({ submissions: [{ submissionRef: "opaque", state: "REGISTERED", submission: { revision: 1, producerDeclaration: { softwareName: "ODM", softwareVersion: "1" }, artifacts: [{ artifactId: "ortho", kind: "ortho", fileName: "ortho.tif", declaredSha256: "a".repeat(64), declaredSizeBytes: 1 }] } }] }) });
-    render(<ExternalReconstructionPanel workOrderId="work-1" expectedEpochId="epoch-1" canWrite />);
+    render(<ExternalReconstructionPanel workOrderId="work-1" expectedEpochId="epoch-1" canWrite accountIdentity={continuity} />);
     const resumeButton = await screen.findByRole("button", { name: "등록 이어하기" });
     expect(resumeButton.closest("div[class*='hidden'][class*='lg:contents']")).not.toBeNull();
     // 원문은 폐쇄된 파일 정보에 보존하고, 행의 주 표시는 종류·등록 버전으로 둔다.
@@ -274,7 +419,7 @@ describe("ExternalReconstructionPanel", () => {
   });
 
   it("keeps the readable list beside the compact mutation boundary without a duplicate notice", async () => {
-    render(<ExternalReconstructionPanel workOrderId="work-1" expectedEpochId="epoch-1" canWrite />);
+    render(<ExternalReconstructionPanel workOrderId="work-1" expectedEpochId="epoch-1" canWrite accountIdentity={continuity} />);
     expect(await screen.findByText("아직 등록된 관측 자료가 없습니다.")).toBeTruthy();
     expect(screen.queryByText("노트북에서 계속")).toBeNull();
     expect(screen.getByLabelText("정사영상 GeoTIFF")).toBeTruthy();
@@ -286,7 +431,7 @@ describe("ExternalReconstructionPanel", () => {
       if (!init?.method) return { ok: true, json: async () => ({ submissions: [] }) };
       if (url.endsWith("/external-reconstruction-submissions-v3")) {
         registrations.push(JSON.parse(init.body as string));
-        return { ok: true, json: async () => ({ submissionRef: "opaque", submission: { revision: 1 } }) };
+        return { ok: true, json: async () => echoDeclaration(JSON.parse(init.body as string) as EchoBody) };
       }
       if (url.endsWith("/upload-grants")) return { ok: true, json: async () => ({ grants: [{ artifactId: "ortho", uploadUrl: "https://upload.test/ortho", requiredHeaders: {} }] }) };
       return { ok: true, json: async () => ({}) };
@@ -295,7 +440,7 @@ describe("ExternalReconstructionPanel", () => {
       this.onmessage?.({ data: { id: request.id, sha256: "a".repeat(64), size: 1 } } as MessageEvent);
     });
 
-    render(<ExternalReconstructionPanel workOrderId="work-1" expectedEpochId="epoch-1" canWrite requiresCaptureInterval />);
+    render(<ExternalReconstructionPanel workOrderId="work-1" expectedEpochId="epoch-1" canWrite requiresCaptureInterval accountIdentity={continuity} />);
     await screen.findByText("아직 등록된 관측 자료가 없습니다.");
     fireEvent.change(screen.getByLabelText("재구성 소프트웨어 이름"), { target: { value: "ODM" } });
     fireEvent.change(screen.getByLabelText("재구성 소프트웨어 버전"), { target: { value: "1" } });
@@ -318,7 +463,7 @@ describe("ExternalReconstructionPanel", () => {
   });
 
   it("starts a required capture interval with neutral help, then alerts only after an invalid edit", async () => {
-    render(<ExternalReconstructionPanel workOrderId="work-1" expectedEpochId="epoch-1" canWrite requiresCaptureInterval />);
+    render(<ExternalReconstructionPanel workOrderId="work-1" expectedEpochId="epoch-1" canWrite requiresCaptureInterval accountIdentity={continuity} />);
     await screen.findByText("아직 등록된 관측 자료가 없습니다.");
     expect(screen.getByText("외부 관측 등록에는 촬영 구간 확인이 권장됩니다. 미상인 경우 그대로 등록되며, 이후 분석·비교 가능 여부는 별도로 확인합니다.")).toBeTruthy();
     expect(screen.queryByText("시작과 종료를 모두 입력하고, 종료가 시작보다 늦은지 확인하세요.")).toBeNull();
@@ -339,15 +484,15 @@ describe("ExternalReconstructionPanel", () => {
       this.onmessage?.({ data: { id: request.id, sha256: "a".repeat(64), size: 1 } } as MessageEvent);
     });
 
-    const { rerender } = render(<ExternalReconstructionPanel workOrderId="work-1" expectedEpochId="epoch-1" canWrite />);
+    const { rerender } = render(<ExternalReconstructionPanel workOrderId="work-1" expectedEpochId="epoch-1" canWrite accountIdentity={continuity} />);
     await screen.findByText("아직 등록된 관측 자료가 없습니다.");
     fireEvent.change(screen.getByLabelText("재구성 소프트웨어 이름"), { target: { value: "ODM" } });
     fireEvent.change(screen.getByLabelText("재구성 소프트웨어 버전"), { target: { value: "1" } });
     fireEvent.change(screen.getByLabelText("정사영상 GeoTIFF"), { target: { files: [new File(["x"], "ortho.tif")] } });
     await screen.findByText(/정사영상 1 KB 확인 완료/);
     fireEvent.click(screen.getByRole("button", { name: "자료 등록 마치기" }));
-    await screen.findByText("산출물 등록을 완료하지 못했습니다. 목록을 다시 확인하세요.");
-    rerender(<ExternalReconstructionPanel workOrderId="work-1" expectedEpochId="epoch-1" canWrite newIntentAllowed={false} />);
+    await screen.findByText("응답을 확인하지 못했습니다. 같은 시도는 같은 식별자로 다시 확인할 수 있으니 목록에서 실제 상태를 먼저 확인하세요.");
+    rerender(<ExternalReconstructionPanel workOrderId="work-1" expectedEpochId="epoch-1" canWrite newIntentAllowed={false} accountIdentity={continuity} />);
     expect((screen.getByLabelText("재구성 소프트웨어 버전") as HTMLInputElement).disabled).toBe(true);
     fireEvent.click(screen.getByRole("button", { name: "자료 등록 마치기" }));
     await waitFor(() => expect(posts).toHaveLength(2));
@@ -368,19 +513,119 @@ describe("ExternalReconstructionPanel", () => {
       this.onmessage?.({ data: { id: request.id, sha256: "a".repeat(64), size: 1 } } as MessageEvent);
     });
 
-    render(<ExternalReconstructionPanel workOrderId="work-1" expectedEpochId="epoch-1" canWrite />);
+    render(<ExternalReconstructionPanel workOrderId="work-1" expectedEpochId="epoch-1" canWrite accountIdentity={continuity} />);
     await screen.findByText("아직 등록된 관측 자료가 없습니다.");
     fireEvent.change(screen.getByLabelText("재구성 소프트웨어 이름"), { target: { value: "ODM" } });
     fireEvent.change(screen.getByLabelText("재구성 소프트웨어 버전"), { target: { value: "1" } });
     fireEvent.change(screen.getByLabelText("정사영상 GeoTIFF"), { target: { files: [new File(["x"], "ortho.tif")] } });
     await screen.findByText(/정사영상 1 KB 확인 완료/);
     fireEvent.click(screen.getByRole("button", { name: "자료 등록 마치기" }));
-    await screen.findByText("산출물 등록을 완료하지 못했습니다. 목록을 다시 확인하세요.");
+    await screen.findByText("응답을 확인하지 못했습니다. 같은 시도는 같은 식별자로 다시 확인할 수 있으니 목록에서 실제 상태를 먼저 확인하세요.");
     fireEvent.click(screen.getByRole("button", { name: "새로 등록하기" }));
     expect((screen.getByLabelText("재구성 소프트웨어 버전") as HTMLInputElement).disabled).toBe(false);
     fireEvent.click(screen.getByRole("button", { name: "자료 등록 마치기" }));
     await waitFor(() => expect(posts).toHaveLength(2));
     expect(posts[1].submissionId).not.toBe(posts[0].submissionId);
+  });
+
+  it.each([
+    ["401", "세션이 만료되어 산출물 등록을 시작하지 못했습니다"],
+    ["403", "산출물 등록 권한이 없어 시작하지 못했습니다"],
+    ["404", "작업 범위를 확인하지 못해 산출물 등록을 시작하지 못했습니다"],
+  ] as const)("releases the frozen declaration with actionable recovery on definitive %s rejection", async (status, message) => {
+    const posts: unknown[] = [];
+    fetchMock.mockImplementation(async (_url: string, init?: RequestInit) => {
+      if (init?.method === "POST") {
+        posts.push(JSON.parse(init.body as string));
+        return { ok: false, status: Number(status), json: async () => ({}) };
+      }
+      return { ok: true, json: async () => ({ submissions: [] }) };
+    });
+    vi.spyOn(FakeWorker.prototype, "postMessage").mockImplementation(function (this: FakeWorker, request: { id: string }) {
+      this.onmessage?.({ data: { id: request.id, sha256: "a".repeat(64), size: 1 } } as MessageEvent);
+    });
+
+    render(<ExternalReconstructionPanel workOrderId="work-1" expectedEpochId="epoch-1" canWrite accountIdentity={continuity} />);
+    await screen.findByText("아직 등록된 관측 자료가 없습니다.");
+    fireEvent.change(screen.getByLabelText("재구성 소프트웨어 이름"), { target: { value: "ODM" } });
+    fireEvent.change(screen.getByLabelText("재구성 소프트웨어 버전"), { target: { value: "1" } });
+    fireEvent.change(screen.getByLabelText("정사영상 GeoTIFF"), { target: { files: [new File(["x"], "ortho.tif")] } });
+    await screen.findByText(/정사영상 1 KB 확인 완료/);
+    fireEvent.click(screen.getByRole("button", { name: "자료 등록 마치기" }));
+    expect(await screen.findByText(new RegExp(message))).toBeTruthy();
+    // 확정 거부는 같은 식별자로 만든 제출이 없으므로 동결을 풀고 폼을 돌려준다.
+    expect(screen.queryByRole("button", { name: "새로 등록하기" })).toBeNull();
+    expect((screen.getByLabelText("재구성 소프트웨어 버전") as HTMLInputElement).disabled).toBe(false);
+    // 수정 없이 다시 제출하면 같은 신고가 새 동결로 나간다.
+    fireEvent.click(screen.getByRole("button", { name: "자료 등록 마치기" }));
+    await waitFor(() => expect(posts).toHaveLength(2));
+    expect(posts[1]).toEqual(posts[0]);
+  });
+
+  it("preserves the frozen declaration when a same-key retry is denied", async () => {
+    const posts: unknown[] = [];
+    let attempts = 0;
+    fetchMock.mockImplementation(async (_url: string, init?: RequestInit) => {
+      if (init?.method === "POST") {
+        attempts += 1;
+        posts.push(JSON.parse(init.body as string));
+        if (attempts === 1) throw new Error("lost response");
+        return { ok: false, status: 403, json: async () => ({}) };
+      }
+      return { ok: true, json: async () => ({ submissions: [] }) };
+    });
+    vi.spyOn(FakeWorker.prototype, "postMessage").mockImplementation(function (this: FakeWorker, request: { id: string }) {
+      this.onmessage?.({ data: { id: request.id, sha256: "a".repeat(64), size: 1 } } as MessageEvent);
+    });
+
+    render(<ExternalReconstructionPanel workOrderId="work-1" expectedEpochId="epoch-1" canWrite accountIdentity={continuity} />);
+    await screen.findByText("아직 등록된 관측 자료가 없습니다.");
+    fireEvent.change(screen.getByLabelText("재구성 소프트웨어 이름"), { target: { value: "ODM" } });
+    fireEvent.change(screen.getByLabelText("재구성 소프트웨어 버전"), { target: { value: "1" } });
+    fireEvent.change(screen.getByLabelText("정사영상 GeoTIFF"), { target: { files: [new File(["x"], "ortho.tif")] } });
+    await screen.findByText(/정사영상 1 KB 확인 완료/);
+    fireEvent.click(screen.getByRole("button", { name: "자료 등록 마치기" }));
+    await screen.findByText("응답을 확인하지 못했습니다. 같은 시도는 같은 식별자로 다시 확인할 수 있으니 목록에서 실제 상태를 먼저 확인하세요.");
+    // 모호한 첫 시도 뒤 같은 키 재시도가 거부돼도 원래 동결을 버리지 않는다.
+    // 동결 신호: 입력 잠금 + 명시적 새 등록 단추.
+    expect(screen.getByRole("button", { name: "새로 등록하기" })).toBeTruthy();
+    expect((screen.getByLabelText("재구성 소프트웨어 버전") as HTMLInputElement).disabled).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: "자료 등록 마치기" }));
+    await waitFor(() => expect(posts).toHaveLength(2));
+    expect(posts[1]).toEqual(posts[0]);
+    expect(await screen.findByText("응답을 확인하지 못했습니다. 같은 시도는 같은 식별자로 다시 확인할 수 있으니 목록에서 실제 상태를 먼저 확인하세요.")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "새로 등록하기" })).toBeTruthy();
+  });
+
+  it("retries the submission list without a destructive route refresh and keeps the draft", async () => {
+    let listReads = 0;
+    fetchMock.mockImplementation(async (url: string) => {
+      if (url.endsWith("/external-reconstruction-submissions")) {
+        listReads += 1;
+        if (listReads === 1) throw new Error("offline");
+        return { ok: true, json: async () => ({ submissions: [] }) };
+      }
+      return { ok: true, json: async () => ({ submissions: [], items: [] }) };
+    });
+    vi.spyOn(FakeWorker.prototype, "postMessage").mockImplementation(function (this: FakeWorker, request: { id: string }) {
+      this.onmessage?.({ data: { id: request.id, sha256: "a".repeat(64), size: 1 } } as MessageEvent);
+    });
+
+    render(<ExternalReconstructionPanel workOrderId="work-1" expectedEpochId="epoch-1" canWrite accountIdentity={continuity} />);
+    expect(await screen.findByText("등록 목록을 불러오지 못했습니다.")).toBeTruthy();
+    // 목록 실패와 무관하게 입력한 초안은 그대로 둔다.
+    fireEvent.change(screen.getByLabelText("재구성 소프트웨어 이름"), { target: { value: "ODM" } });
+    fireEvent.change(screen.getByLabelText("재구성 소프트웨어 버전"), { target: { value: "1" } });
+    fireEvent.change(screen.getByLabelText("정사영상 GeoTIFF"), { target: { files: [new File(["x"], "ortho.tif")] } });
+    await screen.findByText(/정사영상 1 KB 확인 완료/);
+    fireEvent.click(screen.getByRole("button", { name: "목록 다시 시도" }));
+    expect(await screen.findByText("아직 등록된 관측 자료가 없습니다.")).toBeTruthy();
+    // 목록 복구가 자동 route refresh를 일으키지 않는다 — refresh는 영향받지
+    // 않은 상태만 유지하므로 서버 실패 시 패널이 통째로 사라질 수 있다.
+    // 초안은 그대로 둔다.
+    expect(router.refresh).not.toHaveBeenCalled();
+    expect(screen.getByText(/정사영상 1 KB 확인 완료/)).toBeTruthy();
+    expect((screen.getByLabelText("재구성 소프트웨어 이름") as HTMLInputElement).value).toBe("ODM");
   });
 
   it("resumes an exact registered revision without a current epoch", async () => {
@@ -389,7 +634,7 @@ describe("ExternalReconstructionPanel", () => {
       this.onmessage?.({ data: { id: request.id, sha256: "a".repeat(64), size: 1 } } as MessageEvent);
     });
 
-    render(<ExternalReconstructionPanel workOrderId="work-1" expectedEpochId={null} canWrite />);
+    render(<ExternalReconstructionPanel workOrderId="work-1" expectedEpochId={null} canWrite accountIdentity={continuity} />);
     fireEvent.click(await screen.findByRole("button", { name: "등록 이어하기" }));
     fireEvent.change(screen.getByLabelText("정사영상 GeoTIFF"), { target: { files: [new File(["x"], "ortho.tif")] } });
     await screen.findByText(/정사영상 1 KB 확인 완료/);
@@ -397,8 +642,8 @@ describe("ExternalReconstructionPanel", () => {
   });
 
   it("resumes accepted date-only bytes without revalidating or resubmitting a new exact-time declaration", async () => {
-    const registered = { submissionRef: "opaque", state: "REGISTERED", submission: {
-      contractVersion: "external-reconstruction-submission.v3", revision: 1,
+    const registered = { submissionRef: ECHO_REF, state: "REGISTERED", submission: {
+      contractVersion: "external-reconstruction-submission.v3", revision: 1, submissionId: "resume-date-only-1", observationEpochId: "epoch-1",
       producerDeclaration: { producerKnowledge: "UNKNOWN", softwareName: null, softwareVersion: null },
       inputDeclaration: { captureBasis: "DATE_ONLY", captureDate: "2021-08-17", captureStartedAt: null, captureEndedAt: null },
       artifacts: [{ artifactId: "ortho", kind: "ortho", fileName: "ortho.tif", declaredSha256: "a".repeat(64), declaredSizeBytes: 1 }],
@@ -408,12 +653,15 @@ describe("ExternalReconstructionPanel", () => {
       if (!init?.method) return { ok: true, json: async () => ({ submissions: [registered] }) };
       if (init.method === "POST") posts.push(url);
       if (url.endsWith("/upload-grants")) return { ok: true, json: async () => ({ grants: [{ artifactId: "ortho", uploadUrl: "https://upload.test/ortho", requiredHeaders: {} }] }) };
+      if (url.endsWith("/seal")) {
+        return { ok: true, json: async () => sealedEchoFor(registered) };
+      }
       return { ok: true, json: async () => ({}) };
     });
     vi.spyOn(FakeWorker.prototype, "postMessage").mockImplementation(function (this: FakeWorker, request: { id: string }) {
       this.onmessage?.({ data: { id: request.id, sha256: "a".repeat(64), size: 1 } } as MessageEvent);
     });
-    render(<ExternalReconstructionPanel workOrderId="work-1" expectedEpochId={null} canWrite requiresCaptureInterval />);
+    render(<ExternalReconstructionPanel workOrderId="work-1" expectedEpochId={null} canWrite requiresCaptureInterval accountIdentity={continuity} />);
     fireEvent.click(await screen.findByRole("button", { name: "등록 이어하기" }));
     expect(screen.getByText(/같은 파일의 전송만 재개/)).toBeTruthy();
     expect(screen.queryByRole("radiogroup", { name: "촬영 시점 확인 방식" })).toBeNull();
@@ -428,31 +676,39 @@ describe("ExternalReconstructionPanel", () => {
   });
 
   it("uses a registered reference for an old epoch without a second declaration POST", async () => {
-    const registered = { submissionRef: "opaque", state: "REGISTERED", submission: { revision: 1, observationEpochId: "old-epoch", producerDeclaration: { softwareName: "ODM", softwareVersion: "1" }, artifacts: [{ artifactId: "ortho", kind: "ortho", fileName: "ortho.tif", declaredSha256: "a".repeat(64), declaredSizeBytes: 1 }] } };
+    const registered = { submissionRef: ECHO_REF, state: "REGISTERED", submission: { revision: 1, submissionId: "resume-old-epoch-1", observationEpochId: "old-epoch", producerDeclaration: { softwareName: "ODM", softwareVersion: "1" }, inputDeclaration: { captureBasis: "UNKNOWN", captureStartedAt: null, captureEndedAt: null, captureDate: null }, artifacts: [{ artifactId: "ortho", kind: "ortho", fileName: "ortho.tif", declaredSha256: "a".repeat(64), declaredSizeBytes: 1 }] } };
     const requests: Array<{ url: string; method?: string }> = [];
     fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
       requests.push({ url, method: init?.method });
       if (!init?.method) return { ok: true, json: async () => ({ submissions: [registered] }) };
       if (url.endsWith("/upload-grants")) return { ok: true, json: async () => ({ grants: [{ artifactId: "ortho", uploadUrl: "https://upload.test/ortho", requiredHeaders: {} }] }) };
+      if (url.endsWith("/seal")) {
+        return { ok: true, json: async () => sealedEchoFor(registered) };
+      }
       return { ok: true, json: async () => ({ submissions: [registered] }) };
     });
     vi.spyOn(FakeWorker.prototype, "postMessage").mockImplementation(function (this: FakeWorker, request: { id: string }) {
       this.onmessage?.({ data: { id: request.id, sha256: "a".repeat(64), size: 1 } } as MessageEvent);
     });
 
-    render(<ExternalReconstructionPanel workOrderId="work-1" expectedEpochId={null} canWrite />);
+    render(<ExternalReconstructionPanel workOrderId="work-1" expectedEpochId={null} canWrite accountIdentity={continuity} />);
     fireEvent.click(await screen.findByRole("button", { name: "등록 이어하기" }));
     fireEvent.change(screen.getByLabelText("정사영상 GeoTIFF"), { target: { files: [new File(["x"], "ortho.tif")] } });
     await screen.findByText(/정사영상 1 KB 확인 완료/);
+    const listReads = () => fetchMock.mock.calls.filter(([url, init]) => !(init as RequestInit | undefined)?.method && (url as string).endsWith("/external-reconstruction-submissions")).length;
+    const readsBefore = listReads();
     fireEvent.click(screen.getByRole("button", { name: "자료 등록 마치기" }));
     await screen.findByText("파일 등록을 확인했습니다. 파일 형식과 측정 적합성 확인은 아직 진행되지 않았습니다.");
     expect(requests.filter((request) => request.method === "POST" && request.url.endsWith("/external-reconstruction-submissions"))).toHaveLength(0);
     expect(requests.some((request) => request.url.endsWith("/upload-grants"))).toBe(true);
-    await waitFor(() => expect(router.refresh).toHaveBeenCalledTimes(1));
+    // 목록은 다시 읽되 자동 route refresh는 하지 않는다 — 상단 배너는
+    // 별도 이동·새로고침 때 갱신되며, 그때 미제출 입력·동결 시도는 사라질 수 있다.
+    await waitFor(() => expect(listReads()).toBeGreaterThan(readsBefore));
+    expect(router.refresh).not.toHaveBeenCalled();
   });
 
   it("keeps the registration form open when nothing is retained", async () => {
-    render(<ExternalReconstructionPanel workOrderId="work-1" expectedEpochId="epoch-1" canWrite />);
+    render(<ExternalReconstructionPanel workOrderId="work-1" expectedEpochId="epoch-1" canWrite accountIdentity={continuity} />);
     await screen.findByText("아직 등록된 관측 자료가 없습니다.");
     const disclosure = screen.getByText("새 산출물 등록").closest("details");
     expect(disclosure?.open).toBe(true);
@@ -461,7 +717,7 @@ describe("ExternalReconstructionPanel", () => {
 
   it("puts the new-submission form behind a disclosure when revisions are retained", async () => {
     fetchMock.mockResolvedValue({ ok: true, json: async () => ({ submissions: [{ submissionRef: "opaque", state: "SEALED", submission: { revision: 1 } }] }) });
-    render(<ExternalReconstructionPanel workOrderId="work-1" expectedEpochId="epoch-1" canWrite />);
+    render(<ExternalReconstructionPanel workOrderId="work-1" expectedEpochId="epoch-1" canWrite accountIdentity={continuity} />);
     // 유지된 revision 행이 폼보다 먼저 보인다.
     expect(await within(document.getElementById("external-submissions") as HTMLElement).findByText(/산출물 · 등록 버전 1/)).toBeTruthy();
     const disclosure = screen.getByText("새 산출물 등록").closest("details");
@@ -474,7 +730,7 @@ describe("ExternalReconstructionPanel", () => {
 
   it("never hides a resumed attempt behind the disclosure", async () => {
     fetchMock.mockResolvedValue({ ok: true, json: async () => ({ submissions: [{ submissionRef: "opaque", state: "REGISTERED", submission: { revision: 1, producerDeclaration: { softwareName: "ODM", softwareVersion: "1" }, artifacts: [{ artifactId: "ortho", kind: "ortho", fileName: "ortho.tif", declaredSha256: "a".repeat(64), declaredSizeBytes: 1 }] } }] }) });
-    render(<ExternalReconstructionPanel workOrderId="work-1" expectedEpochId="epoch-1" canWrite />);
+    render(<ExternalReconstructionPanel workOrderId="work-1" expectedEpochId="epoch-1" canWrite accountIdentity={continuity} />);
     fireEvent.click(await screen.findByRole("button", { name: "등록 이어하기" }));
     // 재개한 시도는 compactness보다 우선해 항상 보인다.
     expect(screen.getByText("새 산출물 등록").closest("details")?.open).toBe(true);
@@ -492,13 +748,16 @@ describe("ExternalReconstructionPanel", () => {
         });
       }
       if (url.endsWith("/upload-grants")) return { ok: true, json: async () => ({ grants: [{ artifactId: "ortho", uploadUrl: "https://upload.test/ortho", requiredHeaders: {} }] }) };
+      if (url.endsWith("/external-reconstruction-submissions-v3")) {
+        return { ok: true, json: async () => echoDeclaration(JSON.parse(init.body as string) as EchoBody) };
+      }
       return { ok: true, json: async () => ({ submissionRef: "opaque", submission: { revision: 1 } }) };
     });
     vi.spyOn(FakeWorker.prototype, "postMessage").mockImplementation(function (this: FakeWorker, request: { id: string }) {
       this.onmessage?.({ data: { id: request.id, sha256: "a".repeat(64), size: 1 } } as MessageEvent);
     });
 
-    render(<ExternalReconstructionPanel workOrderId="work-1" expectedEpochId="epoch-1" canWrite />);
+    render(<ExternalReconstructionPanel workOrderId="work-1" expectedEpochId="epoch-1" canWrite accountIdentity={continuity} />);
     await screen.findByText("아직 등록된 관측 자료가 없습니다.");
     fireEvent.change(screen.getByLabelText("재구성 소프트웨어 이름"), { target: { value: "ODM" } });
     fireEvent.change(screen.getByLabelText("재구성 소프트웨어 버전"), { target: { value: "1" } });
@@ -508,9 +767,35 @@ describe("ExternalReconstructionPanel", () => {
     await waitFor(() => expect(uploadSignal).toBeDefined());
     fireEvent.click(screen.getByRole("button", { name: "등록 중단" }));
     expect(uploadSignal?.aborted).toBe(true);
-    expect(await screen.findByText("등록을 중단했습니다.")).toBeTruthy();
+    expect(await screen.findByText("등록 중단을 요청했습니다. 이미 접수되거나 전송된 내용이 있을 수 있습니다. 목록을 다시 읽어 실제 상태를 확인하세요.")).toBeTruthy();
   });
 
+});
+
+describe("ExternalReconstructionPanel registration order strip", () => {
+  function expectNeutralStaticSequence(strip: HTMLElement) {
+    const items = within(strip).getAllByRole("listitem");
+    expect(items).toHaveLength(3);
+    const classes = items.map((item) => (item as HTMLElement).className);
+    // All steps share one neutral style: no accent, no current-step marking.
+    expect(new Set(classes).size).toBe(1);
+    expect(classes[0]).not.toMatch(/accent/);
+    expect(strip.querySelector("[aria-current]")).toBeNull();
+  }
+
+  it("labels the strip as an ordinary order, never as live progress", async () => {
+    render(<ExternalReconstructionPanel workOrderId="work-1" expectedEpochId="epoch-1" canWrite accountIdentity={continuity} />);
+    await screen.findByText("아직 등록된 관측 자료가 없습니다.");
+    expectNeutralStaticSequence(screen.getByRole("list", { name: "등록 순서" }));
+    expect(screen.queryByRole("list", { name: "자료 등록 흐름" })).toBeNull();
+  });
+
+  it("stays neutral while retained revisions are shown", async () => {
+    fetchMock.mockResolvedValue({ ok: true, json: async () => ({ submissions: [{ submissionRef: "opaque", state: "SEALED", submission: { revision: 1 } }] }) });
+    render(<ExternalReconstructionPanel workOrderId="work-1" expectedEpochId="epoch-1" canWrite accountIdentity={continuity} />);
+    await within(document.getElementById("external-submissions") as HTMLElement).findByText(/등록 버전 1/);
+    expectNeutralStaticSequence(screen.getByRole("list", { name: "등록 순서" }));
+  });
 });
 
 describe("ExternalReconstructionPanel header auto-recognition (AX-3)", () => {
@@ -522,13 +807,21 @@ describe("ExternalReconstructionPanel header auto-recognition (AX-3)", () => {
 
   function registerFlow() {
     const registrations: Record<string, unknown>[] = [];
+    let declared: EchoBody | null = null;
     fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
       if (!init?.method) return { ok: true, json: async () => ({ submissions: [] }) };
       if (url.endsWith("/external-reconstruction-submissions-v3")) {
-        registrations.push(JSON.parse(init.body as string));
-        return { ok: true, json: async () => ({ submissionRef: "opaque", submission: { revision: 1 } }) };
+        const body = JSON.parse(init.body as string) as EchoBody;
+        registrations.push(body);
+        declared = body;
+        return { ok: true, json: async () => echoDeclaration(body) };
       }
-      if (url.endsWith("/upload-grants")) return { ok: true, json: async () => ({ grants: [{ artifactId: "ortho", uploadUrl: "https://upload.test/ortho", requiredHeaders: {} }] }) };
+      if (url.endsWith("/upload-grants")) return { ok: true, json: async () => ORTHO_GRANT };
+      if (url.endsWith("/seal")) {
+        return declared
+          ? { ok: true, json: async () => echoSeal(declared as EchoBody) }
+          : { ok: true, json: async () => ({}) };
+      }
       return { ok: true, json: async () => ({}) };
     });
     vi.spyOn(FakeWorker.prototype, "postMessage").mockImplementation(function (this: FakeWorker, request: { id: string }) {
@@ -538,7 +831,7 @@ describe("ExternalReconstructionPanel header auto-recognition (AX-3)", () => {
   }
 
   async function chooseOrtho() {
-    render(<ExternalReconstructionPanel workOrderId="work-1" expectedEpochId="epoch-1" canWrite />);
+    render(<ExternalReconstructionPanel workOrderId="work-1" expectedEpochId="epoch-1" canWrite accountIdentity={continuity} />);
     await screen.findByText("아직 등록된 관측 자료가 없습니다.");
     fireEvent.change(screen.getByLabelText("정사영상 GeoTIFF"), { target: { files: [new File(["x"], "ortho.tif")] } });
     await screen.findByText(/정사영상 1 KB 확인 완료/);
@@ -564,7 +857,7 @@ describe("ExternalReconstructionPanel header auto-recognition (AX-3)", () => {
   it("never overwrites producer text the operator already typed", async () => {
     registerFlow();
     headerMock.read.mockResolvedValue(orthoHeader);
-    render(<ExternalReconstructionPanel workOrderId="work-1" expectedEpochId="epoch-1" canWrite />);
+    render(<ExternalReconstructionPanel workOrderId="work-1" expectedEpochId="epoch-1" canWrite accountIdentity={continuity} />);
     await screen.findByText("아직 등록된 관측 자료가 없습니다.");
     fireEvent.change(screen.getByLabelText("재구성 소프트웨어 이름"), { target: { value: "Metashape" } });
     fireEvent.change(screen.getByLabelText("정사영상 GeoTIFF"), { target: { files: [new File(["x"], "ortho.tif")] } });
@@ -599,7 +892,7 @@ describe("ExternalReconstructionPanel header auto-recognition (AX-3)", () => {
       this.onmessage?.({ data: { id: request.id, sha256: "a".repeat(64), size: 1 } } as MessageEvent);
     });
     headerMock.read.mockResolvedValue(orthoHeader);
-    render(<ExternalReconstructionPanel workOrderId="work-1" expectedEpochId="epoch-1" canWrite />);
+    render(<ExternalReconstructionPanel workOrderId="work-1" expectedEpochId="epoch-1" canWrite accountIdentity={continuity} />);
     fireEvent.click(await screen.findByRole("button", { name: "등록 이어하기" }));
     fireEvent.change(screen.getByLabelText("정사영상 GeoTIFF"), { target: { files: [new File(["x"], "ortho.tif")] } });
     await screen.findByText(/파일 헤더에서 읽은 정사영상 정보입니다/);
@@ -628,7 +921,7 @@ describe("ExternalReconstructionPanel basename preflight", () => {
 
   it("rejects a Korean basename before hashing with actionable copy and no POST", async () => {
     const hashSpy = hashAs("a".repeat(64));
-    render(<ExternalReconstructionPanel workOrderId="work-1" expectedEpochId="epoch-1" canWrite />);
+    render(<ExternalReconstructionPanel workOrderId="work-1" expectedEpochId="epoch-1" canWrite accountIdentity={continuity} />);
     await screen.findByText("아직 등록된 관측 자료가 없습니다.");
     fireEvent.change(screen.getByLabelText("정사영상 GeoTIFF"), { target: { files: [new File(["x"], "정사영상_동측.tif")] } });
     const issue = await screen.findByText(/정사영상_동측.tif’ 파일은 등록할 수 없습니다/);
@@ -643,7 +936,7 @@ describe("ExternalReconstructionPanel basename preflight", () => {
 
   it("keeps the previous valid choice, then re-enables on valid reselection or clears it", async () => {
     hashAs("a".repeat(64));
-    render(<ExternalReconstructionPanel workOrderId="work-1" expectedEpochId="epoch-1" canWrite />);
+    render(<ExternalReconstructionPanel workOrderId="work-1" expectedEpochId="epoch-1" canWrite accountIdentity={continuity} />);
     await screen.findByText("아직 등록된 관측 자료가 없습니다.");
     fireEvent.change(screen.getByLabelText("재구성 소프트웨어 이름"), { target: { value: "ODM" } });
     fireEvent.change(screen.getByLabelText("재구성 소프트웨어 버전"), { target: { value: "1" } });
@@ -673,7 +966,7 @@ describe("ExternalReconstructionPanel basename preflight", () => {
       return { ok: true, json: async () => ({ submissions: [registered] }) };
     });
     hashAs("a".repeat(64));
-    render(<ExternalReconstructionPanel workOrderId="work-1" expectedEpochId={null} canWrite />);
+    render(<ExternalReconstructionPanel workOrderId="work-1" expectedEpochId={null} canWrite accountIdentity={continuity} />);
     fireEvent.click(await screen.findByRole("button", { name: "등록 이어하기" }));
     fireEvent.change(screen.getByLabelText("정사영상 GeoTIFF"), { target: { files: [new File(["x"], "한글.tif")] } });
     await screen.findByText(/정사영상 1 KB 확인 완료/);
@@ -686,14 +979,15 @@ describe("ExternalReconstructionPanel basename preflight", () => {
     fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
       if (!init?.method) return { ok: true, json: async () => ({ submissions: [] }) };
       if (url.endsWith("/external-reconstruction-submissions-v3")) {
-        posts.push(JSON.parse(init.body as string));
+        const body = JSON.parse(init.body as string) as EchoBody;
+        posts.push(body);
         if (posts.length === 1) return { ok: false, status: 422, json: async () => ({ code: "INVALID" }) };
-        return { ok: true, json: async () => ({ submissionRef: "opaque", state: "REGISTERED", submission: { revision: 1 } }) };
+        return { ok: true, json: async () => echoDeclaration(body) };
       }
       return { ok: true, json: async () => ({}) };
     });
     hashAs("a".repeat(64));
-    render(<ExternalReconstructionPanel workOrderId="work-1" expectedEpochId="epoch-1" canWrite />);
+    render(<ExternalReconstructionPanel workOrderId="work-1" expectedEpochId="epoch-1" canWrite accountIdentity={continuity} />);
     await screen.findByText("아직 등록된 관측 자료가 없습니다.");
     fireEvent.change(screen.getByLabelText("재구성 소프트웨어 이름"), { target: { value: "ODM" } });
     fireEvent.change(screen.getByLabelText("재구성 소프트웨어 버전"), { target: { value: "1" } });
@@ -716,15 +1010,120 @@ describe("ExternalReconstructionPanel basename preflight", () => {
   });
 });
 
-describe("ExternalReconstructionPanel sealed completion lock", () => {
-  function successFlow(posts: { url: string; body?: unknown }[]) {
+describe("ExternalReconstructionPanel submit safety", () => {
+  function queuedFlow() {
+    const posts: string[] = [];
+    let releaseUpload: (() => void) | undefined;
+    let declared: EchoBody | null = null;
     fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
       if (!init?.method) return { ok: true, json: async () => ({ submissions: [] }) };
       if (url.endsWith("/external-reconstruction-submissions-v3")) {
-        posts.push({ url, body: init.body ? JSON.parse(init.body as string) : undefined });
-        return { ok: true, json: async () => ({ submissionRef: "opaque", state: "REGISTERED", submission: { revision: 1 } }) };
+        posts.push(url);
+        declared = JSON.parse(init.body as string) as EchoBody;
+        return { ok: true, json: async () => echoDeclaration(declared as EchoBody) };
       }
+      if (url.endsWith("/upload-grants")) return { ok: true, json: async () => ORTHO_GRANT };
+      if (init.method === "PUT") return new Promise((resolve) => { releaseUpload = () => resolve({ ok: true }); });
+      if (url.endsWith("/seal")) {
+        return declared
+          ? { ok: true, json: async () => echoSeal(declared as EchoBody) }
+          : { ok: true, json: async () => ({}) };
+      }
+      return { ok: true, json: async () => ({}) };
+    });
+    vi.spyOn(FakeWorker.prototype, "postMessage").mockImplementation(function (this: FakeWorker, request: { id: string }) {
+      this.onmessage?.({ data: { id: request.id, sha256: "a".repeat(64), size: 1 } } as MessageEvent);
+    });
+    return { posts, release: () => releaseUpload?.() };
+  }
+
+  it("sends one declaration for a double click while the first attempt is in flight", async () => {
+    const { posts, release } = queuedFlow();
+    render(<ExternalReconstructionPanel workOrderId="work-1" expectedEpochId="epoch-1" canWrite accountIdentity={continuity} />);
+    await screen.findByText("아직 등록된 관측 자료가 없습니다.");
+    fireEvent.change(screen.getByLabelText("재구성 소프트웨어 이름"), { target: { value: "ODM" } });
+    fireEvent.change(screen.getByLabelText("재구성 소프트웨어 버전"), { target: { value: "1" } });
+    fireEvent.change(screen.getByLabelText("정사영상 GeoTIFF"), { target: { files: [new File(["x"], "ortho.tif")] } });
+    await screen.findByText(/정사영상 1 KB 확인 완료/);
+    const submit = screen.getByRole("button", { name: "자료 등록 마치기" });
+    fireEvent.click(submit);
+    fireEvent.click(submit);
+    await waitFor(() => expect(posts).toHaveLength(1));
+    release();
+    await screen.findByText("파일 등록을 확인했습니다. 파일 형식과 측정 적합성 확인은 아직 진행되지 않았습니다.");
+    expect(posts).toHaveLength(1);
+  });
+
+  it("announces a failed submission as an alert and offers cancellation limits up front", async () => {
+    queuedFlow();
+    // PUT never resolves here; abort path below covers cancellation.
+    fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+      if (!init?.method) return { ok: true, json: async () => ({ submissions: [] }) };
+      throw new Error("offline");
+    });
+    vi.spyOn(FakeWorker.prototype, "postMessage").mockImplementation(function (this: FakeWorker, request: { id: string }) {
+      this.onmessage?.({ data: { id: request.id, sha256: "a".repeat(64), size: 1 } } as MessageEvent);
+    });
+    render(<ExternalReconstructionPanel workOrderId="work-1" expectedEpochId="epoch-1" canWrite accountIdentity={continuity} />);
+    await screen.findByText("아직 등록된 관측 자료가 없습니다.");
+    fireEvent.change(screen.getByLabelText("재구성 소프트웨어 이름"), { target: { value: "ODM" } });
+    fireEvent.change(screen.getByLabelText("재구성 소프트웨어 버전"), { target: { value: "1" } });
+    fireEvent.change(screen.getByLabelText("정사영상 GeoTIFF"), { target: { files: [new File(["x"], "ortho.tif")] } });
+    await screen.findByText(/정사영상 1 KB 확인 완료/);
+    fireEvent.click(screen.getByRole("button", { name: "자료 등록 마치기" }));
+    const failure = await screen.findByText("응답을 확인하지 못했습니다. 같은 시도는 같은 식별자로 다시 확인할 수 있으니 목록에서 실제 상태를 먼저 확인하세요.");
+    expect(failure.getAttribute("role")).toBe("alert");
+  });
+
+  it("reloads the list on cancellation so the actual server state is shown", async () => {
+    let listReads = 0;
+    fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+      if (!init?.method) {
+        listReads += 1;
+        return { ok: true, json: async () => ({ submissions: [] }) };
+      }
+      if (init.method === "PUT") return new Promise(() => undefined);
       if (url.endsWith("/upload-grants")) return { ok: true, json: async () => ({ grants: [{ artifactId: "ortho", uploadUrl: "https://upload.test/ortho", requiredHeaders: {} }] }) };
+      if (url.endsWith("/external-reconstruction-submissions-v3")) {
+        return { ok: true, json: async () => echoDeclaration(JSON.parse(init.body as string) as EchoBody) };
+      }
+      return { ok: true, json: async () => ({ submissionRef: "opaque", submission: { revision: 1 } }) };
+    });
+    vi.spyOn(FakeWorker.prototype, "postMessage").mockImplementation(function (this: FakeWorker, request: { id: string }) {
+      this.onmessage?.({ data: { id: request.id, sha256: "a".repeat(64), size: 1 } } as MessageEvent);
+    });
+    render(<ExternalReconstructionPanel workOrderId="work-1" expectedEpochId="epoch-1" canWrite accountIdentity={continuity} />);
+    await screen.findByText("아직 등록된 관측 자료가 없습니다.");
+    const readsBeforeCancel = listReads;
+    fireEvent.change(screen.getByLabelText("재구성 소프트웨어 이름"), { target: { value: "ODM" } });
+    fireEvent.change(screen.getByLabelText("재구성 소프트웨어 버전"), { target: { value: "1" } });
+    fireEvent.change(screen.getByLabelText("정사영상 GeoTIFF"), { target: { files: [new File(["x"], "ortho.tif")] } });
+    await screen.findByText(/정사영상 1 KB 확인 완료/);
+    fireEvent.click(screen.getByRole("button", { name: "자료 등록 마치기" }));
+    await screen.findByText(/등록 중단은 이미 접수·전송된 내용을 되돌리지 않습니다/);
+    fireEvent.click(screen.getByRole("button", { name: "등록 중단" }));
+    await screen.findByText("등록 중단을 요청했습니다. 이미 접수되거나 전송된 내용이 있을 수 있습니다. 목록을 다시 읽어 실제 상태를 확인하세요.");
+    await waitFor(() => expect(listReads).toBeGreaterThan(readsBeforeCancel));
+  });
+});
+
+describe("ExternalReconstructionPanel sealed completion lock", () => {
+  function successFlow(posts: { url: string; body?: unknown }[]) {
+    let declared: EchoBody | null = null;
+    fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+      if (!init?.method) return { ok: true, json: async () => ({ submissions: [] }) };
+      if (url.endsWith("/external-reconstruction-submissions-v3")) {
+        const body = JSON.parse(init.body as string) as EchoBody;
+        posts.push({ url, body });
+        declared = body;
+        return { ok: true, json: async () => echoDeclaration(body) };
+      }
+      if (url.endsWith("/upload-grants")) return { ok: true, json: async () => ORTHO_GRANT };
+      if (url.endsWith("/seal")) {
+        return declared
+          ? { ok: true, json: async () => echoSeal(declared as EchoBody) }
+          : { ok: true, json: async () => ({}) };
+      }
       return { ok: true, json: async () => ({}) };
     });
     vi.spyOn(FakeWorker.prototype, "postMessage").mockImplementation(function (this: FakeWorker, request: { id: string }) {
@@ -733,7 +1132,7 @@ describe("ExternalReconstructionPanel sealed completion lock", () => {
   }
 
   async function fillAndChoose() {
-    render(<ExternalReconstructionPanel workOrderId="work-1" expectedEpochId="epoch-1" canWrite />);
+    render(<ExternalReconstructionPanel workOrderId="work-1" expectedEpochId="epoch-1" canWrite accountIdentity={continuity} />);
     await screen.findByText("아직 등록된 관측 자료가 없습니다.");
     fireEvent.change(screen.getByLabelText("재구성 소프트웨어 이름"), { target: { value: "ODM" } });
     fireEvent.change(screen.getByLabelText("재구성 소프트웨어 버전"), { target: { value: "1" } });
@@ -749,11 +1148,14 @@ describe("ExternalReconstructionPanel sealed completion lock", () => {
     await screen.findByText("파일 등록을 확인했습니다. 파일 형식과 측정 적합성 확인은 아직 진행되지 않았습니다.");
     const locked = screen.getByRole("button", { name: "파일 제출 완료" }) as HTMLButtonElement;
     expect(locked.disabled).toBe(true);
-    expect(router.refresh).toHaveBeenCalledTimes(1);
+    // 목록은 다시 읽되 자동 route refresh는 하지 않는다.
+    const listReads = () => fetchMock.mock.calls.filter(([url, init]) => !(init as RequestInit | undefined)?.method && (url as string).endsWith("/external-reconstruction-submissions")).length;
+    await waitFor(() => expect(listReads()).toBeGreaterThan(1));
+    expect(router.refresh).not.toHaveBeenCalled();
     // 두 번째 클릭은 같은 시도로 다시 보내지 않는다.
     fireEvent.click(locked);
     await waitFor(() => expect(posts).toHaveLength(1));
-    expect(router.refresh).toHaveBeenCalledTimes(1);
+    expect(router.refresh).not.toHaveBeenCalled();
     // 명시적인 새 등록만이 잠금을 풀고 새 식별자를 만든다.
     fireEvent.click(screen.getByRole("button", { name: "새로 등록하기" }));
     expect((screen.getByRole("button", { name: "자료 등록 마치기" }) as HTMLButtonElement).disabled).toBe(false);
@@ -763,18 +1165,21 @@ describe("ExternalReconstructionPanel sealed completion lock", () => {
   });
 
   it("locks the same way after a registered-reference resume seal", async () => {
-    const registered = { submissionRef: "opaque", state: "REGISTERED", submission: { revision: 1, observationEpochId: "old-epoch", producerDeclaration: { softwareName: "ODM", softwareVersion: "1" }, artifacts: [{ artifactId: "ortho", kind: "ortho", fileName: "ortho.tif", declaredSha256: "a".repeat(64), declaredSizeBytes: 1 }] } };
+    const registered = { submissionRef: ECHO_REF, state: "REGISTERED", submission: { revision: 1, submissionId: "resume-lock-1", observationEpochId: "old-epoch", producerDeclaration: { softwareName: "ODM", softwareVersion: "1" }, inputDeclaration: { captureBasis: "UNKNOWN", captureStartedAt: null, captureEndedAt: null, captureDate: null }, artifacts: [{ artifactId: "ortho", kind: "ortho", fileName: "ortho.tif", declaredSha256: "a".repeat(64), declaredSizeBytes: 1 }] } };
     const posts: { url: string; body?: unknown }[] = [];
     fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
       if (!init?.method) return { ok: true, json: async () => ({ submissions: [registered] }) };
       posts.push({ url });
       if (url.endsWith("/upload-grants")) return { ok: true, json: async () => ({ grants: [{ artifactId: "ortho", uploadUrl: "https://upload.test/ortho", requiredHeaders: {} }] }) };
+      if (url.endsWith("/seal")) {
+        return { ok: true, json: async () => sealedEchoFor(registered) };
+      }
       return { ok: true, json: async () => ({}) };
     });
     vi.spyOn(FakeWorker.prototype, "postMessage").mockImplementation(function (this: FakeWorker, request: { id: string }) {
       this.onmessage?.({ data: { id: request.id, sha256: "a".repeat(64), size: 1 } } as MessageEvent);
     });
-    render(<ExternalReconstructionPanel workOrderId="work-1" expectedEpochId={null} canWrite />);
+    render(<ExternalReconstructionPanel workOrderId="work-1" expectedEpochId={null} canWrite accountIdentity={continuity} />);
     fireEvent.click(await screen.findByRole("button", { name: "등록 이어하기" }));
     fireEvent.change(screen.getByLabelText("정사영상 GeoTIFF"), { target: { files: [new File(["x"], "ortho.tif")] } });
     await screen.findByText(/정사영상 1 KB 확인 완료/);
@@ -782,7 +1187,10 @@ describe("ExternalReconstructionPanel sealed completion lock", () => {
     await screen.findByText("파일 등록을 확인했습니다. 파일 형식과 측정 적합성 확인은 아직 진행되지 않았습니다.");
     expect((screen.getByRole("button", { name: "파일 제출 완료" }) as HTMLButtonElement).disabled).toBe(true);
     expect(posts.filter((request) => request.url.endsWith("/external-reconstruction-submissions"))).toHaveLength(0);
-    expect(router.refresh).toHaveBeenCalledTimes(1);
+    // 목록은 다시 읽되 자동 route refresh는 하지 않는다.
+    const listReads = () => fetchMock.mock.calls.filter(([url, init]) => !(init as RequestInit | undefined)?.method && (url as string).endsWith("/external-reconstruction-submissions")).length;
+    await waitFor(() => expect(listReads()).toBeGreaterThan(1));
+    expect(router.refresh).not.toHaveBeenCalled();
   });
 });
 
@@ -799,7 +1207,7 @@ describe("ExternalReconstructionPanel per-slot name issues", () => {
   }
 
   async function fillTwoValidSlots() {
-    render(<ExternalReconstructionPanel workOrderId="work-1" expectedEpochId="epoch-1" canWrite />);
+    render(<ExternalReconstructionPanel workOrderId="work-1" expectedEpochId="epoch-1" canWrite accountIdentity={continuity} />);
     await screen.findByText("아직 등록된 관측 자료가 없습니다.");
     fireEvent.change(screen.getByLabelText("재구성 소프트웨어 이름"), { target: { value: "ODM" } });
     fireEvent.change(screen.getByLabelText("재구성 소프트웨어 버전"), { target: { value: "1" } });
@@ -854,7 +1262,7 @@ describe("ExternalReconstructionPanel per-slot name issues", () => {
 
 describe("ExternalReconstructionPanel V3 missing-info intake", () => {
   it("only shows inputs for the selected timing precision and keeps calendar dates timezone-free", async () => {
-    render(<ExternalReconstructionPanel workOrderId="work-1" expectedEpochId="epoch-1" canWrite />);
+    render(<ExternalReconstructionPanel workOrderId="work-1" expectedEpochId="epoch-1" canWrite accountIdentity={continuity} />);
     await screen.findByText("아직 등록된 관측 자료가 없습니다.");
     expect((within(screen.getByRole("radiogroup", { name: "원본 보관 위치" })).getByRole("radio", { name: "미상" }) as HTMLInputElement).checked).toBe(true);
     expect(screen.queryByLabelText("촬영 날짜 (YYYY-MM-DD)")).toBeNull();
@@ -886,7 +1294,7 @@ describe("ExternalReconstructionPanel V3 missing-info intake", () => {
       if (!init?.method) return { ok: true, json: async () => ({ submissions: [] }) };
       if (url.endsWith("/external-reconstruction-submissions-v3")) {
         posts.push(JSON.parse(init.body as string));
-        return { ok: true, json: async () => ({ submissionRef: "opaque", submission: { revision: 1 } }) };
+        return { ok: true, json: async () => echoDeclaration(JSON.parse(init.body as string) as EchoBody) };
       }
       if (url.endsWith("/upload-grants")) return { ok: true, json: async () => ({ grants: [{ artifactId: "dsm", uploadUrl: "https://upload.test/dsm", requiredHeaders: {} }] }) };
       return { ok: true, json: async () => ({}) };
@@ -897,7 +1305,7 @@ describe("ExternalReconstructionPanel V3 missing-info intake", () => {
     const posts: Record<string, unknown>[] = [];
     v3SubmitFlow(posts);
     hashAs("b".repeat(64), 2);
-    render(<ExternalReconstructionPanel workOrderId="work-1" expectedEpochId="epoch-1" canWrite />);
+    render(<ExternalReconstructionPanel workOrderId="work-1" expectedEpochId="epoch-1" canWrite accountIdentity={continuity} />);
     await screen.findByText("아직 등록된 관측 자료가 없습니다.");
     fireEvent.change(screen.getByLabelText("DSM GeoTIFF"), { target: { files: [new File(["x"], "surface.tif")] } });
     await screen.findByText(/DSM 1 KB 확인 완료/);
@@ -931,7 +1339,7 @@ describe("ExternalReconstructionPanel V3 missing-info intake", () => {
     const posts: Record<string, unknown>[] = [];
     v3SubmitFlow(posts);
     hashAs("b".repeat(64), 2);
-    render(<ExternalReconstructionPanel workOrderId="work-1" expectedEpochId="epoch-1" canWrite />);
+    render(<ExternalReconstructionPanel workOrderId="work-1" expectedEpochId="epoch-1" canWrite accountIdentity={continuity} />);
     await screen.findByText("아직 등록된 관측 자료가 없습니다.");
     fireEvent.change(screen.getByLabelText("재구성 소프트웨어 이름"), { target: { value: "ODM" } });
     fireEvent.change(screen.getByLabelText("재구성 소프트웨어 버전"), { target: { value: "1" } });
@@ -962,7 +1370,7 @@ describe("ExternalReconstructionPanel V3 missing-info intake", () => {
 
   it("blocks the fabricated literal unknown instead of submitting it", async () => {
     hashAs("b".repeat(64), 2);
-    render(<ExternalReconstructionPanel workOrderId="work-1" expectedEpochId="epoch-1" canWrite />);
+    render(<ExternalReconstructionPanel workOrderId="work-1" expectedEpochId="epoch-1" canWrite accountIdentity={continuity} />);
     await screen.findByText("아직 등록된 관측 자료가 없습니다.");
     fireEvent.change(screen.getByLabelText("DSM GeoTIFF"), { target: { files: [new File(["x"], "surface.tif")] } });
     await screen.findByText(/DSM 1 KB 확인 완료/);
@@ -977,7 +1385,7 @@ describe("ExternalReconstructionPanel V3 missing-info intake", () => {
     const posts: Record<string, unknown>[] = [];
     v3SubmitFlow(posts);
     hashAs("b".repeat(64), 2);
-    render(<ExternalReconstructionPanel workOrderId="work-1" expectedEpochId="epoch-1" canWrite />);
+    render(<ExternalReconstructionPanel workOrderId="work-1" expectedEpochId="epoch-1" canWrite accountIdentity={continuity} />);
     await screen.findByText("아직 등록된 관측 자료가 없습니다.");
     fireEvent.change(screen.getByLabelText("DSM GeoTIFF"), { target: { files: [new File(["x"], "surface.tif")] } });
     await screen.findByText(/DSM 1 KB 확인 완료/);
@@ -999,7 +1407,7 @@ describe("ExternalReconstructionPanel V3 missing-info intake", () => {
 
   it("rejects an unsafe upstream reference before HTTP without echoing it", async () => {
     hashAs("b".repeat(64), 2);
-    render(<ExternalReconstructionPanel workOrderId="work-1" expectedEpochId="epoch-1" canWrite />);
+    render(<ExternalReconstructionPanel workOrderId="work-1" expectedEpochId="epoch-1" canWrite accountIdentity={continuity} />);
     await screen.findByText("아직 등록된 관측 자료가 없습니다.");
     fireEvent.change(screen.getByLabelText("재구성 소프트웨어 이름"), { target: { value: "ODM" } });
     fireEvent.change(screen.getByLabelText("재구성 소프트웨어 버전"), { target: { value: "1" } });
@@ -1017,7 +1425,7 @@ describe("ExternalReconstructionPanel V3 missing-info intake", () => {
     v3SubmitFlow(posts);
     hashAs("b".repeat(64), 2);
     headerMock.read.mockResolvedValue({ width: 4000, height: 3000, samplesPerPixel: 4, bitsPerSample: 8, sampleFormat: 1, geoKeys: { ProjectedCSTypeGeoKey: 5186 }, software: "SomeEngine", dateTime: "2026:09:15 10:20:30", pixelSize: [0.05, 0.05] });
-    render(<ExternalReconstructionPanel workOrderId="work-1" expectedEpochId="epoch-1" canWrite />);
+    render(<ExternalReconstructionPanel workOrderId="work-1" expectedEpochId="epoch-1" canWrite accountIdentity={continuity} />);
     await screen.findByText("아직 등록된 관측 자료가 없습니다.");
     fireEvent.change(screen.getByLabelText("DSM GeoTIFF"), { target: { files: [new File(["x"], "surface.tif")] } });
     await screen.findByText(/DSM 1 KB 확인 완료/);
@@ -1031,7 +1439,7 @@ describe("ExternalReconstructionPanel V3 missing-info intake", () => {
   });
 
   it("never asks for raw photos: only ortho/DSM slots exist and retention stays a declaration", async () => {
-    render(<ExternalReconstructionPanel workOrderId="work-1" expectedEpochId="epoch-1" canWrite />);
+    render(<ExternalReconstructionPanel workOrderId="work-1" expectedEpochId="epoch-1" canWrite accountIdentity={continuity} />);
     await screen.findByText("아직 등록된 관측 자료가 없습니다.");
     expect(document.querySelectorAll('input[type="file"]')).toHaveLength(2);
     expect(screen.getByText(/제출할 GeoTIFF가 아니라 재구성에 사용한 원본 사진·관측 자료의 보관 위치/)).toBeTruthy();
@@ -1074,14 +1482,17 @@ describe("ExternalReconstructionPanel V3 missing-info intake", () => {
   });
 
   it("resumes a DSM-only registered record by binding match without a second declaration POST", async () => {
-    const registered = { submissionRef: "opaque", state: "REGISTERED", submission: { revision: 1, observationEpochId: "old-epoch", producerDeclaration: { softwareName: "ODM", softwareVersion: "1" }, artifacts: [{ artifactId: "dsm", kind: "dsm", fileName: "surface.tif", declaredSha256: "b".repeat(64), declaredSizeBytes: 2 }] } };
+    const registered = { submissionRef: ECHO_REF, state: "REGISTERED", submission: { revision: 1, submissionId: "resume-dsm-1", observationEpochId: "old-epoch", producerDeclaration: { softwareName: "ODM", softwareVersion: "1" }, inputDeclaration: { captureBasis: "UNKNOWN", captureStartedAt: null, captureEndedAt: null, captureDate: null }, artifacts: [{ artifactId: "dsm", kind: "dsm", fileName: "surface.tif", declaredSha256: "b".repeat(64), declaredSizeBytes: 2 }] } };
     fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
       if (!init?.method) return { ok: true, json: async () => ({ submissions: [registered] }) };
       if (url.endsWith("/upload-grants")) return { ok: true, json: async () => ({ grants: [{ artifactId: "dsm", uploadUrl: "https://upload.test/dsm", requiredHeaders: {} }] }) };
+      if (url.endsWith("/seal")) {
+        return { ok: true, json: async () => sealedEchoFor(registered) };
+      }
       return { ok: true, json: async () => ({ submissions: [registered] }) };
     });
     hashAs("b".repeat(64), 2);
-    render(<ExternalReconstructionPanel workOrderId="work-1" expectedEpochId={null} canWrite />);
+    render(<ExternalReconstructionPanel workOrderId="work-1" expectedEpochId={null} canWrite accountIdentity={continuity} />);
     fireEvent.click(await screen.findByRole("button", { name: "등록 이어하기" }));
     fireEvent.change(screen.getByLabelText("DSM GeoTIFF"), { target: { files: [new File(["x"], "surface.tif")] } });
     await screen.findByText(/DSM 1 KB 확인 완료/);
@@ -1090,5 +1501,950 @@ describe("ExternalReconstructionPanel V3 missing-info intake", () => {
     const posts = fetchMock.mock.calls.filter(([, init]) => (init as RequestInit | undefined)?.method === "POST");
     expect(posts.filter(([url]) => (url as string).endsWith("/external-reconstruction-submissions-v3"))).toHaveLength(0);
     expect(posts.filter(([url]) => (url as string).endsWith("/external-reconstruction-submissions"))).toHaveLength(0);
+  });
+});
+
+describe("ExternalReconstructionPanel continuity and echo verification", () => {
+  function hashAs(sha256: string, size = 1) {
+    return vi.spyOn(FakeWorker.prototype, "postMessage").mockImplementation(function (this: FakeWorker, request: { id: string }) {
+      this.onmessage?.({ data: { id: request.id, sha256, size } } as MessageEvent);
+    });
+  }
+
+  async function fillNewOrtho() {
+    render(<ExternalReconstructionPanel workOrderId="work-1" expectedEpochId="epoch-1" canWrite accountIdentity={continuity} />);
+    await screen.findByText("아직 등록된 관측 자료가 없습니다.");
+    fireEvent.change(screen.getByLabelText("재구성 소프트웨어 이름"), { target: { value: "ODM" } });
+    fireEvent.change(screen.getByLabelText("재구성 소프트웨어 버전"), { target: { value: "1" } });
+    fireEvent.change(screen.getByLabelText("정사영상 GeoTIFF"), { target: { files: [new File(["x"], "ortho.tif")] } });
+    await screen.findByText(/정사영상 1 KB 확인 완료/);
+  }
+
+  function phaseMock(sealPayload: (declared: EchoBody) => unknown) {
+    const seen: Record<string, unknown> = {};
+    let declared: EchoBody | null = null;
+    fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+      if (!init?.method) return { ok: true, json: async () => ({ submissions: [] }) };
+      if (url.endsWith("/external-reconstruction-submissions-v3")) {
+        const body = JSON.parse(init.body as string) as EchoBody;
+        seen.declarationHeaders = init.headers;
+        seen.declarationBody = body;
+        declared = body;
+        return { ok: true, json: async () => echoDeclaration(body) };
+      }
+      if (url.endsWith("/upload-grants")) {
+        seen.grantsHeaders = init.headers;
+        return { ok: true, json: async () => ORTHO_GRANT };
+      }
+      if (url.endsWith("/seal")) {
+        seen.sealHeaders = init.headers;
+        return { ok: true, json: async () => sealPayload(declared as EchoBody) };
+      }
+      return { ok: true, json: async () => ({}) };
+    });
+    return seen;
+  }
+
+  it("freezes the verified fingerprint and sends it on declaration, grants and seal", async () => {
+    hashAs("a".repeat(64));
+    const seen = phaseMock((declared) => echoSeal(declared));
+    await fillNewOrtho();
+    fireEvent.click(screen.getByRole("button", { name: "자료 등록 마치기" }));
+    await screen.findByText("파일 등록을 확인했습니다. 파일 형식과 측정 적합성 확인은 아직 진행되지 않았습니다.");
+    expect((seen.declarationHeaders as Record<string, string>)["x-ksi-continuity-fingerprint"]).toBe(continuity.fingerprint);
+    expect((seen.grantsHeaders as Record<string, string>)["x-ksi-continuity-fingerprint"]).toBe(continuity.fingerprint);
+    expect((seen.sealHeaders as Record<string, string>)["x-ksi-continuity-fingerprint"]).toBe(continuity.fingerprint);
+    expect((seen.declarationBody as EchoBody).submissionId).toMatch(/^console-/);
+    expect(screen.getByRole("button", { name: "파일 제출 완료" })).toBeTruthy();
+    // 목록은 다시 읽되 자동 route refresh는 하지 않는다.
+    const listReads = () => fetchMock.mock.calls.filter(([url, init]) => !(init as RequestInit | undefined)?.method && (url as string).endsWith("/external-reconstruction-submissions")).length;
+    await waitFor(() => expect(listReads()).toBeGreaterThan(1));
+    expect(router.refresh).not.toHaveBeenCalled();
+  });
+
+  it("blocks new writes without a verified identity but keeps reads", async () => {
+    hashAs("a".repeat(64));
+    render(<ExternalReconstructionPanel workOrderId="work-1" expectedEpochId="epoch-1" canWrite accountIdentity={null} />);
+    await screen.findByText("아직 등록된 관측 자료가 없습니다.");
+    fireEvent.change(screen.getByLabelText("재구성 소프트웨어 이름"), { target: { value: "ODM" } });
+    fireEvent.change(screen.getByLabelText("재구성 소프트웨어 버전"), { target: { value: "1" } });
+    fireEvent.change(screen.getByLabelText("정사영상 GeoTIFF"), { target: { files: [new File(["x"], "ortho.tif")] } });
+    await screen.findByText(/정사영상 1 KB 확인 완료/);
+    expect((screen.getByRole("button", { name: "자료 등록 마치기" }) as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getByText(/계정을 확인하지 못해 산출물 등록을 시작할 수 없습니다/)).toBeTruthy();
+    expect(fetchMock.mock.calls.filter(([, init]) => (init as RequestInit | undefined)?.method === "POST")).toHaveLength(0);
+  });
+
+  it("blocks an explicit resume without a verified identity", async () => {
+    const registered = { submissionRef: ECHO_REF, state: "REGISTERED", submission: { revision: 1, submissionId: "resume-blocked-1", observationEpochId: "old-epoch", producerDeclaration: { softwareName: "ODM", softwareVersion: "1" }, artifacts: [{ artifactId: "ortho", kind: "ortho", fileName: "ortho.tif", declaredSha256: "a".repeat(64), declaredSizeBytes: 1 }] } };
+    fetchMock.mockResolvedValue({ ok: true, json: async () => ({ submissions: [registered] }) });
+    hashAs("a".repeat(64));
+    render(<ExternalReconstructionPanel workOrderId="work-1" expectedEpochId={null} canWrite accountIdentity={null} />);
+    fireEvent.click(await screen.findByRole("button", { name: "등록 이어하기" }));
+    expect(screen.getByText(/계정을 확인하지 못해 등록 이어하기를 시작할 수 없습니다/)).toBeTruthy();
+    expect(screen.queryByText(/등록된 파일과 같은 파일을 다시 선택하세요/)).toBeNull();
+    expect(fetchMock.mock.calls.filter(([, init]) => (init as RequestInit | undefined)?.method === "POST")).toHaveLength(0);
+  });
+
+  it.each([
+    ["declaration", "external-reconstruction-submissions-v3"],
+    ["grants", "upload-grants"],
+    ["seal", "/seal"],
+  ] as const)("preserves the frozen attempt on an account-continuity 409 at %s (synthetic BFF response)", async (_phase, suffix) => {
+    // 합성: BFF 계정 연속성 거부를 흉내낸 통제 응답이며 실제 BFF/Core 계약 검증이 아니다.
+    hashAs("a".repeat(64));
+    let declared: EchoBody | null = null;
+    fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+      if (!init?.method) return { ok: true, json: async () => ({ submissions: [] }) };
+      if (url.endsWith("/external-reconstruction-submissions-v3")) {
+        declared = JSON.parse(init.body as string) as EchoBody;
+        if (suffix === "external-reconstruction-submissions-v3") {
+          return { ok: false, status: 409, json: async () => ({ code: "ACCOUNT_CONTINUITY_MISMATCH" }) };
+        }
+        return { ok: true, json: async () => echoDeclaration(declared as EchoBody) };
+      }
+      if (url.endsWith("/upload-grants")) {
+        if (suffix === "upload-grants") {
+          return { ok: false, status: 409, json: async () => ({ code: "ACCOUNT_CONTINUITY_MISMATCH" }) };
+        }
+        return { ok: true, json: async () => ORTHO_GRANT };
+      }
+      if (url.endsWith("/seal")) {
+        if (suffix === "/seal") {
+          return { ok: false, status: 409, json: async () => ({ code: "ACCOUNT_CONTINUITY_MISMATCH" }) };
+        }
+        return { ok: true, json: async () => echoSeal(declared as EchoBody) };
+      }
+      return { ok: true, json: async () => ({}) };
+    });
+    await fillNewOrtho();
+    fireEvent.click(screen.getByRole("button", { name: "자료 등록 마치기" }));
+    expect(await screen.findByText(/계정이 바뀌어 같은 요청을 다시 보내지 않았습니다/)).toBeTruthy();
+    // 원래 시도·파일·키는 그대로 둔다.
+    expect(screen.getByRole("button", { name: "새로 등록하기" })).toBeTruthy();
+    expect((screen.getByLabelText("재구성 소프트웨어 버전") as HTMLInputElement).disabled).toBe(true);
+    expect(screen.queryByRole("button", { name: "파일 제출 완료" })).toBeNull();
+  });
+
+  it("keeps the frozen attempt when an uncertain retry is rejected with 422", async () => {
+    hashAs("a".repeat(64));
+    const posts: unknown[] = [];
+    let attempts = 0;
+    fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+      if (!init?.method) return { ok: true, json: async () => ({ submissions: [] }) };
+      if (url.endsWith("/external-reconstruction-submissions-v3")) {
+        attempts += 1;
+        posts.push(JSON.parse(init.body as string));
+        if (attempts === 1) throw new Error("lost response");
+        return { ok: false, status: 422, json: async () => ({ code: "INVALID" }) };
+      }
+      return { ok: true, json: async () => ({}) };
+    });
+    await fillNewOrtho();
+    fireEvent.click(screen.getByRole("button", { name: "자료 등록 마치기" }));
+    expect(await screen.findByText(/응답을 확인하지 못했습니다\. 같은 시도는 같은 식별자로 다시 확인할 수 있으니/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "자료 등록 마치기" }));
+    expect(await screen.findByText(/다시 보낸 요청이 등록 기준에 맞지 않아 접수되지 않았습니다/)).toBeTruthy();
+    expect(await screen.findByText(/이전 요청이 처리되었는지는 알 수 없습니다/)).toBeTruthy();
+    // 되돌림·부재를 단정하지 않고 동결을 유지한다.
+    expect(screen.getByRole("button", { name: "새로 등록하기" })).toBeTruthy();
+    expect(router.refresh).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "자료 등록 마치기" }));
+    await waitFor(() => expect(posts).toHaveLength(3));
+    expect(posts[1]).toEqual(posts[0]);
+    expect(posts[2]).toEqual(posts[0]);
+  });
+
+  it("does not mark success on a foreign declaration echo", async () => {
+    hashAs("a".repeat(64));
+    fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+      if (!init?.method) return { ok: true, json: async () => ({ submissions: [] }) };
+      if (url.endsWith("/external-reconstruction-submissions-v3")) {
+        return { ok: true, json: async () => ({ submissionRef: ECHO_REF, state: "REGISTERED", submission: { submissionId: "someone-else", revision: 1, observationEpochId: "epoch-1", artifacts: [{ kind: "ortho", declaredSha256: "a".repeat(64), declaredSizeBytes: 1 }] } }) };
+      }
+      return { ok: true, json: async () => ({}) };
+    });
+    await fillNewOrtho();
+    fireEvent.click(screen.getByRole("button", { name: "자료 등록 마치기" }));
+    expect(await screen.findByText(/응답을 확인하지 못했습니다\. 같은 시도는 같은 식별자로 다시 확인할 수 있으니/)).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "파일 제출 완료" })).toBeNull();
+    expect(screen.getByRole("button", { name: "새로 등록하기" })).toBeTruthy();
+    expect(router.refresh).not.toHaveBeenCalled();
+  });
+
+  it("does not mark success on an empty declaration echo", async () => {
+    hashAs("a".repeat(64));
+    fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+      if (!init?.method) return { ok: true, json: async () => ({ submissions: [] }) };
+      if (url.endsWith("/external-reconstruction-submissions-v3")) return { ok: true, json: async () => ({}) };
+      return { ok: true, json: async () => ({}) };
+    });
+    await fillNewOrtho();
+    fireEvent.click(screen.getByRole("button", { name: "자료 등록 마치기" }));
+    expect(await screen.findByText(/응답을 확인하지 못했습니다\. 같은 시도는 같은 식별자로 다시 확인할 수 있으니/)).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "파일 제출 완료" })).toBeNull();
+    expect(screen.getByRole("button", { name: "새로 등록하기" })).toBeTruthy();
+  });
+
+  it.each(["malformed", "foreign target", "non-sealed"] as const)("does not mark success on a %s seal echo", async (sealCase) => {
+    hashAs("a".repeat(64));
+    let declared: EchoBody | null = null;
+    fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+      if (!init?.method) return { ok: true, json: async () => ({ submissions: [] }) };
+      if (url.endsWith("/external-reconstruction-submissions-v3")) {
+        declared = JSON.parse(init.body as string) as EchoBody;
+        return { ok: true, json: async () => echoDeclaration(declared as EchoBody) };
+      }
+      if (url.endsWith("/upload-grants")) return { ok: true, json: async () => ORTHO_GRANT };
+      if (url.endsWith("/seal")) {
+        if (sealCase === "malformed") return { ok: true, json: async () => ({}) };
+        if (sealCase === "foreign target") {
+          const foreignBody = { submissionId: "foreign-seal", expectedEpochId: "epoch-1", artifacts: [{ artifactId: "ortho", kind: "ortho", fileName: "ortho.tif", declaredSha256: "a".repeat(64), declaredSizeBytes: 1, declaredCrs: null }] };
+          return { ok: true, json: async () => ({ submissionRef: `ers-v1-${"e".repeat(64)}`, state: "SEALED", submission: { submissionId: foreignBody.submissionId, revision: 1, observationEpochId: foreignBody.expectedEpochId, artifacts: foreignBody.artifacts }, manifest: manifestFor(foreignBody as EchoBody, TEST_DIGEST) }) };
+        }
+        return { ok: true, json: async () => echoDeclaration(declared as EchoBody) };
+      }
+      return { ok: true, json: async () => ({}) };
+    });
+    await fillNewOrtho();
+    fireEvent.click(screen.getByRole("button", { name: "자료 등록 마치기" }));
+    expect(await screen.findByText(/응답을 확인하지 못했습니다\. 같은 시도는 같은 식별자로 다시 확인할 수 있으니/)).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "파일 제출 완료" })).toBeNull();
+    expect(screen.getByRole("button", { name: "새로 등록하기" })).toBeTruthy();
+    expect(router.refresh).not.toHaveBeenCalled();
+  });
+
+  it("does not mark success on a seal echo with a different valid ref", async () => {
+    // 신규: 선언 echo ref와 다른 유효 ref의 봉인은 같은 시도가 아니다.
+    hashAs("a".repeat(64));
+    let declared: EchoBody | null = null;
+    fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+      if (!init?.method) return { ok: true, json: async () => ({ submissions: [] }) };
+      if (url.endsWith("/external-reconstruction-submissions-v3")) {
+        declared = JSON.parse(init.body as string) as EchoBody;
+        return { ok: true, json: async () => echoDeclaration(declared as EchoBody) };
+      }
+      if (url.endsWith("/upload-grants")) return { ok: true, json: async () => ORTHO_GRANT };
+      if (url.endsWith("/seal")) {
+        return { ok: true, json: async () => echoSeal(declared as EchoBody, `ers-v1-${"f".repeat(64)}`) };
+      }
+      return { ok: true, json: async () => ({}) };
+    });
+    await fillNewOrtho();
+    fireEvent.click(screen.getByRole("button", { name: "자료 등록 마치기" }));
+    expect(await screen.findByText(/응답을 확인하지 못했습니다\. 같은 시도는 같은 식별자로 다시 확인할 수 있으니/)).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "파일 제출 완료" })).toBeNull();
+    expect(screen.getByRole("button", { name: "새로 등록하기" })).toBeTruthy();
+    expect(router.refresh).not.toHaveBeenCalled();
+  });
+
+  it.each([["extra artifact", "extra"], ["missing artifact", "missing"]] as const)(
+    "does not mark success on a seal echo with %s",
+    async (_case, variant) => {
+      hashAs("a".repeat(64));
+      let declared: EchoBody | null = null;
+      fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+        if (!init?.method) return { ok: true, json: async () => ({ submissions: [] }) };
+        if (url.endsWith("/external-reconstruction-submissions-v3")) {
+          declared = JSON.parse(init.body as string) as EchoBody;
+          return { ok: true, json: async () => echoDeclaration(declared as EchoBody) };
+        }
+        if (url.endsWith("/upload-grants")) return { ok: true, json: async () => ORTHO_GRANT };
+        if (url.endsWith("/seal")) {
+          const body = declared as EchoBody;
+          const artifacts = variant === "extra"
+            ? [...body.artifacts, { artifactId: "dsm", kind: "dsm", fileName: "surface.tif", declaredSha256: "b".repeat(64), declaredSizeBytes: 2, declaredCrs: null }]
+            : [];
+          return { ok: true, json: async () => echoSeal({ ...body, artifacts }, ECHO_REF) };
+        }
+        return { ok: true, json: async () => ({}) };
+      });
+      await fillNewOrtho();
+      fireEvent.click(screen.getByRole("button", { name: "자료 등록 마치기" }));
+      expect(await screen.findByText(/응답을 확인하지 못했습니다\. 같은 시도는 같은 식별자로 다시 확인할 수 있으니/)).toBeTruthy();
+      expect(screen.queryByRole("button", { name: "파일 제출 완료" })).toBeNull();
+      expect(screen.getByRole("button", { name: "새로 등록하기" })).toBeTruthy();
+    },
+  );
+
+  it("does not mark success on a SEALED seal echo without a manifest", async () => {
+    hashAs("a".repeat(64));
+    let declared: EchoBody | null = null;
+    fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+      if (!init?.method) return { ok: true, json: async () => ({ submissions: [] }) };
+      if (url.endsWith("/external-reconstruction-submissions-v3")) {
+        declared = JSON.parse(init.body as string) as EchoBody;
+        return { ok: true, json: async () => echoDeclaration(declared as EchoBody) };
+      }
+      if (url.endsWith("/upload-grants")) return { ok: true, json: async () => ORTHO_GRANT };
+      if (url.endsWith("/seal")) {
+        const body = declared as EchoBody;
+        return { ok: true, json: async () => ({ submissionRef: ECHO_REF, state: "SEALED", submission: { submissionId: body.submissionId, revision: 1, observationEpochId: body.expectedEpochId, artifacts: body.artifacts }, manifest: null }) };
+      }
+      return { ok: true, json: async () => ({}) };
+    });
+    await fillNewOrtho();
+    fireEvent.click(screen.getByRole("button", { name: "자료 등록 마치기" }));
+    expect(await screen.findByText(/응답을 확인하지 못했습니다\. 같은 시도는 같은 식별자로 다시 확인할 수 있으니/)).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "파일 제출 완료" })).toBeNull();
+    expect(screen.getByRole("button", { name: "새로 등록하기" })).toBeTruthy();
+  });
+
+  it("does not mark success on a resume seal echo with a different ref", async () => {
+    const registered = { submissionRef: ECHO_REF, state: "REGISTERED", submission: { revision: 1, submissionId: "resume-ref-1", observationEpochId: "old-epoch", producerDeclaration: { softwareName: "ODM", softwareVersion: "1" }, artifacts: [{ artifactId: "ortho", kind: "ortho", fileName: "ortho.tif", declaredSha256: "a".repeat(64), declaredSizeBytes: 1 }] } };
+    hashAs("a".repeat(64));
+    fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+      if (!init?.method) return { ok: true, json: async () => ({ submissions: [registered] }) };
+      if (url.endsWith("/upload-grants")) return { ok: true, json: async () => ORTHO_GRANT };
+      if (url.endsWith("/seal")) {
+        // ref만 다르고 결속은 같은 응답 — ref 동등성 대조에서 걸려야 한다.
+        return { ok: true, json: async () => ({ ...sealedEchoFor(registered), submissionRef: `ers-v1-${"f".repeat(64)}` }) };
+      }
+      return { ok: true, json: async () => ({}) };
+    });
+    render(<ExternalReconstructionPanel workOrderId="work-1" expectedEpochId={null} canWrite accountIdentity={continuity} />);
+    fireEvent.click(await screen.findByRole("button", { name: "등록 이어하기" }));
+    fireEvent.change(screen.getByLabelText("정사영상 GeoTIFF"), { target: { files: [new File(["x"], "ortho.tif")] } });
+    await screen.findByText(/정사영상 1 KB 확인 완료/);
+    fireEvent.click(screen.getByRole("button", { name: "자료 등록 마치기" }));
+    expect(await screen.findByText(/응답을 확인하지 못했습니다\. 같은 시도는 같은 식별자로 다시 확인할 수 있으니/)).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "파일 제출 완료" })).toBeNull();
+  });
+
+  it("recovers a sealed replay of the same frozen declaration without re-uploading (synthetic double)", async () => {
+    // 합성: 첫 등록 응답 유실 뒤 같은 선언 replay가 SEALED 기록으로 돌아오는
+    // fetch double이며 실제 Core/BFF 계약 검증이 아니다.
+    hashAs("a".repeat(64));
+    const posts: { url: string; body?: unknown }[] = [];
+    let attempts = 0;
+    fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+      if (!init?.method) return { ok: true, json: async () => ({ submissions: [] }) };
+      if (url.endsWith("/external-reconstruction-submissions-v3")) {
+        attempts += 1;
+        const replayBody = JSON.parse(init.body as string) as EchoBody;
+        posts.push({ url, body: replayBody });
+        if (attempts === 1) throw new Error("lost response after seal");
+        return { ok: true, json: async () => echoSeal(replayBody) };
+      }
+      if (init.method === "POST") posts.push({ url });
+      return { ok: true, json: async () => ({}) };
+    });
+    await fillNewOrtho();
+    fireEvent.click(screen.getByRole("button", { name: "자료 등록 마치기" }));
+    expect(await screen.findByText(/응답을 확인하지 못했습니다\. 같은 시도는 같은 식별자로 다시 확인할 수 있으니/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "자료 등록 마치기" }));
+    await screen.findByText("파일 등록을 확인했습니다. 파일 형식과 측정 적합성 확인은 아직 진행되지 않았습니다.");
+    expect((screen.getByRole("button", { name: "파일 제출 완료" }) as HTMLButtonElement).disabled).toBe(true);
+    const declarations = posts.filter(({ url }) => url.endsWith("/external-reconstruction-submissions-v3"));
+    expect(declarations).toHaveLength(2);
+    expect(declarations[1].body).toEqual(declarations[0].body);
+    // PUT/grant/seal 추가 재발행 없이 이전 기록 확인으로 복구한다.
+    expect(posts.some(({ url }) => url.endsWith("/upload-grants") || url.endsWith("/seal"))).toBe(false);
+    expect(fetchMock.mock.calls.filter(([, init]) => (init as RequestInit | undefined)?.method === "PUT")).toHaveLength(0);
+    // 목록은 다시 읽되 자동 route refresh는 하지 않는다.
+    const replayListReads = () => fetchMock.mock.calls.filter(([url, init]) => !(init as RequestInit | undefined)?.method && (url as string).endsWith("/external-reconstruction-submissions")).length;
+    await waitFor(() => expect(replayListReads()).toBeGreaterThan(1));
+    expect(router.refresh).not.toHaveBeenCalled();
+  });
+
+  it("stays blocked on an account-continuity 409 for a same-key retry (synthetic BFF response)", async () => {
+    // 합성: 통제된 BFF 409 응답이며 실제 BFF/Core 계약 검증이 아니다.
+    hashAs("a".repeat(64));
+    const posts: unknown[] = [];
+    let attempts = 0;
+    fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+      if (!init?.method) return { ok: true, json: async () => ({ submissions: [] }) };
+      if (url.endsWith("/external-reconstruction-submissions-v3")) {
+        attempts += 1;
+        posts.push(JSON.parse(init.body as string));
+        if (attempts === 1) throw new Error("lost response");
+        return { ok: false, status: 409, json: async () => ({ code: "ACCOUNT_CONTINUITY_MISMATCH" }) };
+      }
+      return { ok: true, json: async () => ({}) };
+    });
+    await fillNewOrtho();
+    fireEvent.click(screen.getByRole("button", { name: "자료 등록 마치기" }));
+    expect(await screen.findByText(/응답을 확인하지 못했습니다\. 같은 시도는 같은 식별자로 다시 확인할 수 있으니/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "자료 등록 마치기" }));
+    expect(await screen.findByText(/계정이 바뀌어 같은 요청을 다시 보내지 않았습니다/)).toBeTruthy();
+    expect(screen.getByRole("button", { name: "새로 등록하기" })).toBeTruthy();
+    expect(posts).toHaveLength(2);
+    expect(posts[1]).toEqual(posts[0]);
+    expect(screen.queryByRole("button", { name: "파일 제출 완료" })).toBeNull();
+    expect(router.refresh).not.toHaveBeenCalled();
+  });
+
+  it("stays blocked on a conflicting retry without claiming success (synthetic BFF response)", async () => {
+    // 합성: 같은 식별자에 다른 내용이 이미 있다는 통제된 BFF 409 응답이다.
+    hashAs("a".repeat(64));
+    let attempts = 0;
+    fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+      if (!init?.method) return { ok: true, json: async () => ({ submissions: [] }) };
+      if (url.endsWith("/external-reconstruction-submissions-v3")) {
+        attempts += 1;
+        if (attempts === 1) throw new Error("lost response");
+        return { ok: false, status: 409, json: async () => ({ code: "CONFLICT" }) };
+      }
+      return { ok: true, json: async () => ({}) };
+    });
+    await fillNewOrtho();
+    fireEvent.click(screen.getByRole("button", { name: "자료 등록 마치기" }));
+    expect(await screen.findByText(/응답을 확인하지 못했습니다\. 같은 시도는 같은 식별자로 다시 확인할 수 있으니/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "자료 등록 마치기" }));
+    expect(await screen.findByText(/응답을 확인하지 못했습니다\. 같은 시도는 같은 식별자로 다시 확인할 수 있으니/)).toBeTruthy();
+    expect(screen.getByRole("button", { name: "새로 등록하기" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "파일 제출 완료" })).toBeNull();
+    expect(router.refresh).not.toHaveBeenCalled();
+  });
+
+  it("does not mark success on a seal echo with a duplicated kind", async () => {
+    // 같은 종류 두 건은 길이가 맞아도 집합이 아니므로 거부한다.
+    hashAs("a".repeat(64));
+    let declared: EchoBody | null = null;
+    fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+      if (!init?.method) return { ok: true, json: async () => ({ submissions: [] }) };
+      if (url.endsWith("/external-reconstruction-submissions-v3")) {
+        declared = JSON.parse(init.body as string) as EchoBody;
+        return { ok: true, json: async () => echoDeclaration(declared as EchoBody) };
+      }
+      if (url.endsWith("/upload-grants")) return { ok: true, json: async () => ORTHO_GRANT };
+      if (url.endsWith("/seal")) {
+        const body = declared as EchoBody;
+        const dup = { artifactId: "ortho", kind: "ortho", fileName: "ortho.tif", declaredSha256: "a".repeat(64), declaredSizeBytes: 1, declaredCrs: null as string | null };
+        return { ok: true, json: async () => ({ ...echoSeal(body), submission: { submissionId: body.submissionId, revision: 1, observationEpochId: body.expectedEpochId, artifacts: [dup, { ...dup }] }, manifest: manifestFor({ ...body, artifacts: [dup, { ...dup }] }, TEST_DIGEST) }) };
+      }
+      return { ok: true, json: async () => ({}) };
+    });
+    await fillNewOrtho();
+    fireEvent.click(screen.getByRole("button", { name: "자료 등록 마치기" }));
+    expect(await screen.findByText(/응답을 확인하지 못했습니다\. 같은 시도는 같은 식별자로 다시 확인할 수 있으니/)).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "파일 제출 완료" })).toBeNull();
+    expect(screen.getByRole("button", { name: "새로 등록하기" })).toBeTruthy();
+    expect(router.refresh).not.toHaveBeenCalled();
+  });
+
+  it("does not mark success on a seal echo with an artifactId mismatch", async () => {
+    // echo artifactId가 동결된 것과 다르면 같은 산출물이 아니다 — 키 기준 대조.
+    hashAs("a".repeat(64));
+    let declared: EchoBody | null = null;
+    fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+      if (!init?.method) return { ok: true, json: async () => ({ submissions: [] }) };
+      if (url.endsWith("/external-reconstruction-submissions-v3")) {
+        declared = JSON.parse(init.body as string) as EchoBody;
+        return { ok: true, json: async () => echoDeclaration(declared as EchoBody) };
+      }
+      if (url.endsWith("/upload-grants")) return { ok: true, json: async () => ORTHO_GRANT };
+      if (url.endsWith("/seal")) {
+        const body = declared as EchoBody;
+        const swapped = [{ artifactId: "dsm", kind: "ortho", fileName: "ortho.tif", declaredSha256: "a".repeat(64), declaredSizeBytes: 1, declaredCrs: null as string | null }];
+        return { ok: true, json: async () => ({ ...echoSeal(body), submission: { submissionId: body.submissionId, revision: 1, observationEpochId: body.expectedEpochId, artifacts: swapped }, manifest: manifestFor({ ...body, artifacts: swapped }, TEST_DIGEST) }) };
+      }
+      return { ok: true, json: async () => ({}) };
+    });
+    await fillNewOrtho();
+    fireEvent.click(screen.getByRole("button", { name: "자료 등록 마치기" }));
+    expect(await screen.findByText(/응답을 확인하지 못했습니다\. 같은 시도는 같은 식별자로 다시 확인할 수 있으니/)).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "파일 제출 완료" })).toBeNull();
+    expect(screen.getByRole("button", { name: "새로 등록하기" })).toBeTruthy();
+    expect(router.refresh).not.toHaveBeenCalled();
+  });
+
+  it("does not mark success on a seal echo whose manifest binds a different submission", async () => {
+    // 제출 묶음은 맞지만 manifest가 다른 제출을 가리키면 확정하지 않는다.
+    hashAs("a".repeat(64));
+    let declared: EchoBody | null = null;
+    fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+      if (!init?.method) return { ok: true, json: async () => ({ submissions: [] }) };
+      if (url.endsWith("/external-reconstruction-submissions-v3")) {
+        declared = JSON.parse(init.body as string) as EchoBody;
+        return { ok: true, json: async () => echoDeclaration(declared as EchoBody) };
+      }
+      if (url.endsWith("/upload-grants")) return { ok: true, json: async () => ORTHO_GRANT };
+      if (url.endsWith("/seal")) {
+        const body = declared as EchoBody;
+        return { ok: true, json: async () => ({ ...echoSeal(body), manifest: manifestFor({ submissionId: "someone-else", expectedEpochId: body.expectedEpochId, artifacts: body.artifacts }, TEST_DIGEST) }) };
+      }
+      return { ok: true, json: async () => ({}) };
+    });
+    await fillNewOrtho();
+    fireEvent.click(screen.getByRole("button", { name: "자료 등록 마치기" }));
+    expect(await screen.findByText(/응답을 확인하지 못했습니다\. 같은 시도는 같은 식별자로 다시 확인할 수 있으니/)).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "파일 제출 완료" })).toBeNull();
+    expect(screen.getByRole("button", { name: "새로 등록하기" })).toBeTruthy();
+    expect(router.refresh).not.toHaveBeenCalled();
+  });
+
+  it("does not mark success on a seal echo with empty manifest entries", async () => {
+    hashAs("a".repeat(64));
+    let declared: EchoBody | null = null;
+    fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+      if (!init?.method) return { ok: true, json: async () => ({ submissions: [] }) };
+      if (url.endsWith("/external-reconstruction-submissions-v3")) {
+        declared = JSON.parse(init.body as string) as EchoBody;
+        return { ok: true, json: async () => echoDeclaration(declared as EchoBody) };
+      }
+      if (url.endsWith("/upload-grants")) return { ok: true, json: async () => ORTHO_GRANT };
+      if (url.endsWith("/seal")) {
+        const body = declared as EchoBody;
+        return { ok: true, json: async () => ({ ...echoSeal(body), manifest: { ...manifestFor(body, TEST_DIGEST), entries: [] } }) };
+      }
+      return { ok: true, json: async () => ({}) };
+    });
+    await fillNewOrtho();
+    fireEvent.click(screen.getByRole("button", { name: "자료 등록 마치기" }));
+    expect(await screen.findByText(/응답을 확인하지 못했습니다\. 같은 시도는 같은 식별자로 다시 확인할 수 있으니/)).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "파일 제출 완료" })).toBeNull();
+    expect(screen.getByRole("button", { name: "새로 등록하기" })).toBeTruthy();
+    expect(router.refresh).not.toHaveBeenCalled();
+  });
+
+  it("does not mark success on a REGISTERED declaration echo carrying a manifest", async () => {
+    // REGISTERED인데 manifest가 있으면 계약 표면이 어긋난 것이므로 확정하지 않는다.
+    hashAs("a".repeat(64));
+    fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+      if (!init?.method) return { ok: true, json: async () => ({ submissions: [] }) };
+      if (url.endsWith("/external-reconstruction-submissions-v3")) {
+        const body = JSON.parse(init.body as string) as EchoBody;
+        return { ok: true, json: async () => ({ ...echoDeclaration(body), manifest: manifestFor(body, TEST_DIGEST) }) };
+      }
+      return { ok: true, json: async () => ({}) };
+    });
+    await fillNewOrtho();
+    fireEvent.click(screen.getByRole("button", { name: "자료 등록 마치기" }));
+    expect(await screen.findByText(/응답을 확인하지 못했습니다\. 같은 시도는 같은 식별자로 다시 확인할 수 있으니/)).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "파일 제출 완료" })).toBeNull();
+    expect(screen.getByRole("button", { name: "새로 등록하기" })).toBeTruthy();
+    expect(router.refresh).not.toHaveBeenCalled();
+  });
+
+  it("does not recover a sealed replay whose manifest binds a different submission", async () => {
+    // 합성: replay 응답의 manifest가 다른 제출을 가리키는 통제 응답이다.
+    hashAs("a".repeat(64));
+    let attempts = 0;
+    fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+      if (!init?.method) return { ok: true, json: async () => ({ submissions: [] }) };
+      if (url.endsWith("/external-reconstruction-submissions-v3")) {
+        attempts += 1;
+        const replayBody = JSON.parse(init.body as string) as EchoBody;
+        if (attempts === 1) throw new Error("lost response after seal");
+        return { ok: true, json: async () => ({ ...echoSeal(replayBody), manifest: manifestFor({ submissionId: "someone-else", expectedEpochId: replayBody.expectedEpochId, artifacts: replayBody.artifacts }, TEST_DIGEST) }) };
+      }
+      return { ok: true, json: async () => ({}) };
+    });
+    await fillNewOrtho();
+    fireEvent.click(screen.getByRole("button", { name: "자료 등록 마치기" }));
+    expect(await screen.findByText(/응답을 확인하지 못했습니다\. 같은 시도는 같은 식별자로 다시 확인할 수 있으니/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "자료 등록 마치기" }));
+    expect(await screen.findByText(/응답을 확인하지 못했습니다\. 같은 시도는 같은 식별자로 다시 확인할 수 있으니/)).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "파일 제출 완료" })).toBeNull();
+    expect(screen.getByRole("button", { name: "새로 등록하기" })).toBeTruthy();
+    expect(router.refresh).not.toHaveBeenCalled();
+  });
+
+  it("does not mark success on a resume seal echo whose manifest binds a different submission", async () => {
+    const registered = { submissionRef: ECHO_REF, state: "REGISTERED", submission: { revision: 1, submissionId: "resume-manifest-1", observationEpochId: "old-epoch", producerDeclaration: { softwareName: "ODM", softwareVersion: "1" }, artifacts: [{ artifactId: "ortho", kind: "ortho", fileName: "ortho.tif", declaredSha256: "a".repeat(64), declaredSizeBytes: 1 }] } };
+    hashAs("a".repeat(64));
+    fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+      if (!init?.method) return { ok: true, json: async () => ({ submissions: [registered] }) };
+      if (url.endsWith("/upload-grants")) return { ok: true, json: async () => ORTHO_GRANT };
+      if (url.endsWith("/seal")) {
+        return { ok: true, json: async () => ({ ...sealedEchoFor(registered), manifest: manifestFor({ submissionId: "someone-else", expectedEpochId: "old-epoch", artifacts: registered.submission.artifacts }, TEST_DIGEST) }) };
+      }
+      return { ok: true, json: async () => ({}) };
+    });
+    render(<ExternalReconstructionPanel workOrderId="work-1" expectedEpochId={null} canWrite accountIdentity={continuity} />);
+    fireEvent.click(await screen.findByRole("button", { name: "등록 이어하기" }));
+    fireEvent.change(screen.getByLabelText("정사영상 GeoTIFF"), { target: { files: [new File(["x"], "ortho.tif")] } });
+    await screen.findByText(/정사영상 1 KB 확인 완료/);
+    fireEvent.click(screen.getByRole("button", { name: "자료 등록 마치기" }));
+    expect(await screen.findByText(/응답을 확인하지 못했습니다\. 같은 시도는 같은 식별자로 다시 확인할 수 있으니/)).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "파일 제출 완료" })).toBeNull();
+    expect(router.refresh).not.toHaveBeenCalled();
+  });
+
+  it("does not mark success on a two-slot seal echo missing one kind", async () => {
+    // 두 슬롯을 동결했는데 echo가 한 종류만 돌려주면 집합 불일치로 둔다.
+    // grant는 결속 집합과 정확히 같아야 통과하므로 두 슬롯분을 둔다.
+    hashAs("a".repeat(64));
+    let declared: EchoBody | null = null;
+    fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+      if (!init?.method) return { ok: true, json: async () => ({ submissions: [] }) };
+      if (url.endsWith("/external-reconstruction-submissions-v3")) {
+        declared = JSON.parse(init.body as string) as EchoBody;
+        return { ok: true, json: async () => echoDeclaration(declared as EchoBody) };
+      }
+      if (url.endsWith("/upload-grants")) return { ok: true, json: async () => BOTH_GRANTS };
+      if (url.endsWith("/seal")) {
+        const body = declared as EchoBody;
+        const orthoOnly = body.artifacts.filter((artifact) => artifact.kind === "ortho");
+        return { ok: true, json: async () => echoSeal({ ...body, artifacts: orthoOnly }) };
+      }
+      return { ok: true, json: async () => ({}) };
+    });
+    render(<ExternalReconstructionPanel workOrderId="work-1" expectedEpochId="epoch-1" canWrite accountIdentity={continuity} />);
+    await screen.findByText("아직 등록된 관측 자료가 없습니다.");
+    fireEvent.change(screen.getByLabelText("재구성 소프트웨어 이름"), { target: { value: "ODM" } });
+    fireEvent.change(screen.getByLabelText("재구성 소프트웨어 버전"), { target: { value: "1" } });
+    fireEvent.change(screen.getByLabelText("정사영상 GeoTIFF"), { target: { files: [new File(["x"], "ortho.tif")] } });
+    await screen.findByText(/정사영상 1 KB 확인 완료/);
+    fireEvent.change(screen.getByLabelText("DSM GeoTIFF"), { target: { files: [new File(["x"], "dsm.tif")] } });
+    await screen.findByText(/DSM 1 KB 확인 완료/);
+    fireEvent.click(screen.getByRole("button", { name: "자료 등록 마치기" }));
+    expect(await screen.findByText(/응답을 확인하지 못했습니다\. 같은 시도는 같은 식별자로 다시 확인할 수 있으니/)).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "파일 제출 완료" })).toBeNull();
+    expect(screen.getByRole("button", { name: "새로 등록하기" })).toBeTruthy();
+    expect(router.refresh).not.toHaveBeenCalled();
+  });
+
+  it("resumes a V1-style custom artifactId by binding the stored identifier", async () => {
+    // artifactId===kind는 V3 신규 등록 본문 검증일 뿐 범용 제약이 아니다.
+    // 유지된 V1 기록의 사용자 정의 ID와 echo·grant·manifest가 같은 저장
+    // 식별자로 결속하면 이어가기가 성공한다. grant 조회는 슬롯 키가 아니라
+    // 결속된 저장 artifact_id로 한다.
+    const registered = { submissionRef: ECHO_REF, state: "REGISTERED", submission: { revision: 1, submissionId: "resume-custom-id-1", observationEpochId: "old-epoch", producerDeclaration: { softwareName: "ODM", softwareVersion: "1" }, inputDeclaration: { captureBasis: "UNKNOWN", captureStartedAt: null, captureEndedAt: null, captureDate: null }, artifacts: [{ artifactId: "ortho-custom-1", kind: "ortho", fileName: "ortho.tif", declaredSha256: "a".repeat(64), declaredSizeBytes: 1 }] } };
+    hashAs("a".repeat(64));
+    fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+      if (!init?.method) return { ok: true, json: async () => ({ submissions: [registered] }) };
+      if (url.endsWith("/upload-grants")) return { ok: true, json: async () => ({ grants: [{ artifactId: "ortho-custom-1", uploadUrl: "https://upload.test/ortho", requiredHeaders: {} }] }) };
+      if (url.endsWith("/seal")) {
+        return { ok: true, json: async () => sealedEchoFor(registered) };
+      }
+      return { ok: true, json: async () => ({}) };
+    });
+    render(<ExternalReconstructionPanel workOrderId="work-1" expectedEpochId={null} canWrite accountIdentity={continuity} />);
+    fireEvent.click(await screen.findByRole("button", { name: "등록 이어하기" }));
+    fireEvent.change(screen.getByLabelText("정사영상 GeoTIFF"), { target: { files: [new File(["x"], "ortho.tif")] } });
+    await screen.findByText(/정사영상 1 KB 확인 완료/);
+    fireEvent.click(screen.getByRole("button", { name: "자료 등록 마치기" }));
+    expect(await screen.findByText("파일 등록을 확인했습니다. 파일 형식과 측정 적합성 확인은 아직 진행되지 않았습니다.")).toBeTruthy();
+    expect((screen.getByRole("button", { name: "파일 제출 완료" }) as HTMLButtonElement).disabled).toBe(true);
+    expect(router.refresh).not.toHaveBeenCalled();
+  });
+
+  it("resumes a V2-style custom DSM artifactId by binding the stored identifier", async () => {
+    // V2도 artifact_id는 제출 내 유일한 자유 문자열이다. DSM 사용자 정의 ID
+    // 기록이 grant·manifest와 같은 저장 식별자로 결속하면 이어가기가 성공한다.
+    const registered = { submissionRef: ECHO_REF, state: "REGISTERED", submission: { contractVersion: "external-reconstruction-submission.v2", revision: 1, submissionId: "resume-v2-custom-1", observationEpochId: "old-epoch", producerDeclaration: { softwareName: "ODM", softwareVersion: "1" }, inputDeclaration: { captureBasis: "UNKNOWN", captureStartedAt: null, captureEndedAt: null, captureDate: null }, artifacts: [{ artifactId: "dsm-custom-7", kind: "dsm", fileName: "surface.tif", declaredSha256: "b".repeat(64), declaredSizeBytes: 2 }] } };
+    hashAs("b".repeat(64), 2);
+    fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+      if (!init?.method) return { ok: true, json: async () => ({ submissions: [registered] }) };
+      if (url.endsWith("/upload-grants")) return { ok: true, json: async () => ({ grants: [{ artifactId: "dsm-custom-7", uploadUrl: "https://upload.test/dsm", requiredHeaders: {} }] }) };
+      if (url.endsWith("/seal")) {
+        return { ok: true, json: async () => sealedEchoFor(registered) };
+      }
+      return { ok: true, json: async () => ({}) };
+    });
+    render(<ExternalReconstructionPanel workOrderId="work-1" expectedEpochId={null} canWrite accountIdentity={continuity} />);
+    fireEvent.click(await screen.findByRole("button", { name: "등록 이어하기" }));
+    fireEvent.change(screen.getByLabelText("DSM GeoTIFF"), { target: { files: [new File(["x"], "surface.tif")] } });
+    await screen.findByText(/DSM 1 KB 확인 완료/);
+    fireEvent.click(screen.getByRole("button", { name: "자료 등록 마치기" }));
+    expect(await screen.findByText("파일 등록을 확인했습니다. 파일 형식과 측정 적합성 확인은 아직 진행되지 않았습니다.")).toBeTruthy();
+    expect((screen.getByRole("button", { name: "파일 제출 완료" }) as HTMLButtonElement).disabled).toBe(true);
+    const posts = fetchMock.mock.calls.filter(([, init]) => (init as RequestInit | undefined)?.method === "POST");
+    expect(posts.filter(([url]) => (url as string).endsWith("/external-reconstruction-submissions-v3"))).toHaveLength(0);
+    expect(router.refresh).not.toHaveBeenCalled();
+  });
+
+  it("does not start an upload when grants carry an artifact outside the frozen set", async () => {
+    // Core는 저장 bindings와 1:1로 grant를 만들므로 여분은 계약 표면이
+    // 어긋난 것이다. 바인딩되지 않은 grant에 PUT하지 않고 모름으로 둔다.
+    hashAs("a".repeat(64));
+    let declared: EchoBody | null = null;
+    fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+      if (!init?.method) return { ok: true, json: async () => ({ submissions: [] }) };
+      if (url.endsWith("/external-reconstruction-submissions-v3")) {
+        declared = JSON.parse(init.body as string) as EchoBody;
+        return { ok: true, json: async () => echoDeclaration(declared as EchoBody) };
+      }
+      if (url.endsWith("/upload-grants")) return { ok: true, json: async () => BOTH_GRANTS };
+      return { ok: true, json: async () => ({}) };
+    });
+    await fillNewOrtho();
+    fireEvent.click(screen.getByRole("button", { name: "자료 등록 마치기" }));
+    expect(await screen.findByText(/응답을 확인하지 못했습니다\. 같은 시도는 같은 식별자로 다시 확인할 수 있으니/)).toBeTruthy();
+    expect(fetchMock.mock.calls.filter(([, init]) => (init as RequestInit | undefined)?.method === "PUT")).toHaveLength(0);
+    expect(screen.queryByRole("button", { name: "파일 제출 완료" })).toBeNull();
+    expect(screen.getByRole("button", { name: "새로 등록하기" })).toBeTruthy();
+    expect(router.refresh).not.toHaveBeenCalled();
+  });
+
+  it("does not start an upload when grants miss a frozen artifact", async () => {
+    // 결속 집합보다 grant가 모자라도 같은 capability를 확정할 수 없으므로
+    // 전송하지 않고 모름으로 둔다.
+    hashAs("a".repeat(64));
+    let declared: EchoBody | null = null;
+    fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+      if (!init?.method) return { ok: true, json: async () => ({ submissions: [] }) };
+      if (url.endsWith("/external-reconstruction-submissions-v3")) {
+        declared = JSON.parse(init.body as string) as EchoBody;
+        return { ok: true, json: async () => echoDeclaration(declared as EchoBody) };
+      }
+      if (url.endsWith("/upload-grants")) return { ok: true, json: async () => ({ grants: [] }) };
+      return { ok: true, json: async () => ({}) };
+    });
+    await fillNewOrtho();
+    fireEvent.click(screen.getByRole("button", { name: "자료 등록 마치기" }));
+    expect(await screen.findByText(/응답을 확인하지 못했습니다\. 같은 시도는 같은 식별자로 다시 확인할 수 있으니/)).toBeTruthy();
+    expect(fetchMock.mock.calls.filter(([, init]) => (init as RequestInit | undefined)?.method === "PUT")).toHaveLength(0);
+    expect(screen.queryByRole("button", { name: "파일 제출 완료" })).toBeNull();
+    expect(screen.getByRole("button", { name: "새로 등록하기" })).toBeTruthy();
+    expect(router.refresh).not.toHaveBeenCalled();
+  });
+
+  it("does not mark success on a seal echo whose submission misses its digest", async () => {
+    // Core revision 화면은 sealed 제출을 실으므로 submissionDigest 없는
+    // SEALED는 계약 표면이 어긋난 것이다.
+    hashAs("a".repeat(64));
+    let declared: EchoBody | null = null;
+    fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+      if (!init?.method) return { ok: true, json: async () => ({ submissions: [] }) };
+      if (url.endsWith("/external-reconstruction-submissions-v3")) {
+        declared = JSON.parse(init.body as string) as EchoBody;
+        return { ok: true, json: async () => echoDeclaration(declared as EchoBody) };
+      }
+      if (url.endsWith("/upload-grants")) return { ok: true, json: async () => ORTHO_GRANT };
+      if (url.endsWith("/seal")) {
+        const body = declared as EchoBody;
+        const sealed = echoSeal(body);
+        const sealedSubmission = { ...(sealed.submission as unknown as Record<string, unknown>) };
+        delete sealedSubmission.submissionDigest;
+        return { ok: true, json: async () => ({ ...sealed, submission: sealedSubmission }) };
+      }
+      return { ok: true, json: async () => ({}) };
+    });
+    await fillNewOrtho();
+    fireEvent.click(screen.getByRole("button", { name: "자료 등록 마치기" }));
+    expect(await screen.findByText(/응답을 확인하지 못했습니다\. 같은 시도는 같은 식별자로 다시 확인할 수 있으니/)).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "파일 제출 완료" })).toBeNull();
+    expect(screen.getByRole("button", { name: "새로 등록하기" })).toBeTruthy();
+    expect(router.refresh).not.toHaveBeenCalled();
+  });
+
+  it("does not mark success on a seal echo whose manifest misses its digest", async () => {
+    // Core는 봉인된 manifest에만 manifestDigest를 적는다. 없는 manifest는
+    // 계약 표면이 어긋난 것이므로 확정하지 않는다.
+    hashAs("a".repeat(64));
+    let declared: EchoBody | null = null;
+    fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+      if (!init?.method) return { ok: true, json: async () => ({ submissions: [] }) };
+      if (url.endsWith("/external-reconstruction-submissions-v3")) {
+        declared = JSON.parse(init.body as string) as EchoBody;
+        return { ok: true, json: async () => echoDeclaration(declared as EchoBody) };
+      }
+      if (url.endsWith("/upload-grants")) return { ok: true, json: async () => ORTHO_GRANT };
+      if (url.endsWith("/seal")) {
+        const body = declared as EchoBody;
+        return { ok: true, json: async () => ({ ...echoSeal(body), manifest: { ...manifestFor(body, TEST_DIGEST), manifestDigest: null } }) };
+      }
+      return { ok: true, json: async () => ({}) };
+    });
+    await fillNewOrtho();
+    fireEvent.click(screen.getByRole("button", { name: "자료 등록 마치기" }));
+    expect(await screen.findByText(/응답을 확인하지 못했습니다\. 같은 시도는 같은 식별자로 다시 확인할 수 있으니/)).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "파일 제출 완료" })).toBeNull();
+    expect(screen.getByRole("button", { name: "새로 등록하기" })).toBeTruthy();
+    expect(router.refresh).not.toHaveBeenCalled();
+  });
+
+  it("does not mark success on a declaration echo whose submission misses its digest", async () => {
+    // REGISTERED 응답도 sealed 제출을 실어야 한다. digest 없는 선언 echo는
+    // 계약 표면이 어긋난 것이므로 확정하지 않는다.
+    hashAs("a".repeat(64));
+    fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+      if (!init?.method) return { ok: true, json: async () => ({ submissions: [] }) };
+      if (url.endsWith("/external-reconstruction-submissions-v3")) {
+        const body = JSON.parse(init.body as string) as EchoBody;
+        const declared = echoDeclaration(body);
+        const declaredSubmission = { ...(declared.submission as unknown as Record<string, unknown>) };
+        delete declaredSubmission.submissionDigest;
+        return { ok: true, json: async () => ({ ...declared, submission: declaredSubmission }) };
+      }
+      return { ok: true, json: async () => ({}) };
+    });
+    await fillNewOrtho();
+    fireEvent.click(screen.getByRole("button", { name: "자료 등록 마치기" }));
+    expect(await screen.findByText(/응답을 확인하지 못했습니다\. 같은 시도는 같은 식별자로 다시 확인할 수 있으니/)).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "파일 제출 완료" })).toBeNull();
+    expect(screen.getByRole("button", { name: "새로 등록하기" })).toBeTruthy();
+    expect(router.refresh).not.toHaveBeenCalled();
+  });
+
+  it("does not mark success when the producer declaration differs from the frozen attempt", async () => {
+    // 제작자 신고(소프트웨어명)가 다르면 같은 시도가 아니다.
+    hashAs("a".repeat(64));
+    let declared: EchoBody | null = null;
+    fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+      if (!init?.method) return { ok: true, json: async () => ({ submissions: [] }) };
+      if (url.endsWith("/external-reconstruction-submissions-v3")) {
+        declared = JSON.parse(init.body as string) as EchoBody;
+        return { ok: true, json: async () => echoDeclaration(declared as EchoBody) };
+      }
+      if (url.endsWith("/upload-grants")) return { ok: true, json: async () => ORTHO_GRANT };
+      if (url.endsWith("/seal")) {
+        const body = declared as EchoBody;
+        return { ok: true, json: async () => ({ ...echoSeal(body), submission: { ...(echoSeal(body).submission as object), producerDeclaration: { producerKnowledge: body.producerKnowledge, softwareName: "다른도구", softwareVersion: body.softwareVersion, sourceNote: body.sourceNote } } }) };
+      }
+      return { ok: true, json: async () => ({}) };
+    });
+    await fillNewOrtho();
+    fireEvent.click(screen.getByRole("button", { name: "자료 등록 마치기" }));
+    expect(await screen.findByText(/응답을 확인하지 못했습니다\. 같은 시도는 같은 식별자로 다시 확인할 수 있으니/)).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "파일 제출 완료" })).toBeNull();
+    expect(screen.getByRole("button", { name: "새로 등록하기" })).toBeTruthy();
+    expect(router.refresh).not.toHaveBeenCalled();
+  });
+
+  it("does not mark success when the upstream declaration differs from the frozen attempt", async () => {
+    // 원본 공개 출처 신고가 다르면 같은 시도가 아니다.
+    hashAs("a".repeat(64));
+    let declared: EchoBody | null = null;
+    fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+      if (!init?.method) return { ok: true, json: async () => ({ submissions: [] }) };
+      if (url.endsWith("/external-reconstruction-submissions-v3")) {
+        declared = JSON.parse(init.body as string) as EchoBody;
+        return { ok: true, json: async () => echoDeclaration(declared as EchoBody) };
+      }
+      if (url.endsWith("/upload-grants")) return { ok: true, json: async () => ORTHO_GRANT };
+      if (url.endsWith("/seal")) {
+        const body = declared as EchoBody;
+        const sealed = echoSeal(body);
+        const sealedInput = sealed.submission.inputDeclaration as unknown as Record<string, unknown>;
+        const forgedUpstream = { ...(sealedInput.upstreamSource as Record<string, unknown> | null ?? {}), sourceUri: "https://example.invalid/other.tif" };
+        return { ok: true, json: async () => ({ ...sealed, submission: { ...(sealed.submission as object), inputDeclaration: { ...sealedInput, upstreamSource: forgedUpstream } } }) };
+      }
+      return { ok: true, json: async () => ({}) };
+    });
+    await fillNewOrtho();
+    fireEvent.click(screen.getByRole("button", { name: "자료 등록 마치기" }));
+    expect(await screen.findByText(/응답을 확인하지 못했습니다\. 같은 시도는 같은 식별자로 다시 확인할 수 있으니/)).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "파일 제출 완료" })).toBeNull();
+    expect(screen.getByRole("button", { name: "새로 등록하기" })).toBeTruthy();
+    expect(router.refresh).not.toHaveBeenCalled();
+  });
+
+  it("does not mark success when the seal manifest digest differs from the submission digest", async () => {
+    // manifest 결속이 제출과 어긋나면 확정하지 않는다.
+    hashAs("a".repeat(64));
+    let declared: EchoBody | null = null;
+    fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+      if (!init?.method) return { ok: true, json: async () => ({ submissions: [] }) };
+      if (url.endsWith("/external-reconstruction-submissions-v3")) {
+        declared = JSON.parse(init.body as string) as EchoBody;
+        return { ok: true, json: async () => echoDeclaration(declared as EchoBody) };
+      }
+      if (url.endsWith("/upload-grants")) return { ok: true, json: async () => ORTHO_GRANT };
+      if (url.endsWith("/seal")) {
+        const body = declared as EchoBody;
+        return { ok: true, json: async () => ({ ...echoSeal(body), manifest: { ...manifestFor(body, TEST_DIGEST), submissionDigest: `sha256:${"f".repeat(64)}` } }) };
+      }
+      return { ok: true, json: async () => ({}) };
+    });
+    await fillNewOrtho();
+    fireEvent.click(screen.getByRole("button", { name: "자료 등록 마치기" }));
+    expect(await screen.findByText(/응답을 확인하지 못했습니다\. 같은 시도는 같은 식별자로 다시 확인할 수 있으니/)).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "파일 제출 완료" })).toBeNull();
+    expect(screen.getByRole("button", { name: "새로 등록하기" })).toBeTruthy();
+    expect(router.refresh).not.toHaveBeenCalled();
+  });
+
+  it("does not mark success when the seal digests match each other but break the digest shape", async () => {
+    // 제출·manifest 양쪽 submissionDigest가 같은 비어 있지 않은 잘못된 문자열이면
+    // 동등 검사는 통과하지만 Core 계약(_DIGEST_PATTERN) 표면이 아니므로 확정하지 않는다.
+    hashAs("a".repeat(64));
+    let declared: EchoBody | null = null;
+    fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+      if (!init?.method) return { ok: true, json: async () => ({ submissions: [] }) };
+      if (url.endsWith("/external-reconstruction-submissions-v3")) {
+        declared = JSON.parse(init.body as string) as EchoBody;
+        return { ok: true, json: async () => echoDeclaration(declared as EchoBody) };
+      }
+      if (url.endsWith("/upload-grants")) return { ok: true, json: async () => ORTHO_GRANT };
+      if (url.endsWith("/seal")) {
+        const body = declared as EchoBody;
+        return { ok: true, json: async () => ({ ...echoSeal(body), submission: { ...(echoSeal(body).submission as object), submissionDigest: "not-a-digest" }, manifest: manifestFor(body, "not-a-digest") }) };
+      }
+      return { ok: true, json: async () => ({}) };
+    });
+    await fillNewOrtho();
+    fireEvent.click(screen.getByRole("button", { name: "자료 등록 마치기" }));
+    expect(await screen.findByText(/응답을 확인하지 못했습니다\. 같은 시도는 같은 식별자로 다시 확인할 수 있으니/)).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "파일 제출 완료" })).toBeNull();
+    expect(screen.getByRole("button", { name: "새로 등록하기" })).toBeTruthy();
+    expect(router.refresh).not.toHaveBeenCalled();
+  });
+
+  it("does not recover a sealed replay whose digests break the digest shape", async () => {
+    // 합성: 첫 등록 응답 유실 뒤 돌아온 SEALED replay의 양쪽 digest가 같은 잘못된
+    // 문자열인 통제 응답이다. 동등하지만 계약 표면이 아니므로 복구하지 않는다.
+    hashAs("a".repeat(64));
+    let attempts = 0;
+    fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+      if (!init?.method) return { ok: true, json: async () => ({ submissions: [] }) };
+      if (url.endsWith("/external-reconstruction-submissions-v3")) {
+        attempts += 1;
+        const replayBody = JSON.parse(init.body as string) as EchoBody;
+        if (attempts === 1) throw new Error("lost response after seal");
+        const sealed = echoSeal(replayBody);
+        return { ok: true, json: async () => ({ ...sealed, submission: { ...(sealed.submission as object), submissionDigest: "not-a-digest" }, manifest: manifestFor(replayBody, "not-a-digest") }) };
+      }
+      return { ok: true, json: async () => ({}) };
+    });
+    await fillNewOrtho();
+    fireEvent.click(screen.getByRole("button", { name: "자료 등록 마치기" }));
+    expect(await screen.findByText(/응답을 확인하지 못했습니다\. 같은 시도는 같은 식별자로 다시 확인할 수 있으니/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "자료 등록 마치기" }));
+    expect(await screen.findByText(/응답을 확인하지 못했습니다\. 같은 시도는 같은 식별자로 다시 확인할 수 있으니/)).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "파일 제출 완료" })).toBeNull();
+    expect(screen.getByRole("button", { name: "새로 등록하기" })).toBeTruthy();
+    expect(router.refresh).not.toHaveBeenCalled();
+  });
+
+  it("does not mark success when the file name differs from the frozen declaration", async () => {
+    hashAs("a".repeat(64));
+    let declared: EchoBody | null = null;
+    fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+      if (!init?.method) return { ok: true, json: async () => ({ submissions: [] }) };
+      if (url.endsWith("/external-reconstruction-submissions-v3")) {
+        declared = JSON.parse(init.body as string) as EchoBody;
+        return { ok: true, json: async () => echoDeclaration(declared as EchoBody) };
+      }
+      if (url.endsWith("/upload-grants")) return { ok: true, json: async () => ORTHO_GRANT };
+      if (url.endsWith("/seal")) {
+        const body = declared as EchoBody;
+        const renamed = (body.artifacts as EchoArtifact[]).map((artifact) => ({ ...artifact, fileName: "renamed.tif" }));
+        return { ok: true, json: async () => ({ ...echoSeal(body), submission: { ...(echoSeal(body).submission as object), artifacts: renamed }, manifest: manifestFor({ ...body, artifacts: renamed }, TEST_DIGEST) }) };
+      }
+      return { ok: true, json: async () => ({}) };
+    });
+    await fillNewOrtho();
+    fireEvent.click(screen.getByRole("button", { name: "자료 등록 마치기" }));
+    expect(await screen.findByText(/응답을 확인하지 못했습니다\. 같은 시도는 같은 식별자로 다시 확인할 수 있으니/)).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "파일 제출 완료" })).toBeNull();
+    expect(screen.getByRole("button", { name: "새로 등록하기" })).toBeTruthy();
+    expect(router.refresh).not.toHaveBeenCalled();
+  });
+
+  it("does not start an upload when grants contain a duplicated artifact", async () => {
+    // 같은 슬롯 grant가 둘 이상이면 어느 capability로 보낼지 확정할 수 없다.
+    hashAs("a".repeat(64));
+    let declared: EchoBody | null = null;
+    fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+      if (!init?.method) return { ok: true, json: async () => ({ submissions: [] }) };
+      if (url.endsWith("/external-reconstruction-submissions-v3")) {
+        declared = JSON.parse(init.body as string) as EchoBody;
+        return { ok: true, json: async () => echoDeclaration(declared as EchoBody) };
+      }
+      if (url.endsWith("/upload-grants")) {
+        return { ok: true, json: async () => ({ grants: [BOTH_GRANTS.grants[0], BOTH_GRANTS.grants[0]] }) };
+      }
+      return { ok: true, json: async () => ({}) };
+    });
+    await fillNewOrtho();
+    fireEvent.click(screen.getByRole("button", { name: "자료 등록 마치기" }));
+    expect(await screen.findByText(/응답을 확인하지 못했습니다\. 같은 시도는 같은 식별자로 다시 확인할 수 있으니/)).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "파일 제출 완료" })).toBeNull();
+    expect(screen.getByRole("button", { name: "새로 등록하기" })).toBeTruthy();
+    expect(router.refresh).not.toHaveBeenCalled();
   });
 });

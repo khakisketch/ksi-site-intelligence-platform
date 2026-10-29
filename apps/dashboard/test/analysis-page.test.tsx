@@ -125,7 +125,7 @@ describe("analysis deep link", () => {
     expect(screen.getByTestId("panel-work-names").textContent).toBe("work-1=북측 1차 관측");
   });
 
-  it("keeps accessible Site context when an optional analysis child returns 404", async () => {
+  it("keeps records and the request section when observations are unavailable without claiming emptiness", async () => {
     const calls: string[] = [];
     mocked.site.mockImplementation(async () => { calls.push("site"); return { siteId: "site-1", name: "접근 확인된 현장", status: "BASELINE_MAPPING", aoi: null, resumeTarget: null, siteFrame: { crs: "EPSG:5186", transformVersion: "v1" }, registeredAt: "2026-10-01T00:00:00Z", updatedAt: "2026-10-01T00:00:00Z" }; });
     mocked.areas.mockImplementation(async () => { calls.push("areas"); return { workAreas: [] }; });
@@ -137,9 +137,25 @@ describe("analysis deep link", () => {
     expect(calls[0]).toBe("site");
     expect(screen.getAllByText("접근 확인된 현장").length).toBeGreaterThan(0);
     expect(screen.getByRole("heading", { level: 2, name: "현장 변화 분석" })).toBeTruthy();
-    expect(screen.getByRole("alert").textContent).toMatch(/현장 변화 분석/);
+    // 관측 실패가 기록 이력까지 닫지 않는다 — 구역별 상태로만 전달된다.
+    const props = JSON.parse(screen.getByTestId("panel-exact").textContent!);
+    expect(props.listsState.observations).toBe("unconfirmed");
+    expect(props.listsState.history).toBe("ready");
+    expect(screen.queryByRole("alert")).toBeNull();
     expect(screen.queryByText(/0건|분석 결과/)).toBeNull();
     expect(screen.queryByText(/현장을 찾을 수 없습니다/)).toBeNull();
+  });
+
+  it.each(["route missing", "scope hidden"])("treats every child-list 404 as unconfirmed, not %s", async (cause) => {
+    for (const [source, section] of [[mocked.areas, "workAreas"], [mocked.observations, "observations"], [mocked.workOrders, "workOrders"], [mocked.list, "history"]] as const) {
+      source.mockRejectedValueOnce(new CoreApiError(404, { detail: cause }));
+      render(await SiteAnalysisPage({ params: Promise.resolve({ siteId: "site-1" }), searchParams: Promise.resolve({}) }));
+      const props = JSON.parse(screen.getByTestId("panel-exact").textContent!);
+      expect(props.listsState[section]).toBe("unconfirmed");
+      expect(JSON.stringify(props.listsState)).not.toMatch(/route missing|scope hidden|지원하지|찾을 수 없|권한이 없습니다/);
+      expect(screen.queryByText(/아직 변화 분석 요청이 없습니다/)).toBeNull();
+      cleanup();
+    }
   });
 
   it("does not query analysis children or disclose Site context before an inaccessible Site 404", async () => {
@@ -154,25 +170,28 @@ describe("analysis deep link", () => {
     expect(screen.queryByText("접근 확인된 현장")).toBeNull();
   });
 
-  it("shows a retry for transient child failures without inventing an empty result", async () => {
+  it("reports a transient history failure as record-section state without inventing an empty result", async () => {
     mocked.list.mockRejectedValue(new CoreApiError(503, { detail: "temporarily unavailable" }, 4));
 
     render(await SiteAnalysisPage({ params: Promise.resolve({ siteId: "site-1" }), searchParams: Promise.resolve({}) }));
 
     expect(screen.getAllByText("접근 확인된 현장").length).toBeGreaterThan(0);
-    expect(screen.getByRole("alert")).toBeTruthy();
-    expect(screen.getByRole("button", { name: /다시 시도/ })).toBeTruthy();
-    expect(screen.queryByText(/0건|분석 결과/)).toBeNull();
+    // 이력 실패는 기록 구역만의 상태다 — 요청서는 그대로 두고 빈 단정을 두지 않는다.
+    const props = JSON.parse(screen.getByTestId("panel-exact").textContent!);
+    expect(props.listsState.history).toBe("failed");
+    expect(props.listsState.historyMessage).toContain("이력을 불러오지 못했습니다");
+    expect(screen.queryByText(/0건|아직 변화 분석 요청이 없습니다/)).toBeNull();
   });
 
-  it("explains the next step for a denied analysis read without offering a retry", async () => {
+  it("explains a denied history read as record-section state without offering a retry", async () => {
     mocked.list.mockRejectedValue(new CoreApiError(403, { detail: "denied" }));
 
     render(await SiteAnalysisPage({ params: Promise.resolve({ siteId: "site-1" }), searchParams: Promise.resolve({}) }));
 
-    expect(screen.getByRole("alert").textContent).toContain("현장 담당자에게 변화 분석 기록 조회 권한을 요청하세요.");
-    expect(screen.queryByRole("button", { name: /다시 시도/ })).toBeNull();
-    expect(screen.queryByText(/0건|분석 결과/)).toBeNull();
+    const props = JSON.parse(screen.getByTestId("panel-exact").textContent!);
+    expect(props.listsState.history).toBe("denied");
+    expect(props.listsState.historyMessage).toContain("현장 담당자에게 변화 분석 기록 조회 권한을 요청하세요.");
+    expect(screen.queryByText(/0건|아직 변화 분석 요청이 없습니다/)).toBeNull();
   });
 
   it("preselects the single ACTIVE area without an explicit query", async () => {
@@ -194,18 +213,55 @@ describe("analysis deep link", () => {
     expect(screen.getByTestId("panel-scope").textContent).toBe("|");
   });
 
-  it("offers same-area return links when analysis is environmentally unavailable without asserting file validity", async () => {
+  it("marks observations unconfirmed for an ambiguous 404, keeping scope honest", async () => {
     mocked.areas.mockResolvedValue({ workAreas: [{ workAreaId: "area-1", name: "1구역", status: "ACTIVE" }] });
     mocked.observations.mockRejectedValueOnce(new CoreApiError(404, { detail: "route unavailable" }));
 
     render(await SiteAnalysisPage({ params: Promise.resolve({ siteId: "site-1" }), searchParams: Promise.resolve({ workAreaId: "area-1" }) }));
 
-    const alert = screen.getByRole("alert");
-    expect(alert.textContent).toContain("이 환경에서는 현장 변화 분석 기능을 사용할 수 없습니다.");
-    expect(alert.textContent).toContain("등록 자료 자체의 문제가 아닙니다.");
-    expect(screen.getByRole("link", { name: "등록 자료 보기" }).getAttribute("href")).toBe("/sites/site-1/spatial-assets?workAreaId=area-1");
-    expect(screen.getByRole("link", { name: "현장 현황 보기" }).getAttribute("href")).toBe("/sites/site-1?workAreaId=area-1");
+    // 같은 구역의 다음 확인 링크는 요청서의 목록 상태 안내가 맡는다.
+    const props = JSON.parse(screen.getByTestId("panel-exact").textContent!);
+    expect(props.listsState.observations).toBe("unconfirmed");
+    expect(props.listsState.history).toBe("ready");
+    expect(screen.getByTestId("panel-scope").textContent).toBe("area-1|");
     expect(document.body.textContent).not.toMatch(/유효|사용 가능|적합/);
+  });
+
+  it.each([403, 503] as const)("marks order attribution unavailable (%s) without discarding verified observations", async (status) => {
+    const sa = `ers-v1-${"a".repeat(64)}`, sb = `ers-v1-${"b".repeat(64)}`;
+    mocked.areas.mockResolvedValue({ workAreas: [{ workAreaId: "area-1", name: "1구역", status: "ACTIVE" }] });
+    mocked.observations.mockResolvedValue([
+      { selector: { workOrderId: "work-a", submissionRef: sa, revision: 1 }, observationEpochId: "epoch-a", captureStartedAt: "2026-09-01T00:00:00Z", captureEndedAt: "2026-09-01T00:30:00Z" },
+      { selector: { workOrderId: "work-b", submissionRef: sb, revision: 2 }, observationEpochId: "epoch-b", captureStartedAt: "2026-09-08T00:00:00Z", captureEndedAt: "2026-09-08T00:30:00Z" },
+    ]);
+    mocked.workOrders.mockRejectedValueOnce(new CoreApiError(status, { detail: "orders unavailable" }));
+    mocked.list.mockResolvedValue({ siteId: "site-1", items: [], nextCursor: null });
+
+    render(await SiteAnalysisPage({ params: Promise.resolve({ siteId: "site-1" }), searchParams: Promise.resolve({ workAreaId: "area-1" }) }));
+
+    // 귀속 실패가 후보 없음으로 둔갑하지 않는다 — 원본 관측은 그대로 둔다.
+    const props = JSON.parse(screen.getByTestId("panel-exact").textContent!);
+    expect(props.listsState.workOrders).toBe(status === 403 ? "denied" : "unavailable");
+    expect(props.listsState.observations).toBe("ready");
+    expect(props.listsState.history).toBe("ready");
+    expect(props.siteObservations).toHaveLength(2);
+    expect(screen.getByTestId("panel-attribution").textContent).toBe("|unknown:0");
+    expect(screen.getByTestId("panel-scope").textContent).toBe("area-1|");
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.queryByText(/후보가 없습니다|0건/)).toBeNull();
+  });
+
+  it("marks order attribution unconfirmed on an ambiguous 404", async () => {
+    mocked.areas.mockResolvedValue({ workAreas: [{ workAreaId: "area-1", name: "1구역", status: "ACTIVE" }] });
+    mocked.observations.mockResolvedValue([]);
+    mocked.workOrders.mockRejectedValueOnce(new CoreApiError(404, { detail: "route unavailable" }));
+    mocked.list.mockResolvedValue({ siteId: "site-1", items: [], nextCursor: null });
+
+    render(await SiteAnalysisPage({ params: Promise.resolve({ siteId: "site-1" }), searchParams: Promise.resolve({ workAreaId: "area-1" }) }));
+
+    const props = JSON.parse(screen.getByTestId("panel-exact").textContent!);
+    expect(props.listsState.workOrders).toBe("unconfirmed");
+    expect(screen.queryByRole("alert")).toBeNull();
   });
 
   it("does not call a missing deep-linked record an unavailable analysis environment", async () => {
@@ -216,13 +272,15 @@ describe("analysis deep link", () => {
     expect(screen.getByRole("link", { name: "분석 목록 보기" }).getAttribute("href")).toBe("/sites/site-1/analysis?workAreaId=area-1");
   });
 
-  it("keeps return links scopeless for a blank or multi-valued area hint instead of echoing it", async () => {
+  it("keeps return scope honest for a blank or multi-valued area hint without echoing it", async () => {
     mocked.observations.mockRejectedValueOnce(new CoreApiError(404, { detail: "route unavailable" }));
 
     render(await SiteAnalysisPage({ params: Promise.resolve({ siteId: "site-1" }), searchParams: Promise.resolve({ workAreaId: "   " }) }));
 
-    expect(screen.getByRole("link", { name: "등록 자료 보기" }).getAttribute("href")).toBe("/sites/site-1/spatial-assets");
-    expect(screen.getByRole("link", { name: "현장 현황 보기" }).getAttribute("href")).toBe("/sites/site-1");
+    const props = JSON.parse(screen.getByTestId("panel-exact").textContent!);
+    expect(props.listsState.observations).toBe("unconfirmed");
+    // 모르는 구역 값은 그대로 싣지 않는다 — 목록 화면이 범위를 다시 검증한다.
+    expect(screen.getByTestId("panel-scope").textContent?.startsWith("|")).toBe(true);
 
     cleanup();
 
@@ -230,8 +288,9 @@ describe("analysis deep link", () => {
 
     render(await SiteAnalysisPage({ params: Promise.resolve({ siteId: "site-1" }), searchParams: Promise.resolve({ workAreaId: ["area-1", "area-2"] }) }));
 
-    expect(screen.getByRole("link", { name: "등록 자료 보기" }).getAttribute("href")).toBe("/sites/site-1/spatial-assets");
-    expect(screen.getByRole("link", { name: "현장 현황 보기" }).getAttribute("href")).toBe("/sites/site-1");
+    const repeated = JSON.parse(screen.getByTestId("panel-exact").textContent!);
+    expect(repeated.listsState.observations).toBe("unconfirmed");
+    expect(screen.getByTestId("panel-scope").textContent?.startsWith("|")).toBe(true);
   });
 });
 
@@ -321,14 +380,16 @@ describe("routed independent-pair analysis handoff", () => {
     expect(props.catalogPair.a.assetRef).toBe(a);
     expect(props.catalogPair.b.assetRef).toBe(b);
   });
-  it("rejects repeated exact hints and never falls back to a WorkOrder approximation", async () => {
+  it("rejects repeated exact hints while preserving the other exact side, never a WorkOrder approximation", async () => {
     setupPair();
     render(await SiteAnalysisPage({ params: Promise.resolve({siteId:"site-1"}), searchParams: Promise.resolve({workAreaId:"area-1", ...hints, hintBaselineRevision:["1","2"], currentWorkOrderId:"work-b"}) }));
     const props = panelProps();
     expect(props.initialBaselineSelector).toBeNull();
-    expect(props.initialCurrentSelector).toBeNull();
+    // 반복 배열 쪽은 버리되, 정확히 맞은 반대쪽은 그대로 둔다.
+    expect(props.initialCurrentSelector).toEqual(current);
     expect(props.initialCurrentWorkOrderId).toBeNull();
-    expect(props.exactHintNotice).toContain("직접 선택");
+    expect(props.exactHintNotice).toContain("형식을 확인하지 못했습니다");
+    expect(props.exactHintNotice).toContain("미리 골랐습니다");
   });
   it("drops return context when the exact lookup contradicts its scope", async () => {
     setupPair();

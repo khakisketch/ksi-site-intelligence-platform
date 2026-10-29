@@ -315,7 +315,11 @@ class SiteStore:
         *,
         coordinator: ExternalAuthorityCurrentnessCoordinator | None = None,
         max_bootstrap_sites_per_org: int = _DEFAULT_MAX_BOOTSTRAP_SITES_PER_ORG,
+        registration_stopped: bool = False,
     ) -> None:
+        if type(registration_stopped) is not bool:
+            raise ValueError("registration_stopped must be a bool")
+        self._registration_stopped = registration_stopped
         if type(max_bootstrap_sites_per_org) is not int or max_bootstrap_sites_per_org < 1:
             raise ValueError("max_bootstrap_sites_per_org 는 1 이상 정수여야 한다")
         self._journal = journal
@@ -741,6 +745,11 @@ class SiteStore:
         bootstrap: dict[str, Any] | None,
     ) -> SiteResult:
         """``register``/``register_bootstrap`` 공용 등록 본체 — 호출자가 lock 을 쥔다."""
+        if self._registration_stopped:
+            return SiteResult(
+                SiteVerdict.STORE_UNAVAILABLE,
+                detail="Site registration is temporarily stopped for recovery",
+            )
         if self._journal.sealed_reason is not None:
             return SiteResult(SiteVerdict.STORE_UNAVAILABLE, detail=_STORE_UNAVAILABLE_DETAIL)
         if not site_id.strip():

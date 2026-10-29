@@ -10,6 +10,7 @@ import hashlib
 import io
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import Any
 
 import pytest
 from ksi_core.domains.external.quantity.external_delta_publication_api import (
@@ -20,6 +21,7 @@ from ksi_core.domains.external.quantity.external_delta_publications import (
     DeltaPublicationDispositionV1,
     DeltaPublicationPolicy,
     DeltaPublicationStatusV1,
+    DeltaPublicationView,
     DeltaSourceWitness,
     ExternalDeltaPublicationStore,
     FilesystemDeltaByteStore,
@@ -152,7 +154,7 @@ class _FakeSource:
             organization_id=kwargs["organization_id"],
             site_id=kwargs["site_id"],
             work_area_id=kwargs["work_area_id"],
-            source_contract_version=self.version,  # type: ignore[arg-type]
+            source_contract_version=self.version,
             source_calculation_identity_digest=kwargs["source_calculation_identity_digest"],
             source_numeric_result_identity_digest=kwargs["source_numeric_result_identity_digest"],
             source_coverage_witness_digest=kwargs["source_coverage_witness_digest"],
@@ -251,7 +253,7 @@ def _policy(**overrides):  # type: ignore[no-untyped-def]
         "max_upload_attempts": 8,
     }
     fields.update(overrides)
-    return DeltaPublicationPolicy(**fields)  # type: ignore[arg-type]
+    return DeltaPublicationPolicy(**fields)
 
 
 def _harness(tmp_path: Path, **policy_overrides):  # type: ignore[no-untyped-def]
@@ -359,16 +361,16 @@ def _leased(store, worker, clock, pub="pub-01", instance="inst-1", acq="acq-1"):
 
 
 def _publish(
-    store,
-    observations,
-    worker,
-    clock,
-    payload,
-    pub="pub-01",
-    instance="inst-1",
-    acq="acq-1",
-    **obs_kwargs,
-):  # type: ignore[no-untyped-def]
+    store: ExternalDeltaPublicationStore,
+    observations: _FakeObservations,
+    worker: Principal,
+    clock: _Clock,
+    payload: bytes,
+    pub: str = "pub-01",
+    instance: str = "inst-1",
+    acq: str = "acq-1",
+    **obs_kwargs: Any,
+) -> DeltaPublicationView | None:
     lease = _leased(store, worker, clock, pub, instance, acq)
     assert lease is not None
     observations.bind(
@@ -658,7 +660,7 @@ def test_publish_rejects_hash_size_and_cap_violations(tmp_path: Path) -> None:
         def readable(self) -> bool:
             return True
 
-        def read(self, size: int = -1) -> bytes:  # type: ignore[override]
+        def read(self, size: int = -1) -> bytes:
             if self._done:
                 return b""
             self._done = True
@@ -670,7 +672,7 @@ def test_publish_rejects_hash_size_and_cap_violations(tmp_path: Path) -> None:
             publication_id="pub-01",
             worker_instance_id="inst-1",
             lease_generation=lease.lease_generation,
-            byte_stream=_ShortStream(),  # type: ignore[arg-type]
+            byte_stream=_ShortStream(),
         )
     assert len(_journal_events(journal_path)) == 2
     tiny, _, _, _, _, _, _, tiny_observations, tiny_clock = _harness(
@@ -1478,7 +1480,7 @@ def test_request_publication_derives_grid_from_source(tmp_path: Path) -> None:
             lifetime_seconds=3_600,
         )
     with pytest.raises(TypeError):
-        store.request_publication(  # type: ignore[call-arg]
+        store.request_publication(
             principal=_operator(),
             publication_id="pub-grid",
             site_id="site-a",

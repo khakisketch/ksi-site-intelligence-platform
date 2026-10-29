@@ -63,11 +63,31 @@ it("keeps verified Site context and does not offer futile retry for denied histo
   expect(screen.queryByRole("button", { name: "다시 시도" })).toBeNull();
 });
 
-it.each(["history", "areas"] as const)("does not turn a %s 404 into Site absence", async (dependency) => {
-  mocked[dependency].mockRejectedValue(new CoreApiError(404, { detail: "unavailable" }));
+it("does not turn a history 404 into Site absence", async () => {
+  mocked.history.mockRejectedValue(new CoreApiError(404, { detail: "unavailable" }));
   render(await callPage());
   expectKnownContext();
   expect(screen.getByRole("alert").textContent).toMatch(/불러오지 못/);
+});
+
+it("keeps history visible with a notice when only area names fail", async () => {
+  mocked.areas.mockRejectedValue(new CoreApiError(503, { detail: "unavailable" }));
+  render(await callPage());
+  expectKnownContext();
+  // 이력은 그대로 보이고, 이름 실패만 따로 알린다.
+  expect(screen.queryByRole("alert")).toBeNull();
+  const notice = screen.getByRole("status").textContent ?? "";
+  expect(notice).toMatch(/작업구역 이름을 불러오지 못했습니다/);
+  // 수치 존재를 단정하지 않고 실제 대체 표시를 설명한다.
+  expect(notice).toMatch(/이름이 없는 행은 작업구역으로 표시됩니다/);
+  expect(notice).not.toMatch(/수치/);
+  expect(screen.getByText(/조회된 외부 비교 기록이 없습니다/)).toBeTruthy();
+});
+
+it("hides observation creation from history without write permission", async () => {
+  render(await callPage());
+  // 읽기 전용 고정(권한 SITES_READ)이라 등록 단추는 없다.
+  expect(screen.queryByRole("link", { name: "관측 자료 등록" })).toBeNull();
 });
 
 it("preserves known context and retry for a transient history failure", async () => {

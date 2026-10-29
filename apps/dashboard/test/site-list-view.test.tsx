@@ -593,6 +593,14 @@ describe("sites page initial view", () => {
     ];
   }
 
+  it("조회된 현장 목록이 비면 조직 전체 부재 대신 현재 계정의 범위를 설명한다", async () => {
+    mockedSites.items = [];
+    render(await SitesPage({ searchParams: Promise.resolve({}) }));
+    expect(screen.getByRole("heading", { name: "현재 계정에서 볼 수 있는 현장이 없습니다" })).toBeTruthy();
+    expect(screen.getByText("찾는 현장이 이미 있다면 관리자에게 이 계정의 현장 접근 권한을 확인해 주세요.")).toBeTruthy();
+    expect(screen.queryByText("조건에 맞는 현장이 없습니다")).toBeNull();
+  });
+
   it("쿠키 list 면 밀도표로 시작한다", async () => {
     mockedCookies.value = "list";
     mockSites();
@@ -645,6 +653,7 @@ describe("sites page initial view", () => {
     render(await SitesPage({ searchParams: Promise.resolve({ q: "없는현장" }) }));
     expect(screen.queryByRole("heading", { name: "현장 상태" })).toBeNull();
     expect(screen.getAllByText("조건에 맞는 현장이 없습니다")).toHaveLength(1);
+    expect(screen.queryByRole("heading", { name: "현재 계정에서 볼 수 있는 현장이 없습니다" })).toBeNull();
     // 도구모음·전환기는 그대로 쓸 수 있다(반응형 두 벌 중 보이는 쪽).
     expect(screen.getAllByRole("searchbox", { name: "현장 찾기" }).length).toBeGreaterThanOrEqual(1);
     expect(screen.getByRole("group", { name: "현장 보기 방식" })).toBeTruthy();

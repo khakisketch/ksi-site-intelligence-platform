@@ -1,5 +1,6 @@
 // @vitest-environment node
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -133,5 +134,38 @@ describe("Dashboard standalone packaging", () => {
     expect(manifest.restoredAliases).toBe(1);
     expect(readFileSync(join(f.destination, "node_modules/runtime/package.json"), "utf8")).toBe("{}");
     expect(existsSync(join(f.destination, "node_modules/dev-only"))).toBe(false);
+  });
+
+  it("rejects an escaping link inside a wide tree without traversing it", () => {
+    // A symlink-following walker multiplies this tree per loop cycle and
+    // dies (OOM, ELOOP/ENAMETOOLONG, or timeout) instead of reporting the
+    // link. Drive the public entry point in a heap/time-bounded child so a
+    // regression aborts the child rather than the Vitest worker.
+    const f = fixture();
+    for (let i = 0; i < 800; i++) put(join(f.standalone, "bulk", `f-${i}.txt`), `bulk ${i}`);
+    symlinkSync(f.app, join(f.standalone, "escape"));
+    const script = new URL("../scripts/package-standalone.mjs", import.meta.url).href;
+    const driver = join(f.root, "driver.mjs");
+    writeFileSync(driver, [
+      `import { packageStandalone } from ${JSON.stringify(script)};`,
+      `try {`,
+      `  packageStandalone({ projectRoot: ${JSON.stringify(f.app)}, distDir: ".next", destination: ${JSON.stringify(f.destination)} });`,
+      `  console.log("PACKAGED-UNEXPECTEDLY");`,
+      `} catch (error) {`,
+      "  console.log(`THREW: ${error && error.message}`);",
+      `}`,
+      ``,
+    ].join("\n"));
+    const output = execFileSync(process.execPath, ["--max-old-space-size=64", driver], { encoding: "utf8", timeout: 30_000 });
+    expect(output).toMatch(/THREW:.*symlink/i);
+    expect(existsSync(f.destination)).toBe(false);
+  });
+
+  it("keeps relocatable internal directory links", () => {
+    const f = fixture();
+    put(join(f.standalone, "pkgdir/real.txt"), "through the link");
+    symlinkSync("pkgdir", join(f.standalone, "pkgalias"));
+    packageStandalone({ projectRoot: f.app, distDir: ".next", destination: f.destination });
+    expect(readFileSync(join(f.destination, "pkgalias/real.txt"), "utf8")).toBe("through the link");
   });
 });

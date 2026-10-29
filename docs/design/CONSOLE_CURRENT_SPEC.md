@@ -52,6 +52,22 @@ site/queue authority.
 - Visual reference: [`CONSOLE_VIEWER_FIRST_COMPARISON_2026-10-26.html`](CONSOLE_VIEWER_FIRST_COMPARISON_2026-10-26.html)
   and [`CONSOLE_VIEWER_FIRST_2026-10-26.html`](CONSOLE_VIEWER_FIRST_2026-10-26.html); prior
   desktop board [`CONSOLE_DESKTOP_FIRST_2026-10-26.html`](CONSOLE_DESKTOP_FIRST_2026-10-26.html).
+- Local integration follow-through: Analysis and external-task results can explicitly load Core's
+  exact coverage grid; V3 distinguishes mask exclusion. V2 may additionally show cell positions only
+  with exact baseline inspection/CRS/affine binding and supported display conversion. Missing location
+  evidence keeps the grid/explanation, never fabricated imagery. Existing list/form-first result
+  composition, on-demand details and read/write permissions remain; no generic GIS editor or theme
+  change. Pending task reads can follow the same calculation without another run request.
+  Initial/terminal task return rechecks currentness without overwriting unsaved choices or a newer
+  accepted save. Failed checks label previous results beside their numbers with read-only recovery;
+  permission/expiry loss withholds the private task/map/result, never replaces them with zeros.
+- Local UX assessment follow-through (not deployed): site navigation explains the roles of workspace,
+  materials, site work and results; organization work is not personal work. Results precede a separate
+  new request while a pending request remains discoverable without moving its form; execution,
+  suitability and numerical accuracy limits stay distinct. The initial registration distinguishes
+  cloud processing, optional AI access and third-party map requests; small screens retain read/review
+  and describe the same-tab/desktop boundary. A materials stage with no selected item explains how to
+  open the list rather than substituting another item. See the [work evidence](../ledger/work/2026-10-26-console.md#2026-10-29-ux-assessment-follow-through--local-candidate).
 - Audit/evidence: [`CONSOLE_USABILITY_IA_AUDIT_2026-10-26.md`](CONSOLE_USABILITY_IA_AUDIT_2026-10-26.md)
   and `~/.local/state/ksi-console-ia-20261025/viewer-first-20261026/`.
 

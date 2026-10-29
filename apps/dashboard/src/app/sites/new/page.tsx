@@ -35,10 +35,13 @@ export default async function NewSitePage() {
   return (
     <ResponsiveActionBoundary
       action="SITE_DEVICE_TRANSITION"
-      reason="현장 등록은 노트북의 전체 Operations Console에서 수행합니다."
+      reason="등록은 노트북 이상의 화면에서 같은 계정으로 현장 목록을 열어 시작하세요. 입력 중인 지도 경계가 있다면 이 탭의 화면 폭을 1024px 이상으로 넓혀 완료하거나 취소하세요. 이 탭의 입력은 다른 기기로 옮겨지지 않습니다."
       className="m-4 lg:m-5"
     >
-      <SiteRegistrationOnlyWizard mode={availability.mode} />
+      <SiteRegistrationOnlyWizard
+        mode={availability.mode}
+        accountFingerprint={availability.accountFingerprint ?? null}
+      />
     </ResponsiveActionBoundary>
   );
 }

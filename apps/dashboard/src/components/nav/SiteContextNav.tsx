@@ -7,6 +7,7 @@ import { createPortal } from "react-dom";
 
 import { SITE_STATUS_LABEL } from "@/lib/core-api/labels";
 
+import { useAccountDisplayLock } from "./AccountDisplayBoundary";
 import { NavIcon } from "./NavIcon";
 import {
   SITE_CONTEXT_SECTIONS,
@@ -19,6 +20,13 @@ import {
   type SidebarSite,
 } from "./site-context";
 
+const SECTION_HINTS = {
+  workspace: "구역과 관측 시점 보기",
+  materials: "등록 자료와 검사 상태",
+  "work-orders": "이 현장의 작업 기록",
+  results: "분석 기록과 결과 확인",
+} as const;
+
 /**
  * 데스크톱 레일의 현재 현장 블록.
  *
@@ -29,6 +37,7 @@ import {
  * - 전환 팝오버는 사이드바의 overflow 밖에 두기 위해 portal로 띄운다.
  */
 export function SiteContextNav({ sites }: { sites: readonly SidebarSite[] }) {
+  const accountDisplay = useAccountDisplayLock();
   const pathname = usePathname() ?? "";
   const searchParams = useSearchParams();
   const siteId = resolveSiteId(pathname);
@@ -36,6 +45,7 @@ export function SiteContextNav({ sites }: { sites: readonly SidebarSite[] }) {
   const activeSection = resolveSiteSection(pathname, searchParams);
   const [open, setOpen] = useState(false);
   const [position, setPosition] = useState<{ top: number; left: number } | null>(null);
+  const [portalTarget, setPortalTarget] = useState<HTMLElement | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const popoverRef = useRef<HTMLDivElement>(null);
@@ -49,7 +59,7 @@ export function SiteContextNav({ sites }: { sites: readonly SidebarSite[] }) {
       setOpen(false);
     };
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") return;
+      if (accountDisplay?.locked() || event.key !== "Escape") return;
       setOpen(false);
       triggerRef.current?.focus();
     };
@@ -64,7 +74,7 @@ export function SiteContextNav({ sites }: { sites: readonly SidebarSite[] }) {
       window.removeEventListener("resize", onViewportChange);
       window.removeEventListener("scroll", onViewportChange, true);
     };
-  }, [open]);
+  }, [accountDisplay, open]);
 
   useEffect(() => {
     if (!open || !position) return;
@@ -79,6 +89,7 @@ export function SiteContextNav({ sites }: { sites: readonly SidebarSite[] }) {
   const openSwitcher = () => {
     const trigger = triggerRef.current;
     if (!trigger) return;
+    setPortalTarget(trigger.closest<HTMLElement>("[data-account-display-root]") ?? document.body);
     const rect = trigger.getBoundingClientRect();
     setPosition({
       top: Math.max(8, rect.top),
@@ -170,20 +181,22 @@ export function SiteContextNav({ sites }: { sites: readonly SidebarSite[] }) {
               key={section.key}
               href={siteSectionHref(current.siteId, section.key)}
               aria-current={active ? "page" : undefined}
-              className={`tap-target flex min-h-8 items-center gap-2 rounded-md px-2 text-[12px] transition-colors ${
+              aria-labelledby={`site-nav-${section.key}-label`}
+              aria-describedby={`site-nav-${section.key}-hint`}
+              className={`tap-target flex min-h-8 items-start gap-2 rounded-md px-2 py-1.5 text-[12px] transition-colors ${
                 active
                   ? "bg-sidebar-active font-semibold text-sidebar-active-ink"
                   : "text-sidebar-text hover:bg-sidebar-hover"
               }`}
             >
-              <NavIcon name={section.icon} className="size-[15px] flex-none opacity-80" />
-              <span>{section.label}</span>
+              <NavIcon name={section.icon} className="mt-0.5 size-[15px] flex-none opacity-80" />
+              <span className="min-w-0"><span id={`site-nav-${section.key}-label`} className="block">{section.label}</span><span id={`site-nav-${section.key}-hint`} className="block text-[11px] leading-4 font-normal">{SECTION_HINTS[section.key]}</span></span>
             </Link>
           );
         })}
       </nav>
 
-      {open && position && createPortal(
+      {open && position && portalTarget && createPortal(
         <div
           ref={popoverRef}
           id="site-context-switcher"
@@ -249,7 +262,7 @@ export function SiteContextNav({ sites }: { sites: readonly SidebarSite[] }) {
             <span aria-hidden="true">→</span>
           </Link>
         </div>,
-        document.body,
+        portalTarget,
       )}
     </div>
   );

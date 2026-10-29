@@ -2,19 +2,24 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const mocked = vi.hoisted(() => ({ site: vi.fn(), areas: vi.fn(), permissions: vi.fn() }));
+const mocked = vi.hoisted(() => ({ site: vi.fn(), areas: vi.fn(), permissions: vi.fn(), who: vi.fn() }));
 
 vi.mock("next/link", () => ({
   default: ({ href, children, ...props }: { href: string; children: React.ReactNode; [key: string]: unknown }) =>
     createElement("a", { href, ...props }, children),
 }));
-vi.mock("next/navigation", () => ({ notFound: () => { throw new Error("NEXT_NOT_FOUND"); } }));
+vi.mock("next/navigation", () => ({ usePathname: () => "/sites/site-1/work-areas", notFound: () => { throw new Error("NEXT_NOT_FOUND"); } }));
 vi.mock("@/lib/core-api/sites", () => ({ getSite: mocked.site }));
 vi.mock("@/lib/core-api/workAreas", () => ({ listWorkAreas: mocked.areas }));
 vi.mock("@/lib/core-api/permissions", () => ({ hasAllPermissions: mocked.permissions }));
+vi.mock("@/lib/core-api/auth", () => ({ whoAmI: mocked.who }));
 vi.mock("@/app/sites/[siteId]/work-areas/WorkAreaPanel", () => ({
-  WorkAreaPanel: ({ initialWorkAreas, workAreaListError }: { initialWorkAreas: unknown[]; workAreaListError: { message: string } | null }) =>
-    createElement("div", { "data-area-count": initialWorkAreas.length, "data-list-error": workAreaListError !== null }, workAreaListError?.message ?? "목록 준비됨"),
+  WorkAreaPanel: ({ initialWorkAreas, workAreaListError, accountIdentity }: { initialWorkAreas: unknown[]; workAreaListError: { message: string } | null; accountIdentity: { fingerprint: string } | null }) =>
+    createElement("div", {
+      "data-area-count": initialWorkAreas.length,
+      "data-list-error": workAreaListError !== null,
+      "data-account-identity": accountIdentity ? accountIdentity.fingerprint : "absent",
+    }, workAreaListError?.message ?? "목록 준비됨"),
 }));
 
 import SiteWorkAreasPage from "@/app/sites/[siteId]/work-areas/page";
@@ -27,6 +32,7 @@ beforeEach(() => {
   mocked.site.mockResolvedValue({ siteId: "site-1", name: "현장 1", status: "BASELINE_MAPPING", aoi: null, resumeTarget: null, siteFrame: { crs: "EPSG:5186", transformVersion: "v1" }, registeredAt: "2026-10-01T00:00:00Z", updatedAt: "2026-10-01T00:00:00Z" });
   mocked.areas.mockResolvedValue({ workAreas: [] });
   mocked.permissions.mockResolvedValue(false);
+  mocked.who.mockResolvedValue(null);
 });
 
 describe("work area list load state", () => {
@@ -68,5 +74,26 @@ describe("work area list load state", () => {
     const html = renderToStaticMarkup(await callPage());
     expect(html).toContain("현장 작업구역 목록을 확인할 수 없습니다.");
     expect(html).toContain("data-list-error=\"true\"");
+  });
+
+  it("passes the server-verified account fingerprint for guarded retransmit", async () => {
+    mocked.who.mockResolvedValue({
+      principalId: "alice",
+      organizationId: "org-a",
+      kind: "OPERATOR",
+      role: "FIELD_OPERATOR",
+      deviceId: null,
+      permissions: ["SITES_READ", "SITES_WRITE"],
+    });
+    const html = renderToStaticMarkup(await callPage());
+    expect(html).toContain("data-account-identity=\"v1-");
+  });
+
+  it("leaves the fingerprint empty when identity is unavailable (reads stay open)", async () => {
+    mocked.who.mockRejectedValue(new Error("whoami down"));
+    const html = renderToStaticMarkup(await callPage());
+    expect(html).toContain("data-account-identity=\"absent\"");
+    // 목록 읽기는 그대로 시도된다
+    expect(html).toContain("data-area-count=\"0\"");
   });
 });

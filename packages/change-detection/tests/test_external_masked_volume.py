@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import Any
 
+import ksi_change_detection.external_masked_volume as masked_volume
 import numpy as np
 import pytest
 from ksi_change_detection.dsm_diff import DiffResult
@@ -12,6 +14,10 @@ from ksi_change_detection.external_masked_volume import (
     MaskedExternalVolumeErrorReason,
     MaskedExternalVolumeZoneMeasurement,
     measure_masked_external_volume_zone,
+)
+from ksi_change_detection.external_volume import (
+    ExternalVolumeMeasurementError,
+    ExternalVolumeMeasurementErrorReason,
 )
 from rasterio.transform import Affine, from_origin
 
@@ -57,7 +63,7 @@ def _mask(values: list[list[int]]) -> np.ndarray[Any, np.dtype[np.uint8]]:
 
 def _measure(
     diff: DiffResult,
-    polygon: dict[str, object] | None = None,
+    polygon: Mapping[str, Any] | None = None,
     mask: np.ndarray[Any, np.dtype[np.uint8]] | None = None,
     **overrides: Any,
 ) -> MaskedExternalVolumeZoneMeasurement | MaskedExternalVolumeError:
@@ -71,8 +77,30 @@ def _measure(
     }
     arguments.update(overrides)
     return measure_masked_external_volume_zone(
-        diff, _zone() if polygon is None else polygon, **arguments
+        diff, dict(_zone() if polygon is None else polygon), **arguments
     )
+
+
+@pytest.mark.parametrize("reason", list(ExternalVolumeMeasurementErrorReason))
+def test_underlying_errors_remain_non_numeric_and_fail_closed(
+    reason: ExternalVolumeMeasurementErrorReason, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Even a boundary-only underlying error must not become a number or crash."""
+    error = ExternalVolumeMeasurementError(reason, "underlying detail")
+    monkeypatch.setattr(masked_volume, "_validate_parameters", lambda **_: error)
+
+    result = _measure(_diff([[1.0, 1.0], [1.0, 1.0]]))
+    assert isinstance(result, MaskedExternalVolumeError)
+    if reason in {
+        ExternalVolumeMeasurementErrorReason.INSUFFICIENT_BOUNDARY_COVERAGE,
+        ExternalVolumeMeasurementErrorReason.BOUNDARY_SAMPLES_INSUFFICIENT,
+    }:
+        expected = MaskedExternalVolumeErrorReason.INVALID_INPUT
+    else:
+        expected = MaskedExternalVolumeErrorReason(reason.value)
+    assert result.reason is expected
+    assert result.detail == "underlying detail"
+    assert result.metrics is None
 
 
 def test_empty_mask_reproduces_hand_calculated_cut_fill_net() -> None:

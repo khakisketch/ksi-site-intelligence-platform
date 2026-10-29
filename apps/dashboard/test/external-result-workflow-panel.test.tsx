@@ -255,18 +255,72 @@ it("replays a frozen proposal after closure and a lost response", async () => {
   expect(posts[1].headers).toEqual(posts[0].headers);
 });
 
-it("reuses a frozen issue key after a lost response and clears busy ownership when selection changes", async () => {
-  let firstSignal: AbortSignal | undefined;
+it("keeps an in-flight issue after a decision change and binds its late response to current selection", async () => {
+  let firstAborted = false;
+  let resolveFirst: ((value: unknown) => void) | undefined;
   let attempts = 0;
+  const posts: Array<{ key: string; body: unknown }> = [];
+  const post = (init: RequestInit | undefined) => {
+    const headers = (init?.headers ?? {}) as Record<string, string>;
+    const key = headers["idempotency-key"];
+    posts.push({ key, body: JSON.parse(String(init?.body)) });
+    return key;
+  };
   fetchMock.mockImplementation((url: string, init?: RequestInit) => {
     if (url === "/api/observation-work-orders/work-1/relative-volume-requests" && !init?.method) return Promise.resolve(response({ items: [] }));
     if (url === "/api/observation-work-orders/work-1/relative-volume-requests" && init?.method === "POST") {
       attempts += 1;
-      if (attempts === 1) return Promise.resolve({ ok: false, json: async () => ({ code: "AUTHORITY_UNAVAILABLE" }) });
-      if (attempts === 2) {
-        firstSignal = init.signal ?? undefined;
-        return new Promise(() => undefined);
+      post(init);
+      if (attempts === 1) {
+        init?.signal?.addEventListener("abort", () => { firstAborted = true; });
+        return new Promise((resolve) => { resolveFirst = resolve as (value: unknown) => void; });
       }
+      return Promise.resolve(response({ verdict: "ISSUED", request: { requestRef, status: "QUEUED", reportRef: null }, detail: null }));
+    }
+    throw new Error(`unexpected fetch ${url}`);
+  });
+  const { rerender } = render(<ExternalResultWorkflowPanel workOrderId="work-1" siteId="site-1" decision={decision} permissions={["SITES_WRITE"]} />);
+  fireEvent.click(await screen.findByRole("button", { name: "상대 물량 비교 요청" }));
+  await waitFor(() => expect(attempts).toBe(1));
+
+  // Draft change must not abort the in-flight issue nor erase its frozen key.
+  rerender(<ExternalResultWorkflowPanel workOrderId="work-1" siteId="site-1" decision={null} permissions={["SITES_WRITE"]} />);
+  expect(firstAborted).toBe(false);
+  expect(await screen.findByText(/이전 상대 물량 비교 요청의 결과를 확인하지 못했습니다/)).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "상대 물량 비교 요청" })).toBeNull();
+
+  // Late success binds to the list, not to the changed selection.
+  resolveFirst!(response({ verdict: "ISSUED", request: { requestRef, status: "QUEUED", reportRef: null }, detail: null }));
+  await waitFor(() => {
+      expect(screen.getByText(/접수되었습니다. 현재 선택과 다른 조건의 요청이므로 목록에서 확인하세요/)).toBeTruthy();
+    });
+  expect(screen.queryByText("외부 상대 물량 비교를 요청했습니다.")).toBeNull();
+  expect(posts).toHaveLength(1);
+
+  // Returning to the original draft restores issuance with the same frozen key.
+  rerender(<ExternalResultWorkflowPanel workOrderId="work-1" siteId="site-1" decision={decision} permissions={["SITES_WRITE"]} />);
+  expect(screen.queryByText(/이전 상대 물량 비교 요청의 결과를 확인하지 못했습니다/)).toBeNull();
+  fireEvent.click(await screen.findByRole("button", { name: "상대 물량 비교 요청" }));
+  await waitFor(() => expect(posts).toHaveLength(2));
+  expect(posts[1].key).toBe(posts[0].key);
+  expect(posts[1].body).toEqual(posts[0].body);
+});
+
+it("warns before a new issue key while an earlier result is unknown, and confirms explicitly", async () => {
+  let keySeq = 0;
+  vi.stubGlobal("crypto", { randomUUID: () => `warn-key-${++keySeq}` });
+  const posts: Array<{ key: string; body: unknown }> = [];
+  const post = (init: RequestInit | undefined) => {
+    const headers = (init?.headers ?? {}) as Record<string, string>;
+    const key = headers["idempotency-key"];
+    posts.push({ key, body: JSON.parse(String(init?.body)) });
+    return key;
+  };
+  fetchMock.mockImplementation((url: string, init?: RequestInit) => {
+    if (url === "/api/observation-work-orders/work-1/relative-volume-requests" && !init?.method) return response({ items: [] });
+    if (url === "/api/observation-work-orders/work-1/relative-volume-requests" && init?.method === "POST") {
+      post(init);
+      if (posts.length === 1) return Promise.resolve({ ok: false, status: 503, json: async () => ({ code: "STORE_UNAVAILABLE", message: "점검 중" }) });
       return Promise.resolve(response({ verdict: "ISSUED", request: { requestRef, status: "QUEUED", reportRef: null }, detail: null }));
     }
     throw new Error(`unexpected fetch ${url}`);
@@ -274,17 +328,480 @@ it("reuses a frozen issue key after a lost response and clears busy ownership wh
   const nextDecision = { ...decision, decisionId: `external-use-decision-${"f".repeat(32)}`, decisionDigest: digest("f") };
   const { rerender } = render(<ExternalResultWorkflowPanel workOrderId="work-1" siteId="site-1" decision={decision} permissions={["SITES_WRITE"]} />);
   fireEvent.click(await screen.findByRole("button", { name: "상대 물량 비교 요청" }));
-  expect(await screen.findByText("비교에 필요한 기준이나 증거를 지금 사용할 수 없습니다. 현재 선택을 다시 확인한 뒤 재시도하세요.")).toBeTruthy();
-  const firstCall = fetchMock.mock.calls.filter((call) => call[1]?.method === "POST")[0][1] as RequestInit;
-  fireEvent.click(screen.getByRole("button", { name: "상대 물량 비교 요청" }));
-  await waitFor(() => expect(firstSignal).toBeDefined());
-  const retryCall = fetchMock.mock.calls.filter((call) => call[1]?.method === "POST")[1][1] as RequestInit;
-  expect((firstCall.headers as Record<string, string>)["idempotency-key"]).toBe((retryCall.headers as Record<string, string>)["idempotency-key"]);
+  expect(await screen.findByText(/요청 처리를 지금 시작할 수 없습니다. 같은 선택으로 다시 시도합니다/)).toBeTruthy();
+  expect(posts).toHaveLength(1);
 
+  // A different decision must not silently mint a new key while the earlier result is unknown.
   rerender(<ExternalResultWorkflowPanel workOrderId="work-1" siteId="site-1" decision={nextDecision} permissions={["SITES_WRITE"]} />);
-  expect(firstSignal?.aborted).toBe(true);
   fireEvent.click(await screen.findByRole("button", { name: "상대 물량 비교 요청" }));
-  await waitFor(() => expect(attempts).toBe(3));
+  expect(await screen.findByText(/이전 요청의 결과를 확인하지 못했습니다. 새로 요청하면 다른 요청 기록이 생길 수 있습니다/)).toBeTruthy();
+  expect(posts).toHaveLength(1);
+
+  // Cancel sends nothing.
+  fireEvent.click(screen.getByRole("button", { name: "유지" }));
+  expect(posts).toHaveLength(1);
+  expect(screen.queryByText(/이전 요청의 결과를 확인하지 못했습니다. 새로 요청하면 다른 요청 기록이 생길 수 있습니다/)).toBeNull();
+
+  // Explicit confirmation binds the new decision with a new key.
+  fireEvent.click(await screen.findByRole("button", { name: "상대 물량 비교 요청" }));
+  expect(await screen.findByText(/이전 요청의 결과를 확인하지 못했습니다. 새로 요청하면 다른 요청 기록이 생길 수 있습니다/)).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "새 요청 계속" }));
+  await waitFor(() => expect(posts).toHaveLength(2));
+  expect(posts[1].key).not.toBe(posts[0].key);
+  expect(posts[1].body).toEqual({ decisionRef: nextDecision.decisionId });
+  expect(await screen.findByText("외부 상대 물량 비교를 요청했습니다.")).toBeTruthy();
+});
+
+it("retains the attempt on a first-dispatch refusal instead of claiming no record", async () => {
+  // BFF 400 코드는 Core 전달 오류일 수 있어 첫 전송이라도 기록 여부를
+  // 단정하지 않는다. 같은 키·내용을 보관하고 목록 확인을 안내한다.
+  const posts: Array<{ key: string; body: unknown }> = [];
+  fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+    if (url === "/api/observation-work-orders/work-1/relative-volume-requests" && !init?.method) return response({ items: [] });
+    if (url === "/api/observation-work-orders/work-1/relative-volume-requests" && init?.method === "POST") {
+      const headers = (init.headers as Record<string, string>) ?? {};
+      posts.push({ key: headers["idempotency-key"], body: JSON.parse(String(init?.body)) });
+      if (posts.length === 1) return { ok: false, status: 400, json: async () => ({ code: "INVALID_EXTERNAL_RELATIVE_VOLUME_INTENT" }) };
+      return response({ verdict: "ISSUED", request: { requestRef, status: "QUEUED", reportRef: null }, detail: null });
+    }
+    throw new Error(`unexpected fetch ${url}`);
+  });
+  const { rerender } = render(<ExternalResultWorkflowPanel workOrderId="work-1" siteId="site-1" decision={decision} permissions={["SITES_WRITE"]} />);
+  fireEvent.click(await screen.findByRole("button", { name: "상대 물량 비교 요청" }));
+  expect(await screen.findByText(/비교 요청이 거부되어 결과를 확인하지 못했습니다/)).toBeTruthy();
+  expect(screen.queryByText(/요청이 기록되지 않았습니다/)).toBeNull();
+  expect(posts).toHaveLength(1);
+  // 같은 선택의 복구 안내가 보인다.
+  expect(screen.queryByText(/이 선택의 상대 물량 비교 요청 결과를 아직 확인하지 못했습니다/)).toBeTruthy();
+  // 보관된 시도는 원래 선택으로 돌아오면 같은 키·내용으로 다시 보낼 수 있다.
+  rerender(<ExternalResultWorkflowPanel workOrderId="work-1" siteId="site-1" decision={null} permissions={["SITES_WRITE"]} />);
+  expect(await screen.findByText(/이전 상대 물량 비교 요청의 결과를 확인하지 못했습니다/)).toBeTruthy();
+  rerender(<ExternalResultWorkflowPanel workOrderId="work-1" siteId="site-1" decision={decision} permissions={["SITES_WRITE"]} />);
+  fireEvent.click(await screen.findByRole("button", { name: "상대 물량 비교 요청" }));
+  await waitFor(() => expect(posts).toHaveLength(2));
+  expect(posts[1].key).toBe(posts[0].key);
+  expect(posts[1].body).toEqual(posts[0].body);
+  expect(await screen.findByText("외부 상대 물량 비교를 요청했습니다.")).toBeTruthy();
+});
+
+it("sends exactly one POST for batched rapid issue clicks", async () => {
+  let keySeq = 0;
+  vi.stubGlobal("crypto", { randomUUID: () => `race-key-${++keySeq}` });
+  const posts: Array<{ key: string; body: unknown }> = [];
+  fetchMock.mockImplementation((url: string, init?: RequestInit) => {
+    if (url === "/api/observation-work-orders/work-1/relative-volume-requests" && !init?.method) return response({ items: [] });
+    if (url === "/api/observation-work-orders/work-1/relative-volume-requests" && init?.method === "POST") {
+      const headers = (init.headers as Record<string, string>) ?? {};
+      posts.push({ key: headers["idempotency-key"], body: JSON.parse(String(init?.body)) });
+      return new Promise(() => undefined);
+    }
+    throw new Error(`unexpected fetch ${url}`);
+  });
+  render(<ExternalResultWorkflowPanel workOrderId="work-1" siteId="site-1" decision={decision} permissions={["SITES_WRITE"]} />);
+  const trigger = await screen.findByRole("button", { name: "상대 물량 비교 요청" });
+  // Both handlers run before React commits busy/retained state: only the first
+  // may dispatch. A ref-level synchronous lock enforces the single flight.
+  act(() => {
+    fireEvent.click(trigger);
+    fireEvent.click(trigger);
+  });
+  await waitFor(() => expect(posts.length).toBeGreaterThanOrEqual(1));
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  expect(posts).toHaveLength(1);
+});
+
+it("unlocks retry after a failure without minting a new key", async () => {
+  const posts: Array<{ key: string; body: unknown }> = [];
+  fetchMock.mockImplementation((url: string, init?: RequestInit) => {
+    if (url === "/api/observation-work-orders/work-1/relative-volume-requests" && !init?.method) return response({ items: [] });
+    if (url === "/api/observation-work-orders/work-1/relative-volume-requests" && init?.method === "POST") {
+      const headers = (init.headers as Record<string, string>) ?? {};
+      posts.push({ key: headers["idempotency-key"], body: JSON.parse(String(init?.body)) });
+      if (posts.length === 1) return Promise.resolve({ ok: false, status: 503, json: async () => ({ code: "STORE_UNAVAILABLE", message: "점검 중" }) });
+      return Promise.resolve(response({ verdict: "ISSUED", request: { requestRef, status: "QUEUED", reportRef: null }, detail: null }));
+    }
+    throw new Error(`unexpected fetch ${url}`);
+  });
+  render(<ExternalResultWorkflowPanel workOrderId="work-1" siteId="site-1" decision={decision} permissions={["SITES_WRITE"]} />);
+  const trigger = await screen.findByRole("button", { name: "상대 물량 비교 요청" });
+  fireEvent.click(trigger);
+  expect(await screen.findByText(/요청 처리를 지금 시작할 수 없습니다. 같은 선택으로 다시 시도합니다/)).toBeTruthy();
+  expect(posts).toHaveLength(1);
+  const retry = screen.getByRole("button", { name: "상대 물량 비교 요청" });
+  fireEvent.click(retry);
+  fireEvent.click(retry);
+  await waitFor(() => expect(posts).toHaveLength(2));
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  expect(posts).toHaveLength(2);
+  expect(posts[1].key).toBe(posts[0].key);
+  expect(posts[1].body).toEqual(posts[0].body);
+});
+
+it("keeps an in-flight issue out of a new work order and preserves its uncertainty", async () => {
+  const posts: Array<{ key: string; body: unknown }> = [];
+  let firstSignal: AbortSignal | undefined;
+  let resolveFirst: ((value: unknown) => void) | undefined;
+  fetchMock.mockImplementation((url: string, init?: RequestInit) => {
+    if (url === "/api/observation-work-orders/work-1/relative-volume-requests" && !init?.method) return response({ items: [] });
+    if (url === "/api/observation-work-orders/work-2/relative-volume-requests" && !init?.method) return response({ items: [] });
+    if (url === "/api/observation-work-orders/work-1/relative-volume-requests" && init?.method === "POST") {
+      const headers = (init.headers as Record<string, string>) ?? {};
+      posts.push({ key: headers["idempotency-key"], body: JSON.parse(String(init?.body)) });
+      firstSignal = init?.signal ?? undefined;
+      return new Promise((resolve) => { resolveFirst = resolve as (value: unknown) => void; });
+    }
+    if (url.includes("/observation-work-orders/work-2/")) return response({ items: [] });
+    throw new Error(`unexpected fetch ${url}`);
+  });
+  const { rerender } = render(<ExternalResultWorkflowPanel workOrderId="work-1" siteId="site-1" decision={decision} permissions={["SITES_WRITE"]} />);
+  fireEvent.click(await screen.findByRole("button", { name: "상대 물량 비교 요청" }));
+  await waitFor(() => expect(posts).toHaveLength(1));
+  const firstKey = posts[0].key;
+  // Navigate while the issue is in flight: abort it and invalidate its scope.
+  rerender(<ExternalResultWorkflowPanel workOrderId="work-2" siteId="site-1" decision={null} permissions={["SITES_WRITE"]} />);
+  expect(firstSignal?.aborted).toBe(true);
+  expect(await screen.findByText(/이전 상대 물량 비교 요청의 결과를 확인하지 못했습니다/)).toBeTruthy();
+  resolveFirst!(response({ verdict: "ISSUED", request: { requestRef, status: "QUEUED", reportRef: null }, detail: null }));
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  expect(screen.queryByText("외부 상대 물량 비교를 요청했습니다.")).toBeNull();
+  expect(screen.queryByText(/접수되었습니다. 현재 선택과 다른 조건의 요청이므로 목록에서 확인하세요/)).toBeNull();
+  expect(posts).toHaveLength(1);
+  // Uncertainty disclosure survives navigation instead of claiming cancellation.
+  expect(screen.queryByText(/이전 상대 물량 비교 요청의 결과를 확인하지 못했습니다/)).toBeTruthy();
+  // Returning restores the exact draft and replays the same frozen key.
+  rerender(<ExternalResultWorkflowPanel workOrderId="work-1" siteId="site-1" decision={decision} permissions={["SITES_WRITE"]} />);
+  await waitFor(() => expect(screen.queryByText(/이전 상대 물량 비교 요청의 결과를 확인하지 못했습니다/)).toBeNull());
+  fireEvent.click(await screen.findByRole("button", { name: "상대 물량 비교 요청" }));
+  await waitFor(() => expect(posts).toHaveLength(2));
+  expect(posts[1].key).toBe(firstKey);
+  expect(posts[1].body).toEqual(posts[0].body);
+  resolveFirst!(response({ verdict: "ISSUED", request: { requestRef, status: "QUEUED", reportRef: null }, detail: null }));
+  expect(await screen.findByText("외부 상대 물량 비교를 요청했습니다.")).toBeTruthy();
+});
+
+it("reconciles a retained attempt after closure without a new key", async () => {
+  const posts: Array<{ key: string; body: unknown }> = [];
+  fetchMock.mockImplementation((url: string, init?: RequestInit) => {
+    if (url === "/api/observation-work-orders/work-1/relative-volume-requests" && !init?.method) return response({ items: [] });
+    if (url === "/api/observation-work-orders/work-1/relative-volume-requests" && init?.method === "POST") {
+      const headers = (init.headers as Record<string, string>) ?? {};
+      posts.push({ key: headers["idempotency-key"], body: JSON.parse(String(init?.body)) });
+      if (posts.length === 1) return Promise.resolve({ ok: false, status: 503, json: async () => ({ code: "STORE_UNAVAILABLE", message: "점검 중" }) });
+      return Promise.resolve(response({ verdict: "ISSUED", request: { requestRef, status: "QUEUED", reportRef: null }, detail: null }));
+    }
+    throw new Error(`unexpected fetch ${url}`);
+  });
+  const { rerender } = render(<ExternalResultWorkflowPanel workOrderId="work-1" siteId="site-1" decision={decision} permissions={["SITES_WRITE"]} />);
+  fireEvent.click(await screen.findByRole("button", { name: "상대 물량 비교 요청" }));
+  expect(await screen.findByText(/요청 처리를 지금 시작할 수 없습니다. 같은 선택으로 다시 시도합니다/)).toBeTruthy();
+  expect(posts).toHaveLength(1);
+  rerender(<ExternalResultWorkflowPanel workOrderId="work-1" siteId="site-1" decision={decision} permissions={["SITES_WRITE"]} newIntentAllowed={false} />);
+  const retry = await screen.findByRole("button", { name: "상대 물량 비교 요청" });
+  expect(retry.hasAttribute("disabled")).toBe(false);
+  fireEvent.click(retry);
+  await waitFor(() => expect(posts).toHaveLength(2));
+  expect(posts[1].key).toBe(posts[0].key);
+  expect(posts[1].body).toEqual(posts[0].body);
+  expect(await screen.findByText("외부 상대 물량 비교를 요청했습니다.")).toBeTruthy();
+});
+
+it("keeps the original attempt when a retry is refused after a lost response", async () => {
+  const posts: Array<{ key: string; body: unknown }> = [];
+  fetchMock.mockImplementation((url: string, init?: RequestInit) => {
+    if (url === "/api/observation-work-orders/work-1/relative-volume-requests" && !init?.method) return response({ items: [] });
+    if (url === "/api/observation-work-orders/work-1/relative-volume-requests" && init?.method === "POST") {
+      const headers = (init.headers as Record<string, string>) ?? {};
+      posts.push({ key: headers["idempotency-key"], body: JSON.parse(String(init?.body)) });
+      if (posts.length === 1) throw new Error("lost response");
+      return Promise.resolve({ ok: false, status: 400, json: async () => ({ code: "INVALID_EXTERNAL_RELATIVE_VOLUME_INTENT" }) });
+    }
+    throw new Error(`unexpected fetch ${url}`);
+  });
+  const { rerender } = render(<ExternalResultWorkflowPanel workOrderId="work-1" siteId="site-1" decision={decision} permissions={["SITES_WRITE"]} />);
+  fireEvent.click(await screen.findByRole("button", { name: "상대 물량 비교 요청" }));
+  expect(await screen.findByText(/외부 상대 물량 요청 상태를 확인하지 못했습니다. 같은 선택으로 다시 시도합니다/)).toBeTruthy();
+  expect(posts).toHaveLength(1);
+  const firstKey = posts[0].key;
+  // The retry hits a BFF refusal. That refusal proves only this dispatch did not
+  // reach Core — the first dispatch may already have committed — so the frozen
+  // key and body must survive and no "no record" claim may be made.
+  fireEvent.click(screen.getByRole("button", { name: "상대 물량 비교 요청" }));
+  expect(await screen.findByText(/비교 요청이 거부되어 결과를 확인하지 못했습니다/)).toBeTruthy();
+  expect(screen.queryByText(/요청이 기록되지 않았습니다/)).toBeNull();
+  expect(posts).toHaveLength(2);
+  expect(posts[1].key).toBe(firstKey);
+  expect(posts[1].body).toEqual(posts[0].body);
+  // The attempt stays recoverable under the original draft.
+  rerender(<ExternalResultWorkflowPanel workOrderId="work-1" siteId="site-1" decision={null} permissions={["SITES_WRITE"]} />);
+  expect(await screen.findByText(/이전 상대 물량 비교 요청의 결과를 확인하지 못했습니다/)).toBeTruthy();
+  rerender(<ExternalResultWorkflowPanel workOrderId="work-1" siteId="site-1" decision={decision} permissions={["SITES_WRITE"]} />);
+  expect(screen.queryByText(/이전 상대 물량 비교 요청의 결과를 확인하지 못했습니다/)).toBeNull();
+});
+
+it("keeps the original attempt when a retry after an interrupted issue is refused", async () => {
+  const posts: Array<{ key: string; body: unknown }> = [];
+  let firstSignal: AbortSignal | undefined;
+  let resolveFirst: ((value: unknown) => void) | undefined;
+  const queued = { requestRef, status: "QUEUED", reportRef: null, deadlineAt: "2030-01-01T00:00:00Z" };
+  fetchMock.mockImplementation((url: string, init?: RequestInit) => {
+    if (url === "/api/observation-work-orders/work-1/relative-volume-requests" && !init?.method) return response({ items: [queued] });
+    if (url === `/api/observation-work-orders/work-1/relative-volume-requests/${requestRef}`) return response(queued);
+    if (url === "/api/observation-work-orders/work-1/relative-volume-requests" && init?.method === "POST") {
+      const headers = (init.headers as Record<string, string>) ?? {};
+      posts.push({ key: headers["idempotency-key"], body: JSON.parse(String(init?.body)) });
+      if (posts.length === 1) {
+        firstSignal = init?.signal ?? undefined;
+        return new Promise((resolve) => { resolveFirst = resolve as (value: unknown) => void; });
+      }
+      return Promise.resolve({ ok: false, status: 400, json: async () => ({ code: "INVALID_EXTERNAL_RELATIVE_VOLUME_INTENT" }) });
+    }
+    throw new Error(`unexpected fetch ${url}`);
+  });
+  render(<ExternalResultWorkflowPanel workOrderId="work-1" siteId="site-1" decision={decision} permissions={["SITES_WRITE"]} />);
+  fireEvent.click(await screen.findByRole("button", { name: "상대 물량 비교 요청" }));
+  await waitFor(() => expect(posts).toHaveLength(1));
+  const firstKey = posts[0].key;
+  // Selecting a request interrupts the in-flight issue.
+  fireEvent.click(await screen.findByRole("button", { name: "비교 요청 상태" }));
+  expect(firstSignal?.aborted).toBe(true);
+  resolveFirst!(response({ verdict: "ISSUED", request: { requestRef, status: "QUEUED", reportRef: null }, detail: null }));
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  expect(posts).toHaveLength(1);
+  // The retry is refused: the original attempt must survive without a no-record claim.
+  fireEvent.click(screen.getByRole("button", { name: "상대 물량 비교 요청" }));
+  expect(await screen.findByText(/비교 요청이 거부되어 결과를 확인하지 못했습니다/)).toBeTruthy();
+  expect(screen.queryByText(/요청이 기록되지 않았습니다/)).toBeNull();
+  expect(posts).toHaveLength(2);
+  expect(posts[1].key).toBe(firstKey);
+  expect(posts[1].body).toEqual(posts[0].body);
+});
+
+it("warns before a new key when an earlier retry was refused", async () => {
+  const posts: Array<{ key: string }> = [];
+  fetchMock.mockImplementation((url: string, init?: RequestInit) => {
+    if (url === "/api/observation-work-orders/work-1/relative-volume-requests" && !init?.method) return response({ items: [] });
+    if (url === "/api/observation-work-orders/work-1/relative-volume-requests" && init?.method === "POST") {
+      posts.push({ key: (init.headers as Record<string, string>)["idempotency-key"] });
+      if (posts.length === 1) throw new Error("lost response");
+      if (posts.length === 2) return Promise.resolve({ ok: false, status: 400, json: async () => ({ code: "INVALID_EXTERNAL_RELATIVE_VOLUME_INTENT" }) });
+      return Promise.resolve(response({ verdict: "ISSUED", request: { requestRef, status: "QUEUED", reportRef: null }, detail: null }));
+    }
+    throw new Error(`unexpected fetch ${url}`);
+  });
+  let keySeq = 0;
+  vi.stubGlobal("crypto", { randomUUID: () => `refused-warn-key-${++keySeq}` });
+  const nextDecision = { ...decision, decisionId: `external-use-decision-${"f".repeat(32)}`, decisionDigest: digest("f") };
+  const { rerender } = render(<ExternalResultWorkflowPanel workOrderId="work-1" siteId="site-1" decision={decision} permissions={["SITES_WRITE"]} />);
+  fireEvent.click(await screen.findByRole("button", { name: "상대 물량 비교 요청" }));
+  await waitFor(() => expect(posts).toHaveLength(1));
+  fireEvent.click(screen.getByRole("button", { name: "상대 물량 비교 요청" }));
+  expect(await screen.findByText(/비교 요청이 거부되어 결과를 확인하지 못했습니다/)).toBeTruthy();
+  expect(posts).toHaveLength(2);
+  // A different decision must still warn before minting another key.
+  rerender(<ExternalResultWorkflowPanel workOrderId="work-1" siteId="site-1" decision={nextDecision} permissions={["SITES_WRITE"]} />);
+  fireEvent.click(await screen.findByRole("button", { name: "상대 물량 비교 요청" }));
+  expect(await screen.findByText(/이전 요청의 결과를 확인하지 못했습니다. 새로 요청하면 다른 요청 기록이 생길 수 있습니다/)).toBeTruthy();
+  expect(posts).toHaveLength(2);
+});
+
+it("never posts an orphaned attempt while a different decision is displayed", async () => {
+  const posts: Array<{ key: string; body: unknown }> = [];
+  fetchMock.mockImplementation((url: string, init?: RequestInit) => {
+    if (url === "/api/observation-work-orders/work-1/relative-volume-requests" && !init?.method) return response({ items: [] });
+    if (url === "/api/observation-work-orders/work-1/relative-volume-requests" && init?.method === "POST") {
+      const headers = (init.headers as Record<string, string>) ?? {};
+      posts.push({ key: headers["idempotency-key"], body: JSON.parse(String(init?.body)) });
+      if (posts.length === 1) return Promise.resolve({ ok: false, status: 503, json: async () => ({ code: "STORE_UNAVAILABLE", message: "점검 중" }) });
+      return Promise.resolve(response({ verdict: "ISSUED", request: { requestRef, status: "QUEUED", reportRef: null }, detail: null }));
+    }
+    throw new Error(`unexpected fetch ${url}`);
+  });
+  const other = { ...decision, decisionId: `external-use-decision-${"e".repeat(32)}`, decisionDigest: digest("e") };
+  const { rerender } = render(<ExternalResultWorkflowPanel workOrderId="work-1" siteId="site-1" decision={decision} permissions={["SITES_WRITE"]} />);
+  fireEvent.click(await screen.findByRole("button", { name: "상대 물량 비교 요청" }));
+  expect(await screen.findByText(/요청 처리를 지금 시작할 수 없습니다. 같은 선택으로 다시 시도합니다/)).toBeTruthy();
+  expect(posts).toHaveLength(1);
+  // Null draft: the orphan notice offers no mutating route.
+  rerender(<ExternalResultWorkflowPanel workOrderId="work-1" siteId="site-1" decision={null} permissions={["SITES_WRITE"]} />);
+  const orphanNull = await screen.findByText(/이전 상대 물량 비교 요청의 결과를 확인하지 못했습니다/);
+  expect(orphanNull.closest("div")?.querySelector("button")).toBeNull();
+  expect(screen.queryByRole("button", { name: "상대 물량 비교 요청" })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "목록 새로고침" }));
+  await new Promise((resolve) => setTimeout(resolve, 30));
+  expect(posts).toHaveLength(1);
+  // Different draft: issuing warns first and never replays the old decision.
+  rerender(<ExternalResultWorkflowPanel workOrderId="work-1" siteId="site-1" decision={other} permissions={["SITES_WRITE"]} />);
+  const orphanOther = await screen.findByText(/이전 상대 물량 비교 요청의 결과를 확인하지 못했습니다/);
+  expect(orphanOther.closest("div")?.querySelector("button")).toBeNull();
+  fireEvent.click(await screen.findByRole("button", { name: "상대 물량 비교 요청" }));
+  expect(await screen.findByText(/이전 요청의 결과를 확인하지 못했습니다. 새로 요청하면 다른 요청 기록이 생길 수 있습니다/)).toBeTruthy();
+  expect(posts).toHaveLength(1);
+  fireEvent.click(screen.getByRole("button", { name: "유지" }));
+  expect(posts).toHaveLength(1);
+  // Restoring the exact draft replays the same frozen key and body.
+  rerender(<ExternalResultWorkflowPanel workOrderId="work-1" siteId="site-1" decision={decision} permissions={["SITES_WRITE"]} />);
+  expect(screen.queryByText(/이전 상대 물량 비교 요청의 결과를 확인하지 못했습니다/)).toBeNull();
+  fireEvent.click(await screen.findByRole("button", { name: "상대 물량 비교 요청" }));
+  await waitFor(() => expect(posts).toHaveLength(2));
+  expect(posts[1].key).toBe(posts[0].key);
+  expect(posts[1].body).toEqual(posts[0].body);
+  expect(await screen.findByText("외부 상대 물량 비교를 요청했습니다.")).toBeTruthy();
+});
+
+it("blocks a new decision on a closed work order while an unrelated attempt is retained", async () => {
+  const posts: Array<{ key: string; body: unknown }> = [];
+  fetchMock.mockImplementation((url: string, init?: RequestInit) => {
+    if (url === "/api/observation-work-orders/work-1/relative-volume-requests" && !init?.method) return response({ items: [] });
+    if (url === "/api/observation-work-orders/work-1/relative-volume-requests" && init?.method === "POST") {
+      const headers = (init.headers as Record<string, string>) ?? {};
+      posts.push({ key: headers["idempotency-key"], body: JSON.parse(String(init?.body)) });
+      if (posts.length === 1) return Promise.resolve({ ok: false, status: 503, json: async () => ({ code: "STORE_UNAVAILABLE", message: "점검 중" }) });
+      return Promise.resolve(response({ verdict: "ISSUED", request: { requestRef, status: "QUEUED", reportRef: null }, detail: null }));
+    }
+    throw new Error(`unexpected fetch ${url}`);
+  });
+  const other = { ...decision, decisionId: `external-use-decision-${"e".repeat(32)}`, decisionDigest: digest("e") };
+  const { rerender } = render(<ExternalResultWorkflowPanel workOrderId="work-1" siteId="site-1" decision={decision} permissions={["SITES_WRITE"]} />);
+  fireEvent.click(await screen.findByRole("button", { name: "상대 물량 비교 요청" }));
+  expect(await screen.findByText(/요청 처리를 지금 시작할 수 없습니다. 같은 선택으로 다시 시도합니다/)).toBeTruthy();
+  // Closed with a different decision selected: no issue button, no actionable retry.
+  rerender(<ExternalResultWorkflowPanel workOrderId="work-1" siteId="site-1" decision={other} permissions={["SITES_WRITE"]} newIntentAllowed={false} />);
+  expect(screen.queryByRole("button", { name: "상대 물량 비교 요청" })).toBeNull();
+  const orphan = await screen.findByText(/이전 상대 물량 비교 요청의 결과를 확인하지 못했습니다/);
+  expect(orphan.closest("div")?.querySelector("button")).toBeNull();
+  expect(posts).toHaveLength(1);
+  // Restoring the exact retained draft re-enables issuance with the original key.
+  rerender(<ExternalResultWorkflowPanel workOrderId="work-1" siteId="site-1" decision={decision} permissions={["SITES_WRITE"]} newIntentAllowed={false} />);
+  const retry = await screen.findByRole("button", { name: "상대 물량 비교 요청" });
+  expect(retry.hasAttribute("disabled")).toBe(false);
+  fireEvent.click(retry);
+  await waitFor(() => expect(posts).toHaveLength(2));
+  expect(posts[1].key).toBe(posts[0].key);
+  expect(posts[1].body).toEqual(posts[0].body);
+  expect(await screen.findByText("외부 상대 물량 비교를 요청했습니다.")).toBeTruthy();
+});
+
+it("treats the same decision id with a different digest as a new intent", async () => {
+  const posts: Array<{ key: string; body: unknown }> = [];
+  fetchMock.mockImplementation((url: string, init?: RequestInit) => {
+    if (url === "/api/observation-work-orders/work-1/relative-volume-requests" && !init?.method) return response({ items: [] });
+    if (url === "/api/observation-work-orders/work-1/relative-volume-requests" && init?.method === "POST") {
+      const headers = (init.headers as Record<string, string>) ?? {};
+      posts.push({ key: headers["idempotency-key"], body: JSON.parse(String(init?.body)) });
+      if (posts.length === 1) return Promise.resolve({ ok: false, status: 503, json: async () => ({ code: "STORE_UNAVAILABLE", message: "점검 중" }) });
+      return Promise.resolve(response({ verdict: "ISSUED", request: { requestRef, status: "QUEUED", reportRef: null }, detail: null }));
+    }
+    throw new Error(`unexpected fetch ${url}`);
+  });
+  let keySeq = 0;
+  vi.stubGlobal("crypto", { randomUUID: () => `digest-change-key-${++keySeq}` });
+  const changed = { ...decision, decisionDigest: digest("b") };
+  const { rerender } = render(<ExternalResultWorkflowPanel workOrderId="work-1" siteId="site-1" decision={decision} permissions={["SITES_WRITE"]} />);
+  fireEvent.click(await screen.findByRole("button", { name: "상대 물량 비교 요청" }));
+  expect(await screen.findByText(/요청 처리를 지금 시작할 수 없습니다. 같은 선택으로 다시 시도합니다/)).toBeTruthy();
+  // Same id, new digest: must warn, never silently replay the stale attempt.
+  rerender(<ExternalResultWorkflowPanel workOrderId="work-1" siteId="site-1" decision={changed} permissions={["SITES_WRITE"]} />);
+  fireEvent.click(await screen.findByRole("button", { name: "상대 물량 비교 요청" }));
+  expect(await screen.findByText(/이전 요청의 결과를 확인하지 못했습니다. 새로 요청하면 다른 요청 기록이 생길 수 있습니다/)).toBeTruthy();
+  expect(posts).toHaveLength(1);
+  fireEvent.click(screen.getByRole("button", { name: "새 요청 계속" }));
+  await waitFor(() => expect(posts).toHaveLength(2));
+  expect(posts[1].key).not.toBe(posts[0].key);
+  expect(posts[1].body).toEqual({ decisionRef: decision.decisionId });
+  // The stale attempt is untouched: restoring the exact original draft replays it.
+  rerender(<ExternalResultWorkflowPanel workOrderId="work-1" siteId="site-1" decision={decision} permissions={["SITES_WRITE"]} />);
+  expect(screen.queryByText(/이전 상대 물량 비교 요청의 결과를 확인하지 못했습니다/)).toBeNull();
+});
+
+it("keeps the explicit confirm inside the desktop write boundary while 유지 stays usable", async () => {
+  fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+    if (url === "/api/observation-work-orders/work-1/relative-volume-requests" && !init?.method) return response({ items: [] });
+    if (url.endsWith("/relative-volume-requests") && init?.method === "POST") {
+      return { ok: false, status: 503, json: async () => ({ code: "STORE_UNAVAILABLE", message: "점검 중" }) };
+    }
+    throw new Error(`unexpected fetch ${url}`);
+  });
+  const nextDecision = { ...decision, decisionId: `external-use-decision-${"f".repeat(32)}`, decisionDigest: digest("f") };
+  const { rerender } = render(<ExternalResultWorkflowPanel workOrderId="work-1" siteId="site-1" decision={decision} permissions={["SITES_WRITE"]} />);
+  fireEvent.click(await screen.findByRole("button", { name: "상대 물량 비교 요청" }));
+  await screen.findByText(/요청 처리를 지금 시작할 수 없습니다. 같은 선택으로 다시 시도합니다/);
+  rerender(<ExternalResultWorkflowPanel workOrderId="work-1" siteId="site-1" decision={nextDecision} permissions={["SITES_WRITE"]} />);
+  fireEvent.click(await screen.findByRole("button", { name: "상대 물량 비교 요청" }));
+  const confirmButton = await screen.findByRole("button", { name: "새 요청 계속" });
+  const keepButton = screen.getByRole("button", { name: "유지" });
+  expect(confirmButton.closest("div.hidden")).not.toBeNull();
+  expect(keepButton.closest("div.hidden")).toBeNull();
+  expect(document.querySelector('[data-responsive-action-notice="EXTERNAL_RECONSTRUCTION_MUTATION"]')).not.toBeNull();
+  fireEvent.click(keepButton);
+  expect(screen.queryByText(/이전 요청의 결과를 확인하지 못했습니다/)).toBeNull();
+});
+
+it("shows the in-memory recovery limit on the same selection without hiding it on narrow screens", async () => {
+  const posts: Array<{ key: string; body: unknown }> = [];
+  fetchMock.mockImplementation((url: string, init?: RequestInit) => {
+    if (url === "/api/observation-work-orders/work-1/relative-volume-requests" && !init?.method) return response({ items: [] });
+    if (url === "/api/observation-work-orders/work-1/relative-volume-requests" && init?.method === "POST") {
+      const headers = (init.headers as Record<string, string>) ?? {};
+      posts.push({ key: headers["idempotency-key"], body: JSON.parse(String(init?.body)) });
+      if (posts.length === 1) return Promise.resolve({ ok: false, status: 503, json: async () => ({ code: "STORE_UNAVAILABLE", message: "점검 중" }) });
+      return Promise.resolve(response({ verdict: "ISSUED", request: { requestRef, status: "QUEUED", reportRef: null }, detail: null }));
+    }
+    throw new Error(`unexpected fetch ${url}`);
+  });
+  const { rerender } = render(<ExternalResultWorkflowPanel workOrderId="work-1" siteId="site-1" decision={decision} permissions={["SITES_WRITE"]} />);
+  fireEvent.click(await screen.findByRole("button", { name: "상대 물량 비교 요청" }));
+  expect(await screen.findByText(/요청 처리를 지금 시작할 수 없습니다. 같은 선택으로 다시 시도합니다/)).toBeTruthy();
+  // The same-selection recovery notice is visible, distinct from orphans,
+  // and is never gated behind the desktop write boundary.
+  const banner = await screen.findByText(/이 선택의 상대 물량 비교 요청 결과를 아직 확인하지 못했습니다/);
+  expect(banner.closest("div.hidden")).toBeNull();
+  expect(screen.queryByText(/이전 상대 물량 비교 요청의 결과를 확인하지 못했습니다/)).toBeNull();
+  // A draft change swaps it for the orphan notice; restoring brings it back.
+  rerender(<ExternalResultWorkflowPanel workOrderId="work-1" siteId="site-1" decision={null} permissions={["SITES_WRITE"]} />);
+  expect(await screen.findByText(/이전 상대 물량 비교 요청의 결과를 확인하지 못했습니다/)).toBeTruthy();
+  expect(screen.queryByText(/이 선택의 상대 물량 비교 요청 결과를 아직 확인하지 못했습니다/)).toBeNull();
+  rerender(<ExternalResultWorkflowPanel workOrderId="work-1" siteId="site-1" decision={decision} permissions={["SITES_WRITE"]} />);
+  expect(await screen.findByText(/이 선택의 상대 물량 비교 요청 결과를 아직 확인하지 못했습니다/)).toBeTruthy();
+  fireEvent.click(await screen.findByRole("button", { name: "상대 물량 비교 요청" }));
+  await waitFor(() => expect(posts).toHaveLength(2));
+  expect(posts[1].key).toBe(posts[0].key);
+  expect(await screen.findByText("외부 상대 물량 비교를 요청했습니다.")).toBeTruthy();
+});
+
+it("never resends a retained attempt under a different work order", async () => {
+  const posts: Array<{ url: string; key: string; body: unknown }> = [];
+  fetchMock.mockImplementation((url: string, init?: RequestInit) => {
+    if (url === "/api/observation-work-orders/work-1/relative-volume-requests" && !init?.method) return response({ items: [] });
+    if (url === "/api/observation-work-orders/work-2/relative-volume-requests" && !init?.method) return response({ items: [] });
+    if (init?.method === "POST" && url.includes("/relative-volume-requests")) {
+      const headers = (init.headers as Record<string, string>) ?? {};
+      posts.push({ url, key: headers["idempotency-key"], body: JSON.parse(String(init?.body)) });
+      if (posts.length === 1) return Promise.resolve({ ok: false, status: 503, json: async () => ({ code: "STORE_UNAVAILABLE", message: "점검 중" }) });
+      return Promise.resolve(response({ verdict: "ISSUED", request: { requestRef, status: "QUEUED", reportRef: null }, detail: null }));
+    }
+    if (url.includes("/observation-work-orders/work-2/")) return response({ items: [] });
+    throw new Error(`unexpected fetch ${url}`);
+  });
+  const { rerender } = render(<ExternalResultWorkflowPanel workOrderId="work-1" siteId="site-1" decision={decision} permissions={["SITES_WRITE"]} />);
+  fireEvent.click(await screen.findByRole("button", { name: "상대 물량 비교 요청" }));
+  expect(await screen.findByText(/요청 처리를 지금 시작할 수 없습니다. 같은 선택으로 다시 시도합니다/)).toBeTruthy();
+  expect(posts).toHaveLength(1);
+  const firstKey = posts[0].key;
+  // Direct prop switch to another work order with the same decision prop:
+  // the retained attempt must refuse instead of POSTing the old key elsewhere.
+  rerender(<ExternalResultWorkflowPanel workOrderId="work-2" siteId="site-1" decision={decision} permissions={["SITES_WRITE"]} />);
+  fireEvent.click(await screen.findByRole("button", { name: "상대 물량 비교 요청" }));
+  expect(await screen.findByText(/이전 작업에서 시작한 비교 요청은 이 작업에서 다시 보낼 수 없습니다/)).toBeTruthy();
+  expect(posts).toHaveLength(1);
+  expect(posts.every((post) => !post.url.includes("/work-2/"))).toBe(true);
+  // Returning to the original work order replays the exact frozen intent.
+  rerender(<ExternalResultWorkflowPanel workOrderId="work-1" siteId="site-1" decision={decision} permissions={["SITES_WRITE"]} />);
+  fireEvent.click(await screen.findByRole("button", { name: "상대 물량 비교 요청" }));
+  await waitFor(() => expect(posts).toHaveLength(2));
+  expect(posts[1].key).toBe(firstKey);
+  expect(posts[1].body).toEqual(posts[0].body);
+  expect(posts[1].url).toBe(posts[0].url);
+  expect(await screen.findByText("외부 상대 물량 비교를 요청했습니다.")).toBeTruthy();
 });
 
 it("loads a retained work-order report without a current pair decision, renders metrics only after coverage passes, keeps unknown uncertainty unknown, and exposes immutable provenance", async () => {
@@ -885,6 +1402,367 @@ describe("SINGLE_VOLUME measurement", () => {
     expect(screen.queryByText(retryText)).toBeNull();
   });
 
+  it("retains an uncertain single-volume attempt across a draft change and replays its key", async () => {
+    const posts: Array<{ key: string; body: unknown }> = [];
+    const post = (init: RequestInit | undefined) => {
+      const headers = (init?.headers ?? {}) as Record<string, string>;
+      const key = headers["idempotency-key"];
+      posts.push({ key, body: JSON.parse(String(init?.body)) });
+      return key;
+    };
+    let resolveFirst: ((value: unknown) => void) | undefined;
+    let aborted = false;
+    let attempts = 0;
+    fetchMock.mockImplementation((url: string, init?: RequestInit) => {
+      if (url === "/api/observation-work-orders/work-1/relative-volume-requests") return response({ items: [] });
+      if (url === "/api/observation-work-orders/work-1/single-volume-requests" && !init?.method) return response({ items: [] });
+      if (url === "/api/observation-work-orders/work-1/single-volume-requests" && init?.method === "POST") {
+        attempts += 1;
+        post(init);
+        if (attempts === 1) {
+          init?.signal?.addEventListener("abort", () => { aborted = true; });
+          return new Promise((resolve) => { resolveFirst = resolve as (value: unknown) => void; });
+        }
+        return Promise.resolve(response({ verdict: "ISSUED", request: singleRequest("QUEUED"), detail: null }));
+      }
+      throw new Error(`unexpected fetch ${url}`);
+    });
+    const { rerender } = render(<ExternalResultWorkflowPanel workOrderId="work-1" siteId="site-1" decision={null} singleVolumeDecision={singleDecision} permissions={["SITES_WRITE"]} />);
+    fireEvent.click(await screen.findByRole("button", { name: "단일 시점 체적 측정 요청" }));
+    await waitFor(() => expect(attempts).toBe(1));
+
+    // Draft change must not abort the in-flight issue nor erase its frozen key.
+    rerender(<ExternalResultWorkflowPanel workOrderId="work-1" siteId="site-1" decision={null} singleVolumeDecision={null} permissions={["SITES_WRITE"]} />);
+    expect(aborted).toBe(false);
+    expect(await screen.findByText(/이전 단일 시점 체적 측정 요청의 결과를 확인하지 못했습니다/)).toBeTruthy();
+    resolveFirst!(response({ verdict: "ISSUED", request: singleRequest("QUEUED"), detail: null }));
+    await waitFor(() => expect(screen.getByText(/접수되었습니다. 현재 선택과 다른 조건의 요청이므로 목록에서 확인하세요/)).toBeTruthy());
+
+    // Returning to the original draft restores issuance with the same frozen key.
+    rerender(<ExternalResultWorkflowPanel workOrderId="work-1" siteId="site-1" decision={null} singleVolumeDecision={singleDecision} permissions={["SITES_WRITE"]} />);
+    expect(screen.queryByText(/이전 단일 시점 체적 측정 요청의 결과를 확인하지 못했습니다/)).toBeNull();
+    fireEvent.click(await screen.findByRole("button", { name: "단일 시점 체적 측정 요청" }));
+    await waitFor(() => expect(posts).toHaveLength(2));
+    expect(posts[1].key).toBe(posts[0].key);
+    expect(posts[1].body).toEqual({ decisionRef: singleDecision.decisionId });
+    expect(await screen.findByText("단일 시점 체적 측정을 요청했습니다.")).toBeTruthy();
+  });
+
+  it("warns before a new single-volume key while an earlier result is unknown", async () => {
+    let keySeq = 0;
+    vi.stubGlobal("crypto", { randomUUID: () => `single-warn-key-${++keySeq}` });
+    const posts: Array<{ key: string }> = [];
+    fetchMock.mockImplementation((url: string, init?: RequestInit) => {
+      if (url === "/api/observation-work-orders/work-1/relative-volume-requests") return response({ items: [] });
+      if (url === "/api/observation-work-orders/work-1/single-volume-requests" && !init?.method) return response({ items: [] });
+      if (url === "/api/observation-work-orders/work-1/single-volume-requests" && init?.method === "POST") {
+        posts.push({ key: (init.headers as Record<string, string>)["idempotency-key"] });
+        if (posts.length === 1) return Promise.resolve({ ok: false, status: 503, json: async () => ({ code: "STORE_UNAVAILABLE", message: "점검 중" }) });
+        return Promise.resolve(response({ verdict: "ISSUED", request: singleRequest("QUEUED"), detail: null }));
+      }
+      throw new Error(`unexpected fetch ${url}`);
+    });
+    const otherSingle = { ...singleDecision, decisionId: `external-use-decision-${"8".repeat(32)}`, decisionDigest: `sha256:${"8".repeat(64)}` };
+    const { rerender } = render(<ExternalResultWorkflowPanel workOrderId="work-1" siteId="site-1" decision={null} singleVolumeDecision={singleDecision} permissions={["SITES_WRITE"]} />);
+    fireEvent.click(await screen.findByRole("button", { name: "단일 시점 체적 측정 요청" }));
+    expect(await screen.findByText("요청 처리를 지금 시작할 수 없습니다. 같은 선택으로 다시 시도합니다.")).toBeTruthy();
+    rerender(<ExternalResultWorkflowPanel workOrderId="work-1" siteId="site-1" decision={null} singleVolumeDecision={otherSingle} permissions={["SITES_WRITE"]} />);
+    fireEvent.click(await screen.findByRole("button", { name: "단일 시점 체적 측정 요청" }));
+    expect(await screen.findByText(/이전 요청의 결과를 확인하지 못했습니다. 새로 요청하면 다른 요청 기록이 생길 수 있습니다/)).toBeTruthy();
+    expect(posts).toHaveLength(1);
+    fireEvent.click(screen.getByRole("button", { name: "유지" }));
+    expect(posts).toHaveLength(1);
+    fireEvent.click(screen.getByRole("button", { name: "단일 시점 체적 측정 요청" }));
+    expect(await screen.findByText(/이전 요청의 결과를 확인하지 못했습니다. 새로 요청하면 다른 요청 기록이 생길 수 있습니다/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "새 요청 계속" }));
+    await waitFor(() => expect(posts).toHaveLength(2));
+    expect(posts[1].key).not.toBe(posts[0].key);
+  });
+
+  it("retains the single attempt on a first-dispatch refusal instead of claiming no record", async () => {
+    // BFF 400 코드는 Core 전달 오류일 수 있어 첫 전송이라도 기록 여부를
+    // 단정하지 않는다. 같은 키·내용을 보관하고 목록 확인을 안내한다.
+    const posts: Array<{ key: string; body: unknown }> = [];
+    fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+      if (url === "/api/observation-work-orders/work-1/relative-volume-requests") return response({ items: [] });
+      if (url === "/api/observation-work-orders/work-1/single-volume-requests" && !init?.method) return response({ items: [] });
+      if (url === "/api/observation-work-orders/work-1/single-volume-requests" && init?.method === "POST") {
+        const headers = (init.headers as Record<string, string>) ?? {};
+        posts.push({ key: headers["idempotency-key"], body: JSON.parse(String(init?.body)) });
+        if (posts.length === 1) return { ok: false, status: 400, json: async () => ({ code: "INVALID_EXTERNAL_SINGLE_VOLUME_INTENT" }) };
+        return response({ verdict: "ISSUED", request: singleRequest("QUEUED"), detail: null });
+      }
+      throw new Error(`unexpected fetch ${url}`);
+    });
+    const { rerender } = render(<ExternalResultWorkflowPanel workOrderId="work-1" siteId="site-1" decision={null} singleVolumeDecision={singleDecision} permissions={["SITES_WRITE"]} />);
+    fireEvent.click(await screen.findByRole("button", { name: "단일 시점 체적 측정 요청" }));
+    expect(await screen.findByText(/체적 측정 요청이 거부되어 결과를 확인하지 못했습니다/)).toBeTruthy();
+    expect(screen.queryByText(/요청이 기록되지 않았습니다/)).toBeNull();
+    expect(posts).toHaveLength(1);
+    // 같은 선택의 복구 안내가 보인다.
+    expect(screen.queryByText(/이 선택의 단일 시점 체적 측정 요청 결과를 아직 확인하지 못했습니다/)).toBeTruthy();
+    // 보관된 시도는 원래 선택으로 돌아오면 같은 키·내용으로 다시 보낼 수 있다.
+    rerender(<ExternalResultWorkflowPanel workOrderId="work-1" siteId="site-1" decision={null} singleVolumeDecision={null} permissions={["SITES_WRITE"]} />);
+    expect(await screen.findByText(/이전 단일 시점 체적 측정 요청의 결과를 확인하지 못했습니다/)).toBeTruthy();
+    rerender(<ExternalResultWorkflowPanel workOrderId="work-1" siteId="site-1" decision={null} singleVolumeDecision={singleDecision} permissions={["SITES_WRITE"]} />);
+    fireEvent.click(await screen.findByRole("button", { name: "단일 시점 체적 측정 요청" }));
+    await waitFor(() => expect(posts).toHaveLength(2));
+    expect(posts[1].key).toBe(posts[0].key);
+    expect(posts[1].body).toEqual(posts[0].body);
+    expect(await screen.findByText("단일 시점 체적 측정을 요청했습니다.")).toBeTruthy();
+  });
+
+  it("keeps the original single attempt when a retry is refused after a lost response", async () => {
+    const posts: Array<{ key: string; body: unknown }> = [];
+    fetchMock.mockImplementation((url: string, init?: RequestInit) => {
+      if (url === "/api/observation-work-orders/work-1/relative-volume-requests") return response({ items: [] });
+      if (url === "/api/observation-work-orders/work-1/single-volume-requests" && !init?.method) return response({ items: [] });
+      if (url === "/api/observation-work-orders/work-1/single-volume-requests" && init?.method === "POST") {
+        const headers = (init.headers as Record<string, string>) ?? {};
+        posts.push({ key: headers["idempotency-key"], body: JSON.parse(String(init?.body)) });
+        if (posts.length === 1) throw new Error("lost response");
+        return Promise.resolve({ ok: false, status: 400, json: async () => ({ code: "INVALID_EXTERNAL_SINGLE_VOLUME_INTENT" }) });
+      }
+      throw new Error(`unexpected fetch ${url}`);
+    });
+    render(<ExternalResultWorkflowPanel workOrderId="work-1" siteId="site-1" decision={null} singleVolumeDecision={singleDecision} permissions={["SITES_WRITE"]} />);
+    fireEvent.click(await screen.findByRole("button", { name: "단일 시점 체적 측정 요청" }));
+    expect(await screen.findByText("단일 시점 체적 요청 상태를 확인하지 못했습니다. 같은 선택으로 다시 시도합니다.")).toBeTruthy();
+    expect(posts).toHaveLength(1);
+    const firstKey = posts[0].key;
+    fireEvent.click(screen.getByRole("button", { name: "단일 시점 체적 측정 요청" }));
+    expect(await screen.findByText(/체적 측정 요청이 거부되어 결과를 확인하지 못했습니다/)).toBeTruthy();
+    expect(screen.queryByText(/요청이 기록되지 않았습니다/)).toBeNull();
+    expect(posts).toHaveLength(2);
+    expect(posts[1].key).toBe(firstKey);
+    expect(posts[1].body).toEqual(posts[0].body);
+  });
+
+  it("never posts an orphaned single attempt while a different decision is displayed", async () => {
+    const posts: Array<{ key: string; body: unknown }> = [];
+    fetchMock.mockImplementation((url: string, init?: RequestInit) => {
+      if (url === "/api/observation-work-orders/work-1/relative-volume-requests") return response({ items: [] });
+      if (url === "/api/observation-work-orders/work-1/single-volume-requests" && !init?.method) return response({ items: [] });
+      if (url === "/api/observation-work-orders/work-1/single-volume-requests" && init?.method === "POST") {
+        const headers = (init.headers as Record<string, string>) ?? {};
+        posts.push({ key: headers["idempotency-key"], body: JSON.parse(String(init?.body)) });
+        if (posts.length === 1) return Promise.resolve({ ok: false, status: 503, json: async () => ({ code: "STORE_UNAVAILABLE", message: "점검 중" }) });
+        return Promise.resolve(response({ verdict: "ISSUED", request: singleRequest("QUEUED"), detail: null }));
+      }
+      throw new Error(`unexpected fetch ${url}`);
+    });
+    const otherSingle = { ...singleDecision, decisionId: `external-use-decision-${"8".repeat(32)}`, decisionDigest: `sha256:${"8".repeat(64)}` };
+    const { rerender } = render(<ExternalResultWorkflowPanel workOrderId="work-1" siteId="site-1" decision={null} singleVolumeDecision={singleDecision} permissions={["SITES_WRITE"]} />);
+    fireEvent.click(await screen.findByRole("button", { name: "단일 시점 체적 측정 요청" }));
+    expect(await screen.findByText("요청 처리를 지금 시작할 수 없습니다. 같은 선택으로 다시 시도합니다.")).toBeTruthy();
+    expect(posts).toHaveLength(1);
+    rerender(<ExternalResultWorkflowPanel workOrderId="work-1" siteId="site-1" decision={null} singleVolumeDecision={null} permissions={["SITES_WRITE"]} />);
+    const orphanNull = await screen.findByText(/이전 단일 시점 체적 측정 요청의 결과를 확인하지 못했습니다/);
+    expect(orphanNull.closest("div")?.querySelector("button")).toBeNull();
+    expect(screen.queryByRole("button", { name: "단일 시점 체적 측정 요청" })).toBeNull();
+    rerender(<ExternalResultWorkflowPanel workOrderId="work-1" siteId="site-1" decision={null} singleVolumeDecision={otherSingle} permissions={["SITES_WRITE"]} />);
+    const orphanOther = await screen.findByText(/이전 단일 시점 체적 측정 요청의 결과를 확인하지 못했습니다/);
+    expect(orphanOther.closest("div")?.querySelector("button")).toBeNull();
+    fireEvent.click(await screen.findByRole("button", { name: "단일 시점 체적 측정 요청" }));
+    expect(await screen.findByText(/이전 요청의 결과를 확인하지 못했습니다. 새로 요청하면 다른 요청 기록이 생길 수 있습니다/)).toBeTruthy();
+    expect(posts).toHaveLength(1);
+    fireEvent.click(screen.getByRole("button", { name: "유지" }));
+    expect(posts).toHaveLength(1);
+    rerender(<ExternalResultWorkflowPanel workOrderId="work-1" siteId="site-1" decision={null} singleVolumeDecision={singleDecision} permissions={["SITES_WRITE"]} />);
+    expect(screen.queryByText(/이전 단일 시점 체적 측정 요청의 결과를 확인하지 못했습니다/)).toBeNull();
+    fireEvent.click(await screen.findByRole("button", { name: "단일 시점 체적 측정 요청" }));
+    await waitFor(() => expect(posts).toHaveLength(2));
+    expect(posts[1].key).toBe(posts[0].key);
+    expect(posts[1].body).toEqual(posts[0].body);
+    expect(await screen.findByText("단일 시점 체적 측정을 요청했습니다.")).toBeTruthy();
+  });
+
+  it("keeps an in-flight single issue out of a new work order and preserves its uncertainty", async () => {
+    const posts: Array<{ key: string; body: unknown }> = [];
+    let firstSignal: AbortSignal | undefined;
+    let resolveFirst: ((value: unknown) => void) | undefined;
+    fetchMock.mockImplementation((url: string, init?: RequestInit) => {
+      if (url === "/api/observation-work-orders/work-1/relative-volume-requests") return response({ items: [] });
+      if (url === "/api/observation-work-orders/work-2/relative-volume-requests") return response({ items: [] });
+      if (url === "/api/observation-work-orders/work-1/single-volume-requests" && !init?.method) return response({ items: [] });
+      if (url === "/api/observation-work-orders/work-2/single-volume-requests" && !init?.method) return response({ items: [] });
+      if (url === "/api/observation-work-orders/work-1/single-volume-requests" && init?.method === "POST") {
+        const headers = (init.headers as Record<string, string>) ?? {};
+        posts.push({ key: headers["idempotency-key"], body: JSON.parse(String(init?.body)) });
+        firstSignal = init?.signal ?? undefined;
+        if (posts.length === 1) return new Promise((resolve) => { resolveFirst = resolve as (value: unknown) => void; });
+        return Promise.resolve({ ok: false, status: 400, json: async () => ({ code: "INVALID_EXTERNAL_SINGLE_VOLUME_INTENT" }) });
+      }
+      if (url.includes("/observation-work-orders/work-2/")) return response({ items: [] });
+      throw new Error(`unexpected fetch ${url}`);
+    });
+    const { rerender } = render(<ExternalResultWorkflowPanel workOrderId="work-1" siteId="site-1" decision={null} singleVolumeDecision={singleDecision} permissions={["SITES_WRITE"]} />);
+    fireEvent.click(await screen.findByRole("button", { name: "단일 시점 체적 측정 요청" }));
+    await waitFor(() => expect(posts).toHaveLength(1));
+    // Navigate while the issue is in flight: abort it and invalidate its scope.
+    rerender(<ExternalResultWorkflowPanel workOrderId="work-2" siteId="site-1" decision={null} singleVolumeDecision={null} permissions={["SITES_WRITE"]} />);
+    expect(firstSignal?.aborted).toBe(true);
+    expect(await screen.findByText(/이전 단일 시점 체적 측정 요청의 결과를 확인하지 못했습니다/)).toBeTruthy();
+    resolveFirst!(response({ verdict: "ISSUED", request: singleRequest("QUEUED"), detail: null }));
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(screen.queryByText("단일 시점 체적 측정을 요청했습니다.")).toBeNull();
+    expect(screen.queryByText(/접수되었습니다. 현재 선택과 다른 조건의 요청이므로 목록에서 확인하세요/)).toBeNull();
+    expect(posts).toHaveLength(1);
+    // The interrupted dispatch followed by a refused retry keeps the attempt.
+    rerender(<ExternalResultWorkflowPanel workOrderId="work-1" siteId="site-1" decision={null} singleVolumeDecision={singleDecision} permissions={["SITES_WRITE"]} />);
+    expect(screen.queryByText(/이전 단일 시점 체적 측정 요청의 결과를 확인하지 못했습니다/)).toBeNull();
+    fireEvent.click(await screen.findByRole("button", { name: "단일 시점 체적 측정 요청" }));
+    expect(await screen.findByText(/체적 측정 요청이 거부되어 결과를 확인하지 못했습니다/)).toBeTruthy();
+    expect(posts).toHaveLength(2);
+    expect(posts[1].key).toBe(posts[0].key);
+    expect(posts[1].body).toEqual(posts[0].body);
+  });
+
+  it("sends exactly one single POST for batched rapid measurement clicks", async () => {
+    let keySeq = 0;
+    vi.stubGlobal("crypto", { randomUUID: () => `single-race-key-${++keySeq}` });
+    const posts: Array<{ key: string }> = [];
+    fetchMock.mockImplementation((url: string, init?: RequestInit) => {
+      if (url === "/api/observation-work-orders/work-1/relative-volume-requests") return response({ items: [] });
+      if (url === "/api/observation-work-orders/work-1/single-volume-requests" && !init?.method) return response({ items: [] });
+      if (url === "/api/observation-work-orders/work-1/single-volume-requests" && init?.method === "POST") {
+        posts.push({ key: (init.headers as Record<string, string>)["idempotency-key"] });
+        return new Promise(() => undefined);
+      }
+      throw new Error(`unexpected fetch ${url}`);
+    });
+    render(<ExternalResultWorkflowPanel workOrderId="work-1" siteId="site-1" decision={null} singleVolumeDecision={singleDecision} permissions={["SITES_WRITE"]} />);
+    const trigger = await screen.findByRole("button", { name: "단일 시점 체적 측정 요청" });
+    act(() => {
+      fireEvent.click(trigger);
+      fireEvent.click(trigger);
+    });
+    await waitFor(() => expect(posts.length).toBeGreaterThanOrEqual(1));
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(posts).toHaveLength(1);
+  });
+
+  it("blocks a new single decision on a closed work order while an unrelated attempt is retained", async () => {
+    const posts: Array<{ key: string; body: unknown }> = [];
+    fetchMock.mockImplementation((url: string, init?: RequestInit) => {
+      if (url === "/api/observation-work-orders/work-1/relative-volume-requests") return response({ items: [] });
+      if (url === "/api/observation-work-orders/work-1/single-volume-requests" && !init?.method) return response({ items: [] });
+      if (url === "/api/observation-work-orders/work-1/single-volume-requests" && init?.method === "POST") {
+        const headers = (init.headers as Record<string, string>) ?? {};
+        posts.push({ key: headers["idempotency-key"], body: JSON.parse(String(init?.body)) });
+        if (posts.length === 1) return Promise.resolve({ ok: false, status: 503, json: async () => ({ code: "STORE_UNAVAILABLE", message: "점검 중" }) });
+        return Promise.resolve(response({ verdict: "ISSUED", request: singleRequest("QUEUED"), detail: null }));
+      }
+      throw new Error(`unexpected fetch ${url}`);
+    });
+    const otherSingle = { ...singleDecision, decisionId: `external-use-decision-${"9".repeat(32)}`, decisionDigest: `sha256:${"9".repeat(64)}` };
+    const { rerender } = render(<ExternalResultWorkflowPanel workOrderId="work-1" siteId="site-1" decision={null} singleVolumeDecision={singleDecision} permissions={["SITES_WRITE"]} />);
+    fireEvent.click(await screen.findByRole("button", { name: "단일 시점 체적 측정 요청" }));
+    expect(await screen.findByText("요청 처리를 지금 시작할 수 없습니다. 같은 선택으로 다시 시도합니다.")).toBeTruthy();
+    rerender(<ExternalResultWorkflowPanel workOrderId="work-1" siteId="site-1" decision={null} singleVolumeDecision={otherSingle} permissions={["SITES_WRITE"]} newIntentAllowed={false} />);
+    expect(screen.queryByRole("button", { name: "단일 시점 체적 측정 요청" })).toBeNull();
+    const orphan = await screen.findByText(/이전 단일 시점 체적 측정 요청의 결과를 확인하지 못했습니다/);
+    expect(orphan.closest("div")?.querySelector("button")).toBeNull();
+    expect(posts).toHaveLength(1);
+    rerender(<ExternalResultWorkflowPanel workOrderId="work-1" siteId="site-1" decision={null} singleVolumeDecision={singleDecision} permissions={["SITES_WRITE"]} newIntentAllowed={false} />);
+    const retry = await screen.findByRole("button", { name: "단일 시점 체적 측정 요청" });
+    expect(retry.hasAttribute("disabled")).toBe(false);
+    fireEvent.click(retry);
+    await waitFor(() => expect(posts).toHaveLength(2));
+    expect(posts[1].key).toBe(posts[0].key);
+    expect(posts[1].body).toEqual(posts[0].body);
+    expect(await screen.findByText("단일 시점 체적 측정을 요청했습니다.")).toBeTruthy();
+  });
+
+  it("keeps the explicit single confirm inside the desktop write boundary while 유지 stays usable", async () => {
+    fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+      if (url === "/api/observation-work-orders/work-1/relative-volume-requests") return response({ items: [] });
+      if (url === "/api/observation-work-orders/work-1/single-volume-requests" && !init?.method) return response({ items: [] });
+      if (url.endsWith("/single-volume-requests") && init?.method === "POST") {
+        return { ok: false, status: 503, json: async () => ({ code: "STORE_UNAVAILABLE", message: "점검 중" }) };
+      }
+      throw new Error(`unexpected fetch ${url}`);
+    });
+    const otherSingle = { ...singleDecision, decisionId: `external-use-decision-${"8".repeat(32)}`, decisionDigest: `sha256:${"8".repeat(64)}` };
+    const { rerender } = render(<ExternalResultWorkflowPanel workOrderId="work-1" siteId="site-1" decision={null} singleVolumeDecision={singleDecision} permissions={["SITES_WRITE"]} />);
+    fireEvent.click(await screen.findByRole("button", { name: "단일 시점 체적 측정 요청" }));
+    await screen.findByText("요청 처리를 지금 시작할 수 없습니다. 같은 선택으로 다시 시도합니다.");
+    rerender(<ExternalResultWorkflowPanel workOrderId="work-1" siteId="site-1" decision={null} singleVolumeDecision={otherSingle} permissions={["SITES_WRITE"]} />);
+    fireEvent.click(await screen.findByRole("button", { name: "단일 시점 체적 측정 요청" }));
+    const confirmButton = await screen.findByRole("button", { name: "새 요청 계속" });
+    const keepButton = screen.getByRole("button", { name: "유지" });
+    expect(confirmButton.closest("div.hidden")).not.toBeNull();
+    expect(keepButton.closest("div.hidden")).toBeNull();
+    expect(document.querySelector('[data-responsive-action-notice="EXTERNAL_RECONSTRUCTION_MUTATION"]')).not.toBeNull();
+    fireEvent.click(keepButton);
+    expect(screen.queryByText(/이전 요청의 결과를 확인하지 못했습니다/)).toBeNull();
+  });
+
+  it("shows the single in-memory recovery limit on the same selection", async () => {
+    const posts: Array<{ key: string; body: unknown }> = [];
+    fetchMock.mockImplementation((url: string, init?: RequestInit) => {
+      if (url === "/api/observation-work-orders/work-1/relative-volume-requests") return response({ items: [] });
+      if (url === "/api/observation-work-orders/work-1/single-volume-requests" && !init?.method) return response({ items: [] });
+      if (url === "/api/observation-work-orders/work-1/single-volume-requests" && init?.method === "POST") {
+        const headers = (init.headers as Record<string, string>) ?? {};
+        posts.push({ key: headers["idempotency-key"], body: JSON.parse(String(init?.body)) });
+        if (posts.length === 1) return Promise.resolve({ ok: false, status: 503, json: async () => ({ code: "STORE_UNAVAILABLE", message: "점검 중" }) });
+        return Promise.resolve(response({ verdict: "ISSUED", request: singleRequest("QUEUED"), detail: null }));
+      }
+      throw new Error(`unexpected fetch ${url}`);
+    });
+    const { rerender } = render(<ExternalResultWorkflowPanel workOrderId="work-1" siteId="site-1" decision={null} singleVolumeDecision={singleDecision} permissions={["SITES_WRITE"]} />);
+    fireEvent.click(await screen.findByRole("button", { name: "단일 시점 체적 측정 요청" }));
+    expect(await screen.findByText("요청 처리를 지금 시작할 수 없습니다. 같은 선택으로 다시 시도합니다.")).toBeTruthy();
+    const banner = await screen.findByText(/이 선택의 단일 시점 체적 측정 요청 결과를 아직 확인하지 못했습니다/);
+    expect(banner.closest("div.hidden")).toBeNull();
+    expect(screen.queryByText(/이전 단일 시점 체적 측정 요청의 결과를 확인하지 못했습니다/)).toBeNull();
+    rerender(<ExternalResultWorkflowPanel workOrderId="work-1" siteId="site-1" decision={null} singleVolumeDecision={null} permissions={["SITES_WRITE"]} />);
+    expect(await screen.findByText(/이전 단일 시점 체적 측정 요청의 결과를 확인하지 못했습니다/)).toBeTruthy();
+    expect(screen.queryByText(/이 선택의 단일 시점 체적 측정 요청 결과를 아직 확인하지 못했습니다/)).toBeNull();
+    rerender(<ExternalResultWorkflowPanel workOrderId="work-1" siteId="site-1" decision={null} singleVolumeDecision={singleDecision} permissions={["SITES_WRITE"]} />);
+    expect(await screen.findByText(/이 선택의 단일 시점 체적 측정 요청 결과를 아직 확인하지 못했습니다/)).toBeTruthy();
+    fireEvent.click(await screen.findByRole("button", { name: "단일 시점 체적 측정 요청" }));
+    await waitFor(() => expect(posts).toHaveLength(2));
+    expect(posts[1].key).toBe(posts[0].key);
+    expect(await screen.findByText("단일 시점 체적 측정을 요청했습니다.")).toBeTruthy();
+  });
+
+  it("never resends a retained single attempt under a different work order", async () => {
+    const posts: Array<{ url: string; key: string; body: unknown }> = [];
+    fetchMock.mockImplementation((url: string, init?: RequestInit) => {
+      if (url === "/api/observation-work-orders/work-1/relative-volume-requests") return response({ items: [] });
+      if (url === "/api/observation-work-orders/work-2/relative-volume-requests") return response({ items: [] });
+      if (url === "/api/observation-work-orders/work-1/single-volume-requests" && !init?.method) return response({ items: [] });
+      if (url === "/api/observation-work-orders/work-2/single-volume-requests" && !init?.method) return response({ items: [] });
+      if (init?.method === "POST" && url.includes("/single-volume-requests")) {
+        const headers = (init.headers as Record<string, string>) ?? {};
+        posts.push({ url, key: headers["idempotency-key"], body: JSON.parse(String(init?.body)) });
+        if (posts.length === 1) return Promise.resolve({ ok: false, status: 503, json: async () => ({ code: "STORE_UNAVAILABLE", message: "점검 중" }) });
+        return Promise.resolve(response({ verdict: "ISSUED", request: singleRequest("QUEUED"), detail: null }));
+      }
+      if (url.includes("/observation-work-orders/work-2/")) return response({ items: [] });
+      throw new Error(`unexpected fetch ${url}`);
+    });
+    const { rerender } = render(<ExternalResultWorkflowPanel workOrderId="work-1" siteId="site-1" decision={null} singleVolumeDecision={singleDecision} permissions={["SITES_WRITE"]} />);
+    fireEvent.click(await screen.findByRole("button", { name: "단일 시점 체적 측정 요청" }));
+    expect(await screen.findByText("요청 처리를 지금 시작할 수 없습니다. 같은 선택으로 다시 시도합니다.")).toBeTruthy();
+    expect(posts).toHaveLength(1);
+    const firstKey = posts[0].key;
+    rerender(<ExternalResultWorkflowPanel workOrderId="work-2" siteId="site-1" decision={null} singleVolumeDecision={singleDecision} permissions={["SITES_WRITE"]} />);
+    fireEvent.click(await screen.findByRole("button", { name: "단일 시점 체적 측정 요청" }));
+    expect(await screen.findByText(/이전 작업에서 시작한 요청은 이 작업에서 다시 보낼 수 없습니다/)).toBeTruthy();
+    expect(posts).toHaveLength(1);
+    expect(posts.every((post) => !post.url.includes("/work-2/"))).toBe(true);
+    rerender(<ExternalResultWorkflowPanel workOrderId="work-1" siteId="site-1" decision={null} singleVolumeDecision={singleDecision} permissions={["SITES_WRITE"]} />);
+    fireEvent.click(await screen.findByRole("button", { name: "단일 시점 체적 측정 요청" }));
+    await waitFor(() => expect(posts).toHaveLength(2));
+    expect(posts[1].key).toBe(firstKey);
+    expect(posts[1].body).toEqual(posts[0].body);
+    expect(posts[1].url).toBe(posts[0].url);
+    expect(await screen.findByText("단일 시점 체적 측정을 요청했습니다.")).toBeTruthy();
+  });
+
   describe("selected request polling", () => {
     let visibility: DocumentVisibilityState = "visible";
     let itemReads = 0;
@@ -1030,5 +1908,82 @@ describe("SINGLE_VOLUME measurement", () => {
     await waitFor(() => expect(screen.getByText("5,555.5 m³")).toBeTruthy(), { timeout: 3000 });
     expect(screen.queryByText("1,234.5 m³")).toBeNull();
     expect(screen.queryByText("체적 결과를 읽지 못했습니다. 완료로 추정하지 않습니다.")).toBeNull();
+  });
+});
+
+describe("scoped release account (legacyDecisionClosed)", () => {
+  const emptyLists = async (url: string) => {
+    if (url.endsWith("/relative-volume-requests") || url.endsWith("/single-volume-requests")) return response({ items: [] });
+    throw new Error(`unexpected fetch ${url}`);
+  };
+
+  it("replaces impossible issue prompts with truthful scoped notices and keeps reads", async () => {
+    fetchMock.mockImplementation(emptyLists);
+    render(
+      <ExternalResultWorkflowPanel
+        workOrderId="work-1"
+        siteId="site-1"
+        decision={null}
+        singleVolumeDecision={null}
+        permissions={["SITES_WRITE", "WORK_ORDERS_WRITE"]}
+        legacyDecisionClosed
+      />,
+    );
+
+    expect(await screen.findByText(/이 화면의 상대 물량 비교 요청은 현재 계정의 배포 범위에 열려 있지 않습니다/)).toBeTruthy();
+    expect(screen.queryByText("현재 선택에서 상대 물량 비교를 요청하세요.")).toBeNull();
+    expect(screen.queryByRole("button", { name: "상대 물량 비교 요청" })).toBeNull();
+    expect(screen.getByText(/새로운 두 시점 관측 변화 분석은 현장의 분석 화면에서 진행합니다/)).toBeTruthy();
+    const handoff = screen.getByRole("link", { name: "분석 화면 열기" });
+    expect(handoff.getAttribute("href")).toBe("/sites/site-1/analysis");
+
+    expect(screen.getByText(/이 화면의 단일 시점 체적 측정 요청은 현재 계정의 배포 범위에 열려 있지 않습니다/)).toBeTruthy();
+    expect(screen.queryByText("현재 선택에서 단일 시점 체적 결정을 요청하세요.")).toBeNull();
+    expect(screen.queryByRole("button", { name: "단일 시점 체적 측정 요청" })).toBeNull();
+    // 단일 시점 측정은 분석 화면에서 약속하지 않는다.
+    expect(screen.queryByText(/정량 비교·측정/)).toBeNull();
+
+    // 보존된 목록 읽기는 그대로 둔다.
+    expect(await screen.findByText(/기록된 상대 물량 비교 요청이 없습니다/)).toBeTruthy();
+    expect(screen.getByRole("button", { name: "목록 새로고침" })).toBeTruthy();
+    expect(screen.getByText(/기록된 단일 시점 체적 측정 요청이 없습니다/)).toBeTruthy();
+    expect(screen.getByRole("button", { name: "체적 목록 새로고침" })).toBeTruthy();
+    expect(fetchMock.mock.calls.every(([, init]) => !(init as RequestInit | undefined)?.method || (init as RequestInit).method === "GET")).toBe(true);
+  });
+
+  it("keeps retained report reads and authorized reviews available when scoped", async () => {
+    fetchMock.mockImplementation(emptyLists);
+    const view = reportView();
+    render(
+      <ExternalResultWorkflowPanel
+        workOrderId="work-1"
+        siteId="site-1"
+        decision={null}
+        permissions={["SITES_WRITE", "WORK_ORDERS_WRITE"]}
+        initialReport={{ reportRef, reportDigest: digest("d"), view }}
+        legacyDecisionClosed
+      />,
+    );
+
+    expect(await screen.findByRole("heading", { name: "외부 상대 물량 비교 결과" })).toBeTruthy();
+    // 검토 기록 POST는 허용 목록에 있어 scoped 계정에도 그대로 둔다.
+    expect(screen.getByRole("button", { name: "결과 검토 기록" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "상대 물량 비교 요청" })).toBeNull();
+    expect(screen.queryByText("현재 선택에서 상대 물량 비교를 요청하세요.")).toBeNull();
+  });
+
+  it("does not alter legacy prompts for non-scoped identities", async () => {
+    fetchMock.mockImplementation(emptyLists);
+    render(
+      <ExternalResultWorkflowPanel
+        workOrderId="work-1"
+        siteId="site-1"
+        decision={null}
+        permissions={[]}
+      />,
+    );
+
+    expect(await screen.findByText("현재 선택에서 상대 물량 비교를 요청하세요.")).toBeTruthy();
+    expect(screen.queryByText(/배포 범위에 열려 있지 않습니다/)).toBeNull();
   });
 });

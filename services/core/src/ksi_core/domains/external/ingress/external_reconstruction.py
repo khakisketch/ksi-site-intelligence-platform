@@ -782,6 +782,8 @@ class ExternalReconstructionStore:
             snapshot = current
         declared = {artifact.artifact_id: artifact for artifact in snapshot.submission.artifacts}
         try:
+            if not isinstance(storage, DigestBoundEvidenceStorage):
+                raise EvidenceStorageError("digest-bound upload storage unavailable")
             grants = tuple(
                 UploadGrant(
                     artifact_id=artifact_id,
@@ -838,6 +840,8 @@ class ExternalReconstructionStore:
         declared = {artifact.artifact_id: artifact for artifact in snapshot.submission.artifacts}
         entries: list[ExternalReconstructionManifestEntryV1] = []
         try:
+            if not isinstance(storage, ObjectStorageObservationPort):
+                raise EvidenceStorageError("object observation storage unavailable")
             for artifact_id, object_key in snapshot.bindings:
                 observed = storage.observe_object(object_key)
                 artifact = declared[artifact_id]

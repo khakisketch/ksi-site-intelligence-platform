@@ -7,6 +7,7 @@ import {
   getSiteRegistrationMode,
   resolveSiteRegistrationMode,
 } from "@/lib/core-api/permissions";
+import { continuityFingerprint } from "@/lib/core-api/work-order-continuity";
 import type { WhoAmIResponse } from "@/lib/core-api/types";
 
 const mocked = vi.hoisted(() => ({ whoAmI: vi.fn() }));
@@ -88,26 +89,26 @@ describe("getSiteRegistrationMode (legacy compatibility)", () => {
 
 describe("getSiteRegistrationAvailability", () => {
   it("allows mapped bootstrap with the mode attached", async () => {
-    mocked.whoAmI.mockResolvedValue(
-      principal({
-        registryScoped: true,
-        permissions: ["SITES_WRITE"],
-        capabilities: ["SITE_BOOTSTRAP"],
-      }),
-    );
+    const allowedPrincipal = principal({
+      registryScoped: true,
+      permissions: ["SITES_WRITE"],
+      capabilities: ["SITE_BOOTSTRAP"],
+    });
+    mocked.whoAmI.mockResolvedValue(allowedPrincipal);
     await expect(getSiteRegistrationAvailability()).resolves.toEqual({
       status: "allowed",
       mode: "MAPPED_BOOTSTRAP",
+      accountFingerprint: continuityFingerprint(allowedPrincipal),
     });
   });
 
   it("allows legacy site id with the mode attached", async () => {
-    mocked.whoAmI.mockResolvedValue(
-      principal({ permissions: ["SITES_WRITE", "MISSIONS_ISSUE"] }),
-    );
+    const allowedPrincipal = principal({ permissions: ["SITES_WRITE", "MISSIONS_ISSUE"] });
+    mocked.whoAmI.mockResolvedValue(allowedPrincipal);
     await expect(getSiteRegistrationAvailability()).resolves.toEqual({
       status: "allowed",
       mode: "LEGACY_SITE_ID",
+      accountFingerprint: continuityFingerprint(allowedPrincipal),
     });
   });
 

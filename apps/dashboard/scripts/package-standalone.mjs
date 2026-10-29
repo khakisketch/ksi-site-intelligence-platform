@@ -13,8 +13,23 @@ function digest(filename) {
 }
 
 function files(root) {
-  return readdirSync(root, { recursive: true, withFileTypes: true })
-    .map((entry) => path.join(entry.parentPath, entry.name));
+  // Never descend into symlinked directories: a runtime link that escapes the
+  // root (or loops back into it) must be reported by checkRuntimeTree as a
+  // non-relocatable symlink, not followed into synthetic deep paths that
+  // surface as ELOOP/ENAMETOOLONG or exhaust memory on large trees.
+  // Dirent.isDirectory() is lstat-based, so symlinks to directories are
+  // listed (and still rejected) but never traversed.
+  const result = [];
+  const stack = [root];
+  while (stack.length > 0) {
+    const dir = stack.pop();
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const filename = path.join(dir, entry.name);
+      result.push(filename);
+      if (entry.isDirectory()) stack.push(filename);
+    }
+  }
+  return result;
 }
 
 function checkRuntimeTree(root) {

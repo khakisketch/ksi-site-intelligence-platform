@@ -15,6 +15,7 @@ describe("ExternalObservationCreateForm path selection", () => {
         siteId="site-1"
         siteName="A 현장"
         workAreas={[{ workAreaId: "area-1", name: "1구역" }]}
+        accountIdentity={{ fingerprint: `v1-${"a".repeat(64)}` }}
       />,
     );
     // Sole workflow heading, not a method-choice card grid.
@@ -38,6 +39,7 @@ describe("ExternalObservationCreateForm path selection", () => {
         siteId="site-1"
         siteName="A 현장"
         workAreas={[{ workAreaId: "area-1", name: "1구역" }]}
+        accountIdentity={{ fingerprint: `v1-${"a".repeat(64)}` }}
       />,
     );
     fireEvent.change(screen.getByLabelText("작업 이름"), { target: { value: "9월 현황 비교" } });

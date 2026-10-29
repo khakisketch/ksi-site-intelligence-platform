@@ -1,9 +1,5 @@
-import { describe, expect, it } from "vitest";
-
-import { siteDetailDocumentTitle } from "@/lib/site-detail-title";
-
-describe("현장 상세 문서 제목", () => {
-  it("현장명을 먼저 두어 같은 종류의 현장을 여러 탭에서 구분한다", () => {
-    expect(siteDetailDocumentTitle("송도 A3 현장")).toBe("송도 A3 현장 · 현장 · KSI");
-  });
+import { expect, it } from "vitest";
+import { SITE_DETAIL_DOCUMENT_TITLE } from "@/lib/site-detail-title";
+it("현장 상세 문서 제목은 현장 식별자가 없는 중립 제목이다", () => {
+  expect(SITE_DETAIL_DOCUMENT_TITLE).toBe("현장 상세 · KSI");
 });

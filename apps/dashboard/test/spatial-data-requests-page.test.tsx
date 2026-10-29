@@ -259,7 +259,7 @@ describe("spatial data request Console surface", () => {
   it("places mobile status right after the title while keeping a single desktop state column", async () => {
     const html = renderToStaticMarkup(await callPage({ workAreaId: "area-1" }));
     expect(html).toContain("mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 sm:hidden");
-    expect(html).toContain("hidden flex-wrap items-center gap-x-2 gap-y-1 sm:flex");
+    expect(html).toContain("hidden sm:block");
     const mobileStatus = html.indexOf("mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 sm:hidden");
     const technicalDetails = html.indexOf("요청·원본 처리 상세 보기");
     expect(mobileStatus).toBeGreaterThan(-1);
@@ -291,8 +291,28 @@ describe("spatial data request Console surface", () => {
     const secondId = "sdj-v1-22345678-1234-1234-1234-123456789abc";
     mocked.list.mockResolvedValueOnce({ items: [job(), job({ jobId: secondId })], nextCursor: null });
     const html = renderToStaticMarkup(await callPage({ workAreaId: "area-1" }));
-    expect(html).toContain(`요청 ${requestId}`);
-    expect(html).toContain(`요청 ${secondId}`);
+    // 전체 ID는 펼침·상세 경로에 그대로 남고, 제목에는 짧은 구분만 둔다.
+    expect(html).toContain(`요청 ID · ${requestId}`);
+    expect(html).toContain(`요청 ID · ${secondId}`);
+    expect(html).toContain("12345678…9abc");
+    expect(html).toContain("22345678…9abc");
+    expect(html).toContain("같은 시각 다른 요청");
+    expect(html).toContain("상세 보기");
+  });
+
+  it("keeps full IDs distinct when short discriminators also collide", async () => {
+    const firstId = "sdj-v1-12345678-aaaa-bbbb-cccc-000056789abc";
+    const secondId = "sdj-v1-12345678-dddd-eeee-ffff-999956789abc";
+    mocked.list.mockResolvedValueOnce({ items: [job({ jobId: firstId }), job({ jobId: secondId })], nextCursor: null });
+    const html = renderToStaticMarkup(await callPage({ workAreaId: "area-1" }));
+    // 짧은 구분(앞 8·끝 4)이 같아도 전체 ID와 링크 목적지를 숨기지 않는다.
+    expect(html).toContain(`요청 ID · ${firstId}`);
+    expect(html).toContain(`요청 ID · ${secondId}`);
+    expect(html).toContain("짧은 구분도 같음");
+    expect(html).toContain(`요청 ID ${firstId} 상세 보기`);
+    expect(html).toContain(`요청 ID ${secondId} 상세 보기`);
+    expect(html).toContain(`requestId=${encodeURIComponent(firstId)}`);
+    expect(html).toContain(`requestId=${encodeURIComponent(secondId)}`);
   });
 
   it("offers a real create action from the request history instead of a dead end", async () => {
@@ -325,5 +345,97 @@ describe("spatial data request Console surface", () => {
     const html = renderToStaticMarkup(await callPage({ workAreaId: "area-1", assetRef: "not-an-asset" }));
     expect(html).toContain("자료 참조 형식이 올바르지 않습니다");
     expect(mocked.list).not.toHaveBeenCalled();
+  });
+
+  it("lists the bound COMPLETED size inline so detail entry is unnecessary", async () => {
+    const html = renderToStaticMarkup(await callPage({ workAreaId: "area-1" }));
+    expect(html).toContain("9,166,428 bytes · 준비 당시 기록");
+    expect(html).toContain("크기는 준비 당시 개별 파일 크기이며 누적 사용량이나 비용이 아닙니다");
+  });
+
+  it("does not assert a size for non-COMPLETED rows", async () => {
+    mocked.list.mockResolvedValueOnce({ items: [
+      job({ executionState: "RUNNING", availability: "NOT_READY", reason: null, receipt: null }),
+      job({ jobId: "sdj-v1-22345678-1234-1234-1234-123456789abc", executionState: "FAILED", availability: "NOT_READY", reason: "RASTER_PREPARATION_FAILED", receipt: null }),
+      job({ jobId: "sdj-v1-32345678-1234-1234-1234-123456789abc", executionState: "CANCELED", availability: "UNAVAILABLE", reason: "CANCELED", receipt: null }),
+    ], nextCursor: null });
+    const html = renderToStaticMarkup(await callPage({ workAreaId: "area-1" }));
+    expect(html).toContain(">처리 중</span>");
+    expect(html).toContain(">실패</span>");
+    expect(html).toContain(">취소됨</span>");
+    expect(html).not.toContain("bytes · 준비 당시 기록");
+    expect(html).not.toContain("정확한 크기 표시 불가");
+    expect(html).not.toContain("누적 사용량이나 비용이 아닙니다");
+  });
+
+  it("hides the size guidance when the list has no recorded size", async () => {
+    mocked.list.mockResolvedValueOnce({ items: [], nextCursor: null });
+    const html = renderToStaticMarkup(await callPage({ workAreaId: "area-1" }));
+    expect(html).toContain("이 작업구역의 자료 준비 요청이 없습니다");
+    expect(html).not.toContain("누적 사용량이나 비용이 아닙니다");
+  });
+
+  it("hides the item and the size guidance for an invalid request ID even with a bound positive receipt", async () => {
+    mocked.list.mockResolvedValueOnce({ items: [
+      { ...job({ receipt: null }), jobId: "not-a-valid-id", receipt: { ...receipt("not-a-valid-id"), outputSizeBytes: 12345 } },
+    ], nextCursor: null });
+    const html = renderToStaticMarkup(await callPage({ workAreaId: "area-1" }));
+    expect(html).toContain("유효하지 않은 요청 ID가 있어 해당 항목을 숨겼습니다");
+    expect(html).not.toContain("not-a-valid-id");
+    expect(html).not.toContain("12,345 bytes");
+    expect(html).not.toContain("누적 사용량이나 비용이 아닙니다");
+  });
+
+  it("does not fabricate a size for COMPLETED rows with missing or mismatched receipts", async () => {
+    const secondId = "sdj-v1-22345678-1234-1234-1234-123456789abc";
+    const thirdId = "sdj-v1-32345678-1234-1234-1234-123456789abc";
+    mocked.list.mockResolvedValueOnce({ items: [
+      job({ receipt: null }),
+      job({ jobId: secondId, receipt: receipt("sdj-v1-99999999-9999-9999-9999-999999999999") }),
+      job({ jobId: thirdId }),
+    ], nextCursor: null });
+    const html = renderToStaticMarkup(await callPage({ workAreaId: "area-1" }));
+    expect(html).not.toContain("bytes · 준비 당시 기록");
+    expect(html).not.toContain("정확한 크기 표시 불가");
+    expect(html).not.toContain("누적 사용량이나 비용이 아닙니다");
+  });
+
+  it("marks a bound non-positive-integer size as unmeasurable without inventing a value", async () => {
+    for (const outputSizeBytes of [0, -5, 1.5, Number.NaN, Number.MAX_SAFE_INTEGER + 1]) {
+      mocked.list.mockResolvedValueOnce({ items: [job({ receipt: { ...receipt(), outputSizeBytes } })], nextCursor: null });
+      mocked.detail.mockResolvedValueOnce(job({ receipt: { ...receipt(), outputSizeBytes } }));
+      const list = renderToStaticMarkup(await callPage({ workAreaId: "area-1" }));
+      expect(list).toContain("정확한 크기 표시 불가");
+      expect(list).not.toContain("bytes · 준비 당시 기록");
+      const detail = renderToStaticMarkup(await callPage({ workAreaId: "area-1", requestId }));
+      expect(detail).toContain("준비 당시 파일 크기");
+      expect(detail).toContain("정확한 크기 표시 불가");
+      expect(detail).not.toContain("0 bytes");
+    }
+    expect(renderToStaticMarkup(await callPage({ workAreaId: "area-1" }))).not.toContain("NaN");
+  });
+
+  it("keeps the historical size readable while withholding the file on revocation or expiry", async () => {
+    for (const availability of ["ACCESS_REVOKED", "RETENTION_EXPIRED"] as const) {
+      mocked.list.mockResolvedValueOnce({ items: [job({ availability })], nextCursor: null });
+      mocked.detail.mockResolvedValueOnce(job({ availability }));
+      const html = renderToStaticMarkup(await callPage({ workAreaId: "area-1", requestId }));
+      expect(html).toContain("9,166,428 bytes · 준비 당시 기록");
+      expect(html).toContain("준비 당시 파일 크기");
+      expect(html).toContain("현재 파일을 제공할 수 없습니다.");
+      expect(html).not.toContain("준비된 파일 다운로드");
+      expect(html).toContain(availability === "ACCESS_REVOKED" ? "접근 회수됨" : "보관 기한 만료");
+    }
+  });
+
+  it("separates the preparation record from storage, transfer, compute usage and cost", async () => {
+    const list = renderToStaticMarkup(await callPage({ workAreaId: "area-1" }));
+    expect(list).toContain("크기는 준비 당시 개별 파일 크기이며 누적 사용량이나 비용이 아닙니다");
+    const detail = renderToStaticMarkup(await callPage({ workAreaId: "area-1", requestId }));
+    expect(detail).toContain("준비 당시 파일 크기");
+    expect(detail).toContain("현재 보관량·실제 전송량·연산 사용량·비용을 뜻하지 않습니다");
+    expect(detail).not.toContain(">출력 크기<");
+    expect(list).not.toContain("합산");
+    expect(detail).not.toContain("합산");
   });
 });

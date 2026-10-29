@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import hashlib
 import os
+from typing import Any
 
 import numpy as np
 import pytest
 import rasterio
+from ksi_event_contracts.external_masked_volume import MaskedCalculationIdentityV3
 from ksi_processing_controller.external_delta_raster import (
     DeltaRasterMeasurementError,
     prepare_external_delta_raster_v3,
@@ -24,7 +26,9 @@ from test_external_masked_volume_measurement import (
 )
 
 
-def _measured(*, invalid=None):
+def _measured(
+    *, invalid: tuple[int, int] | None = None
+) -> tuple[MaskedCalculationIdentityV3, MaskedVolumeMeasuredV3]:
     identity = _masked_identity(
         _full_polygon(),
         baseline_sha=_digest("b"),
@@ -36,7 +40,11 @@ def _measured(*, invalid=None):
     return identity, outcome
 
 
-def _prepare(identity, outcome, **overrides):
+def _prepare(
+    identity: MaskedCalculationIdentityV3,
+    outcome: MaskedVolumeMeasuredV3,
+    **overrides: Any,
+) -> Any:
     return prepare_external_delta_raster_v3(
         **{
             "masked_identity": identity,
@@ -50,7 +58,7 @@ def _prepare(identity, outcome, **overrides):
     )
 
 
-def test_actual_v3_measured_grid_emits_private_float64_cells_and_v3_digests():
+def test_actual_v3_measured_grid_emits_private_float64_cells_and_v3_digests() -> None:
     identity, measured = _measured()
     original = measured.report.model_dump_json()
     with _prepare(identity, measured) as output:
@@ -80,7 +88,7 @@ def test_actual_v3_measured_grid_emits_private_float64_cells_and_v3_digests():
     assert measured.report.model_dump_json() == original
 
 
-def test_unknown_unmasked_impact_never_invents_an_excluded_zero_cell():
+def test_unknown_unmasked_impact_never_invents_an_excluded_zero_cell() -> None:
     identity, measured = _measured(invalid=(0, 1))
     assert not measured.report.numeric_result.impact.unmasked_impact_known
     with (
@@ -91,7 +99,7 @@ def test_unknown_unmasked_impact_never_invents_an_excluded_zero_cell():
         assert measured.report.numeric_result.impact.excluded_fill_m3 is None
 
 
-def test_v3_repeated_outputs_are_byte_identical():
+def test_v3_repeated_outputs_are_byte_identical() -> None:
     identity, measured = _measured()
     with _prepare(identity, measured) as first, _prepare(identity, measured) as second:
         assert (first.sha256, first.size_bytes) == (second.sha256, second.size_bytes)
@@ -100,7 +108,7 @@ def test_v3_repeated_outputs_are_byte_identical():
 @pytest.mark.parametrize(
     "change", ["excluded-zero", "valid-nan", "metric-drift", "float32", "shape", "masked-array"]
 )
-def test_v3_rejects_arrays_that_do_not_match_exact_coverage_and_numeric_result(change):
+def test_v3_rejects_arrays_that_do_not_match_exact_coverage_and_numeric_result(change: str) -> None:
     identity, measured = _measured()
     array = measured.delta_grid_m.copy()
     if change == "excluded-zero":
@@ -122,7 +130,7 @@ def test_v3_rejects_arrays_that_do_not_match_exact_coverage_and_numeric_result(c
         pytest.fail("an unbound V3 grid was exposed")
 
 
-def test_v3_wrong_mask_identity_cannot_reuse_a_valid_numeric_report():
+def test_v3_wrong_mask_identity_cannot_reuse_a_valid_numeric_report() -> None:
     identity, measured = _measured()
     other = _masked_identity(
         _full_polygon(),
@@ -135,12 +143,12 @@ def test_v3_wrong_mask_identity_cannot_reuse_a_valid_numeric_report():
         pytest.fail("a report was rebound to another mask")
 
 
-def test_v3_private_snapshot_cannot_be_changed_by_later_caller_mutation():
+def test_v3_private_snapshot_cannot_be_changed_by_later_caller_mutation() -> None:
     identity, measured = _measured()
     expected = measured.delta_grid_m.copy()
     calls = 0
 
-    def mutate_after_validation():
+    def mutate_after_validation() -> None:
         nonlocal calls
         calls += 1
         if calls == 2:
@@ -154,16 +162,16 @@ def test_v3_private_snapshot_cannot_be_changed_by_later_caller_mutation():
 
 
 @pytest.mark.parametrize("cap", [{"maximum_grid_cells": 15}, {"maximum_output_bytes": 100}])
-def test_v3_resource_cap_never_exposes_an_output(cap):
+def test_v3_resource_cap_never_exposes_an_output(cap: dict[str, Any]) -> None:
     identity, measured = _measured()
     with pytest.raises(DeltaRasterMeasurementError), _prepare(identity, measured, **cap):
         pytest.fail("an oversized V3 output was exposed")
 
 
-def test_v3_currentness_failure_aborts_before_an_output_is_exposed():
+def test_v3_currentness_failure_aborts_before_an_output_is_exposed() -> None:
     identity, measured = _measured()
 
-    def revoked():
+    def revoked() -> None:
         raise RuntimeError("REVOKED")
 
     with (
@@ -173,10 +181,12 @@ def test_v3_currentness_failure_aborts_before_an_output_is_exposed():
         pytest.fail("revoked V3 output was exposed")
 
 
-def test_v3_output_byte_cap_is_checked_before_unpacking_or_copying_grid(monkeypatch):
+def test_v3_output_byte_cap_is_checked_before_unpacking_or_copying_grid(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     identity, measured = _measured()
 
-    def must_not_decode(*args, **kwargs):
+    def must_not_decode(*args: Any, **kwargs: Any) -> None:
         pytest.fail("output allocation preceded its explicit byte-cap preflight")
 
     monkeypatch.setattr(

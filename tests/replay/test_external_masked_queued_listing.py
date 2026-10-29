@@ -9,16 +9,23 @@ from __future__ import annotations
 
 import os
 from datetime import datetime, timedelta
+from pathlib import Path
+from typing import Any
 
 import pytest
 from ksi_core.domains.external.quantity.external_masked_calculation_store import (
     ExternalMaskedCalculationStore,
     MaskedAdmissionEvidencePort,
+    MaskedAdmissionWitnessV3,
+    MaskedExecutionRecordV3,
 )
 from ksi_core.foundation.currentness import ExternalAuthorityCurrentnessCoordinator
 from ksi_core.foundation.durable_journal import DurableJournal
+from ksi_core.identity.auth import Principal
 from ksi_event_contracts.external_artifact_validation import ResourceEnvelopeV1
 from ksi_event_contracts.external_masked_api import MaskedCalculationPendingItemV1
+from ksi_event_contracts.external_masked_execution import MaskedAdmissionV3
+from ksi_event_contracts.external_masked_volume import MaskedCalculationIdentityV3
 from ksi_event_contracts.external_masked_volume_result import (
     MaskedVolumeCalculationFailureV3,
 )
@@ -59,22 +66,27 @@ def _deep_envelope() -> ResourceEnvelopeV1:
 class _MapEvidence(MaskedAdmissionEvidencePort):
     """Strict per-identity evidence fan-out with a witness-call counter."""
 
-    def __init__(self, identities) -> None:
+    def __init__(self, identities: list[MaskedCalculationIdentityV3]) -> None:
         self._ports = {
             identity.canonical_digest(): _StrictEvidence(identity) for identity in identities
         }
         self.live = True
         self.calls = 0
 
-    def kill(self, identity) -> None:
+    def kill(self, identity: MaskedCalculationIdentityV3) -> None:
         self._ports[identity.canonical_digest()].live = False
 
-    def revive(self, identity) -> None:
+    def revive(self, identity: MaskedCalculationIdentityV3) -> None:
         self._ports[identity.canonical_digest()].live = True
 
     def prepare_witness(
-        self, *, masked_calculation_identity_digest, organization_id, now, expected_admission=None
-    ):
+        self,
+        *,
+        masked_calculation_identity_digest: str,
+        organization_id: str,
+        now: datetime,
+        expected_admission: MaskedAdmissionV3 | None = None,
+    ) -> MaskedAdmissionWitnessV3 | None:
         self.calls += 1
         if not self.live:
             return None
@@ -88,7 +100,9 @@ class _MapEvidence(MaskedAdmissionEvidencePort):
             expected_admission=expected_admission,
         )
 
-    def witness_is_current(self, *, witness, now):
+    def witness_is_current(
+        self, *, witness: MaskedAdmissionWitnessV3, now: datetime
+    ) -> MaskedAdmissionWitnessV3 | None:
         if not self.live or witness is None:
             return None
         port = self._ports.get(witness.source_identity.canonical_digest())
@@ -97,7 +111,7 @@ class _MapEvidence(MaskedAdmissionEvidencePort):
         return port.witness_is_current(witness=witness, now=now)
 
 
-def _identity(tag: str):
+def _identity(tag: str) -> MaskedCalculationIdentityV3:
     base = _masked_identity()
     return base.model_copy(
         update={
@@ -107,7 +121,13 @@ def _identity(tag: str):
     ).sealed()
 
 
-def _make_store(tmp_path, evidence, *, name="masked-calc.journal", envelope=None):
+def _make_store(
+    tmp_path: Path,
+    evidence: MaskedAdmissionEvidencePort,
+    *,
+    name: str = "masked-calc.journal",
+    envelope: ResourceEnvelopeV1 | None = None,
+) -> tuple[DurableJournal, ExternalMaskedCalculationStore]:
     journal = DurableJournal(tmp_path / name)
     store = ExternalMaskedCalculationStore(
         journal,
@@ -119,7 +139,12 @@ def _make_store(tmp_path, evidence, *, name="masked-calc.journal", envelope=None
     return journal, store
 
 
-def _issue(store, identity, request_id: str, at: datetime):
+def _issue(
+    store: ExternalMaskedCalculationStore,
+    identity: MaskedCalculationIdentityV3,
+    request_id: str,
+    at: datetime,
+) -> MaskedExecutionRecordV3:
     store.bind_constructed_identity(principal=_operator(), identity=identity, now=at)
     return store.issue(
         principal=_operator(),
@@ -130,7 +155,14 @@ def _issue(store, identity, request_id: str, at: datetime):
     )
 
 
-def _lease(store, request_id: str, at: datetime, *, acquisition: str, instance="worker-inst-1"):
+def _lease(
+    store: ExternalMaskedCalculationStore,
+    request_id: str,
+    at: datetime,
+    *,
+    acquisition: str,
+    instance: str = "worker-inst-1",
+) -> Any:
     attempt = store.acquire_lease(
         request_id=request_id,
         worker_principal=_worker(),
@@ -142,7 +174,7 @@ def _lease(store, request_id: str, at: datetime, *, acquisition: str, instance="
     return attempt
 
 
-def test_queued_ordering_oldest_first_and_shape(tmp_path) -> None:
+def test_queued_ordering_oldest_first_and_shape(tmp_path: Path) -> None:
     identities = [_identity("a"), _identity("b"), _identity("c")]
     journal, store = _make_store(tmp_path, _MapEvidence(identities))
     stamps = (NOW, NOW + timedelta(seconds=1), NOW + timedelta(seconds=2))
@@ -158,16 +190,16 @@ def test_queued_ordering_oldest_first_and_shape(tmp_path) -> None:
     assert items[0].issued_at == NOW
 
 
-def test_limit_validation_and_cap(tmp_path) -> None:
+def test_limit_validation_and_cap(tmp_path: Path) -> None:
     identities = [_identity("a")]
     _, store = _make_store(tmp_path, _MapEvidence(identities))
     _issue(store, identities[0], "req-a", NOW)
-    for bad in (0, 51, -1, True, False, "10", 2.0, None):
+    for bad in (0, 51, -1, True, False, "10", 2.0, None):  # intentional invalid limits
         with pytest.raises(ValueError, match="limit must be an integer"):
-            store.list_queued_calculations(organization_id="org-a", limit=bad, now=NOW)
-    for bad_org in ("", "   ", None, 42):
+            store.list_queued_calculations(organization_id="org-a", limit=bad, now=NOW)  # type: ignore[arg-type]
+    for bad_org in ("", "   ", None, 42):  # intentional invalid orgs
         with pytest.raises(ValueError, match="requires an organization"):
-            store.list_queued_calculations(organization_id=bad_org, limit=10, now=NOW)
+            store.list_queued_calculations(organization_id=bad_org, limit=10, now=NOW)  # type: ignore[arg-type]
     with pytest.raises(ValueError, match="must be UTC"):
         store.list_queued_calculations(
             organization_id="org-a", limit=10, now=datetime(2026, 10, 26)
@@ -175,7 +207,7 @@ def test_limit_validation_and_cap(tmp_path) -> None:
     assert len(store.list_queued_calculations(organization_id="org-a", limit=1, now=NOW)) == 1
 
 
-def test_expired_lease_reclaimable_live_lease_hidden(tmp_path) -> None:
+def test_expired_lease_reclaimable_live_lease_hidden(tmp_path: Path) -> None:
     identities = [_identity("a"), _identity("b")]
     _, store = _make_store(tmp_path, _MapEvidence(identities))
     _issue(store, identities[0], "req-a", NOW)
@@ -194,7 +226,7 @@ def test_expired_lease_reclaimable_live_lease_hidden(tmp_path) -> None:
     ]
 
 
-def test_retry_exhaustion_excluded(tmp_path) -> None:
+def test_retry_exhaustion_excluded(tmp_path: Path) -> None:
     identities = [_identity("a")]
     _, store = _make_store(tmp_path, _MapEvidence(identities))
     _issue(store, identities[0], "req-a", NOW)
@@ -210,7 +242,7 @@ def test_retry_exhaustion_excluded(tmp_path) -> None:
     assert store.get_history("req-a", organization_id="org-a") is not None
 
 
-def test_deadline_past_excluded(tmp_path) -> None:
+def test_deadline_past_excluded(tmp_path: Path) -> None:
     identities = [_identity("a")]
     _, store = _make_store(tmp_path, _MapEvidence(identities))
     _issue(store, identities[0], "req-a", NOW)
@@ -223,7 +255,7 @@ def test_deadline_past_excluded(tmp_path) -> None:
     assert "req-a" not in store._pending  # noqa: SLF001 - owned index hygiene
 
 
-def test_terminal_report_failure_cancel_excluded_and_popped(tmp_path) -> None:
+def test_terminal_report_failure_cancel_excluded_and_popped(tmp_path: Path) -> None:
     identities = [_identity("a"), _identity("b"), _identity("c")]
     _, store = _make_store(tmp_path, _MapEvidence(identities))
     _issue(store, identities[0], "req-a", NOW)
@@ -271,7 +303,7 @@ def test_terminal_report_failure_cancel_excluded_and_popped(tmp_path) -> None:
     assert store._pending == {}  # noqa: SLF001 - owned index hygiene
 
 
-def test_stale_witness_omitted(tmp_path) -> None:
+def test_stale_witness_omitted(tmp_path: Path) -> None:
     identities = [_identity("a"), _identity("b")]
     evidence = _MapEvidence(identities)
     _, store = _make_store(tmp_path, evidence)
@@ -301,14 +333,14 @@ def test_stale_witness_omitted(tmp_path) -> None:
     )
 
 
-def test_foreign_org_omitted(tmp_path) -> None:
+def test_foreign_org_omitted(tmp_path: Path) -> None:
     identities = [_identity("a")]
     _, store = _make_store(tmp_path, _MapEvidence(identities))
     _issue(store, identities[0], "req-a", NOW)
     assert store.list_queued_calculations(organization_id="org-b", limit=10, now=NOW) == ()
 
 
-def test_no_journal_append(tmp_path) -> None:
+def test_no_journal_append(tmp_path: Path) -> None:
     identities = [_identity("a")]
     journal, store = _make_store(tmp_path, _MapEvidence(identities))
     _issue(store, identities[0], "req-a", NOW)
@@ -319,7 +351,7 @@ def test_no_journal_append(tmp_path) -> None:
     assert len(journal.replay()) == 2  # bind + issue only
 
 
-def test_rotation_defeats_stale_head_starvation(tmp_path) -> None:
+def test_rotation_defeats_stale_head_starvation(tmp_path: Path) -> None:
     identities = [_identity(f"n{i:02d}") for i in range(32)]
     evidence = _MapEvidence(identities)
     _, store = _make_store(tmp_path, evidence)
@@ -341,7 +373,7 @@ def test_rotation_defeats_stale_head_starvation(tmp_path) -> None:
     assert evidence.calls == 27 + 5
 
 
-def test_replay_restores_pending_index(tmp_path) -> None:
+def test_replay_restores_pending_index(tmp_path: Path) -> None:
     identities = [_identity("a"), _identity("b")]
     journal, store = _make_store(tmp_path, _MapEvidence(identities), name="restart.journal")
     _issue(store, identities[0], "req-a", NOW)
@@ -364,8 +396,8 @@ def test_replay_restores_pending_index(tmp_path) -> None:
     ]
 
 
-def test_pending_flow_binds_designated_worker_not_issuer(tmp_path) -> None:
-    from ksi_core.identity.auth import Principal, PrincipalKind
+def test_pending_flow_binds_designated_worker_not_issuer(tmp_path: Path) -> None:
+    from ksi_core.identity.auth import PrincipalKind
 
     identities = [_identity("a")]
     journal, store = _make_store(tmp_path, _MapEvidence(identities))

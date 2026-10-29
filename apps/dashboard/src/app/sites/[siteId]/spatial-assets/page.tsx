@@ -266,7 +266,7 @@ function RailItem({ item, headline, viewHref, putBHref, isA, isB, showThumb, thu
       : <FileKindTile fileName={item.declared.fileName} kind={item.kind} />}
     <div className="min-w-0 flex-1">
       <p className="flex min-w-0 items-start gap-1 break-words text-[14px] font-semibold leading-snug sm:text-[12.5px]">
-        {role && <span className="mt-0.5 shrink-0 rounded bg-surface px-1 text-[10.5px] font-bold" aria-label={`현재 ${role}로 선택됨`}>{role}</span>}
+        {role && <span role="img" className="mt-0.5 shrink-0 rounded bg-surface px-1 text-[10.5px] font-bold" aria-label={`현재 ${role}로 선택됨`}>{role}</span>}
         <Link href={viewHref} aria-current={isA ? "true" : undefined} title={fullTitle} className="min-w-0 tap-target underline-offset-2 hover:underline">{headline}</Link>
         <RailStatusDot item={item} />
       </p>
@@ -1099,6 +1099,12 @@ export default async function SpatialAssetsPage({
 
   // 공유 frame 슬롯 — 실제 화면과 디자인 예시 화면이 같은 머리/무대/
   // 드로어 관계를 쓴다. 조회·선택 판정은 위에서 끝냈고, 여기서는 배치만 둔다.
+  //
+  // 진짜 빈 목록(아래 본문 빈 분기와 같은 조건)에서는 맥락막대의 등록 제한을
+  // 한 줄로 두지 않는다 — 빈 행동 줄의 전체 안내가 같은 말을 하며 두 번
+  // 말하면 좁은 화면에서 무대를 밀어낸다.
+  const isGenuinelyEmpty = page !== null && page.assets.length === 0 && !sideA && !sideB;
+  const canRegister = session.principal.permissions.includes("WORK_ORDERS_WRITE");
   const renderContextBar = (): ReactNode => (<>
     {areas.workAreas.length > 1 ? (
       <SiteSelectionForm action={basePath} className="flex min-w-0 items-center gap-1.5">
@@ -1147,7 +1153,7 @@ export default async function SpatialAssetsPage({
       ? <Link scroll={false} data-workbench-info-trigger aria-expanded={true} aria-controls="material-inspector" className="tap-target ml-auto inline-flex shrink-0 items-center text-[12px] font-semibold underline max-sm:min-h-9 max-sm:rounded-md max-sm:border max-sm:border-line max-sm:bg-surface max-sm:px-2 max-sm:py-1 max-sm:no-underline xl:hidden" href={materialsHref(siteId, effectiveWorkAreaId, scopeForLinks({ info: null }))}>정보</Link>
       : <Link scroll={false} data-workbench-info-trigger aria-expanded={false} aria-controls="material-inspector" className="tap-target ml-auto inline-flex shrink-0 items-center text-[12px] underline text-ink-2 max-sm:min-h-9 max-sm:rounded-md max-sm:border max-sm:border-line max-sm:bg-surface max-sm:px-2 max-sm:py-1 max-sm:no-underline xl:hidden" href={materialsHref(siteId, effectiveWorkAreaId, scopeForLinks({ info: "1" }))}>정보</Link>)}
     <span className="flex shrink-0 items-center gap-2 xl:ml-auto">
-      {session.principal.permissions.includes("WORK_ORDERS_WRITE") && (
+      {canRegister && (
         <ResponsiveActionBoundary action="WORK_ORDERS_WRITE" inlineNotice={false}>
         <Link
           href={`/sites/${encodeURIComponent(siteId)}/observations/new${effectiveWorkAreaId ? `?workAreaId=${encodeURIComponent(effectiveWorkAreaId)}` : ""}`}
@@ -1167,6 +1173,14 @@ export default async function SpatialAssetsPage({
         </div>
       </details>
     </span>
+    {/*
+      좁은 화면용 등록 제한 한 줄 — 버튼 묶음 바깥의 맥락막대 직속 행으로 둔다.
+      묶음 안은 줄바꿈하지 않으므로 basis-full을 안에 두면 더 보기가 잘린
+      채로 밀려나고 조상은 잘라내 document.scrollWidth도 조용하다.
+    */}
+    {canRegister && !isGenuinelyEmpty && (
+      <p data-register-limit="true" className="min-w-0 shrink-0 basis-full break-words text-[11.5px] leading-4 text-ink-muted lg:hidden">자료 등록은 노트북 이상의 화면에서 진행하세요.</p>
+    )}
   </>);
 
   // 빈 자료의 행동 줄 — 준비된 자료가 없어도 등록 길과 기록 길을 둔다.
@@ -1177,7 +1191,7 @@ export default async function SpatialAssetsPage({
     <>
     <div className="flex min-w-0 flex-wrap items-center gap-2">
       {session.principal.permissions.includes("WORK_ORDERS_WRITE") && (
-        <ResponsiveActionBoundary action="WORK_ORDERS_WRITE" inlineNotice={false}>
+        <ResponsiveActionBoundary action="WORK_ORDERS_WRITE" reason="자료 등록은 노트북 이상의 화면에서 진행하세요.">
           <Link
             href={`/sites/${encodeURIComponent(siteId)}/observations/new${effectiveWorkAreaId ? `?workAreaId=${encodeURIComponent(effectiveWorkAreaId)}` : ""}`}
             className="btn btn-primary"
@@ -1215,9 +1229,30 @@ export default async function SpatialAssetsPage({
 
   // 중앙: 큰 미리보기. 단일 또는 좌·우 독립 보기. 동기화·정합을 주장하지
   // 않는다. 무대 높이를 채우고 넘치면 안에서 스크롤한다.
+  //
+  // Viewer 데스크톱(lg+)에서는 칸별 관측 선택과 무대 자막이 가려지므로,
+  // 닫힌 패널 상태에서도 어떤 자료를 보는지 한 줄로 밝힌다. 아래(lg 미만)
+  // 에서는 칸 머리가 같은 사실을 두므로 이 줄은 두지 않는다. 문구는
+  // 카탈로그가 이미 내놓은 종류·촬영 구간만 쓰며 B를 미리 고르지 않는다.
   const renderStage = (): ReactNode => (
     <section aria-label={compareMode ? "선택한 두 자료 미리보기" : "선택한 자료 미리보기"} className="flex h-full min-w-0 flex-col gap-2 overflow-y-auto" data-materials-stage="true">
-      {!sideA && <p role="status" data-workbench-stage-caption="true" className="text-[12.5px] leading-5 text-ink-2">{sideB ? "첫 자료(A)를 목록에서 고르세요. 선택한 B는 그대로 표시합니다." : "표시할 자료를 목록에서 고르세요. 자동으로 다른 자료를 보여주지 않습니다."}</p>}
+      {sideA && !compareMode && (
+        <p data-materials-current="true" className="hidden min-w-0 shrink-0 break-words text-[11.5px] leading-4 text-ink-muted lg:block">
+          {selection.legacyMapped ? "옛 주소의 선택" : selection.defaultedA ? "목록 첫 자료" : "선택한 자료"} · A · {businessTitleFor(sideA)} · 목록에서 다른 자료를 고르세요
+        </p>
+      )}
+      {compareMode && sideA && sideB && (
+        <p data-materials-current="true" className="hidden min-w-0 shrink-0 break-words text-[11.5px] leading-4 text-ink-muted lg:block">
+          현재 선택 · A · {businessTitleFor(sideA)} / B · {businessTitleFor(sideB)}
+        </p>
+      )}
+      {!sideA && sideB && (
+        <p data-materials-current="true" className="hidden min-w-0 shrink-0 break-words text-[11.5px] leading-4 text-ink-muted lg:block">
+          선택한 B · B · {businessTitleFor(sideB)} · 첫 자료(A)는 목록에서 고르세요
+        </p>
+      )}
+      {!sideA && sideB && <p role="status" data-workbench-stage-caption="true" className="text-[12.5px] leading-5 text-ink-2">첫 자료(A)를 목록에서 고르세요. 선택한 B는 그대로 표시합니다.</p>}
+      {!sideA && !sideB && <p role="status" data-materials-empty-selection="true" className="text-[12.5px] leading-5 text-ink-2">자료 목록을 열어 표시할 자료를 고르세요. 자동으로 다른 자료를 보여주지 않습니다.</p>}
       {!sideA && sideB && centerPane("B", sideB)}
       {sideA && !compareMode && <>
         <p data-workbench-stage-caption="true" className="min-w-0 shrink-0 break-words text-[11.5px] text-ink-muted">
@@ -1320,7 +1355,7 @@ export default async function SpatialAssetsPage({
 
           {page.assets.length === 0 && !sideA && !sideB
             ? <>
-              <EmptyState compact title="이 작업구역에 등록된 자료가 없습니다" description="관측 자료가 이 작업구역에 등록되면 해당 자료의 메타데이터가 여기에 표시됩니다." />
+              <EmptyState compact title="이 작업구역에 등록된 자료가 없습니다" description="관측 자료가 이 작업구역에 등록되면 해당 자료의 메타데이터와 검사 상태를 여기에서 확인할 수 있습니다." />
               {renderEmptyActions()}
             </>
             : <SpatialWorkbenchFrame

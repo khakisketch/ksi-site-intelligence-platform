@@ -370,6 +370,8 @@ export function SiteWorkspaceShell({
   mode,
   areas,
   areasKnown,
+  areasState = areasKnown ? "ready" : "unavailable",
+  canCreateWorkArea = "unknown",
   orders,
   analyses,
   analysesKnown,
@@ -407,6 +409,8 @@ export function SiteWorkspaceShell({
   mode: WorkspaceMode;
   areas: WorkArea[];
   areasKnown: boolean;
+  areasState?: "ready" | "denied" | "unavailable";
+  canCreateWorkArea?: "allowed" | "denied" | "unknown";
   orders: ObservationWorkOrderView[] | null;
   analyses: AnalysisListItem[] | null;
   analysesKnown: boolean;
@@ -833,11 +837,11 @@ export function SiteWorkspaceShell({
   // 전이 선택(서버 기본 없음)의 밝힘은 선택 캡션 한 줄이 맡아, 같은
   // 선택을 알리는 회색 상자를 무대 위에 따로 두지 않는다.
   const selectionNotice = scopeNotice ? (
-    <p role="status" data-workbench-stage-inset="true" className="shrink-0 rounded-md border border-line bg-sunk/40 px-3 py-1.5 text-[12px] leading-5 text-ink-2 max-sm:hidden">
+    <p role="status" data-workbench-stage-inset="true" className="shrink-0 break-words rounded-md border border-line bg-sunk/40 px-3 py-1.5 text-[12px] leading-5 text-ink-2">
       요청한 구역·자료가 조회 범위에 없어 아래 선택을 보여줍니다.
       {selected ? ` 작업구역 · ${areaLabel}.` : ""}
       {mode === "explore" && selectedCaption ? ` 선택 중 · ${selectedCaption}.` : ""}
-      조용히 다른 대상으로 바꾸지 않았습니다.
+      {" "}조용히 다른 대상으로 바꾸지 않았습니다.
     </p>
   ) : null;
   // 맥락막대 — 한 줄 맥락(목록·구역) + 작은 보기 방식 전환 + 한 줄 용도만 둔다.
@@ -849,7 +853,7 @@ export function SiteWorkspaceShell({
         <span className="font-semibold">{areaLabel}{selected.status === "ARCHIVED" ? " (보관됨)" : ""}</span>
       </span>
     ) : (
-      <span className="text-[12px] text-ink-2">작업구역을 확인하지 못했습니다</span>
+      <span className="text-[12px] text-ink-2">{areasState === "ready" ? (areas.length === 0 ? "등록된 작업구역 없음" : "작업구역 미선택") : "작업구역 목록 확인 불가"}</span>
     )}
     <div className="flex min-w-0 shrink-0 flex-wrap items-center gap-x-2 gap-y-1">
       <span id="workspace-view-mode-label" data-viewer-compact-hide="true" className="sr-only sm:not-sr-only sm:shrink-0 sm:text-[11.5px] sm:text-ink-muted">보기 방식</span>
@@ -879,7 +883,7 @@ export function SiteWorkspaceShell({
   // 목록 드로어 — 구역 선택과 이동 길만 둔다. 관측·층 선택과 포털 대상은
   // 무대 위에 그대로 두어, 드로어가 닫혀도 포털이 사라지지 않게 한다.
   const catalog = (<div className="flex min-w-0 flex-col gap-3">
-    {areas.length > 1 ? (
+    {areas.length > 1 || (areas.length > 0 && !selected) ? (
       <SiteSelectionForm action={sitePath} className="flex w-full min-w-0 flex-col gap-2">
         {mode !== "explore" && <input type="hidden" name="mode" value={mode} />}
         <div className="min-w-0 flex-1">
@@ -888,8 +892,10 @@ export function SiteWorkspaceShell({
             id="workspace-catalog-area"
             name="workAreaId"
             defaultValue={selected?.workAreaId ?? ""}
+            required
             className="tap-target mt-1 w-full rounded-md border border-line bg-surface px-2 text-[13px]"
           >
+            {!selected && <option value="" disabled>작업구역 선택</option>}
             {areas.map((area) => {
               const naming = areaNames.get(area.workAreaId) ?? { label: area.name || area.workAreaId };
               return <option key={area.workAreaId} value={area.workAreaId}>
@@ -992,10 +998,32 @@ export function SiteWorkspaceShell({
   // 스크롤에 맡긴다. flex-1 강제 높이를 두지 않으므로 실제 화면과 뒤따르는
   // 안내가 겹치지 않으며, 빈 상태·오류에도 가짜 빈 높이를 두지 않는다.
   // 오류·만료·복구는 이 1차 영역에 둔다.
+  const onlyArchivedAreas = areasState === "ready" && areas.length > 0 && areas.every((area) => area.status === "ARCHIVED");
+  const areaFirstAction = !selected || onlyArchivedAreas ? (
+    <div role="status" className="shrink-0 rounded-lg border border-line bg-surface px-4 py-3 text-[12.5px] leading-5 text-ink-2">
+      {areasState === "denied" ? (
+        <p>작업구역 목록을 조회할 권한이 없습니다. 현장 담당자에게 조회 권한을 요청하세요.</p>
+      ) : areasState === "unavailable" ? (
+        <><p>작업구역 목록을 불러오지 못했습니다. 잠시 후 다시 확인하세요.</p>
+          <div className="mt-2"><WorkbenchRefreshButton label="작업구역 목록 다시 확인" /></div></>
+      ) : areas.length === 0 || onlyArchivedAreas ? (<>
+        <p className="text-[13px] font-bold text-ink-1">{onlyArchivedAreas ? "활성 작업구역이 없습니다" : "등록된 작업구역이 없습니다"}</p>
+        {onlyArchivedAreas && <p className="mt-1">등록된 구역은 모두 보관되어 있습니다. 기존 기록은 그대로 확인할 수 있습니다.</p>}
+        {onlyArchivedAreas && !selected && <p className="mt-1">상단 목록 버튼을 열어 보관된 구역을 선택할 수 있습니다.</p>}
+        <p className="mt-1">관측 자료를 연결할 범위를 먼저 등록하세요.</p>
+        {canCreateWorkArea === "allowed" ? (
+          <><p className="mt-2"><Link href={`${sitePath}/work-areas`} className="btn btn-primary lg:hidden">작업구역 목록 보기</Link><Link href={`${sitePath}/work-areas`} className="btn btn-primary hidden lg:inline-flex">작업구역 등록</Link></p>
+            <p className="mt-1 lg:hidden">모바일에서는 작업구역 목록을 볼 수 있습니다. 등록하려면 노트북 이상의 화면에서 같은 계정으로 로그인해 이 현장을 여세요.</p></>
+        ) : canCreateWorkArea === "denied" ? <p className="mt-1">작업구역 등록 권한이 없습니다. 현장 담당자에게 문의하세요.</p> : <><p className="mt-1">작업구역 등록 권한을 확인하지 못했습니다. 잠시 후 다시 확인하세요.</p>
+          <div className="mt-2"><WorkbenchRefreshButton label="등록 권한 다시 확인" /></div></>}
+      </>) : <p>작업구역을 선택하지 않았습니다. 상단 목록 버튼을 열어 구역을 선택하세요.</p>}
+    </div>
+  ) : null;
   const stage = (<>
     {mode === "explore" && (
       <section aria-label="선택 관측 보기" className="flex h-full min-w-0 min-h-0 flex-col gap-2">
         {selectionNotice}
+        {areaFirstAction}
         {selected && captureOptions.length > 0 && (
           <div data-workbench-pane-controls className="flex min-w-0 shrink-0 flex-wrap items-center gap-x-2 gap-y-1.5">
             <SiteSelectionForm
@@ -1084,11 +1112,9 @@ export function SiteWorkspaceShell({
               detailsTargetId="workspace-inspector-details"
             />
           </div>
-        ) : !exploreIsEmpty && catalogStatus === null ? (
+        ) : selected && !exploreIsEmpty && catalogStatus === null ? (
           <p className="rounded-lg border border-line bg-surface px-4 py-3 text-[12.5px] leading-5 text-ink-2" role="status">
-            {!selected
-              ? "작업구역을 확인할 수 없어 화면을 고르지 않았습니다. 목록에서 구역을 고르세요."
-              : viewerJobsState === "denied"
+            {viewerJobsState === "denied"
                 ? "준비 기록을 조회할 권한이 없습니다. 담당자에게 조회 권한을 요청하세요."
                 : "준비 기록을 불러오지 못했습니다. 잠시 후 목록에서 다시 확인하세요."}
           </p>
@@ -1096,7 +1122,7 @@ export function SiteWorkspaceShell({
         {/* 참 빈 상태의 1차 빈 블록이 사실·행동을 이미 둔다 — 같은 등록 길과
             같은 고지를 두 번 내지 않는다. 서버 기본·전이·범위밖·거부 등 다른
             사유는 그대로 둔다. */}
-        {!(exploreIsEmpty && selected && exploreNextAction
+        {selected && !(exploreIsEmpty && selected && exploreNextAction
           && ordinaryEntry.status === "no-server-default" && ordinaryEntry.reason === "NO_OBSERVATIONS") && (
           <SiteWorkspaceEntryPanel
             sitePath={sitePath}
@@ -1117,7 +1143,7 @@ export function SiteWorkspaceShell({
     {mode === "compare" && (
       <section aria-label="두 시점 비교" className="flex h-full min-w-0 min-h-0 flex-col gap-2 max-sm:gap-1.5">
         {selectionNotice}
-        {!areasKnown && <p role="status" className="shrink-0 text-[12.5px] leading-5 text-ink-2">작업구역 목록을 확인하지 못했습니다. 잠시 후 다시 확인하세요. 빈 목록으로 단정하지 않습니다.</p>}
+        {areaFirstAction}
         {areasKnown && selected && (comparisonReady || visualReady) && viewerJobsState !== "not-requested" && catalogStatus === null && (
           <>
             <p className="shrink-0 text-[11.5px] leading-5 text-ink-muted max-sm:text-[11px] max-sm:leading-4">각 칸은 독립된 보기입니다. 같은 범위 맞춤·같은 색 눈금은 지원하지 않습니다.</p>
@@ -1180,7 +1206,7 @@ export function SiteWorkspaceShell({
           </div>
         )}
         {selected && catalogStatus !== null && (comparison.status === "ready" || visualPair.status === "ready") && viewerJobsState !== "not-requested" && catalogStatus}
-        {areasKnown && (
+        {areasKnown && selected && (
           <SiteWorkspaceCompare {...compareProps} presentation="viewer" />
         )}
       </section>

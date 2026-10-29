@@ -18,7 +18,8 @@
 [![FastAPI Core](https://img.shields.io/badge/Core-FastAPI-009688)](services/core/)
 [![로컬 검증 2026-10-13](https://img.shields.io/badge/verification-local_2026--10--13-lightgrey)](#검증-현황)
 
-> 아래 수치 배지는 **2026-10-13 로컬 실행 결과**입니다. GitHub Actions는 계정 결제 문제로 비활성 상태이며, 별도 조치 전까지 원격 CI 통과를 주장하지 않습니다.
+> 아래 수치 배지는 **2026-10-13 로컬 실행 결과**입니다. 원격 CI는 커밋별로 확인해야 하며,
+> 이 과거 로컬 결과를 최신 커밋의 GitHub Actions 통과로 해석하지 않습니다.
 
 ![두 시점 비교 결과와 검토 기록 — 합성 데모](apps/dashboard/f04-review-evidence/observations-page.png)
 
@@ -195,7 +196,9 @@ M4D 촬영 → 고객 통제 현장 PC 재구성 → 파생 산출물·근거 KS
 ## 검증 현황
 
 > 아래는 **2026-10-13 로컬 소프트웨어 검증 근거**이며 현장·고객 수용을 대체하지 않습니다.
-> GitHub Actions는 계정 결제 문제로 비활성 상태이므로, 원격 CI 통과와 혼동하지 마세요.
+> 원격 CI 결과와 혼동하지 마세요. 2026-10-29 확인 당시 공개 `main`의 최신 실행은
+> 2026-10-22에 mypy 단계에서 실패했고, 이후 pytest 단계는 건너뛰었습니다. 현재 통합 후보의
+> 원격 CI 결과는 없습니다. [실행 기록](https://github.com/khakisketch/ksi-site-intelligence-platform/actions/runs/39793498530).
 
 | 게이트 | 결과 |
 |---|---|
@@ -206,8 +209,8 @@ M4D 촬영 → 고객 통제 현장 PC 재구성 → 파생 산출물·근거 KS
 | Console 검토 지속성 | 201 → 새로고침 → Core 재기동 유지 (증거 `apps/dashboard/f04-review-evidence/`) |
 | Site bootstrap | 서버 발급 ID·멱등 binding·same-Site scope (증거 `apps/dashboard/f01-bootstrap-evidence/`) |
 
-열린 항목(정직 표기): 실자료 A–E provisioning, 샌드박스 VM parser 실체인, 2-cycle 완주,
-production/TLS·고객·EXT-VAL 수용, GitHub Actions 결제 차단. 상세는
+열린 항목(정직 표기): 허용된 실자료 A–E, 현행 후보의 격리 parser 실체인,
+실 고객의 2-cycle 사용, production/TLS·고객·EXT-VAL 수용, 현행 후보의 원격 CI. 상세는
 [통합 감사](docs/audit/PHYSICAL_SITE_REBASELINE_INTEGRATED_VERIFICATION.md)와
 [정본 원장](docs/superpowers/plans/2026-10-07-agent-first-platform-rebaseline.md).
 
@@ -215,28 +218,39 @@ production/TLS·고객·EXT-VAL 수용, GitHub Actions 결제 차단. 상세는
 
 사전 조건: Python 3.12(`uv`), Node.js, Docker, Tailscale(선택).
 소요 시간은 환경에 따라 다르며, 아래는 이미 도구가 준비된 개발 호스트 기준입니다.
+다른 컴퓨터에서 처음 시작한다면 [개발 인계 안내](docs/DEVELOPMENT_HANDOFF.md)와
+[현재 원장](docs/ledger/CURRENT.md)에서 필요한 소스·검증·미이전 로컬 상태를 먼저 확인하세요.
 
 ```bash
-# 1. Console + Core + Local Identity (loopback)
+# 1. Console + Core + Local Identity (localhost, Tailscale 설정 변경 없음)
 cd apps/dashboard
-npm run dev
-# 표시된 MagicDNS URL로 접속 (tailnet 전용, tailnet 미사용 시 아래 참조)
-```
-
-```bash
-# Tailscale 없이 localhost로만 볼 때
 npm run dev:local
+# 출력된 localhost 주소로 접속
 ```
 
+`npm run dev`는 Tailscale Serve 설정을 변경하는 별도 경로이므로, 필요한 경우에만
+[Dashboard 안내](apps/dashboard/README.md)를 확인하고 사용합니다.
+localhost 바인딩은 외부 네트워크 격리가 아닙니다. 일부 지도는 외부 타일을 요청하며,
+이 경계는 [개발 인계 안내](docs/DEVELOPMENT_HANDOFF.md)에서 별도로 설명합니다.
+
+E2E 시험 중 일부는 합성 등록을 수행합니다. 공통 Playwright 설정의 로컬 서버·브라우저
+필터는 운영체제 네트워크 격리를 보장하지 않으며, 시험이 제외되기 전에 서버가 시작될 수도
+있습니다. 작업 전용 격리 환경과 대상 소유권을 확인한 뒤 실행하고, 별도 허가 없이
+`KSI_DASHBOARD_E2E_BASE_URL`을 실제 서비스로 지정하지 마세요. 자동 접근성 검사는 실제
+스크린리더·사용자 수용을 대체하지 않습니다.
+
 ```bash
-# 2. 품질 게이트 (변경 전 제출 기준)
+# 2. 품질 게이트 (빌드는 글꼴 요청 등 네트워크 조건을 먼저 확인)
 npm test && npm run lint && npx tsc --noEmit && npm run build
-npm run test:e2e   # 390/768/1024/1440 + OIDC + 접근성
 ```
 
+브라우저 시험의 실행 조건과 현재 비활성 진단은
+[개발 인계 안내](docs/DEVELOPMENT_HANDOFF.md)에서 별도로 확인합니다.
+
 ```bash
-# 3. Core 계약 테스트 (발췌)
-uv run pytest tests/contract -q
+# 3. Core 계약 테스트 (저장소 루트에서 실행)
+cd ../..
+uv run --locked pytest tests/contract -q
 ```
 
 상세 운영·배포 경계는 [`deploy/README.md`](deploy/README.md), [`docs/ops/DEPLOYMENT.md`](docs/ops/DEPLOYMENT.md).

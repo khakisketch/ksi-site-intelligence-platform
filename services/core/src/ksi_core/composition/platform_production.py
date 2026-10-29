@@ -38,6 +38,7 @@ from ksi_core.composition.runtime_config import (
     _human_auth_config_env,
     _optional_positive_env,
     _parse_principal_tokens,
+    _registration_stopped_env,
     _require_dir,
     _require_env,
     _site_bootstrap_max_sites_per_org_env,
@@ -65,6 +66,7 @@ def build_platform_production_app() -> FastAPI:
         level=os.environ.get("KSI_CORE_LOG_LEVEL", "INFO"), json_format=True
     )
     external_authority_paths = _external_authority_paths_env()
+    registration_stopped = _registration_stopped_env()
 
     # ── 1단계: 검증(가벼운 것부터) — 무거운 부수효과(S3 client·journal open) 이전에
     # 전부 끝낸다. 잘못된 배포는 어느 환경변수가 문제인지 즉시 알아야 한다.
@@ -274,6 +276,7 @@ def build_platform_production_app() -> FastAPI:
             analysis_activation=analysis_activation,
             spatial_data=spatial_data,
             site_bootstrap_max_sites_per_org=site_bootstrap_max_sites_per_org,
+            registration_stopped=registration_stopped,
             expose_docs=expose_docs,
         )
         if external_authority_provider is not None:

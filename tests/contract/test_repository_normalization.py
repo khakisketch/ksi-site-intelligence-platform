@@ -9,6 +9,7 @@ from importlib import import_module
 from pathlib import Path
 from typing import Any
 
+import pytest
 import yaml
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -22,6 +23,9 @@ _check_r3_migration_paths = import_module(
 _existing_or_migrated_path = import_module(
     "tools.validate_repository_normalization"
 )._existing_or_migrated_path
+_check_source_patterns = import_module(
+    "tools.validate_repository_normalization"
+)._check_source_patterns
 
 R3_IMPORT_ONLY_PACKAGE_MOVES = {
     "services/change-detection": "packages/change-detection",
@@ -247,6 +251,55 @@ def test_root_python_tool_caches_are_ignored_by_git() -> None:
     assert missing_rules == []
 
 
+@pytest.mark.parametrize(
+    "path",
+    [
+        "node_modules/.vite/results.json",
+        ".playwright-cli/session.yml",
+        "docs/design/.playwright-cli/session.yml",
+    ],
+)
+def test_local_browser_and_dependency_artifacts_are_ignored_by_git(
+    path: str, tmp_path: Path,
+) -> None:
+    _initialize_git_root(tmp_path)
+    (tmp_path / ".gitignore").write_text(
+        (ROOT / ".gitignore").read_text(encoding="utf-8"), encoding="utf-8"
+    )
+    result = subprocess.run(
+        [
+            "git", "-c", "core.excludesFile=",
+            "check-ignore", "--no-index", "--verbose", path,
+        ],
+        cwd=tmp_path,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0
+    assert result.stdout.startswith(".gitignore:")
+
+
+def test_local_artifact_rules_do_not_hide_design_or_source_paths(tmp_path: Path) -> None:
+    _initialize_git_root(tmp_path)
+    (tmp_path / ".gitignore").write_text(
+        (ROOT / ".gitignore").read_text(encoding="utf-8"), encoding="utf-8"
+    )
+    for path in (
+        "docs/design/CONSOLE_MEDIA_FIRST_20261027.html",
+        "apps/dashboard/src/app/page.tsx",
+    ):
+        result = subprocess.run(
+            [
+                "git", "-c", "core.excludesFile=",
+                "check-ignore", "--no-index", "--quiet", path,
+            ],
+            cwd=tmp_path,
+            check=False,
+        )
+        assert result.returncode == 1
+
+
 def test_cleanup_manifest_covers_observed_sensitive_and_generated_candidates() -> None:
     manifest = json.loads(
         (ROOT / "docs/audit/REPOSITORY_CLEANUP_MANIFEST_R0_R2.json").read_text(
@@ -352,6 +405,69 @@ def test_source_patterns_accept_owner_scoped_ignored_probe(tmp_path: Path) -> No
     _check_manifest_paths(tmp_path, manifest, failures, check_local_cleanup=False)
 
     assert not any("source pattern" in item for item in failures)
+
+
+def test_source_patterns_accept_ignored_symlink_without_touching_its_target(tmp_path: Path) -> None:
+    checkout = tmp_path / "checkout"
+    checkout.mkdir()
+    _initialize_git_root(checkout, "/owner/node_modules\n")
+    (checkout / "owner").mkdir()
+    target = tmp_path / "protected"
+    target.mkdir()
+    marker = target / "untouched"
+    marker.write_text("protected", encoding="utf-8")
+    (checkout / "owner/node_modules").symlink_to(target, target_is_directory=True)
+    failures: list[str] = []
+
+    _check_source_patterns(checkout, "generated", {
+        "sources": ["owner/"], "sourcePatterns": ["owner/node_modules/"],
+    }, failures)
+
+    assert failures == []
+    assert marker.read_text(encoding="utf-8") == "protected"
+
+
+def test_source_patterns_reject_unignored_symlink_even_when_target_would_ignore_children(
+    tmp_path: Path,
+) -> None:
+    checkout = tmp_path / "checkout"
+    checkout.mkdir()
+    _initialize_git_root(checkout)
+    (checkout / "owner").mkdir()
+    target = tmp_path / "protected"
+    target.mkdir()
+    (target / ".gitignore").write_text("*\n", encoding="utf-8")
+    (checkout / "owner/node_modules").symlink_to(target, target_is_directory=True)
+    failures: list[str] = []
+
+    _check_source_patterns(checkout, "generated", {
+        "sources": ["owner/"], "sourcePatterns": ["owner/node_modules/"],
+    }, failures)
+
+    assert any("source pattern" in item for item in failures)
+    assert (target / ".gitignore").read_text(encoding="utf-8") == "*\n"
+
+
+def test_source_patterns_reject_git_errors_even_for_ignored_symlinks(
+    tmp_path: Path, monkeypatch: Any,
+) -> None:
+    checkout = tmp_path / "checkout"
+    checkout.mkdir()
+    _initialize_git_root(checkout, "/owner/node_modules\n")
+    (checkout / "owner").mkdir()
+    (checkout / "owner/node_modules").symlink_to(tmp_path / "missing-target")
+    monkeypatch.setattr(
+        subprocess,
+        "run",
+        lambda *args, **kwargs: subprocess.CompletedProcess(args, 128, "", "synthetic git failure"),
+    )
+    failures: list[str] = []
+
+    _check_source_patterns(checkout, "generated", {
+        "sources": ["owner/"], "sourcePatterns": ["owner/node_modules/"],
+    }, failures)
+
+    assert any("source pattern Git check failed" in item for item in failures)
 
 
 def test_source_patterns_allow_only_justified_global_python_cache_pattern(

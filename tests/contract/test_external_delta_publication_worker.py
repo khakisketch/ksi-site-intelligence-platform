@@ -12,8 +12,11 @@ import base64
 import hashlib
 import os
 import threading
+from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
+from typing import Any
 from urllib.parse import unquote, urlsplit
 
 import numpy as np
@@ -26,7 +29,9 @@ from pydantic import ValidationError
 NOW = datetime(2026, 10, 26, tzinfo=UTC)
 
 
-def _complete_v2_report(tmp_path, label="delta-worker-e2e"):
+def _complete_v2_report(
+    tmp_path: Path, label: str = "delta-worker-e2e"
+) -> tuple[Any, Any, Any, Any, Path, Path]:
     """Run the real local Analysis lane to a COMPLETED V2 report.
 
     Returns (fixture, record, identity, numeric, baseline_path, current_path).
@@ -123,7 +128,7 @@ def _complete_v2_report(tmp_path, label="delta-worker-e2e"):
         raise
 
 
-def test_worker_input_contract_binds_exact_lease_and_rejects_drift(tmp_path):
+def test_worker_input_contract_binds_exact_lease_and_rejects_drift(tmp_path: Path) -> None:
     fixture, record, identity, numeric, _, _ = _complete_v2_report(tmp_path, "worker-contract")
     try:
         from ksi_core.domains.external.quantity.external_delta_output_observations import (
@@ -302,6 +307,7 @@ def test_worker_input_contract_binds_exact_lease_and_rejects_drift(tmp_path):
         assert worker_input.numeric_result == numeric
         assert worker_input.lease_generation == lease.lease_generation
         assert [c.role for c in worker_input.inputs] == ["BASELINE_DSM", "CURRENT_DSM"]
+        assert lease.lease_expires_at is not None
         assert all(c.expires_at <= lease.lease_expires_at for c in worker_input.inputs)
         # Foreign instance, unknown publication, and wrong generation-adjacent
         # principal all fail closed with no input.
@@ -364,7 +370,7 @@ def test_worker_input_contract_binds_exact_lease_and_rejects_drift(tmp_path):
         fixture.close()
 
 
-def test_input_issuance_drops_urls_after_mid_presign_invalidation(tmp_path):
+def test_input_issuance_drops_urls_after_mid_presign_invalidation(tmp_path: Path) -> None:
     """Presigning I/O runs outside the guard; the final recheck must drop URLs.
 
     A signer callback mutates Core state between the two presigned GETs
@@ -474,18 +480,18 @@ def test_input_issuance_drops_urls_after_mid_presign_invalidation(tmp_path):
         class _MutatingStorage:
             """Delegate presigned_get, mutating Core state before the 2nd call."""
 
-            def __init__(self, inner, mutate):
+            def __init__(self, inner: Any, mutate: Callable[[], None]) -> None:
                 self._inner = inner
                 self._mutate = mutate
                 self.calls = 0
 
-            def presigned_get(self, object_key, *, ttl):
+            def presigned_get(self, object_key: str, *, ttl: timedelta) -> str:
                 self.calls += 1
                 if self.calls == 2:
                     self._mutate()
                 return self._inner.presigned_get(object_key, ttl=ttl)
 
-        def _lane(suffix):
+        def _lane(suffix: str) -> str:
             publication_id = f"mid-presign-{suffix}"
             store.request_publication(
                 principal=operator,
@@ -507,7 +513,7 @@ def test_input_issuance_drops_urls_after_mid_presign_invalidation(tmp_path):
             assert lease is not None
             return publication_id
 
-        def _resolve(publication_id, storage):
+        def _resolve(publication_id: str, storage: Any) -> Any:
             issuer = DeltaPublicationS3InputCapabilityIssuer(
                 reconstruction=_reconstruction_of(fixture),
                 storage=storage,
@@ -531,7 +537,7 @@ def test_input_issuance_drops_urls_after_mid_presign_invalidation(tmp_path):
         # Case 1: lease canceled between the two presigns.
         canceled_pub = _lane("canceled")
 
-        def _cancel():
+        def _cancel() -> None:
             store.cancel_intent(
                 principal=operator,
                 publication_id=canceled_pub,
@@ -545,7 +551,7 @@ def test_input_issuance_drops_urls_after_mid_presign_invalidation(tmp_path):
         clock_pub = _lane("clock")
         clock_journal_before = (tmp_path / "mid-pubs.jsonl").read_text()
 
-        def _advance():
+        def _advance() -> None:
             now_box[0] = now_box[0] + timedelta(seconds=61)
 
         assert _resolve(clock_pub, _MutatingStorage(fixture.storage, _advance)) is None
@@ -555,7 +561,7 @@ def test_input_issuance_drops_urls_after_mid_presign_invalidation(tmp_path):
         # Case 3: source revoked between the two presigns (last: irreversible).
         revoked_pub = _lane("revoked")
 
-        def _revoke():
+        def _revoke() -> None:
             for context in fixture._retained_contexts:
                 fixture.revoke_evidence_context(context.context_digest)
 
@@ -564,7 +570,7 @@ def test_input_issuance_drops_urls_after_mid_presign_invalidation(tmp_path):
         fixture.close()
 
 
-def test_discovery_page_rejects_malformed_pages_and_bad_limits(tmp_path):
+def test_discovery_page_rejects_malformed_pages_and_bad_limits(tmp_path: Path) -> None:
     """Closed discovery page: unknown fields, oversize, duplicates, bad ids fail."""
     import httpx
     from ksi_event_contracts.external_delta_publication_worker import DeltaPublicationPendingPageV1
@@ -598,9 +604,10 @@ def test_discovery_page_rejects_malformed_pages_and_bad_limits(tmp_path):
         base_url="http://127.0.0.1:9", bearer_token="discovery-token"
     )
     try:
-        for bad_limit in (0, 51, -1, True, "50"):
+        bad_limits: tuple[Any, ...] = (0, 51, -1, True, "50")
+        for bad_limit in bad_limits:
             with pytest.raises(DeltaPublicationWorkerError):
-                client.discover_pending(bad_limit)  # type: ignore[arg-type]
+                client.discover_pending(bad_limit)
 
         def _over_limit(request: httpx.Request) -> httpx.Response:
             assert request.url.path == "/v1/internal/delta-publication-uploads"
@@ -635,7 +642,7 @@ def test_discovery_page_rejects_malformed_pages_and_bad_limits(tmp_path):
         client.close()
 
 
-def test_discovery_lists_only_takeable_pending_intents(tmp_path):
+def test_discovery_lists_only_takeable_pending_intents(tmp_path: Path) -> None:
     """Store discovery: pending, in-scope, no-live-lease, unexhausted, current only.
 
     A lapsed lease does NOT hide the intent: a crashed or restarted worker
@@ -742,7 +749,7 @@ def test_discovery_lists_only_takeable_pending_intents(tmp_path):
             "source_coverage_witness_digest": numeric.coverage.canonical_digest(),
         }
 
-        def _create(publication_id, lifetime_seconds=300):
+        def _create(publication_id: str, lifetime_seconds: int = 300) -> None:
             store.request_publication(
                 principal=operator,
                 publication_id=publication_id,
@@ -752,7 +759,8 @@ def test_discovery_lists_only_takeable_pending_intents(tmp_path):
                 **digests,
             )
 
-        for bad_limit in (0, 51, -1, True, "50"):
+        bad_limits: tuple[Any, ...] = (0, 51, -1, True, "50")
+        for bad_limit in bad_limits:
             with pytest.raises(ValueError, match="discovery limit"):
                 store.list_pending_for_worker(worker_principal=worker, limit=bad_limit)
         _create("disc-a")
@@ -866,7 +874,7 @@ def test_discovery_lists_only_takeable_pending_intents(tmp_path):
         fixture.close()
 
 
-def _reconstruction_of(fixture):
+def _reconstruction_of(fixture: Any) -> Any:
     for candidate in (
         getattr(getattr(fixture.app.state, "external_analysis_wiring", None), "facade", None),
     ):
@@ -881,7 +889,7 @@ def _reconstruction_of(fixture):
     raise AssertionError("fixture reconstruction store is unavailable")
 
 
-def test_reproduction_primitive_reproduces_actual_bytes_and_rejects_drift(tmp_path):
+def test_reproduction_primitive_reproduces_actual_bytes_and_rejects_drift(tmp_path: Path) -> None:
     fixture, record, identity, numeric, baseline_path, current_path = _complete_v2_report(
         tmp_path, "repro-primitive"
     )
@@ -964,7 +972,7 @@ def test_reproduction_primitive_reproduces_actual_bytes_and_rejects_drift(tmp_pa
             pytest.fail("oversized output was exposed")
 
         # Stale guard never exposes bytes.
-        def _revoked():
+        def _revoked() -> None:
             raise RuntimeError("REVOKED")
 
         with (
@@ -1018,7 +1026,7 @@ def test_reproduction_primitive_reproduces_actual_bytes_and_rejects_drift(tmp_pa
         fixture.close()
 
 
-def test_full_handshake_lease_input_download_reproduce_observe_publish(tmp_path):
+def test_full_handshake_lease_input_download_reproduce_observe_publish(tmp_path: Path) -> None:
     """End-to-end late-export job over real stores, loopback objects, and routers."""
     import hashlib as _hashlib
     import time
@@ -1105,7 +1113,7 @@ def test_full_handshake_lease_input_download_reproduce_observe_publish(tmp_path)
         attempt = AnalysisExecutionAttemptV2.model_validate(leased.json()["attempt"])
 
         class _Handler(BaseHTTPRequestHandler):
-            def do_GET(self):  # noqa: N802
+            def do_GET(self) -> None:  # noqa: N802
                 if not self.path.startswith("/objects/"):
                     self.send_error(404)
                     return
@@ -1122,7 +1130,7 @@ def test_full_handshake_lease_input_download_reproduce_observe_publish(tmp_path)
                 self.end_headers()
                 self.wfile.write(payload)
 
-            def log_message(self, *_a, **_k):
+            def log_message(self, *_a: Any, **_k: Any) -> None:
                 return
 
         object_server = ThreadingHTTPServer(("127.0.0.1", 0), _Handler)
@@ -1301,7 +1309,7 @@ def test_full_handshake_lease_input_download_reproduce_observe_publish(tmp_path)
                 ExternalObjectCapabilityV1(
                     artifact=MeasurementInputV2(
                         role=c.role,
-                        artifact_id=c.artifact_id,  # type: ignore[arg-type]
+                        artifact_id=c.artifact_id,
                         observed_sha256=c.observed_sha256,
                         observed_size_bytes=c.observed_size_bytes,
                     ),
@@ -1504,7 +1512,7 @@ def test_full_handshake_lease_input_download_reproduce_observe_publish(tmp_path)
         fixture.close()
 
 
-def test_live_run_delta_publication_job_over_loopback_core_and_objects(tmp_path):
+def test_live_run_delta_publication_job_over_loopback_core_and_objects(tmp_path: Path) -> None:
     """Full run_delta_publication_job against live loopback Core + objects.
 
     Real software only: a fresh FastAPI app mounting the new publication and
@@ -1569,7 +1577,7 @@ def test_live_run_delta_publication_job_over_loopback_core_and_objects(tmp_path)
     core_server = None
     core_thread = None
     core_socket = None
-    fixture = None
+    fixture: Any = None
     try:
         fixture, record, identity, numeric, _, _ = _complete_v2_report(tmp_path, "live-run")
         before_json = record.report.model_dump_json()
@@ -1587,7 +1595,7 @@ def test_live_run_delta_publication_job_over_loopback_core_and_objects(tmp_path)
         )
 
         class _Handler(BaseHTTPRequestHandler):
-            def do_GET(self):  # noqa: N802
+            def do_GET(self) -> None:  # noqa: N802
                 if not self.path.startswith("/objects/"):
                     self.send_error(404)
                     return
@@ -1604,7 +1612,7 @@ def test_live_run_delta_publication_job_over_loopback_core_and_objects(tmp_path)
                 self.end_headers()
                 self.wfile.write(payload)
 
-            def log_message(self, *_a, **_k):
+            def log_message(self, *_a: Any, **_k: Any) -> None:
                 return
 
         object_server = ThreadingHTTPServer(("127.0.0.1", 0), _Handler)
@@ -1796,7 +1804,7 @@ def test_live_run_delta_publication_job_over_loopback_core_and_objects(tmp_path)
             fixture.close()
 
 
-def test_drain_recovers_lapsed_lease_with_fresh_generation(tmp_path):
+def test_drain_recovers_lapsed_lease_with_fresh_generation(tmp_path: Path) -> None:
     """Live drain: restart after a crash re-acquires the lapsed lease at gen2.
 
     Human operator creates three publications over HTTP without the driver
@@ -1864,7 +1872,7 @@ def test_drain_recovers_lapsed_lease_with_fresh_generation(tmp_path):
     core_server = None
     core_thread = None
     core_socket = None
-    fixture = None
+    fixture: Any = None
     try:
         fixture, record, identity, numeric, _, _ = _complete_v2_report(tmp_path, "drain-run")
         before_json = record.report.model_dump_json()
@@ -1882,7 +1890,7 @@ def test_drain_recovers_lapsed_lease_with_fresh_generation(tmp_path):
         )
 
         class _Handler(BaseHTTPRequestHandler):
-            def do_GET(self):  # noqa: N802
+            def do_GET(self) -> None:  # noqa: N802
                 if not self.path.startswith("/objects/"):
                     self.send_error(404)
                     return
@@ -1899,7 +1907,7 @@ def test_drain_recovers_lapsed_lease_with_fresh_generation(tmp_path):
                 self.end_headers()
                 self.wfile.write(payload)
 
-            def log_message(self, *_a, **_k):
+            def log_message(self, *_a: Any, **_k: Any) -> None:
                 return
 
         object_server = ThreadingHTTPServer(("127.0.0.1", 0), _Handler)
@@ -2138,7 +2146,7 @@ def test_drain_recovers_lapsed_lease_with_fresh_generation(tmp_path):
             fixture.close()
 
 
-def test_synthetic_4x4_and_2x2_encoder_known_answers():
+def test_synthetic_4x4_and_2x2_encoder_known_answers() -> None:
     """Actual emitted TIFF bytes match sealed numeric known answers.
 
     Proves the owned encoder (reused by the late-export primitive) on the two
@@ -2153,7 +2161,13 @@ def test_synthetic_4x4_and_2x2_encoder_known_answers():
     from ksi_processing_controller.external_delta_raster import prepare_external_delta_raster_v2
     from rasterio.transform import from_origin
 
-    def _case(rows, columns, values, valid_mask, metrics):
+    def _case(
+        rows: int,
+        columns: int,
+        values: list[float],
+        valid_mask: list[bool],
+        metrics: tuple[float, float],
+    ) -> tuple[Any, Any]:
         diff = DiffResult(
             diff_m=np.array(values, dtype=np.float64).reshape(rows, columns),
             valid=np.array(valid_mask, dtype=bool).reshape(rows, columns),

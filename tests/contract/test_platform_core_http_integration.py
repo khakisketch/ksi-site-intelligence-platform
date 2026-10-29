@@ -1206,6 +1206,7 @@ def test_platform_opens_no_extra_journal(tmp_path: Path) -> None:
             "external-result-reviews.jsonl",
             "external-sanitized-display-artifacts.jsonl",
             "external-single-volumes.jsonl",
+            "external-spatial-tasks.jsonl",
             "external-use-decisions.jsonl",
             "external-validation-policy.jsonl",
             "observation-work-orders.jsonl",

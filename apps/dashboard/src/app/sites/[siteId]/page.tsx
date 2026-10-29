@@ -20,6 +20,7 @@ import { CoreApiError } from "@/lib/core-api/client";
 import { SITE_STATUS_LABEL, humanizeApiError } from "@/lib/core-api/labels";
 import { listObservationWorkOrders } from "@/lib/core-api/observation-work-orders";
 import { hasAllPermissions } from "@/lib/core-api/permissions";
+import { whoAmI } from "@/lib/core-api/auth";
 import { listSiteExternalVolumeHistory } from "@/lib/core-api/external-result-workflow";
 import { getSite } from "@/lib/core-api/sites";
 import { listSpatialAssets } from "@/lib/core-api/spatial-assets";
@@ -42,22 +43,16 @@ import { analysisHandoffHref } from "./site-visual-pair";
 import { toPreparedWindowJob } from "@/lib/site-windowed-pixel-viewer";
 import { listWorkAreas } from "@/lib/core-api/workAreas";
 import { formatKoreanDate, formatKoreanDateTime } from "@/lib/datetime";
-import { siteDetailDocumentTitle } from "@/lib/site-detail-title";
+import { SITE_DETAIL_DOCUMENT_TITLE } from "@/lib/site-detail-title";
 import { normalizeSiteTab } from "@/lib/site-epochs";
 import { presentWorkOrder } from "@/app/field/work-order-stage";
 import { parseScopeId, pickFootprintAsset, resolveSelectedAssetRef, resolveSelectedWorkAreaId } from "./site-spatial";
 
 const getSiteForDetail = cache(getSite);
 
-export async function generateMetadata({ params }: { params: Promise<{ siteId: string }> }): Promise<Metadata> {
-  const { siteId } = await params;
-  try {
-    const site = await getSiteForDetail(siteId);
-    return { title: siteDetailDocumentTitle(site.name) };
-  } catch {
-    return { title: "현장 상세 · KSI" };
-  }
-}
+// The document head is outside AccountDisplayBoundary. Never put Site names or
+// identifiers there; use static route metadata so Next remains the sole owner.
+export const metadata: Metadata = { title: SITE_DETAIL_DOCUMENT_TITLE };
 
 function SectionCard({ title, children }: { title: string; children: React.ReactNode }) {
   return <section className="overflow-hidden rounded-lg border border-line bg-surface">
@@ -105,6 +100,19 @@ export default async function SiteDetailPage({
   const canRequestData = canRequestDataResult.status === "fulfilled" && canRequestDataResult.value;
   const allAreas = areasResult.status === "fulfilled" ? areasResult.value.workAreas : [];
   const areas = allAreas.filter((area) => area.status === "ACTIVE");
+  // hasAllPermissions deliberately collapses identity/read failures to false.
+  // Only a verified permission list can distinguish denial from unknown here.
+  let workAreaWrite: "allowed" | "denied" | "unknown" = canTransition ? "allowed" : "unknown";
+  if (!canTransition && tab === "workspace" && areasResult.status === "fulfilled" && areas.length === 0) {
+    try {
+      const principal = await whoAmI();
+      if (Array.isArray(principal.permissions) && principal.permissions.every((permission) => typeof permission === "string")) {
+        workAreaWrite = principal.permissions.includes("SITES_WRITE") ? "allowed" : "denied";
+      }
+    } catch {
+      // Unknown remains closed; do not present an outage as a permission denial.
+    }
+  }
   const areaNames = new Map(allAreas.map((area) => [area.workAreaId, area.name]));
   const siteStartCounts = {
     workAreaCount: areasResult.status === "fulfilled" ? areas.length : null,
@@ -397,6 +405,7 @@ export default async function SiteDetailPage({
       latestExternalReportKnown={historyResult.status === "fulfilled"}
       canCreateWorkOrder={canCreateWorkOrder}
       canEditAoi={canTransition}
+      workOrderRecordOwnsAction={tab === "work-orders"}
       scopedWorkAreaId={headerWorkAreaId}
       scopedAssetRef={headerAssetRef}
       visualContext={visualPair.status === "ready" && selectedWorkAreaId === headerWorkAreaId
@@ -415,6 +424,8 @@ export default async function SiteDetailPage({
           mode={mode}
           areas={areasResult.status === "fulfilled" ? areasResult.value.workAreas : []}
           areasKnown={areasResult.status === "fulfilled"}
+          areasState={areasResult.status === "fulfilled" ? "ready" : areasResult.reason instanceof CoreApiError && areasResult.reason.status === 403 ? "denied" : "unavailable"}
+          canCreateWorkArea={workAreaWrite}
           orders={ordersResult.status === "fulfilled" ? ordersResult.value : null}
           analyses={analysesPage?.items ?? null}
           analysesKnown={analysesPage !== null}
@@ -492,6 +503,15 @@ export default async function SiteDetailPage({
 
       {tab === "work-orders" && <div className="flex flex-col gap-4">
         <SectionCard title="관측 작업 기록">
+          <p className="mb-3 text-[13px] leading-5 text-ink-2">이 현장의 관측 작업과 진행 상태를 확인합니다. 제출된 파일과 검사 상태는 자료에서 볼 수 있습니다.</p>
+          <div className="mb-3 flex flex-wrap items-center gap-2">
+            <Link href={`${sitePath}/spatial-assets`} className="btn">등록 자료 보기</Link>
+            {canCreateWorkOrder && areasResult.status === "fulfilled" && areas.length > 0 && <ResponsiveActionBoundary action="WORK_ORDERS_WRITE" reason="관측 자료 등록은 노트북 이상의 화면에서 진행하세요."><Link href={`${sitePath}/observations/new${headerWorkAreaId ? `?workAreaId=${encodeURIComponent(headerWorkAreaId)}` : ""}`} className="btn btn-primary">관측 자료 등록</Link></ResponsiveActionBoundary>}
+            {areasResult.status === "fulfilled" && areas.length === 0 && <Link href={`${sitePath}/work-areas`} className="btn">작업구역 확인</Link>}
+          </div>
+          {areasResult.status === "rejected" && <p className="mb-3 text-[13px] text-ink-2">작업구역을 확인하지 못했습니다. 등록 전 작업구역을 다시 확인하세요.</p>}
+          {areasResult.status === "fulfilled" && areas.length === 0 && <p className="mb-3 text-[13px] text-ink-2">관측 자료를 등록하려면 먼저 활성 작업구역을 확인하세요.</p>}
+          {!canCreateWorkOrder && <p className="mb-3 text-[13px] text-ink-2">등록 권한이 없거나 확인되지 않았습니다. 현장 담당자에게 권한을 확인하세요.</p>}
           {ordersResult.status === "rejected" ? <ErrorState message="관측 작업을 불러오지 못했습니다." retryable /> : ordersResult.value.length === 0 ? <EmptyState title="등록된 관측 작업이 없습니다" description="새 관측 작업이 생성되면 이 목록에 표시됩니다." /> : <ul className="divide-y divide-line">{ordersResult.value.map((order) => {
             const presentation = presentWorkOrder(order.status, order.executionMode);
             const names = order.workAreaIds.map((id) => areaNames.get(id) || "이름을 확인할 수 없는 구역");

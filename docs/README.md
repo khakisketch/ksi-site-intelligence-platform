@@ -42,6 +42,7 @@ source/verification limits. No cleanup record closes `EXT-VAL` or customer accep
 | `architecture/` | Accepted ADRs and detailed control/source boundaries |
 | `design/` | Active target contracts only when explicitly selected by an ADR/higher authority; subordinate and not runtime proof |
 | `acceptance/` | Acceptance criteria and traceability |
+| [`DEVELOPMENT_HANDOFF.md`](DEVELOPMENT_HANDOFF.md) | Recreate a local development environment; not a task ledger or release claim |
 | `goals/` | Capability-track index and historical plans/handoffs; not current task selection |
 | `.opencode/working-state.md` + task ledger | Active checkout task resume after Git revalidation; does not close/reprioritize product slice |
 | `superpowers/product-state.md` + slice ledger | Current Goal/Milestone/slice; choose work only when no active bounded checkout task exists |

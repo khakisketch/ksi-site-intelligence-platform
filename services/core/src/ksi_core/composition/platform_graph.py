@@ -78,6 +78,7 @@ class PlatformGraph:
     storage: Any
     delta: DeltaPublicationWiring | None = None
     masked: MaskedQuantitativeWiring | None = None
+    spatial_tasks: Any = None
 
 
 def build_platform_graph(
@@ -94,6 +95,7 @@ def build_platform_graph(
     masked_quantitative: MaskedQuantitativeLocalConfig | None = None,
     masked_dsm_byte_reader: Any | None = None,
     site_bootstrap_max_sites_per_org: int = _DEFAULT_MAX_BOOTSTRAP_SITES_PER_ORG,
+    registration_stopped: bool = False,
 ) -> PlatformGraph:
     """Build the external-only graph; never synthesize a missing participant.
 
@@ -102,6 +104,8 @@ def build_platform_graph(
     opens no journal outside that closure.
     """
     del data_dir
+    if type(registration_stopped) is not bool:
+        raise ValueError("registration_stopped must be a bool")
     if evidence_storage is None:
         raise ValueError(
             "platform Core requires evidence_storage — "
@@ -135,11 +139,13 @@ def build_platform_graph(
         journal("sites.jsonl"),
         coordinator=coordinator,
         max_bootstrap_sites_per_org=site_bootstrap_max_sites_per_org,
+        registration_stopped=registration_stopped,
     )
     work_area_store = WorkAreaStore(
         journal("work-areas.jsonl"),
         site_exists=lambda site_id: site_store.get(site_id) is not None,
         coordinator=coordinator,
+        registration_stopped=registration_stopped,
     )
     external_pre_work_order = build_external_pre_work_order_graph(
         journal=journal,
@@ -221,6 +227,16 @@ def build_platform_graph(
         if external_analysis_local_graph is not None
         else None
     )
+    # Replay task state before opening extension descriptors. A corrupt task
+    # journal must not strand masked/delta handles in a graph that never returns.
+    spatial_task_store = _build_spatial_tasks(
+        journal,
+        site_store,
+        work_area_store,
+        observation_work_order_store,
+        external_analysis_wiring,
+        coordinator,
+    )
     data_lane = None
     if spatial_data is not None:
         if (
@@ -295,6 +311,24 @@ def build_platform_graph(
         storage=evidence_storage,
         delta=delta_lane,
         masked=masked_lane,
+        spatial_tasks=spatial_task_store,
+    )
+
+
+def _build_spatial_tasks(
+    journal: Any, sites: Any, areas: Any, work_orders: Any, analysis: Any, coordinator: Any
+) -> Any:
+    if analysis is None:
+        return None
+    from ksi_core.domains.external.spatial_tasks import SpatialTaskStore
+
+    return SpatialTaskStore(
+        journal("external-spatial-tasks.jsonl"),
+        sites=sites,
+        areas=areas,
+        work_orders=work_orders,
+        analysis=analysis.facade,
+        coordinator=coordinator,
     )
 
 

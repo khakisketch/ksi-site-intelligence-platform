@@ -7,6 +7,7 @@ import { createPortal } from "react-dom";
 
 import { SITE_STATUS_LABEL } from "@/lib/core-api/labels";
 
+import { useAccountDisplayLock } from "./AccountDisplayBoundary";
 import { NavIcon } from "./NavIcon";
 import { useSidebarSites } from "./SiteListContext";
 import {
@@ -29,6 +30,7 @@ import {
  * The popover is portalled so the floating panel's overflow cannot clip it.
  */
 export function ViewerSiteNav() {
+  const accountDisplay = useAccountDisplayLock();
   const pathname = usePathname() ?? "";
   const searchParams = useSearchParams();
   const sites = useSidebarSites();
@@ -37,6 +39,7 @@ export function ViewerSiteNav() {
   const activeSection = resolveSiteSection(pathname, searchParams);
   const [open, setOpen] = useState(false);
   const [position, setPosition] = useState<{ top: number; left: number } | null>(null);
+  const [portalTarget, setPortalTarget] = useState<HTMLElement | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const popoverRef = useRef<HTMLDivElement>(null);
@@ -50,7 +53,7 @@ export function ViewerSiteNav() {
       setOpen(false);
     };
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") return;
+      if (accountDisplay?.locked() || event.key !== "Escape") return;
       setOpen(false);
       triggerRef.current?.focus();
     };
@@ -63,7 +66,7 @@ export function ViewerSiteNav() {
       document.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("resize", onViewportChange);
     };
-  }, [open]);
+  }, [accountDisplay, open]);
 
   useEffect(() => {
     if (!open || !position) return;
@@ -79,6 +82,7 @@ export function ViewerSiteNav() {
   const openSwitcher = () => {
     const trigger = triggerRef.current;
     if (!trigger) return;
+    setPortalTarget(trigger.closest<HTMLElement>("[data-account-display-root]") ?? document.body);
     const rect = trigger.getBoundingClientRect();
     setPosition({
       top: Math.max(8, rect.bottom + 6),
@@ -173,7 +177,7 @@ export function ViewerSiteNav() {
         })}
       </nav>
 
-      {open && position && createPortal(
+      {open && position && portalTarget && createPortal(
         <div
           ref={popoverRef}
           id="viewer-site-switcher"
@@ -239,7 +243,7 @@ export function ViewerSiteNav() {
             <span aria-hidden="true">→</span>
           </Link>
         </div>,
-        document.body,
+        portalTarget,
       )}
     </div>
   );

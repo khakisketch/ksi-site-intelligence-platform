@@ -944,6 +944,7 @@ export function SiteMosaicViewport({
               ) : canvasMediaAction}
             </div>
             {canvasMediaHint && <p className="text-[11.5px] leading-5 text-ink-muted">{canvasMediaHint}</p>}
+            {absentOverlayNote && <p className="text-[11.5px] leading-5 text-ink-muted">{absentOverlayNote}</p>}
             {detailsTargetId ? (
               <DetailsPortal targetId={detailsTargetId}>
                 <details className="rounded-lg border border-line bg-surface px-3 py-2 text-[12px] text-ink-2">

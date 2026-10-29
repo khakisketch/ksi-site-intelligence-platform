@@ -346,12 +346,12 @@ def test_loader_rejects_expired_future_and_naive_time(tmp_path: Path) -> None:
         load_quantitative_extension_activation(
             activation_path,
             registry_path,
-            **_pins(now=naive),  # type: ignore[arg-type]
+            **_pins(now=naive),
         )
     assert not is_quantitative_extension_current(
         activation_path,
         registry_path,
-        **_pins(now=naive),  # type: ignore[arg-type]
+        **_pins(now=naive),
     )
 
 
@@ -565,8 +565,8 @@ def test_delta_authority_adapter_rejects_wrong_attempt_shapes(tmp_path: Path) ->
     assert not authority.is_runtime_current(now=_NOW, lease_generation=True)
     assert not authority.is_runtime_current(now=_NOW, lease_generation="3")  # type: ignore[arg-type]
     naive = datetime(2026, 9, 29, 12, 0, 0)
-    assert not authority.is_runtime_current(now=naive)  # type: ignore[arg-type]
-    assert not authority.is_policy_current(policy_digest=_POLICY_DIGEST, now=naive)  # type: ignore[arg-type]
+    assert not authority.is_runtime_current(now=naive)
+    assert not authority.is_policy_current(policy_digest=_POLICY_DIGEST, now=naive)
 
 
 def test_delta_authority_adapter_rejects_masked_purpose_and_revocation(tmp_path: Path) -> None:
@@ -682,11 +682,11 @@ def test_store_authority_path_accepts_real_adapter_and_fails_closed_on_revocatio
     try:
         store = ExternalDeltaPublicationStore(
             journal,
-            source_witness=_Source(),  # type: ignore[arg-type]
-            authority=_delta_authority(activation_path, registry_path),  # type: ignore[arg-type]
-            egress=_Egress(),  # type: ignore[arg-type]
-            byte_store=_Bytes(),  # type: ignore[arg-type]
-            observations=_Observations(),  # type: ignore[arg-type]
+            source_witness=_Source(),
+            authority=_delta_authority(activation_path, registry_path),
+            egress=_Egress(),
+            byte_store=_Bytes(),
+            observations=_Observations(),
             policy=policy,
             clock=lambda: _NOW,
         )

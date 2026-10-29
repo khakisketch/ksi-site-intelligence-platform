@@ -23,21 +23,24 @@ test("빈 조직은 Home에서 거짓 운영 안건 없이 현장 등록 다음 
   test.skip(Boolean(process.env.KSI_DASHBOARD_E2E_BASE_URL), "외부 IdP에는 로컬 빈 조직 계정이 없습니다.");
   await loginToEmptyOrganization(page);
 
-  await expect(page.getByText("아직 등록된 현장이 없습니다", { exact: true })).toBeVisible();
+  await expect(page.getByText("현재 계정에서 볼 수 있는 현장이 없습니다", { exact: true })).toBeVisible();
+  await expect(page.getByText("찾는 현장이 이미 있다면 관리자에게 이 계정의 현장 접근 권한을 확인해 주세요.", { exact: true })).toBeVisible();
   await expect(page.getByRole("link", { name: "현장 등록", exact: true })).toBeVisible();
   await expect(page.getByRole("region", { name: "확인 필요 현장 캐러셀" })).toHaveCount(0);
   await expectNoHorizontalOverflow(page);
 });
 
-test("빈 조직의 현장 등록은 단일 실제 행동으로 제공한다", async ({ page }) => {
+test("빈 현장 목록은 현재 계정의 범위를 설명하고 등록 경로를 제공한다", async ({ page }) => {
   test.skip(Boolean(process.env.KSI_DASHBOARD_E2E_BASE_URL), "외부 IdP에는 로컬 빈 조직 계정이 없습니다.");
   await loginToEmptyOrganization(page);
 
   await page.goto("/sites");
-  const register = page.getByRole("link", { name: "첫 현장 등록하기", exact: true });
+  await expect(page.getByRole("heading", { name: "현재 계정에서 볼 수 있는 현장이 없습니다" })).toBeVisible();
+  await expect(page.getByText("찾는 현장이 이미 있다면 관리자에게 이 계정의 현장 접근 권한을 확인해 주세요.")).toBeVisible();
+  const register = page.getByRole("link", { name: "현장 등록하기", exact: true });
   await expect(register).toBeVisible();
   await expect(register).toHaveAttribute("href", "/sites/new");
-  await expect(page.getByRole("link", { name: "현장 등록", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("link", { name: "현장 등록", exact: true })).toHaveAttribute("href", "/sites/new");
   await expect(page.getByText(/DJI Pilot|KMZ|초기 매핑 비행|두 번째 조사부터 분석/)).toHaveCount(0);
   await expectNoHorizontalOverflow(page);
 });

@@ -111,7 +111,7 @@ class _Evidence:
         self,
         item: EvidenceItem,
         *additional_items: EvidenceItem,
-        coordinator: ExternalAuthorityCurrentnessCoordinator | None = None,
+        coordinator: ExternalAuthorityCurrentnessCoordinator,
     ) -> None:
         self.item = item
         self._items = {candidate.evidence_ref: candidate for candidate in (item, *additional_items)}
@@ -119,6 +119,12 @@ class _Evidence:
 
     def resolve_for_validation(self, evidence_ref: str) -> EvidenceItem | None:
         return self._items.get(evidence_ref)
+
+    def locally_matches(self, evidence_ref: str, item: EvidenceItem) -> bool:
+        return self._items.get(evidence_ref) == item and item.manifest is not None
+
+    def assert_locally_available(self) -> None:
+        pass
 
 
 class _PolicyAuthority(PolicyAuthorityPort):
@@ -371,13 +377,15 @@ def test_validation_uses_resolved_context_and_core_adjudicates_observed_metrics(
 ) -> None:
     item = _evidence()
     registry, policy = _policy_registry(tmp_path)
-    context_authority = _ContextAuthority(_context(item, policy))
+    coordinator = registry.coordinator
+    context_authority = _ContextAuthority(_context(item, policy), coordinator=coordinator)
     store = ExternalEvidenceValidationStore(
         DurableJournal(tmp_path / "validations.jsonl"),
-        evidence=_Evidence(item),
+        evidence=_Evidence(item, coordinator=coordinator),
         policy_registry=registry,
         context_authority=context_authority,
         clock=lambda: NOW,
+        coordinator=coordinator,
     )
 
     issued = store.issue_after_seal(item.evidence_ref, now=NOW)
@@ -464,13 +472,15 @@ def test_analysis_scope_projection_keeps_a_payloadless_rejected_terminal_record(
     """A known validation failure must not disappear behind the display projection."""
     item = _evidence()
     registry, policy = _policy_registry(tmp_path)
+    coordinator = registry.coordinator
     context = _context(item, policy)
     store = ExternalEvidenceValidationStore(
         DurableJournal(tmp_path / "payloadless-rejected.jsonl"),
-        evidence=_Evidence(item),
+        evidence=_Evidence(item, coordinator=coordinator),
         policy_registry=registry,
-        context_authority=_ContextAuthority(context),
+        context_authority=_ContextAuthority(context, coordinator=coordinator),
         clock=lambda: NOW,
+        coordinator=coordinator,
     )
     issued = store.issue_after_seal(item.evidence_ref, now=NOW)
     assert issued.request is not None
@@ -507,13 +517,15 @@ def test_worker_input_exposes_complete_policy_and_exact_byte_identities(tmp_path
     assert item.manifest is not None
     manifest = item.manifest
     registry, policy = _policy_registry(tmp_path)
+    coordinator = registry.coordinator
     store = ExternalEvidenceValidationStore(
         DurableJournal(tmp_path / "validation-input.jsonl"),
-        evidence=_Evidence(item),
+        evidence=_Evidence(item, coordinator=coordinator),
         policy_registry=registry,
-        context_authority=_ContextAuthority(_context(item, policy)),
+        context_authority=_ContextAuthority(_context(item, policy), coordinator=coordinator),
         input_capabilities=_InputCapabilities(),
         clock=lambda: NOW,
+        coordinator=coordinator,
     )
     issued = store.issue_after_seal(item.evidence_ref, now=NOW)
     assert issued.request is not None
@@ -544,12 +556,14 @@ def test_worker_input_exposes_complete_policy_and_exact_byte_identities(tmp_path
 def test_validation_does_not_issue_from_a_declaration_only_context(tmp_path: Path) -> None:
     item = _evidence()
     registry, _ = _policy_registry(tmp_path)
+    coordinator = registry.coordinator
     store = ExternalEvidenceValidationStore(
         DurableJournal(tmp_path / "closed.jsonl"),
-        evidence=_Evidence(item),
+        evidence=_Evidence(item, coordinator=coordinator),
         policy_registry=registry,
-        context_authority=_ContextAuthority(None),
+        context_authority=_ContextAuthority(None, coordinator=coordinator),
         clock=lambda: NOW,
+        coordinator=coordinator,
     )
 
     assert (
@@ -580,23 +594,26 @@ def test_validation_request_replays_without_reasking_current_context_authority(
     item = _evidence()
     registry, policy = _policy_registry(tmp_path)
     path = tmp_path / "restart.jsonl"
-    authority = _ContextAuthority(_context(item, policy))
+    coordinator = registry.coordinator
+    authority = _ContextAuthority(_context(item, policy), coordinator=coordinator)
     issued = ExternalEvidenceValidationStore(
         DurableJournal(path),
-        evidence=_Evidence(item),
+        evidence=_Evidence(item, coordinator=coordinator),
         policy_registry=registry,
         context_authority=authority,
         clock=lambda: NOW,
+        coordinator=coordinator,
     ).issue_after_seal(item.evidence_ref, now=NOW)
     assert issued.request is not None
     authority.withdraw()
 
     reopened = ExternalEvidenceValidationStore(
         DurableJournal(path),
-        evidence=_Evidence(item),
+        evidence=_Evidence(item, coordinator=coordinator),
         policy_registry=registry,
         context_authority=authority,
         clock=lambda: NOW,
+        coordinator=coordinator,
     )
 
     pending = reopened.list_pending(1, organization_id="org-a")
@@ -608,12 +625,14 @@ def test_evidence_heartbeat_clamps_then_reports_the_absolute_deadline(tmp_path: 
     """A lease fence expiry must not hide the request's typed execution deadline."""
     item = _evidence()
     registry, policy = _policy_registry(tmp_path)
+    coordinator = registry.coordinator
     store = ExternalEvidenceValidationStore(
         DurableJournal(tmp_path / "deadline.jsonl"),
-        evidence=_Evidence(item),
+        evidence=_Evidence(item, coordinator=coordinator),
         policy_registry=registry,
-        context_authority=_ContextAuthority(_context(item, policy)),
+        context_authority=_ContextAuthority(_context(item, policy), coordinator=coordinator),
         clock=lambda: NOW,
+        coordinator=coordinator,
     )
     issued = store.issue_after_seal(item.evidence_ref, now=NOW)
     assert issued.request is not None
@@ -655,13 +674,15 @@ def test_withdrawn_context_blocks_a_pending_lease_and_a_terminal_measurement(
     """The historical context anchor must not remain current execution authority."""
     item = _evidence()
     registry, policy = _policy_registry(tmp_path)
-    authority = _ContextAuthority(_context(item, policy))
+    coordinator = registry.coordinator
+    authority = _ContextAuthority(_context(item, policy), coordinator=coordinator)
     store = ExternalEvidenceValidationStore(
         DurableJournal(tmp_path / "withdrawn.jsonl"),
-        evidence=_Evidence(item),
+        evidence=_Evidence(item, coordinator=coordinator),
         policy_registry=registry,
         context_authority=authority,
         clock=lambda: NOW,
+        coordinator=coordinator,
     )
     issued = store.issue_after_seal(item.evidence_ref, now=NOW)
     assert issued.request is not None
@@ -676,13 +697,14 @@ def test_withdrawn_context_blocks_a_pending_lease_and_a_terminal_measurement(
         is EvidenceValidationVerdict.CONTEXT_UNAVAILABLE
     )
 
-    authority = _ContextAuthority(_context(item, policy))
+    authority = _ContextAuthority(_context(item, policy), coordinator=coordinator)
     terminal_store = ExternalEvidenceValidationStore(
         DurableJournal(tmp_path / "withdrawn-terminal.jsonl"),
-        evidence=_Evidence(item),
+        evidence=_Evidence(item, coordinator=coordinator),
         policy_registry=registry,
         context_authority=authority,
         clock=lambda: NOW,
+        coordinator=coordinator,
     )
     terminal_issued = terminal_store.issue_after_seal(item.evidence_ref, now=NOW)
     assert terminal_issued.request is not None
@@ -722,14 +744,18 @@ def test_evidence_admission_enforces_queue_and_tenant_lease_capacity(tmp_path: P
     """An independent validation request cannot bypass the policy envelope."""
     first_item, second_item = _evidence("a"), _evidence("b")
     registry, policy = _policy_registry(tmp_path / "queue", max_queue_depth=1)
+    queue_coordinator = registry.coordinator
     queue_store = ExternalEvidenceValidationStore(
         DurableJournal(tmp_path / "queue" / "validations.jsonl"),
-        evidence=_Evidence(first_item, second_item),
+        evidence=_Evidence(first_item, second_item, coordinator=queue_coordinator),
         policy_registry=registry,
         context_authority=_ContextAuthority(
-            _context(first_item, policy), _context(second_item, policy)
+            _context(first_item, policy),
+            _context(second_item, policy),
+            coordinator=queue_coordinator,
         ),
         clock=lambda: NOW,
+        coordinator=queue_coordinator,
     )
     assert (
         queue_store.issue_after_seal(first_item.evidence_ref, now=NOW).verdict
@@ -741,14 +767,18 @@ def test_evidence_admission_enforces_queue_and_tenant_lease_capacity(tmp_path: P
     )
 
     registry, policy = _policy_registry(tmp_path / "capacity")
+    capacity_coordinator = registry.coordinator
     capacity_store = ExternalEvidenceValidationStore(
         DurableJournal(tmp_path / "capacity" / "validations.jsonl"),
-        evidence=_Evidence(first_item, second_item),
+        evidence=_Evidence(first_item, second_item, coordinator=capacity_coordinator),
         policy_registry=registry,
         context_authority=_ContextAuthority(
-            _context(first_item, policy), _context(second_item, policy)
+            _context(first_item, policy),
+            _context(second_item, policy),
+            coordinator=capacity_coordinator,
         ),
         clock=lambda: NOW,
+        coordinator=capacity_coordinator,
     )
     first = capacity_store.issue_after_seal(first_item.evidence_ref, now=NOW)
     second = capacity_store.issue_after_seal(second_item.evidence_ref, now=NOW)
@@ -787,8 +817,9 @@ def _terminalized_validation(
 ]:
     item = _evidence()
     registry, policy = _policy_registry(tmp_path / "policy")
-    evidence = _Evidence(item)
-    authority = _ContextAuthority(_context(item, policy))
+    coordinator = registry.coordinator
+    evidence = _Evidence(item, coordinator=coordinator)
+    authority = _ContextAuthority(_context(item, policy), coordinator=coordinator)
     path = tmp_path / "validation.jsonl"
     store = ExternalEvidenceValidationStore(
         DurableJournal(path),
@@ -796,6 +827,7 @@ def _terminalized_validation(
         policy_registry=registry,
         context_authority=authority,
         clock=lambda: NOW,
+        coordinator=coordinator,
     )
     issued = store.issue_after_seal(item.evidence_ref, now=NOW)
     assert issued.request is not None
@@ -865,6 +897,7 @@ def test_replay_rejects_a_claim_after_terminal_and_retains_a_legitimate_terminal
         policy_registry=registry,
         context_authority=authority,
         clock=lambda: NOW,
+        coordinator=registry.coordinator,
     )
     assert restarted.record_for_use(
         record.evidence_record_digest or "",
@@ -883,6 +916,7 @@ def test_replay_rejects_a_claim_after_terminal_and_retains_a_legitimate_terminal
             policy_registry=registry,
             context_authority=authority,
             clock=lambda: NOW,
+            coordinator=registry.coordinator,
         )
 
 
@@ -927,6 +961,7 @@ def test_replay_rejects_terminal_replacement_after_a_rehashed_claim(tmp_path: Pa
             policy_registry=registry,
             context_authority=authority,
             clock=lambda: NOW,
+            coordinator=registry.coordinator,
         )
 
 
@@ -960,6 +995,7 @@ def test_replay_rejects_a_heartbeat_that_shortens_a_fenced_lease(tmp_path: Path)
             policy_registry=registry,
             context_authority=authority,
             clock=lambda: NOW,
+            coordinator=registry.coordinator,
         )
 
 
@@ -970,12 +1006,16 @@ def test_expired_unleased_validation_releases_queue_capacity_and_pending_slot(
     now = [NOW]
     first, second = _evidence("a"), _evidence("b")
     registry, policy = _policy_registry(tmp_path / "policy", max_queue_depth=1)
+    coordinator = registry.coordinator
     store = ExternalEvidenceValidationStore(
         DurableJournal(tmp_path / "validation.jsonl"),
-        evidence=_Evidence(first, second),
+        evidence=_Evidence(first, second, coordinator=coordinator),
         policy_registry=registry,
-        context_authority=_ContextAuthority(_context(first, policy), _context(second, policy)),
+        context_authority=_ContextAuthority(
+            _context(first, policy), _context(second, policy), coordinator=coordinator
+        ),
         clock=lambda: now[0],
+        coordinator=coordinator,
     )
     issued = store.issue_after_seal(first.evidence_ref, now=now[0])
     assert issued.request is not None
@@ -995,12 +1035,14 @@ def test_pending_validation_omits_retry_exhausted_lease_after_expiry(tmp_path: P
     registry, policy = _policy_registry(
         tmp_path / "policy", max_retry_attempts=1, max_deadline_seconds=30.0
     )
+    coordinator = registry.coordinator
     store = ExternalEvidenceValidationStore(
         DurableJournal(tmp_path / "validation.jsonl"),
-        evidence=_Evidence(item),
+        evidence=_Evidence(item, coordinator=coordinator),
         policy_registry=registry,
-        context_authority=_ContextAuthority(_context(item, policy)),
+        context_authority=_ContextAuthority(_context(item, policy), coordinator=coordinator),
         clock=lambda: now[0],
+        coordinator=coordinator,
     )
     issued = store.issue_after_seal(item.evidence_ref, now=now[0])
     assert issued.request is not None
@@ -1033,12 +1075,16 @@ def test_pending_validation_omits_expired_records_but_keeps_live_records(tmp_pat
     now = [NOW]
     expired, live = _evidence("a"), _evidence("b")
     registry, policy = _policy_registry(tmp_path / "policy")
+    coordinator = registry.coordinator
     store = ExternalEvidenceValidationStore(
         DurableJournal(tmp_path / "validation.jsonl"),
-        evidence=_Evidence(expired, live),
+        evidence=_Evidence(expired, live, coordinator=coordinator),
         policy_registry=registry,
-        context_authority=_ContextAuthority(_context(expired, policy), _context(live, policy)),
+        context_authority=_ContextAuthority(
+            _context(expired, policy), _context(live, policy), coordinator=coordinator
+        ),
         clock=lambda: now[0],
+        coordinator=coordinator,
     )
     first = store.issue_after_seal(expired.evidence_ref, now=now[0])
     assert first.request is not None
@@ -1067,16 +1113,18 @@ def test_pending_validation_lists_only_the_latest_issuance_per_context_key(
     item = _evidence()
     registry, policy = _policy_registry(tmp_path, max_deadline_seconds=120.0)
     path = tmp_path / "restart.jsonl"
+    coordinator = registry.coordinator
     context_a = _context(item, policy)
     context_b = _context(item, policy, context_id="context-b")
     assert context_a.context_digest != context_b.context_digest
 
     first = ExternalEvidenceValidationStore(
         DurableJournal(path),
-        evidence=_Evidence(item),
+        evidence=_Evidence(item, coordinator=coordinator),
         policy_registry=registry,
-        context_authority=_ContextAuthority(context_a),
+        context_authority=_ContextAuthority(context_a, coordinator=coordinator),
         clock=lambda: NOW,
+        coordinator=coordinator,
     )
     superseded = first.issue_after_seal(item.evidence_ref, now=NOW)
     assert superseded.request is not None
@@ -1087,12 +1135,13 @@ def test_pending_validation_lists_only_the_latest_issuance_per_context_key(
 
     second = ExternalEvidenceValidationStore(
         DurableJournal(path),
-        evidence=_Evidence(item),
+        evidence=_Evidence(item, coordinator=coordinator),
         policy_registry=registry,
         # Both contexts stay historically resolvable for replay; the first
         # entry is the one the store resolves as current.
-        context_authority=_ContextAuthority(context_b, context_a),
+        context_authority=_ContextAuthority(context_b, context_a, coordinator=coordinator),
         clock=lambda: NOW,
+        coordinator=coordinator,
     )
     issued = second.issue_after_seal(item.evidence_ref, now=NOW + timedelta(seconds=30))
     assert issued.request is not None
@@ -1179,16 +1228,17 @@ def test_pending_list_follows_the_context_a_refused_claim_resolved(tmp_path: Pat
     context_b = _context(item, policy, context_id="context-b")
     assert context_a.context_digest != context_b.context_digest
     path = tmp_path / "restart.jsonl"
-    coordinator = ExternalAuthorityCurrentnessCoordinator()
+    coordinator = registry.coordinator
     authority = _SwitchableContextAuthority(coordinator=coordinator)
 
     authority.adopt(context_a)
     first = ExternalEvidenceValidationStore(
         DurableJournal(path),
-        evidence=_Evidence(item),
+        evidence=_Evidence(item, coordinator=coordinator),
         policy_registry=registry,
         context_authority=authority,
         clock=lambda: NOW,
+        coordinator=coordinator,
     )
     record_a = first.issue_after_seal(item.evidence_ref, now=NOW).request
     assert record_a is not None
@@ -1197,10 +1247,11 @@ def test_pending_list_follows_the_context_a_refused_claim_resolved(tmp_path: Pat
     authority.adopt(context_b)
     store = ExternalEvidenceValidationStore(
         DurableJournal(path),
-        evidence=_Evidence(item),
+        evidence=_Evidence(item, coordinator=coordinator),
         policy_registry=registry,
         context_authority=authority,
         clock=lambda: NOW,
+        coordinator=coordinator,
     )
     record_b = store.issue_after_seal(item.evidence_ref, now=NOW + timedelta(seconds=30)).request
     assert record_b is not None
@@ -1246,14 +1297,19 @@ def test_concurrent_fresh_admission_after_expiry_respects_released_queue_boundar
     now = [NOW]
     expired, first, second = _evidence("a"), _evidence("b"), _evidence("c")
     registry, policy = _policy_registry(tmp_path / "policy", max_queue_depth=1)
+    coordinator = registry.coordinator
     store = ExternalEvidenceValidationStore(
         DurableJournal(tmp_path / "validation.jsonl"),
-        evidence=_Evidence(expired, first, second),
+        evidence=_Evidence(expired, first, second, coordinator=coordinator),
         policy_registry=registry,
         context_authority=_ContextAuthority(
-            _context(expired, policy), _context(first, policy), _context(second, policy)
+            _context(expired, policy),
+            _context(first, policy),
+            _context(second, policy),
+            coordinator=coordinator,
         ),
         clock=lambda: now[0],
+        coordinator=coordinator,
     )
     assert (
         store.issue_after_seal(expired.evidence_ref, now=now[0]).verdict
@@ -1283,12 +1339,14 @@ def test_evidence_generation_zero_response_loss_retry_returns_existing_grant(
 ) -> None:
     item = _evidence()
     registry, policy = _policy_registry(tmp_path)
+    coordinator = registry.coordinator
     store = ExternalEvidenceValidationStore(
         DurableJournal(tmp_path / "response-loss.jsonl"),
-        evidence=_Evidence(item),
+        evidence=_Evidence(item, coordinator=coordinator),
         policy_registry=registry,
-        context_authority=_ContextAuthority(_context(item, policy)),
+        context_authority=_ContextAuthority(_context(item, policy), coordinator=coordinator),
         clock=lambda: NOW,
+        coordinator=coordinator,
     )
     issued = store.issue_after_seal(item.evidence_ref, now=NOW)
     assert issued.request is not None
@@ -1310,12 +1368,14 @@ def test_evidence_generation_zero_retry_rejects_foreign_or_expired_acquisition(
 ) -> None:
     item = _evidence()
     registry, policy = _policy_registry(tmp_path)
+    coordinator = registry.coordinator
     store = ExternalEvidenceValidationStore(
         DurableJournal(tmp_path / "response-loss-negative.jsonl"),
-        evidence=_Evidence(item),
+        evidence=_Evidence(item, coordinator=coordinator),
         policy_registry=registry,
-        context_authority=_ContextAuthority(_context(item, policy)),
+        context_authority=_ContextAuthority(_context(item, policy), coordinator=coordinator),
         clock=lambda: NOW,
+        coordinator=coordinator,
     )
     issued = store.issue_after_seal(item.evidence_ref, now=NOW)
     assert issued.request is not None

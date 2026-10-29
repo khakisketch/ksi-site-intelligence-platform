@@ -1027,17 +1027,17 @@ def _run_genuine_chain(
         now=NOW,
     )
     assert identity.mask_binding.observed_sha256 == manifest.observed_sha256
-    issued = calc.issue(
+    issued_calc = calc.issue(
         principal=_operator(),
         request_id="request-1",
         masked_calculation_identity_digest=identity.canonical_digest(),
         idempotency_key="idem-1",
         now=NOW,
     )
-    assert issued.admission.disposition.value == "ADMIT_PROVISIONAL"
-    assert "MASK_ADMITTED" in issued.admission.reason_codes
-    assert any(code.startswith("CHECKPOINT_") for code in issued.admission.reason_codes), (
-        issued.admission.reason_codes
+    assert issued_calc.admission.disposition.value == "ADMIT_PROVISIONAL"
+    assert "MASK_ADMITTED" in issued_calc.admission.reason_codes
+    assert any(code.startswith("CHECKPOINT_") for code in issued_calc.admission.reason_codes), (
+        issued_calc.admission.reason_codes
     )
     attempt = calc.acquire_lease(
         request_id="request-1",

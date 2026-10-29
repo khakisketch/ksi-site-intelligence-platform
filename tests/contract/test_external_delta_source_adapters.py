@@ -9,6 +9,8 @@ import hashlib
 import os
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
+from typing import Any
 from urllib.parse import unquote, urlsplit
 
 import pytest
@@ -30,7 +32,7 @@ from ksi_processing_controller.external_analysis_delta_measurement import (
 )
 
 
-def _adapter(fixture):
+def _adapter(fixture: Any) -> CoreV2DeltaSourceAdapter:
     wiring = fixture.app.state.external_analysis_wiring
     return CoreV2DeltaSourceAdapter(
         intents=wiring.intents,
@@ -40,7 +42,9 @@ def _adapter(fixture):
     )
 
 
-def test_v2_source_resolves_actual_measured_report_and_revokes_on_source_authority_change(tmp_path):
+def test_v2_source_resolves_actual_measured_report_and_revokes_on_source_authority_change(
+    tmp_path: Path,
+) -> None:
     (tmp_path / "core").mkdir(mode=0o700)
     fixture = build_local_analysis_api_fixture(tmp_path / "core")
     try:
@@ -156,6 +160,7 @@ def test_v2_source_resolves_actual_measured_report_and_revokes_on_source_authori
                 wrong = "sha256:" + "0" * 64 if field.endswith("digest") else "foreign"
                 assert source.resolve_current_source(**{**args, field: wrong}) is None
             for context in fixture._retained_contexts:
+                assert context.context_digest is not None
                 fixture.revoke_evidence_context(context.context_digest)
             assert source.resolve_current_source(**args) is None
             assert (
@@ -177,7 +182,15 @@ def test_v2_source_resolves_actual_measured_report_and_revokes_on_source_authori
         fixture.close()
 
 
-def _prove_guarded_publication(tmp_path, fixture, source, witness, measured, attempt, now):
+def _prove_guarded_publication(
+    tmp_path: Path,
+    fixture: Any,
+    source: Any,
+    witness: Any,
+    measured: Any,
+    attempt: Any,
+    now: datetime,
+) -> Any:
     """Generated DSMs -> Core numeric acceptance -> observed actual TIFF -> guarded bytes.
 
     The new signing key is temporary synthetic authority, NOT release issuance.
@@ -356,7 +369,9 @@ def _prove_guarded_publication(tmp_path, fixture, source, witness, measured, att
     return store
 
 
-def test_source_adapter_rejects_unrelated_coordinator_and_non_core_participants(tmp_path):
+def test_source_adapter_rejects_unrelated_coordinator_and_non_core_participants(
+    tmp_path: Path,
+) -> None:
     fixture = build_local_analysis_api_fixture(tmp_path)
     try:
         wiring = fixture.app.state.external_analysis_wiring
@@ -372,14 +387,16 @@ def test_source_adapter_rejects_unrelated_coordinator_and_non_core_participants(
 
 
 @pytest.mark.parametrize("consent", [False, True])
-def test_egress_uses_real_site_consent_and_scope_without_restricting_human_reads(tmp_path, consent):
+def test_egress_uses_real_site_consent_and_scope_without_restricting_human_reads(
+    tmp_path: Path, consent: bool
+) -> None:
     fixture = build_local_analysis_api_fixture(tmp_path, ai_egress_allowed=consent)
     try:
         adapter = CoreDeltaEgressAdapter(sites=fixture.app.state.site_store)
         operator = Principal(
             "human", PrincipalKind.OPERATOR, Role.VIEWER, None, fixture.organization_id
         )
-        args = {
+        args: dict[str, Any] = {
             "organization_id": fixture.organization_id,
             "site_id": fixture.site_id,
             "work_area_id": fixture.work_area_id,

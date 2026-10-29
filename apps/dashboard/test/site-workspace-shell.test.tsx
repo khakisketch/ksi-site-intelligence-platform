@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const mocked = vi.hoisted(() => ({
   site: vi.fn(),
   permissions: vi.fn(),
+  identity: vi.fn(),
   areas: vi.fn(),
   orders: vi.fn(),
   history: vi.fn(),
@@ -17,6 +18,7 @@ const mocked = vi.hoisted(() => ({
 
 vi.mock("@/lib/core-api/sites", () => ({ getSite: mocked.site }));
 vi.mock("@/lib/core-api/permissions", () => ({ hasAllPermissions: mocked.permissions }));
+vi.mock("@/lib/core-api/auth", () => ({ whoAmI: mocked.identity }));
 vi.mock("@/lib/core-api/workAreas", () => ({ listWorkAreas: mocked.areas }));
 vi.mock("@/lib/core-api/observation-work-orders", () => ({ listObservationWorkOrders: mocked.orders }));
 vi.mock("@/lib/core-api/external-result-workflow", () => ({ listSiteExternalVolumeHistory: mocked.history }));
@@ -235,6 +237,7 @@ beforeEach(() => {
     updatedAt: "2026-10-01T00:00:00Z",
   });
   mocked.permissions.mockResolvedValue(false);
+  mocked.identity.mockRejectedValue(new Error("identity unavailable"));
   mocked.areas.mockResolvedValue({ workAreas: [areaFixture()] });
   mocked.orders.mockResolvedValue([]);
   mocked.history.mockResolvedValue({ items: [], nextCursor: null });
@@ -253,11 +256,65 @@ async function renderOverview(searchParams: Record<string, string> = {}) {
 }
 
 describe("workspace shell structure", () => {
+  it("passes a verified empty list and SITES_WRITE to the first action without requesting a projection", async () => {
+    mocked.areas.mockResolvedValue({ workAreas: [] });
+    mocked.permissions.mockImplementation(async (permission: string) => permission === "SITES_WRITE");
+    await renderOverview();
+    const stage = within(screen.getByRole("region", { name: "선택 관측 보기" }));
+    expect(stage.getByRole("link", { name: "작업구역 등록" }).getAttribute("href")).toBe("/sites/site-1/work-areas");
+    const mobileLink = stage.getByRole("link", { name: "작업구역 목록 보기" });
+    expect(mobileLink.getAttribute("href")).toBe("/sites/site-1/work-areas");
+    expect(mobileLink.className).toContain("lg:hidden");
+    expect(stage.getByText(/모바일에서는 작업구역 목록을 볼 수 있습니다.*같은 계정/)).toBeTruthy();
+    expect(mocked.areas).toHaveBeenCalledWith("site-1", { includeArchived: true });
+    expect(mocked.workspace).not.toHaveBeenCalled();
+    expect(stage.queryByText("관측 목록을 확인할 수 없습니다")).toBeNull();
+    const context = screen.getByRole("navigation", { name: "보기 방식" }).closest("[data-workbench-context-bar]");
+    expect(context).toBeTruthy();
+    expect(within(context as HTMLElement).getByText("등록된 작업구역 없음")).toBeTruthy();
+  });
+  it.each([
+    ["denied", { permissions: [] }, "작업구역 등록 권한이 없습니다"],
+    ["unknown", null, "작업구역 등록 권한을 확인하지 못했습니다"],
+  ])("does not treat a fail-closed permission check as confirmed %s", async (_label, identity, text) => {
+    mocked.areas.mockResolvedValue({ workAreas: [] });
+    if (identity) mocked.identity.mockResolvedValue(identity);
+    await renderOverview();
+    const stage = within(screen.getByRole("region", { name: "선택 관측 보기" }));
+    expect(stage.getByText(new RegExp(text))).toBeTruthy();
+    expect(stage.queryByRole("link", { name: "작업구역 등록" })).toBeNull();
+    expect(stage.queryByRole("link", { name: "작업구역 목록 보기" })).toBeNull();
+  });
+  it("shows a denied list separately from a verified empty list", async () => {
+    mocked.areas.mockRejectedValue(new CoreApiError(403, { detail: "denied" }));
+    await renderOverview();
+    const stage = within(screen.getByRole("region", { name: "선택 관측 보기" }));
+    expect(stage.getByText(/작업구역 목록을 조회할 권한이 없습니다/)).toBeTruthy();
+    expect(stage.queryByText("등록된 작업구역이 없습니다")).toBeNull();
+    expect(stage.queryByRole("link", { name: "작업구역 등록" })).toBeNull();
+    const context = screen.getByRole("navigation", { name: "보기 방식" }).closest("[data-workbench-context-bar]");
+    expect(context).toBeTruthy();
+    expect(within(context as HTMLElement).getByText("작업구역 목록 확인 불가")).toBeTruthy();
+  });
+  it("selects an archived-only fallback and verifies write denial independently", async () => {
+    mocked.areas.mockResolvedValue({ workAreas: [{ ...areaFixture(), status: "ARCHIVED" }] });
+    mocked.identity.mockResolvedValue({ permissions: [] });
+    await renderOverview({ workAreaId: "not-in-list" });
+    const stage = within(screen.getByRole("region", { name: "선택 관측 보기" }));
+    expect(stage.getByText(/활성 작업구역이 없습니다/)).toBeTruthy();
+    expect(stage.getByText(/등록 권한이 없습니다/)).toBeTruthy();
+    expect(stage.queryByRole("link", { name: "작업구역 등록" })).toBeNull();
+    expect(mocked.identity).toHaveBeenCalled();
+    expect(mocked.workspace).toHaveBeenCalledWith("site-1", "tiny-1", { limit: 50 });
+  });
   it("does not call an unavailable work-area list an empty comparison", async () => {
     mocked.areas.mockRejectedValue(new CoreApiError(503, { detail: "unavailable" }));
     await renderOverview({ mode: "compare" });
-    expect(screen.getByText("작업구역 목록을 확인하지 못했습니다. 잠시 후 다시 확인하세요. 빈 목록으로 단정하지 않습니다.")).toBeTruthy();
+    expect(screen.getByText("작업구역 목록을 불러오지 못했습니다. 잠시 후 다시 확인하세요.")).toBeTruthy();
     expect(screen.queryByText("비교할 수 있는 관측이 아직 없습니다. 뷰어에서 사유를 확인하세요.")).toBeNull();
+    const context = screen.getByRole("navigation", { name: "보기 방식" }).closest("[data-workbench-context-bar]");
+    expect(context).toBeTruthy();
+    expect(within(context as HTMLElement).getByText("작업구역 목록 확인 불가")).toBeTruthy();
   });
   it.each([
     ["explore", "단일 시점"], ["compare", "두 시점 비교"],

@@ -25,24 +25,40 @@ export function AssetRequestDialog({
   const closeRef = useRef<HTMLButtonElement>(null);
   const uid = useId();
   const titleId = `${uid}-title`;
+  // Focus only moves on an explicit open/close transition. The closed branch
+  // must not run on the initial mount — otherwise every selected-asset detail
+  // steals focus to its request trigger before the reviewer has acted.
+  const wasOpenRef = useRef(false);
 
   useEffect(() => {
     const dialog = dialogRef.current;
     if (!dialog) return;
-    if (open) {
+    const wasOpen = wasOpenRef.current;
+    wasOpenRef.current = open;
+    if (open && !wasOpen) {
       try {
         if (!dialog.open) dialog.showModal();
       } catch {
         // jsdom 등 showModal 미지원 환경 — 렌더는 유지한다.
       }
       closeRef.current?.focus();
-    } else {
+      return;
+    }
+    if (!open && wasOpen) {
       try {
         if (dialog.open) dialog.close();
       } catch {
         // 이미 닫힌 환경.
       }
       triggerRef.current?.focus();
+      return;
+    }
+    if (!open) {
+      try {
+        if (dialog.open) dialog.close();
+      } catch {
+        // 이미 닫힌 환경.
+      }
     }
   }, [open]);
 
@@ -72,6 +88,12 @@ export function AssetRequestDialog({
         aria-labelledby={titleId}
         onClick={(event) => {
           if (event.target === dialogRef.current) setOpen(false);
+        }}
+        onKeyDown={(event) => {
+          // Escape은 가장 위의 이 모달만 닫는다. 버블된 키 입력이 뒤의
+          // 정보 패널까지 닫아 선택 맥락을 잃지 않게 한다. 닫기 자체는
+          // 네이티브 cancel이 맡으며 폼 제출은 만들지 않는다.
+          if (event.key === "Escape") event.stopPropagation();
         }}
         className="m-auto max-h-[calc(100dvh-3rem)] w-[min(640px,calc(100vw-2rem))] overflow-hidden rounded-xl border border-line-strong bg-surface p-0 text-ink-1 backdrop:bg-black/40"
       >

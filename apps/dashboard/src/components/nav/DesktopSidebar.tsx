@@ -10,6 +10,7 @@ import { DESKTOP_NAV_GROUPS } from "./nav-items";
 import { NavIcon } from "./NavIcon";
 import { SidebarSearchTrigger } from "./SidebarSearchTrigger";
 import { SiteContextNav } from "./SiteContextNav";
+import { useSiteListSnapshot } from "./SiteListContext";
 import { resolveSiteId, siteMark, siteShortName, type SidebarSite } from "./site-context";
 
 /** 사이드바에 띄울 실측 건수. 값이 없으면(집계 실패 포함) 배지를 아예 그리지 않는다 —
@@ -114,8 +115,8 @@ function CompactSidebar({
 // 폭은 시안을 따른다: 1280+ 232px · 1024~1279 176px(Console v2 §0). 태블릿 가로에서 본문을 최대한
 // 남기되 마스터·디테일이 유지되는 값이다.
 export function DesktopSidebar({
-  counts,
-  sites = [],
+  counts: initialCounts,
+  sites: initialSites = [],
   userBlock,
 }: {
   counts?: NavCounts;
@@ -125,6 +126,9 @@ export function DesktopSidebar({
    *  layout.tsx 가 넘긴다 — 클라이언트 컴포넌트 안에 서버 컴포넌트를 중첩할 수 없다. */
   userBlock?: React.ReactNode;
 }) {
+  const siteSnapshot = useSiteListSnapshot();
+  const sites = siteSnapshot?.refreshed ? siteSnapshot.sites : initialSites;
+  const counts = siteSnapshot?.refreshed ? { ...initialCounts, sites: sites.length ? { value: sites.length } : undefined } : initialCounts;
   const pathname = usePathname();
   const collapsed = useDesktopNavCollapsed();
   const toggleRef = useRef<HTMLButtonElement>(null);

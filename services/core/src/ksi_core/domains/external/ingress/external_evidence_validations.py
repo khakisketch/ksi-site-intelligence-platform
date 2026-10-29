@@ -86,9 +86,20 @@ class EvidenceValidationPhase(StrEnum):
 
 
 class SealedEvidenceValidationPort(Protocol):
-    """Closed bridge to the sealed external-evidence ledger."""
+    """Local bridge; all authority mutations must hold this shared coordinator.
+
+    ``locally_matches`` and ``assert_locally_available`` perform no external I/O.
+    An adapter cannot safely satisfy this contract by exposing an unrelated lock.
+    """
+
+    @property
+    def coordinator(self) -> ExternalAuthorityCurrentnessCoordinator: ...
 
     def resolve_for_validation(self, evidence_ref: str) -> EvidenceItem | None: ...
+
+    def locally_matches(self, evidence_ref: str, item: EvidenceItem) -> bool: ...
+
+    def assert_locally_available(self) -> None: ...
 
 
 class EvidenceMeasurementContextAuthorityPort(Protocol):
@@ -461,22 +472,28 @@ class ExternalEvidenceValidationStore:
         clock: Callable[[], datetime] | None = None,
         coordinator: ExternalAuthorityCurrentnessCoordinator | None = None,
     ) -> None:
-        if coordinator is not None:
-            for name, dependency in (
-                ("evidence store", evidence),
-                ("validation policy registry", policy_registry),
-            ):
-                if getattr(dependency, "coordinator", None) is not coordinator:
-                    raise ValueError(f"{name} must share currentness coordinator")
-            if context_authority is not None and context_authority.coordinator is not coordinator:
-                raise ValueError("measurement context authority must share currentness coordinator")
+        evidence_coordinator = getattr(evidence, "coordinator", None)
+        if not isinstance(evidence_coordinator, ExternalAuthorityCurrentnessCoordinator):
+            raise ValueError("evidence store must provide a currentness coordinator")
+        selected_coordinator = evidence_coordinator if coordinator is None else coordinator
+        for name, dependency in (
+            ("evidence store", evidence),
+            ("validation policy registry", policy_registry),
+        ):
+            if getattr(dependency, "coordinator", None) is not selected_coordinator:
+                raise ValueError(f"{name} must share currentness coordinator")
+        if (
+            context_authority is not None
+            and context_authority.coordinator is not selected_coordinator
+        ):
+            raise ValueError("measurement context authority must share currentness coordinator")
         self._journal = journal
         self._evidence = evidence
         self._policy_registry = policy_registry
         self._context_authority = context_authority or _NoContextAuthority()
         self._input_capabilities = input_capabilities
         self._clock = clock or (lambda: datetime.now(UTC))
-        self._coordinator = coordinator or ExternalAuthorityCurrentnessCoordinator()
+        self._coordinator = selected_coordinator
         self._records: dict[str, _Record] = {}
         self._natural: dict[tuple[str, str, str], str] = {}
         # Derived cache (never journaled): the generation a refused claim last
@@ -564,6 +581,8 @@ class ExternalEvidenceValidationStore:
             idempotency_key="evidence-seal:" + evidence_ref,
         )
         with self._coordinator.mutation(), self._lock:
+            if not self._evidence.locally_matches(evidence_ref, item):
+                return EvidenceValidationIssueResult(EvidenceValidationVerdict.CONTEXT_UNAVAILABLE)
             existing_id = self._natural.get(natural)
             if existing_id is not None:
                 return EvidenceValidationIssueResult(
@@ -909,10 +928,14 @@ class ExternalEvidenceValidationStore:
         now: datetime,
     ) -> EvidenceValidationMeasurementResult:
         _wire_time(now)
-        with self._lock:
+        with self._coordinator.guarded_read(), self._lock:
             record = self._scoped(validation_id, organization_id)
             if record is None:
                 return EvidenceValidationMeasurementResult(EvidenceValidationVerdict.NOT_FOUND)
+            if not self._evidence.locally_matches(record.evidence_ref, record.item):
+                return EvidenceValidationMeasurementResult(
+                    EvidenceValidationVerdict.CONTEXT_UNAVAILABLE
+                )
             if record.result is not None:
                 if record.result.measurement_payload == payload:
                     return EvidenceValidationMeasurementResult(
@@ -1005,6 +1028,10 @@ class ExternalEvidenceValidationStore:
             record = self._scoped(validation_id, organization_id)
             if record is None:
                 return EvidenceValidationMeasurementResult(EvidenceValidationVerdict.NOT_FOUND)
+            if not self._evidence.locally_matches(record.evidence_ref, record.item):
+                return EvidenceValidationMeasurementResult(
+                    EvidenceValidationVerdict.CONTEXT_UNAVAILABLE
+                )
             if record.result is not None:
                 return EvidenceValidationMeasurementResult(
                     EvidenceValidationVerdict.REJECTED, record.result
@@ -1133,6 +1160,7 @@ class ExternalEvidenceValidationStore:
             policy = self._policy_for(resolved) if resolved is not None else None
             if (
                 resolved is None
+                or not self._evidence.locally_matches(resolved.evidence_ref, snapshot_item)
                 or resolved.item != snapshot_item
                 or resolved.result != snapshot_result
                 or resolved.context != snapshot_context
@@ -1151,7 +1179,8 @@ class ExternalEvidenceValidationStore:
         Read-only projection for a worker capability issuer that already holds
         current launch authority; it grants no use by itself.
         """
-        with self._lock:
+        with self._coordinator.guarded_read(), self._lock:
+            self._evidence.assert_locally_available()
             for record in self._records.values():
                 result = record.result
                 manifest = record.item.manifest
@@ -1164,6 +1193,8 @@ class ExternalEvidenceValidationStore:
                     and result.policy_digest == policy_digest
                     and manifest.evidence_manifest_digest == result.evidence_manifest_digest
                 ):
+                    if not self._evidence.locally_matches(record.evidence_ref, record.item):
+                        return None
                     return record.item.object_key, manifest
         return None
 
@@ -1198,6 +1229,7 @@ class ExternalEvidenceValidationStore:
             policy = self._policy_for(matching)
             if (
                 policy is None
+                or not self._evidence.locally_matches(matching.evidence_ref, matching.item)
                 or policy.policy_digest != policy_digest
                 or not self._policy_registry.locally_current_use_permitted(
                     policy_digest,
@@ -1381,6 +1413,7 @@ class ExternalEvidenceValidationStore:
         """Check an issued lifecycle snapshot without fresh authority lookup."""
         _wire_time(now)
         with self._coordinator.guarded_read(), self._lock:
+            self._evidence.assert_locally_available()
             for lifecycle in lifecycles:
                 matching = next(
                     (
@@ -1399,6 +1432,7 @@ class ExternalEvidenceValidationStore:
                 policy = self._policy_for(matching)
                 if (
                     policy is None
+                    or not self._evidence.locally_matches(matching.evidence_ref, matching.item)
                     or policy.policy_digest != lifecycle.context.policy_digest
                     or not self._policy_registry.locally_current_use_permitted(
                         policy.policy_digest,
@@ -1442,6 +1476,7 @@ class ExternalEvidenceValidationStore:
         """
         _wire_time(now)
         with self._coordinator.guarded_read(), self._lock:
+            self._evidence.assert_locally_available()
             return tuple(self._analysis_fact_is_locally_current(fact, now=now) for fact in facts)
 
     def _analysis_fact_is_locally_current(
@@ -1463,6 +1498,7 @@ class ExternalEvidenceValidationStore:
         policy = self._policy_for(matching)
         return bool(
             policy is not None
+            and self._evidence.locally_matches(matching.evidence_ref, matching.item)
             and policy.policy_digest == fact.context.policy_digest
             and self._policy_registry.locally_current_use_permitted(
                 policy.policy_digest,
@@ -1518,7 +1554,8 @@ class ExternalEvidenceValidationStore:
             return None
         with self._coordinator.guarded_read(), self._lock:
             if (
-                not self._policy_registry.locally_current_use_permitted(
+                not self._evidence.locally_matches(evidence_ref, item)
+                or not self._policy_registry.locally_current_use_permitted(
                     policy_digest, use="EVIDENCE", subjects=(subject,), at=now
                 )
                 or not self._context_authority.is_current(context)
@@ -1639,6 +1676,7 @@ class ExternalEvidenceValidationStore:
         return bool(
             manifest is not None
             and policy is not None
+            and self._evidence.locally_matches(record.evidence_ref, record.item)
             and policy.policy_digest == record.request.policy_digest
             and self._policy_registry.locally_current_use_permitted(
                 record.request.policy_digest,

@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import os
 from datetime import UTC, datetime
+from pathlib import Path
+from typing import Any
 
 import numpy as np
 import pytest
@@ -21,7 +23,7 @@ from ksi_processing_controller.external_analysis_measurement import (
 from test_external_analysis_measurement import _attempt, _identity, _write_dsm
 
 
-def _inputs(tmp_path):
+def _inputs(tmp_path: Path) -> dict[str, Any]:
     baseline = _write_dsm(tmp_path / "baseline.tif", np.full((2, 2), 100.0))
     current = _write_dsm(tmp_path / "current.tif", np.array([[101.0, 99.0], [100.0, 100.0]]))
     identity = _identity(baseline, current)
@@ -36,7 +38,9 @@ def _inputs(tmp_path):
     }
 
 
-def test_actual_source_tiffs_emit_delta_without_changing_any_v2_report_byte(tmp_path):
+def test_actual_source_tiffs_emit_delta_without_changing_any_v2_report_byte(
+    tmp_path: Path,
+) -> None:
     inputs = _inputs(tmp_path)
     original = measure_external_relative_volume_v2(**inputs)
     assert isinstance(original, RelativeVolumeCalculationReportV2)
@@ -58,7 +62,9 @@ def test_actual_source_tiffs_emit_delta_without_changing_any_v2_report_byte(tmp_
         os.fstat(descriptor)
 
 
-def test_derived_output_cap_failure_is_separate_from_the_numeric_result(tmp_path):
+def test_derived_output_cap_failure_is_separate_from_the_numeric_result(
+    tmp_path: Path,
+) -> None:
     inputs = _inputs(tmp_path)
     original = measure_external_relative_volume_v2(**inputs)
     with measure_external_relative_volume_with_delta_v2(
@@ -71,7 +77,7 @@ def test_derived_output_cap_failure_is_separate_from_the_numeric_result(tmp_path
         assert measured.delta_failure_code == "DELTA_RASTER_OUTPUT_UNAVAILABLE"
 
 
-def test_mismatched_original_bytes_never_produce_a_delta(tmp_path):
+def test_mismatched_original_bytes_never_produce_a_delta(tmp_path: Path) -> None:
     inputs = _inputs(tmp_path)
     _write_dsm(inputs["current_path"], np.full((2, 2), 500.0))
     with measure_external_relative_volume_with_delta_v2(
@@ -83,10 +89,10 @@ def test_mismatched_original_bytes_never_produce_a_delta(tmp_path):
         assert measured.delta is None
 
 
-def test_explicit_currentness_loss_exposes_no_private_bytes(tmp_path):
+def test_explicit_currentness_loss_exposes_no_private_bytes(tmp_path: Path) -> None:
     inputs = _inputs(tmp_path)
 
-    def revoked():
+    def revoked() -> None:
         raise RuntimeError("PUBLICATION_AUTHORITY_REVOKED")
 
     with (
@@ -101,7 +107,9 @@ def test_explicit_currentness_loss_exposes_no_private_bytes(tmp_path):
 
 
 @pytest.mark.parametrize("cap", [True, 0, 1_000_001])
-def test_delta_policy_cannot_exceed_the_original_execution_envelope(tmp_path, cap):
+def test_delta_policy_cannot_exceed_the_original_execution_envelope(
+    tmp_path: Path, cap: bool | int
+) -> None:
     with (
         pytest.raises(ValueError, match="Core-authorized"),
         measure_external_relative_volume_with_delta_v2(

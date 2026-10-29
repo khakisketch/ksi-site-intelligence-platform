@@ -993,7 +993,7 @@ class _LoopbackPresignedStorage:
         self._origin = origin.rstrip("/")
         self._root = root
 
-    def presigned_get(self, object_key: str, *, ttl) -> str:
+    def presigned_get(self, object_key: str, *, ttl: int) -> str:
         from urllib.parse import quote as _quote
 
         _ = ttl
@@ -1507,7 +1507,7 @@ def test_masked_workflow_rejects_runtime_envelope_mismatch(tmp_path: Path) -> No
             calls.append("dispatch")
             return real_dispatch(*args, **kwargs)
 
-        _worker_mod.dispatch_masked_execution_v3 = _spy_dispatch  # type: ignore[assignment]
+        _worker_mod.dispatch_masked_execution_v3 = _spy_dispatch
         bad_client = MaskedWorkflowCoreClient(
             base_url=core_origin, bearer_token="synthetic-worker", transport=None
         )
@@ -1525,7 +1525,7 @@ def test_masked_workflow_rejects_runtime_envelope_mismatch(tmp_path: Path) -> No
             )
         finally:
             bad_client.close()
-            _worker_mod.dispatch_masked_execution_v3 = real_dispatch  # type: ignore[assignment]
+            _worker_mod.dispatch_masked_execution_v3 = real_dispatch
         assert result_a == "FAILED", result_a
         assert calls == [], "native dispatch must not run on runtime mismatch"
         assert not list((tmp_path / "worker-pin").rglob("*.tif")), "no bytes may stage"
@@ -1552,7 +1552,7 @@ def test_masked_workflow_rejects_runtime_envelope_mismatch(tmp_path: Path) -> No
             calls2.append("dispatch")
             raise AssertionError("native dispatch must not run on tampered caps")
 
-        _worker_mod.dispatch_masked_execution_v3 = _no_native  # type: ignore[assignment]
+        _worker_mod.dispatch_masked_execution_v3 = _no_native
         tamper_client = MaskedWorkflowCoreClient(
             base_url=core_origin, bearer_token="synthetic-worker", transport=None
         )
@@ -1568,7 +1568,7 @@ def test_masked_workflow_rejects_runtime_envelope_mismatch(tmp_path: Path) -> No
                     }
                 )
 
-            tamper_client.fetch_dsm_input = _tampered_fetch  # type: ignore[assignment]
+            tamper_client.fetch_dsm_input = _tampered_fetch  # type: ignore[method-assign]
             result = run_masked_calculation_job(
                 config=good_config,
                 core_client=tamper_client,
@@ -1579,7 +1579,7 @@ def test_masked_workflow_rejects_runtime_envelope_mismatch(tmp_path: Path) -> No
             )
         finally:
             tamper_client.close()
-            _worker_mod.dispatch_masked_execution_v3 = real_dispatch  # type: ignore[assignment]
+            _worker_mod.dispatch_masked_execution_v3 = real_dispatch
         assert result == "FAILED", result
         assert calls2 == [], "native dispatch must not run on tampered caps"
         detail2 = operator.get(f"{CALC_BASE}/masked-request-tamper")
@@ -1708,7 +1708,7 @@ def test_masked_workflow_posts_inspection_failure_best_effort(tmp_path: Path) ->
                 posted.append({"mask_child_id": mask_child_id, **kwargs})
                 raise MaskedWorkflowWorkerError("CORE_HTTP_404")
 
-            worker_client.fail_inspection = _fail_404  # type: ignore[assignment]
+            worker_client.fail_inspection = _fail_404  # type: ignore[method-assign]
             result = run_mask_inspection_job(
                 config=config,
                 core_client=worker_client,
@@ -1753,7 +1753,7 @@ def test_masked_workflow_posts_inspection_failure_best_effort(tmp_path: Path) ->
             def _fail_ok(mask_child_id: str, **kwargs: Any) -> None:
                 posted2.append({"mask_child_id": mask_child_id, **kwargs})
 
-            worker_client2.fail_inspection = _fail_ok  # type: ignore[assignment]
+            worker_client2.fail_inspection = _fail_ok  # type: ignore[method-assign]
             result2 = run_mask_inspection_job(
                 config=config,
                 core_client=worker_client2,
@@ -1866,7 +1866,7 @@ def test_masked_workflow_posts_inspection_failure_best_effort(tmp_path: Path) ->
             def _fail_never(mask_child_id: str, **kwargs: Any) -> None:
                 posted3.append({"mask_child_id": mask_child_id, **kwargs})
 
-            wrong_client.fail_inspection = _fail_never  # type: ignore[assignment]
+            wrong_client.fail_inspection = _fail_never  # type: ignore[method-assign]
             result3 = run_mask_inspection_job(
                 config=config,
                 core_client=wrong_client,
