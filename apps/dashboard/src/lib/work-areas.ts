@@ -1,14 +1,6 @@
 import type { Tone } from "@/lib/core-api/labels";
 import type { AoiVertex, WorkArea } from "@/lib/core-api/types";
-
-/**
- * BFF 계정 연속성 가드의 거부 코드 — `@/lib/core-api/work-order-continuity`의
- * `ACCOUNT_CONTINUITY_MISMATCH` 와 같은 값이어야 한다. 공유 파일을 직접
- * import하지 않는 이유: 이 모듈은 클라이언트 패널도 import하므로 server-only인
- * 공유 파일을 끌어올 수 없다. 일치는 `work-area-submit-outcome.test.ts`의
- * pin 테스트가 고정한다.
- */
-const ACCOUNT_CONTINUITY_MISMATCH_CODE = "ACCOUNT_CONTINUITY_MISMATCH";
+import { ACCOUNT_CONTINUITY_MISMATCH as ACCOUNT_CONTINUITY_MISMATCH_CODE } from "@/lib/account-continuity-mismatch";
 
 /**
  * 작업구역 화면의 **순수 판정**(M4-C) — 렌더링에서 떼어내 테스트 가능하게 둔다.
@@ -190,8 +182,8 @@ export function classifyWorkAreaSubmitOutcome(input: {
     return { kind: "definiteFailure", code };
   }
   // BFF 계정 연속성 가드가 Core 호출 전에 끊었으므로 이 요청은 쓰지 않았다 —
-  // 다만 첫 불명은 여전히 미확인이므로 패널은 남긴다. 공유 파일의 상수와 같은
-  // 값임이 pin 테스트로 고정된다.
+  // 다만 첫 불명은 여전히 미확인이므로 패널은 남긴다. 공유 모듈의 상수를 직접
+  // 쓰며, 값 일치는 pin 테스트로 고정된다.
   if (status === 409 && code === ACCOUNT_CONTINUITY_MISMATCH_CODE) {
     return { kind: "definiteFailure", code };
   }

@@ -17,6 +17,7 @@ import { SiteRegistrationStorageGate } from "./SiteRegistrationStorageGate";
 import { SiteRegistrationRecoveryGuidance } from "./SiteRegistrationRecoveryGuidance";
 import { buildDataResidencyInput, type EgressChoice } from "@/lib/data-residency";
 import { isConvexPolygon } from "@/lib/geometry";
+import { isAccountContinuityMismatch } from "@/lib/account-continuity-mismatch";
 import type { SiteRegistrationMode } from "@/lib/core-api/permissions";
 import {
   buildSitePostAttempt,
@@ -835,7 +836,7 @@ export function SiteRegistrationOnlyWizard({
         return;
       }
       if (res.status === 409) {
-        if (body.code === "ACCOUNT_CONTINUITY_MISMATCH") {
+        if (isAccountContinuityMismatch(res.status, body)) {
           // 다른 계정 차단 — BFF가 Core POST 없이 끊은 상태다. 입력·요청 키는
           // 그대로 두고, 원래 계정 복귀 또는 명시적 현재-계정 재시작만 받는다.
           setContinuityBlocked(true);
@@ -1173,7 +1174,7 @@ export function SiteRegistrationOnlyWizard({
         return;
       }
       const body = await parseJsonSafe(res);
-      if (res.status === 409 && body.code === "ACCOUNT_CONTINUITY_MISMATCH") {
+      if (isAccountContinuityMismatch(res.status, body)) {
         // 다른 계정 차단 — BFF가 Core POST 없이 끊은 상태다. legacy는 siteId가
         // 전역 유일이라 별도 현장이 생기지 않지만, 같은 이유로 재시도하지 않는다.
         postAttemptRef.current = previousAttempt;

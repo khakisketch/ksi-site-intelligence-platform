@@ -19,6 +19,7 @@ import { StateBadge } from "@/components/ui/StatusBadge";
 import { COMPARISON_ZONE_CRS, toZonePolygon } from "@/lib/comparison-submit";
 import { readableApiError } from "@/lib/core-api/labels";
 import { parseJsonSafe } from "@/lib/http";
+import { isAccountContinuityMismatch } from "@/lib/account-continuity-mismatch";
 import { formatKoreanDateTime } from "@/lib/datetime";
 import { toDisplayVertices, type DisplayVerticesResult } from "@/lib/geo/display-geometry";
 import {
@@ -1455,7 +1456,7 @@ export function WorkAreaPanel({
       );
       const body = await parseJsonSafe<WorkAreaResponse & { code?: string }>(response);
       if (!current()) return;
-      if (response.status === 409 && body.code === "ACCOUNT_CONTINUITY_MISMATCH") {
+      if (isAccountContinuityMismatch(response.status, body)) {
         settle("rejected");
         setArchiveError({ areaId: area.workAreaId, message: "계정이 바뀌어 이번 보관 요청을 보내지 않았습니다. 이전 요청의 결과는 별도로 목록에서 확인하세요." });
         recheckIdentity.current?.();

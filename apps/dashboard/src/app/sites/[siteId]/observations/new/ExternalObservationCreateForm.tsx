@@ -6,6 +6,7 @@ import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 
 import { ResponsiveActionBoundary } from "@/components/responsive/ResponsiveActionBoundary";
 import type { TemporalCoherencePolicy } from "@/lib/core-api/types";
+import { isAccountContinuityMismatch } from "@/lib/account-continuity-mismatch";
 
 type WorkAreaOption = { workAreaId: string; name: string };
 
@@ -169,14 +170,11 @@ export function ExternalObservationCreateForm({
         signal: controller.signal,
       });
       const value: unknown = await response.json().catch(() => null);
-      const responseCode = value && typeof value === "object" && "code" in value
-        ? String((value as { code?: unknown }).code ?? "")
-        : "";
       // 계정이 바뀐 같은 키 재시도는 서버로 나가지 않고 여기서 끊긴다. 원래
       // 키·내용을 버리면 중복 등록으로 이어지므로 동결을 유지하고, 원래 계정으로
       // 돌아가 같은 요청으로 다시 시도하라는 안내를 준다. 이는 중복 방지 가드이며
       // Core 권한·범위 판단을 대신하지 않는다.
-      if (response.status === 409 && responseCode === "ACCOUNT_CONTINUITY_MISMATCH") {
+      if (isAccountContinuityMismatch(response.status, value)) {
         if (active.current && submitAbort.current === controller) {
           setError("계정이 바뀌어 같은 요청을 다시 보내지 않았습니다. 이전 요청이 처리되었는지는 알 수 없습니다. 입력과 요청은 이 화면에 그대로 있습니다. 다른 탭에서 원래 계정으로 다시 로그인한 뒤 이 화면에서 같은 요청으로 다시 시도하세요. 먼저 작업 목록에서 원래 요청의 작업이 이미 만들어졌는지 확인하세요. 새로고침하면 입력과 요청이 사라집니다.");
         }
