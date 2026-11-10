@@ -2075,11 +2075,17 @@ export function AnalysisRequestPanel({
           : "작업구역·관측 목록을 확인할 수 없어 이 구역의 분석 후보를 보여줄 수 없습니다. 후보가 없다는 뜻이 아닙니다. 목록을 다시 불러온 뒤 이어가세요."}
       </p>
       <div className="mt-1 text-[12.5px] leading-5 text-ink-2">{listFailureDetails}</div>
-      <div className="mt-2.5 flex flex-wrap gap-2">
+      <div className="mt-2.5 flex flex-wrap items-center gap-x-4 gap-y-2">
         <button type="button" className="btn min-h-11" onClick={() => router.refresh()}>목록 다시 불러오기</button>
-        <Link className="btn min-h-11" href={`/sites/${encodeURIComponent(siteId)}/spatial-assets?workAreaId=${encodeURIComponent(workAreaId)}`}>등록 자료와 검사 상태 확인</Link>
-        <Link className="btn min-h-11" href={`/sites/${encodeURIComponent(siteId)}?workAreaId=${encodeURIComponent(workAreaId)}`}>작업공간으로 돌아가기</Link>
-        {visualReturnHref && <Link className="btn min-h-11" href={visualReturnHref}>독립 보기로 돌아가기</Link>}
+        <p className="text-[12.5px] leading-5 text-ink-2">
+          또는 <Link className="font-semibold text-accent-text underline underline-offset-4" href={`/sites/${encodeURIComponent(siteId)}/spatial-assets?workAreaId=${encodeURIComponent(workAreaId)}`}>등록 자료와 검사 상태 확인</Link>
+          {" · "}
+          <Link className="font-semibold text-accent-text underline underline-offset-4" href={`/sites/${encodeURIComponent(siteId)}?workAreaId=${encodeURIComponent(workAreaId)}`}>작업공간으로 돌아가기</Link>
+          {visualReturnHref && (<>
+            {" · "}
+            <Link className="font-semibold text-accent-text underline underline-offset-4" href={visualReturnHref}>독립 보기로 돌아가기</Link>
+          </>)}
+        </p>
       </div>
     </div>
   );
@@ -2209,10 +2215,12 @@ export function AnalysisRequestPanel({
           {listFailureDetails}
           <p className="mt-0.5">목록을 다시 불러오면 확인된 범위에서 이어갈 수 있습니다. 보류 중인 요청이 있으면 같은 요청 식별자로 다시 확인할 수 있습니다.</p>
           <button type="button" className="btn mt-1.5 min-h-10" onClick={() => router.refresh()}>목록 다시 불러오기</button>
-          <nav className="mt-2 flex flex-wrap gap-2" aria-label="목록 조회 불가 시 다음 확인">
-            <Link className="btn min-h-11" href={`/sites/${encodeURIComponent(siteId)}/spatial-assets${workAreaId ? `?workAreaId=${encodeURIComponent(workAreaId)}` : ""}`}>등록 자료 보기</Link>
-            <Link className="btn min-h-11" href={`/sites/${encodeURIComponent(siteId)}${workAreaId ? `?workAreaId=${encodeURIComponent(workAreaId)}` : ""}`}>현장 현황 보기</Link>
-          </nav>
+          <p className="mt-1.5">
+            또는 <Link className="font-semibold text-accent-text underline underline-offset-4" href={`/sites/${encodeURIComponent(siteId)}/spatial-assets${workAreaId ? `?workAreaId=${encodeURIComponent(workAreaId)}` : ""}`}>등록 자료 보기</Link>
+            {" · "}
+            <Link className="font-semibold text-accent-text underline underline-offset-4" href={`/sites/${encodeURIComponent(siteId)}${workAreaId ? `?workAreaId=${encodeURIComponent(workAreaId)}` : ""}`}>현장 현황 보기</Link>
+            에서 범위를 먼저 확인하세요.
+          </p>
         </div>
       )}
       {showCatalogInspect && catalogInspectBlock}
@@ -2356,10 +2364,12 @@ export function AnalysisRequestPanel({
       <p className="text-[13px] font-bold">분석 이력을 확인할 수 없습니다</p>
       <p className="mt-1 text-[12.5px] leading-5 text-ink-2">{listsState?.historyMessage ?? "현장 변화 분석 이력을 불러오지 못했습니다."}</p>
       {(listsState?.history === "failed" || listsState?.history === "unconfirmed") && <div className="mt-2"><button type="button" className="btn min-h-11" disabled={listLoading || (historyRetryWait ?? 0) > 0} onClick={() => void refreshAnalyses()}>{(historyRetryWait ?? 0) > 0 ? `${historyRetryWait}초 후 다시 시도` : listLoading ? "이력 불러오는 중" : "이력 다시 불러오기"}</button></div>}
-      {listsState?.history === "unconfirmed" && <nav className="mt-2 flex flex-wrap gap-2" aria-label="이력 조회 불가 시 다음 확인">
-        <Link className="btn min-h-11" href={workAreaId ? `/sites/${encodeURIComponent(siteId)}/spatial-assets?workAreaId=${encodeURIComponent(workAreaId)}` : `/sites/${encodeURIComponent(siteId)}/spatial-assets`}>등록 자료 보기</Link>
-        <Link className="btn min-h-11" href={workAreaId ? `/sites/${encodeURIComponent(siteId)}?workAreaId=${encodeURIComponent(workAreaId)}` : `/sites/${encodeURIComponent(siteId)}`}>현장 현황 보기</Link>
-      </nav>}
+      {listsState?.history === "unconfirmed" && <p className="mt-2 text-[12.5px] leading-5 text-ink-2">
+        등록 자료나 현장 현황에서 범위를 먼저 확인할 수 있습니다.{" "}
+        <Link className="font-semibold text-accent-text underline underline-offset-4" href={workAreaId ? `/sites/${encodeURIComponent(siteId)}/spatial-assets?workAreaId=${encodeURIComponent(workAreaId)}` : `/sites/${encodeURIComponent(siteId)}/spatial-assets`}>등록 자료 보기</Link>
+        {" · "}
+        <Link className="font-semibold text-accent-text underline underline-offset-4" href={workAreaId ? `/sites/${encodeURIComponent(siteId)}?workAreaId=${encodeURIComponent(workAreaId)}` : `/sites/${encodeURIComponent(siteId)}`}>현장 현황 보기</Link>
+      </p>}
     </div>
   );
 

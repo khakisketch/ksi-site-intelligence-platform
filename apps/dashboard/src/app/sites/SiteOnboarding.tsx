@@ -16,7 +16,7 @@ export function SiteOnboarding({
   availability: SiteRegistrationAvailability;
 }) {
   return (
-    <section className="mx-auto flex w-full max-w-3xl flex-col items-center gap-5 py-10 text-center">
+    <section className="mx-auto flex min-h-[50vh] w-full max-w-3xl flex-col items-center justify-center gap-5 py-10 text-center">
       <div className="flex flex-col items-center gap-1.5">
         <h2 className="text-[22px] font-bold tracking-tight break-keep">
           현재 계정에서 볼 수 있는 현장이 없습니다
