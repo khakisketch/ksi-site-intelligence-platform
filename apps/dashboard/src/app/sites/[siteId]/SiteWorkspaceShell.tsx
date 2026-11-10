@@ -623,7 +623,7 @@ export function SiteWorkspaceShell({
     layerParam: "visualAAssetRef" | "visualBAssetRef" | "baselineAssetRef" | "currentAssetRef",
     shared: ReactNode,
   ) => (
-    <div data-workbench-pane className="min-w-0">
+    <div data-workbench-pane className="flex min-w-0 flex-col">
       <div data-workbench-pane-controls className="flex min-w-0 shrink-0 flex-col gap-y-1">
         <div className="flex min-w-0 items-center gap-x-2">
           <span aria-hidden="true" className="flex h-6 min-w-6 shrink-0 items-center justify-center rounded bg-sunk px-1 text-[11px] font-bold">{badge}</span>
@@ -644,6 +644,7 @@ export function SiteWorkspaceShell({
         )}
       </div>
       {shared ? null : (
+      <div className="flex min-h-[280px] min-w-0 flex-1 flex-col md:min-h-[360px]">
       <SiteWindowedPixelViewer
         siteId={facts.siteId}
         workAreaId={selected!.workAreaId}
@@ -664,6 +665,7 @@ export function SiteWorkspaceShell({
         showAbsentExtentCanvas
         detailsTargetId="workspace-inspector-details"
       />
+      </div>
       )}
     </div>
   );
@@ -1158,7 +1160,7 @@ export function SiteWorkspaceShell({
               </div>
             )}
             {comparisonReady && (
-              <div className="grid min-w-0 grid-cols-1 gap-2 md:grid-cols-2 md:gap-0 md:divide-x md:divide-line">
+              <div className="grid min-w-0 grid-cols-1 items-stretch gap-2 md:grid-cols-2 md:gap-0 md:divide-x md:divide-line">
                 {pairPane("1",
                   pairSideSelect("baselineAssetRef", "기준 자료", baselineFact!.assetRef, compareOptions, "기준 자료 선택"),
                   baselineFact!, viewerLayersForEpoch(catalogAssets, baselineFact!.observationEpochId), "windowed-baseline", "baselineAssetRef", jobsSharedBar)}
@@ -1169,7 +1171,7 @@ export function SiteWorkspaceShell({
             )}
             {expiredOrderedNotice}
             {visualReady && (
-              <div className="grid min-w-0 grid-cols-1 gap-2 md:grid-cols-2 md:gap-0 md:divide-x md:divide-line">
+              <div className="grid min-w-0 grid-cols-1 items-stretch gap-2 md:grid-cols-2 md:gap-0 md:divide-x md:divide-line">
                 {pairPane("A",
                   pairSideSelect("visualAAssetRef", "관측 A", visualAFact!.assetRef, visualOptions, "관측 A 선택"),
                   visualAFact!, visualLayersForExactSubmission(catalogAssets, visualAFact!), "windowed-visual-a", "visualAAssetRef", jobsSharedBar)}
@@ -1183,7 +1185,7 @@ export function SiteWorkspaceShell({
           </>
         )}
         {areasKnown && selected && !comparisonReady && !visualReady && catalogStatus === null && (visualOptions.length >= 2 || compareOptions.length >= 2) && (
-          <div className="grid min-w-0 grid-cols-1 gap-2 md:grid-cols-2 md:gap-0 md:divide-x md:divide-line">
+          <div className="grid min-w-0 grid-cols-1 items-stretch gap-2 md:grid-cols-2 md:gap-0 md:divide-x md:divide-line">
             {visualOptions.length >= 2 ? (
               <>
                 {pairPromptPane("A",

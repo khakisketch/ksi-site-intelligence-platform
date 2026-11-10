@@ -98,20 +98,23 @@ function RecordCard({ item, sitePath, lead = false, pairLine = null, pairUnknown
         <p className="mt-1 text-[12px] leading-5 text-ink-2">
           {suitabilityLimitCopy(item)} 이 값은 물량 정확도 보증·측량 승인·정산 근거가 아닙니다.
         </p>
-        {metrics.uncertaintyM3 === null ? (
-          <p className="mt-1 text-[12px] leading-5 text-ink-2">
-            불확실성 미기록 — 기록된 값이 없으므로 0으로 볼 수 없습니다. 검사점 평가와 별개입니다.
+        <details className="mt-1 text-[12px] leading-5 text-ink-2">
+          <summary className="tap-target cursor-pointer font-semibold text-ink-muted">기록 한계 확인</summary>
+          {metrics.uncertaintyM3 === null ? (
+            <p className="mt-1">
+              불확실성 미기록 — 기록된 값이 없으므로 0으로 볼 수 없습니다. 검사점 평가와 별개입니다.
+            </p>
+          ) : typeof metrics.uncertaintyM3 === "number" && Number.isFinite(metrics.uncertaintyM3) ? (
+            <p className="num mt-1 break-words">
+              {`불확실성 ±${formatVolumeM3(metrics.uncertaintyM3)} m³ (기록값)`}
+            </p>
+          ) : null}
+          <p className="mt-1">
+            이 화면은 기록된 값을 옮긴 것이며 다시 계산하지 않습니다. 계산에 쓰인 자료·조건·근거는 분석 기록에 있습니다.
           </p>
-        ) : typeof metrics.uncertaintyM3 === "number" && Number.isFinite(metrics.uncertaintyM3) ? (
-          <p className="num mt-1 break-words text-[12px] leading-5 text-ink-2">
-            {`불확실성 ±${formatVolumeM3(metrics.uncertaintyM3)} m³ (기록값)`}
-          </p>
-        ) : null}
+        </details>
       </>
     )}
-    <p className="mt-1 text-[12px] leading-5 text-ink-2">
-      이 화면은 기록된 값을 옮긴 것이며 다시 계산하지 않습니다. 계산에 쓰인 자료·조건·근거는 분석 기록에 있습니다.
-    </p>
     <p className="mt-1">
       <Link href={`${sitePath}/analysis?workAreaId=${encodeURIComponent(item.workAreaId)}&analysisId=${encodeURIComponent(item.analysisId)}${visualQuery}`} className="tap-target inline-block text-[12px] underline">자료·근거와 검토 보기</Link>
     </p>
@@ -251,18 +254,21 @@ export function SiteWorkspaceResults({
             <p className="mt-1 text-[12px] leading-5 text-ink-2">
               {suitabilityLimitCopy(explicitReady)} 이 값은 물량 정확도 보증·측량 승인·정산 근거가 아닙니다.
             </p>
-            {explicitReady.result.metrics.uncertaintyM3 === null ? (
-              <p className="mt-1 text-[12px] leading-5 text-ink-2">
-                불확실성 미기록 — 기록된 값이 없으므로 0으로 볼 수 없습니다. 검사점 평가와 별개입니다.
+            <details className="mt-1 text-[12px] leading-5 text-ink-2">
+              <summary className="tap-target cursor-pointer font-semibold text-ink-muted">기록 한계 확인</summary>
+              {explicitReady.result.metrics.uncertaintyM3 === null ? (
+                <p className="mt-1">
+                  불확실성 미기록 — 기록된 값이 없으므로 0으로 볼 수 없습니다. 검사점 평가와 별개입니다.
+                </p>
+              ) : typeof explicitReady.result.metrics.uncertaintyM3 === "number" && Number.isFinite(explicitReady.result.metrics.uncertaintyM3) ? (
+                <p className="num mt-1 break-words">
+                  {`불확실성 ±${formatVolumeM3(explicitReady.result.metrics.uncertaintyM3)} m³ (기록값)`}
+                </p>
+              ) : null}
+              <p className="mt-1">
+                이 화면은 기록된 값을 옮긴 것이며 다시 계산하지 않습니다. 계산에 쓰인 자료·조건·근거는 분석 기록에 있습니다.
               </p>
-            ) : typeof explicitReady.result.metrics.uncertaintyM3 === "number" && Number.isFinite(explicitReady.result.metrics.uncertaintyM3) ? (
-              <p className="num mt-1 break-words text-[12px] leading-5 text-ink-2">
-                {`불확실성 ±${formatVolumeM3(explicitReady.result.metrics.uncertaintyM3)} m³ (기록값)`}
-              </p>
-            ) : null}
-            <p className="mt-1 text-[12px] leading-5 text-ink-2">
-              이 화면은 기록된 값을 옮긴 것이며 다시 계산하지 않습니다. 계산에 쓰인 자료·조건·근거는 분석 기록에 있습니다.
-            </p>
+            </details>
           </>
         ) : (
           <p className="mt-1 text-[12px] leading-5 text-ink-2">
