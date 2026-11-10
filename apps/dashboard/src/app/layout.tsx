@@ -115,7 +115,7 @@ export default async function RootLayout({
             )}
             <ShellMain>
               {!chromeless && <MainPageTitle fallback={currentPageTitle} />}
-              <ConnectivityNotice />
+              {!chromeless && <ConnectivityNotice />}
               <SiteListRefreshNotice />
               <ToastProvider>{children}</ToastProvider>
             </ShellMain>
