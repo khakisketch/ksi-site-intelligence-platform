@@ -6,6 +6,7 @@ import { AccountDisplayBoundary } from "@/components/nav/AccountDisplayBoundary"
 import { DesktopSidebar } from "@/components/nav/DesktopSidebar";
 import { isChromelessPath } from "@/components/nav/chromeless-path";
 import { isViewerPath } from "@/components/nav/viewer-path";
+import { ConnectivityNotice } from "@/components/nav/ConnectivityNotice";
 import { SiteListRefreshNotice } from "@/components/nav/SiteListRefreshNotice";
 import { SiteListProvider } from "@/components/nav/SiteListContext";
 import type { SidebarSite } from "@/components/nav/site-context";
@@ -114,6 +115,7 @@ export default async function RootLayout({
             )}
             <ShellMain>
               {!chromeless && <MainPageTitle fallback={currentPageTitle} />}
+              <ConnectivityNotice />
               <SiteListRefreshNotice />
               <ToastProvider>{children}</ToastProvider>
             </ShellMain>
