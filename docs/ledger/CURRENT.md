@@ -47,21 +47,21 @@ duplicate work authority.
   required; not implemented.
 - Real Floreat imagery is retention-expired; quantitative/field/customer acceptance unverified.
 - Theme selection deferred to a future `설정 > 화면 테마` decision; no palette change.
-- A/B/C workspace/materials layout comparison is ready for Human selection:
-  [`comparison`](../design/CONSOLE_LAYOUT_CHOICES_20261027.html) /
-  [`scope`](../design/CONSOLE_LAYOUT_CHOICES_20261027.md). Not selected or applied;
+- A/B/C workspace/materials layout comparison is archived as historical, still awaiting Human selection:
+  [`comparison`](../archive/ui-audit/2026-10-27-console-comparisons/CONSOLE_LAYOUT_CHOICES_20261027.html) /
+  [`scope`](../archive/ui-audit/2026-10-27-console-comparisons/CONSOLE_LAYOUT_CHOICES_20261027.md). Not selected or applied;
   no change to the governing design, production routes or theme setting.
-- Prior research-backed comparison remains available:
-  [`interactive A/B/C`](../design/CONSOLE_LAYOUT_RESEARCH_20261027.html) /
-  [`evidence and adopt/reject matrix`](../design/CONSOLE_LAYOUT_RESEARCH_20261027.md).
+- Prior research-backed comparison remains available in the archive:
+  [`interactive A/B/C`](../archive/ui-audit/2026-10-27-console-comparisons/CONSOLE_LAYOUT_RESEARCH_20261027.html) /
+  [`evidence and adopt/reject matrix`](../archive/ui-audit/2026-10-27-console-comparisons/CONSOLE_LAYOUT_RESEARCH_20261027.md).
   Original comparison preserved; no layout selected/applied. Competitor research limits
   (especially Angelswing guide access) and prototype-only verification are explicit.
 - Latest comparison incorporates the Human's visual-first feedback: keep A's list width,
   remove repeated preview text/default facts and the lower two-date table, separate global
   toast/bell notifications from material badges/popovers, and reserve blocking dialogs for
-  session decisions. [`media-first prototype`](../design/CONSOLE_MEDIA_FIRST_20261027.html) /
-  [`scope and evidence`](../design/CONSOLE_MEDIA_FIRST_20261027.md), local8858. Both prior
-  comparisons preserved; this is not production application or product acceptance.
+  session decisions. [`media-first prototype`](../archive/ui-audit/2026-10-27-console-comparisons/CONSOLE_MEDIA_FIRST_20261027.html) /
+  [`scope and evidence`](../archive/ui-audit/2026-10-27-console-comparisons/CONSOLE_MEDIA_FIRST_20261027.md), local8858. Both prior
+  comparisons preserved in the archive; this is not production application or product acceptance.
 - P2 independent masks/new profile and separate delta publication are approved and locally verified.
   New policy/runtime signing, deployment-host containment, permitted retained data and customer
   quantitative acceptance remain external activation/acceptance gates, not reasons to stop local work.

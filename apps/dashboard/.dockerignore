@@ -5,3 +5,10 @@ npm-debug.log*
 test
 test-results
 playwright-report
+# Verification captures are not runtime inputs — keep them out of the image build context.
+f01-bootstrap-evidence
+f04-review-evidence
+p4-cleanup-evidence
+design-review-inputs
+diagnostics
+analysis-e2e

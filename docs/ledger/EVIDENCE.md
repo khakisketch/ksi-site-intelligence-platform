@@ -3,6 +3,10 @@
 One row per verified batch. Raw files stay in the state/evidence directories; this index records
 what was checked and what remains unverified.
 
+Capture-time paths below (`~/.local/state/…`, `/tmp/opencode/…`) are historical machine-local
+locations from the 2026-10-26 verification run — they are evidence provenance, not live links,
+and are not expected to resolve on another checkout.
+
 | Date | Work | Evidence | Checks | Limits |
 |---|---|---|---|---|
 | 2026-10-26 | Console site-context rail | `~/.local/state/ksi-console-ia-20261025/site-context-nav-20261026/` | 2127 unit, tsc 0, lint 0, Docker build, production 1440/1024/390, axe 0 | Mobile switcher absent; real imagery expired |

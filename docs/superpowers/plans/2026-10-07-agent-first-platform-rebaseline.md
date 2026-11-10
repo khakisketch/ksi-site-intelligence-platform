@@ -4744,7 +4744,7 @@ active bounded work, not the product definition, milestone/slice acceptance or d
 
 #### Design-study delivery (same bounded design pass)
 
-- Delivered `docs/design/demo-screen-study.html`: standalone interactive **screen-design proposal**,
+- Delivered `docs/archive/ui-audit/2026-10-27-console-comparisons/demo-screen-study.html` (moved from `docs/design/` on 2026-11-10): standalone interactive **screen-design proposal**,
   all four display images embedded, no server connection or remote subresource/analytics request.
   Licence/source information and actual-data versus synthetic labels stay visible. Original source
   downloads intentionally point to DataWA, not pretend Core endpoints. The original four source files

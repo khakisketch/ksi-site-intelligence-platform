@@ -19,15 +19,16 @@ list/form-first 구분은 승인 방향이고, 구현·렌더·고객 인수는 
 
 충돌 시 위 문서가 아래 문서보다 우선한다. 이는 권위 우선순위이지 전체 문서의 필수 독서 순서가 아니다.
 
-1. `docs/product/PRODUCT_CONSTITUTION.md`
-2. `docs/product/FINAL_DECISION_LEDGER_v1.0.md`
-3. `docs/product/MASTER_PRD_v3.0.md`
-4. `contracts/`
-5. Architecture Decision
-6. Acceptance Criteria와 Traceability
-7. Reference Adoption Matrix
-8. 참고 저장소 코드·문서
-9. 과거 Commit Message와 TODO
+1. `docs/00_READ_FIRST.md` (본 파일 — 방향·supersession 라우팅)
+2. `docs/product/PRODUCT_CONSTITUTION.md`
+3. `docs/product/FINAL_DECISION_LEDGER_v1.0.md`
+4. `docs/product/MASTER_PRD_v3.0.md`
+5. `contracts/`
+6. Architecture Decision
+7. Acceptance Criteria와 Traceability
+8. Reference Adoption Matrix
+9. 참고 저장소 코드·문서
+10. 과거 Commit Message와 TODO
 
 참고 저장소 코드가 Master PRD와 다르면 참고 코드를 따르지 않는다.
 
