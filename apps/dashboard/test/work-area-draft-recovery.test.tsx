@@ -3,6 +3,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-libra
 import { afterEach, expect, it, vi } from 'vitest';
 import { useState } from 'react';
 import { WorkAreaPanel } from '@/app/sites/[siteId]/work-areas/WorkAreaPanel';
+import { installFakeSessionStorage } from './storage-fakes';
 
 vi.mock('@/components/ui/ToastProvider', () => ({ useToast: () => ({ notify: vi.fn() }) }));
 vi.mock('@/components/responsive/ResponsiveActionBoundary', () => ({ ResponsiveActionBoundary: ({children}: {children: React.ReactNode}) => children, ResponsiveNotice: () => null }));
@@ -14,7 +15,7 @@ const a = `v1-${'a'.repeat(64)}`;
 const b = `v1-${'b'.repeat(64)}`;
 let live = a;
 const props = { siteId:'site-1', siteCrs:'EPSG:4326', canWrite:true, initialWorkAreas:[], workAreaListError:null, accountIdentity:{fingerprint:a} };
-afterEach(() => { cleanup(); sessionStorage.clear(); vi.unstubAllGlobals(); live = a; });
+afterEach(() => { cleanup(); vi.unstubAllGlobals(); window.sessionStorage.clear(); live = a; });
 it('saves the last raw input synchronously and restores it after unmount', async () => {
   vi.stubGlobal('fetch', vi.fn(async () => ({ok:true, json:async () => ({fingerprint:live})})));
   const view = render(<WorkAreaPanel {...props} />);
@@ -52,10 +53,9 @@ it('warns when writing fails instead of promising recovery', async () => {
   vi.stubGlobal('fetch', vi.fn(async () => ({ok:true, json:async () => ({fingerprint:a})})));
   const view = render(<WorkAreaPanel {...props} />);
   await waitFor(() => expect(screen.getByLabelText('원문 좌표')).toBeTruthy());
-  const write = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('quota'); });
+  installFakeSessionStorage({ setItem: () => { throw new Error('quota'); } });
   fireEvent.change(screen.getByLabelText('원문 좌표'), {target:{value:'37.00x'}});
   expect(screen.getByText(/임시 저장에 실패했습니다/)).toBeTruthy();
-  write.mockRestore();
   view.unmount();
 });
 it('keeps the mounted editor and its unsaved text across a focus recheck', async () => {
@@ -69,14 +69,13 @@ it('keeps the mounted editor and its unsaved text across a focus recheck', async
   render(<WorkAreaPanel {...props} />);
   await waitFor(() => expect(screen.getByLabelText('원문 좌표')).toBeTruthy());
   const input = screen.getByLabelText('원문 좌표') as HTMLInputElement;
-  const write = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('quota'); });
+  installFakeSessionStorage({ setItem: () => { throw new Error('quota'); } });
   fireEvent.change(input, {target:{value:'unsaved after quota'}});
   fireEvent.focus(window);
   expect(input.closest('[hidden]')).toBeTruthy();
   resolveCheck?.({ok:true, json:async () => ({fingerprint:a})});
   await waitFor(() => expect(screen.getByLabelText('원문 좌표')).toBe(input));
   expect(input.value).toBe('unsaved after quota');
-  write.mockRestore();
 });
 it('restores an exact correction context with multiple rejected originals', async () => {
   vi.stubGlobal('fetch', vi.fn(async () => ({ok:true, json:async () => ({fingerprint:a})})));
@@ -163,10 +162,9 @@ it('does not POST if tab storage fails before submission', async () => {
   await waitFor(() => expect(screen.getByPlaceholderText('3공구 성토부')).toBeTruthy());
   fireEvent.change(screen.getByPlaceholderText('3공구 성토부'), {target:{value:'새 구역'}});
   fireEvent.click(screen.getByRole('button', {name:'경계 선택'}));
-  const write = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('quota'); });
+  installFakeSessionStorage({ setItem: () => { throw new Error('quota'); } });
   fireEvent.click(screen.getByRole('button', {name:'등록'}));
   expect(request.mock.calls.filter(call => call[0] !== '/api/account-identity')).toHaveLength(0);
-  write.mockRestore();
 });
 it('recovers the exact first request after leaving while POST is pending, without sending again', async () => {
   const requests: {url:string; init?:RequestInit}[] = [];
@@ -272,12 +270,15 @@ it('fails closed if the first-request write fails and does not issue a POST', as
   await waitFor(()=>expect(screen.getByPlaceholderText('3공구 성토부')).toBeTruthy());
   fireEvent.change(screen.getByPlaceholderText('3공구 성토부'),{target:{value:'요청'}});
   fireEvent.click(screen.getByRole('button',{name:'경계 선택'}));
-  const real=Storage.prototype.setItem;
-  const spy=vi.spyOn(Storage.prototype,'setItem').mockImplementation(function(this:Storage, key:string, value:string) { if(key.startsWith('ksi.work-area.first-post')) throw new Error('quota'); return real.call(this,key,value); });
+  installFakeSessionStorage({
+    setItem: (key, value, write) => {
+      if (key.startsWith('ksi.work-area.first-post')) throw new Error('quota');
+      write(key, value);
+    },
+  });
   fireEvent.click(screen.getByRole('button',{name:'등록'}));
   expect(post).not.toHaveBeenCalled();
   expect(screen.getByText(/첫 요청의 임시 기록을 저장하지 못했거나/)).toBeTruthy();
-  spy.mockRestore();
 });
 it('sends only one POST on consecutive clicks', async () => {
   const post=vi.fn(()=>new Promise(()=>{}));
@@ -297,15 +298,15 @@ it('does not POST after first-request readback failure and preserves the written
   await waitFor(()=>expect(screen.getByPlaceholderText('3공구 성토부')).toBeTruthy());
   fireEvent.change(screen.getByPlaceholderText('3공구 성토부'),{target:{value:'요청'}});
   fireEvent.click(screen.getByRole('button',{name:'경계 선택'}));
-  const get=Storage.prototype.getItem;
   let reads=0;
-  const spy=vi.spyOn(Storage.prototype,'getItem').mockImplementation(function(this:Storage,key:string) {
-    if (key.startsWith('ksi.work-area.first-post') && ++reads === 2) throw new Error('readback');
-    return get.call(this,key);
+  installFakeSessionStorage({
+    getItem: (key, read) => {
+      if (key.startsWith('ksi.work-area.first-post') && ++reads === 2) throw new Error('readback');
+      return read(key);
+    },
   });
   fireEvent.click(screen.getByRole('button',{name:'등록'}));
   expect(post).not.toHaveBeenCalled();
-  spy.mockRestore();
   expect(sessionStorage.getItem(`ksi.work-area.first-post.v1:site-1:${a}`)).toBeTruthy();
 });
 it.each(['success','failure','unknown'] as const)('preserves first request when %s arrives after panel unmount', async outcome => {
@@ -389,11 +390,10 @@ it('keeps the request when cleanup storage fails after a matching response', asy
   await waitFor(()=>expect(screen.getByPlaceholderText('3공구 성토부')).toBeTruthy());
   fireEvent.change(screen.getByPlaceholderText('3공구 성토부'),{target:{value:'저장 오류'}});
   fireEvent.click(screen.getByRole('button',{name:'경계 선택'}));
-  const remove=vi.spyOn(Storage.prototype,'removeItem').mockImplementation(()=>{throw new Error('blocked');});
+  installFakeSessionStorage({ removeItem: () => { throw new Error('blocked'); } });
   fireEvent.click(screen.getByRole('button',{name:'등록'}));
   await waitFor(()=>expect(screen.getByText(/임시 요청 기록을 정리하지 못했습니다/)).toBeTruthy());
   expect(sessionStorage.getItem(`ksi.work-area.first-post.v1:site-1:${a}`)).toBeTruthy();
-  remove.mockRestore();
 });
 it('preserves the request when the panel unmounts during the post-success replacement list read', async () => {
   const area = {schemaVersion:'1.0',workAreaId:'area-1',siteId:'site-1',name:'기존', polygon:{type:'Polygon',coordinates:[[[127,37],[128,37],[127,38],[127,37]]]},crs:'EPSG:4326',status:'ACTIVE',supersedes:null,createdAt:'2026-01-01T00:00:00Z'} as const;
@@ -444,14 +444,17 @@ it('resumes interrupted transfer without duplicating an episode', async () => {
   fireEvent.change(screen.getByPlaceholderText('3공구 성토부'),{target:{value:'부분 보관'}});
   fireEvent.click(screen.getByRole('button',{name:'경계 선택'}));fireEvent.click(screen.getByRole('button',{name:'등록'}));
   await screen.findByTestId('work-area-unknown-panel');
-  const remove=vi.spyOn(Storage.prototype,'removeItem').mockImplementation(()=>{throw Error('blocked');});
+  installFakeSessionStorage({ removeItem: () => { throw Error('blocked'); } });
   fireEvent.click(screen.getByTestId('work-area-abandon-button'));
   expect(screen.getByTestId('work-area-unknown-panel')).toBeTruthy();
   const firstKey=`ksi.work-area.first-post.v1:site-1:${a}`;
   const journalKey=`ksi.work-area.episodes.v1:site-1:${a}`;
   expect(sessionStorage.getItem(firstKey)).toBeTruthy();
   expect(JSON.parse(sessionStorage.getItem(journalKey)!).episodes).toHaveLength(1);
-  remove.mockRestore(); view.unmount(); render(<WorkAreaPanel {...props} />);
+  // 2단계(성공 제거)는 정상 저장소로 진행한다. 가짜를 걷으면 그간의 쓰기가
+  // 사라지므로, 현재 상태가 시드된 통과용 가짜로 교체한다.
+  installFakeSessionStorage();
+  view.unmount(); render(<WorkAreaPanel {...props} />);
   await screen.findByTestId('work-area-unknown-panel');
   expect(screen.queryByTestId('work-area-episode-log')).toBeNull();
   fireEvent.click(screen.getByTestId('work-area-abandon-button'));
@@ -483,12 +486,16 @@ it('does not archive or open blank input when the journal write exceeds quota', 
   fireEvent.click(screen.getByRole('button',{name:'경계 선택'}));fireEvent.click(screen.getByRole('button',{name:'등록'}));
   await screen.findByTestId('work-area-unknown-panel');
   const firstKey=`ksi.work-area.first-post.v1:site-1:${a}`; const raw=sessionStorage.getItem(firstKey);
-  const original=Storage.prototype.setItem;
-  const spy=vi.spyOn(Storage.prototype,'setItem').mockImplementation(function(this:Storage,key:string,value:string){if(key.startsWith('ksi.work-area.episodes'))throw Error('quota');return original.call(this,key,value);});
+  installFakeSessionStorage({
+    setItem: (key, value, write) => {
+      if (key.startsWith('ksi.work-area.episodes')) throw Error('quota');
+      write(key, value);
+    },
+  });
   fireEvent.click(screen.getByTestId('work-area-abandon-button'));
   expect(screen.getByTestId('work-area-unknown-panel')).toBeTruthy();
   expect(screen.getByTestId('work-area-continuity-blocked').textContent).toContain('확인하지 못해');
-  expect(sessionStorage.getItem(firstKey)).toBe(raw);spy.mockRestore();
+  expect(sessionStorage.getItem(firstKey)).toBe(raw);
 });
 it('never overwrites new input when opening a prior episode', async () => {
   vi.stubGlobal('fetch',vi.fn(async (url:string)=>{if(url==='/api/account-identity')return {ok:true,json:async()=>({fingerprint:a})};throw Error('lost');}));
@@ -550,12 +557,15 @@ it('does not open a blank draft when draft reset cannot be saved after archiving
   fireEvent.change(screen.getByPlaceholderText('3공구 성토부'),{target:{value:'원래 입력'}});
   fireEvent.click(screen.getByRole('button',{name:'경계 선택'}));fireEvent.click(screen.getByRole('button',{name:'등록'}));
   await screen.findByTestId('work-area-unknown-panel');
-  const old=Storage.prototype.setItem;
-  const spy=vi.spyOn(Storage.prototype,'setItem').mockImplementation(function(this:Storage,key:string,value:string){if(key.startsWith('ksi.work-area.v1:'))throw Error('quota');return old.call(this,key,value);});
+  installFakeSessionStorage({
+    setItem: (key, value, write) => {
+      if (key.startsWith('ksi.work-area.v1:')) throw Error('quota');
+      write(key, value);
+    },
+  });
   fireEvent.click(screen.getByTestId('work-area-abandon-button'));
   expect(screen.getByTestId('work-area-unknown-panel')).toBeTruthy();
   expect((screen.getByPlaceholderText('3공구 성토부') as HTMLInputElement).value).toBe('원래 입력');
-  spy.mockRestore();
 });
 it('sends a new distinct first request while retaining the archived previous episode', async () => {
   const post=vi.fn(async()=>{throw Error('lost');});
@@ -640,13 +650,17 @@ it('does not issue a retry if its pre-send journal write fails', async () => {
   fireEvent.change(screen.getByPlaceholderText('3공구 성토부'),{target:{value:'첫 요청'}});
   fireEvent.click(screen.getByRole('button',{name:'경계 선택'}));fireEvent.click(screen.getByRole('button',{name:'등록'}));
   await screen.findByTestId('work-area-unknown-panel');
-  const set=Storage.prototype.setItem;let writes=0;
-  const spy=vi.spyOn(Storage.prototype,'setItem').mockImplementation(function(this:Storage,key:string,value:string){if(key.startsWith('ksi.work-area.episodes') && ++writes===2)throw Error('quota');return set.call(this,key,value);});
+  let writes=0;
+  installFakeSessionStorage({
+    setItem: (key, value, write) => {
+      if (key.startsWith('ksi.work-area.episodes') && ++writes===2) throw Error('quota');
+      write(key, value);
+    },
+  });
   fireEvent.click(screen.getByTestId('work-area-retry-button'));
   expect(posts).toHaveBeenCalledTimes(1);
   expect(screen.getByTestId('work-area-continuity-blocked').textContent).toContain('재전송하지 않았습니다');
   expect(JSON.parse(sessionStorage.getItem(`ksi.work-area.episodes.v1:site-1:${a}`)!).episodes).toHaveLength(1);
-  spy.mockRestore();
 });
 it('keeps a retry unknown when its success arrives after unmount', async () => {
   let posts=0;let finish:((v:unknown)=>void)|undefined;let sent='';
@@ -696,14 +710,26 @@ it('retains the exact pre-reset draft if blank-draft readback fails during trans
   fireEvent.click(screen.getByRole('button',{name:'경계 선택'}));fireEvent.click(screen.getByRole('button',{name:'등록'}));
   await screen.findByTestId('work-area-unknown-panel');
   const key=`ksi.work-area.v1:site-1:${a}`, firstKey=`ksi.work-area.first-post.v1:site-1:${a}`;
-  const original=sessionStorage.getItem(key); let failRead=false;
-  const set=Storage.prototype.setItem, get=Storage.prototype.getItem;
-  const setSpy=vi.spyOn(Storage.prototype,'setItem').mockImplementation(function(this:Storage,k:string,v:string){set.call(this,k,v);if(k===key && JSON.parse(v).payload.name==='')failRead=true;});
-  const getSpy=vi.spyOn(Storage.prototype,'getItem').mockImplementation(function(this:Storage,k:string){if(k===key && failRead){failRead=false;throw Error('readback');}return get.call(this,k);});
+  const original=sessionStorage.getItem(key);
+  // 빈 초안 재확인은 전체 테스트에서 단 한 번만 실패한다(일시적 읽기 오류).
+  // 그래야 두 번째 정리에서 에피소드 기록이 남는다.
+  let failedOnce = false;
+  let armed = false;
+  installFakeSessionStorage({
+    setItem: (k, v, write) => {
+      write(k, v);
+      try {
+        if (!failedOnce && k===key && (JSON.parse(v) as { payload?: { name?: string } }).payload?.name==='') armed = true;
+      } catch { /* 비JSON 쓰기는 무시한다 */ }
+    },
+    getItem: (k, read) => {
+      if (k===key && armed) { armed = false; failedOnce = true; throw Error('readback'); }
+      return read(k);
+    },
+  });
   fireEvent.click(screen.getByTestId('work-area-abandon-button'));
   expect(screen.getByTestId('work-area-unknown-panel')).toBeTruthy();
   expect(sessionStorage.getItem(firstKey)).toBeTruthy();
-  setSpy.mockRestore();getSpy.mockRestore();
   const journal=JSON.parse(sessionStorage.getItem(`ksi.work-area.episodes.v1:site-1:${a}`)!);
   expect(journal.episodes[0].sourceDraftRaw).toBe(original);
   view.unmount();render(<WorkAreaPanel {...props} />);
@@ -796,12 +822,19 @@ it('recovers the archived v2 episode after first-post removal succeeds but its r
   fireEvent.click(screen.getByRole('button',{name:'경계 선택'}));fireEvent.click(screen.getByRole('button',{name:'등록'}));
   await screen.findByTestId('work-area-unknown-panel');
   const firstKey=`ksi.work-area.first-post.v1:site-1:${a}`;
-  const original=sessionStorage.getItem(firstKey), remove=Storage.prototype.removeItem, get=Storage.prototype.getItem;let removed=false;
-  const removeSpy=vi.spyOn(Storage.prototype,'removeItem').mockImplementation(function(this:Storage,key:string){remove.call(this,key);if(key===firstKey)removed=true;});
-  const getSpy=vi.spyOn(Storage.prototype,'getItem').mockImplementation(function(this:Storage,key:string){if(key===firstKey && removed){removed=false;throw Error('readback');}return get.call(this,key);});
+  const original=sessionStorage.getItem(firstKey); let removed=false;
+  installFakeSessionStorage({
+    removeItem: (key, remove) => {
+      remove(key);
+      if (key===firstKey) removed=true;
+    },
+    getItem: (key, read) => {
+      if (key===firstKey && removed) { removed=false; throw Error('readback'); }
+      return read(key);
+    },
+  });
   fireEvent.click(screen.getByTestId('work-area-abandon-button'));
   expect(screen.getByTestId('work-area-unknown-panel')).toBeTruthy();
-  removeSpy.mockRestore();getSpy.mockRestore();
   const journal=JSON.parse(sessionStorage.getItem(`ksi.work-area.episodes.v1:site-1:${a}`)!);
   expect(journal.episodes).toHaveLength(1);expect(journal.episodes[0].sourceRaw).toBe(original);
   view.unmount();render(<WorkAreaPanel {...props} />);
@@ -866,14 +899,14 @@ it('keeps an unsaved map editor instance through blur and an A-B-A focus sequenc
   render(<WorkAreaPanel {...props} />);
   await waitFor(()=>expect(screen.getByLabelText('원문 좌표')).toBeTruthy());
   const editor=screen.getByLabelText('원문 좌표') as HTMLInputElement;
-  const spy=vi.spyOn(Storage.prototype,'setItem').mockImplementation(()=>{throw Error('quota');});
+  installFakeSessionStorage({ setItem: () => { throw Error('quota'); } });
   fireEvent.change(editor,{target:{value:'저장 안 된 원문'}});
   fireEvent.blur(window);expect(editor.closest('[hidden]')).toBeTruthy();
   live=b;fireEvent.focus(window);await waitFor(()=>expect(screen.getByText(/현재 계정을 확인하지 못해/)).toBeTruthy());
   expect(editor.value).toBe('저장 안 된 원문');expect(editor.closest('[hidden]')).toBeTruthy();
   fireEvent.blur(window);live=a;fireEvent.focus(window);
   await waitFor(()=>expect(screen.getByLabelText('원문 좌표')).toBe(editor));
-  expect(editor.value).toBe('저장 안 된 원문');spy.mockRestore();
+  expect(editor.value).toBe('저장 안 된 원문');
 });
 it('conceals the current editor synchronously on visibility hidden and revalidates on visible', async () => {
   const visibility=vi.spyOn(document,'visibilityState','get').mockReturnValue('visible');
@@ -933,8 +966,13 @@ it('rechecks after a transient storage read error without deleting raw and then 
   const area={schemaVersion:'1.0',workAreaId:'area-1',siteId:'site-1',name:'복구 가능한 목록',polygon:{type:'Polygon',coordinates:[[[127,37],[128,37],[127,38],[127,37]]]},crs:'EPSG:4326',status:'ACTIVE',supersedes:null,createdAt:'2026-01-01T00:00:00Z'} as const;
   const key=`ksi.work-area.v1:site-1:${a}`;
   const raw=JSON.stringify({version:1,siteId:'site-1',identity:a,payload:{name:'저장된 원문',vertices:[],correctionId:null,correctionReady:false,snapshot:null}});
-  sessionStorage.setItem(key,raw);let fail=true;const get=Storage.prototype.getItem;
-  const spy=vi.spyOn(Storage.prototype,'getItem').mockImplementation(function(this:Storage,k:string){if(fail && k===key)throw Error('read');return get.call(this,k);});
+  sessionStorage.setItem(key,raw);let fail=true;
+  installFakeSessionStorage({
+    getItem: (k, read) => {
+      if (fail && k===key) throw Error('read');
+      return read(k);
+    },
+  });
   const fetcher=vi.fn(async()=>({ok:true,json:async()=>({fingerprint:a})}));vi.stubGlobal('fetch',fetcher);
   render(<WorkAreaPanel {...props} initialWorkAreas={[area as never]} />);
   await waitFor(()=>expect(screen.getByText(/작업구역 목록도 볼 수 없습니다/)).toBeTruthy());
@@ -942,7 +980,7 @@ it('rechecks after a transient storage read error without deleting raw and then 
   fail=false;fireEvent.click(screen.getByRole('button',{name:'계정과 저장 상태 다시 확인'}));
   await waitFor(()=>expect(screen.getByText('복구 가능한 목록').closest('[hidden]')).toBeNull());
   expect((screen.getByPlaceholderText('3공구 성토부') as HTMLInputElement).value).toBe('저장된 원문');
-  expect(sessionStorage.getItem(key)).toBe(raw);expect(fetcher).toHaveBeenCalledTimes(2);spy.mockRestore();
+  expect(sessionStorage.getItem(key)).toBe(raw);expect(fetcher).toHaveBeenCalledTimes(2);
 });
 it('rechecks a read-only list, and withholds it immediately if the current account differs', async () => {
   const area={schemaVersion:'1.0',workAreaId:'area-1',siteId:'site-1',name:'권한 읽기 목록',polygon:{type:'Polygon',coordinates:[[[127,37],[128,37],[127,38],[127,37]]]},crs:'EPSG:4326',status:'ACTIVE',supersedes:null,createdAt:'2026-01-01T00:00:00Z'} as const;

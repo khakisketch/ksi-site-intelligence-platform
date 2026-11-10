@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { beforeEach, expect, it, vi } from "vitest";
 import { completeFreshLoginDestination, loadFreshLoginDestination } from "@/components/nav/fresh-login-navigation";
+import { installFakeSessionStorage } from "./storage-fakes";
 const marker = "ksi.login-fresh-document.v1";
 beforeEach(() => { sessionStorage.clear(); window.history.replaceState(null, "", "/sites/test?workAreaId=one#map"); });
 it("does not reload a different or stale router location", () => {
@@ -16,9 +17,10 @@ it("refuses a second automatic transition and leaves draft data alone", () => {
   expect(sessionStorage.getItem("draft-example")).toBe("untouched");
 });
 it("fails closed when session storage cannot enforce the loop guard", () => {
-  vi.spyOn(Storage.prototype,"getItem").mockImplementation(() => {throw new Error("blocked");});
+  // prototype spy는 jsdom 26 저장소에 닿지 않으므로 가짜 저장소로 차단한다.
+  installFakeSessionStorage({ getItem: () => { throw new Error("blocked"); } });
   expect(loadFreshLoginDestination("/sites/test")).toBe(false);
-  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
 });
 
 it("reloads the current document once without changing query or fragment", () => {
