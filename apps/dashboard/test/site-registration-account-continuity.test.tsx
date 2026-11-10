@@ -97,6 +97,22 @@ describe("현장 등록 요청을 보내는 중 화면을 떠날 때", () => {
       expect(window.sessionStorage.getItem(key)).toBe(original);
     });
 
+    it(`${kind} 오프라인이면 POST 없이 확정 차단하고 입력을 보존한다`, async () => {
+      if (kind === "mapped") await goToConfirmMapped(ALICE);
+      else await goToConfirmLegacy(ALICE);
+      Object.defineProperty(window.navigator, "onLine", { value: false, configurable: true });
+      act(() => { window.dispatchEvent(new Event("offline")); });
+      try {
+        fireEvent.click(screen.getByRole("button", { name: "현장 등록" }));
+        expect(await screen.findByText(/연결이 끊겨 요청을 보내지 않았습니다/)).toBeTruthy();
+        expect(requestMock).not.toHaveBeenCalled();
+        // 모름 기록이 아니다 — 보내지 않았음이 확실하므로 불명 목록에 남지 않는다.
+        expect(screen.queryByText(/이전 요청의 결과는 여전히/)).toBeNull();
+      } finally {
+        Object.defineProperty(window.navigator, "onLine", { value: true, configurable: true });
+      }
+    });
+
     it(`${kind} 첫 요청이 확정 실패면 준비 기록만 지운다`, async () => {
       if (kind === "mapped") await goToConfirmMapped(ALICE);
       else await goToConfirmLegacy(ALICE);
