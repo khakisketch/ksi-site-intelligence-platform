@@ -504,7 +504,7 @@ export function WorkOrderOperationsPanel({
             담당과 기한을 정하고, 끝난 작업은 업무 종료로 남깁니다.
           </p>
         </div>
-        <span className={`shrink-0 rounded-full pl-0 pr-2.5 py-1 text-[12px] font-semibold ${isClosed ? "bg-sunk text-ink-2" : "bg-accent-bg text-accent-text"}`}>
+        <span className={`shrink-0 rounded-full pl-0 pr-2.5 py-1 text-[12px] font-semibold ${isClosed ? "bg-sunk text-ink-2" : "bg-accent-tint text-accent-text"}`}>
           {statusLabel(operations.workflowStatus)}
         </span>
       </div>

@@ -1,5 +1,5 @@
 /** @vitest-environment jsdom */
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ComponentProps } from "react";
 import { createHash } from "node:crypto";
@@ -38,6 +38,22 @@ describe("ExternalObservationCreateForm", () => {
     expect(submit.disabled).toBe(true);
     expect(fetchMock).not.toHaveBeenCalled();
     expect(screen.getByText(/계정을 확인하지 못해/)).toBeTruthy();
+  });
+
+  it("오프라인이면 POST 없이 확정 차단하고 입력을 보존한다", async () => {
+    render(<ExternalObservationCreateForm siteId="site-1" siteName="서쪽 현장" workAreas={[{ workAreaId: "wa-1", name: "동측 절토면" }]} />);
+    fireEvent.change(screen.getByLabelText("작업 이름"), { target: { value: "외부 비교" } });
+    fireEvent.click(screen.getByLabelText("동측 절토면"));
+    Object.defineProperty(window.navigator, "onLine", { value: false, configurable: true });
+    act(() => { window.dispatchEvent(new Event("offline")); });
+    try {
+      fireEvent.click(screen.getByRole("button", { name: "관측 자료 등록 계속" }));
+      expect(await screen.findByText(/연결이 끊겨 요청을 보내지 않았습니다/)).toBeTruthy();
+      expect(fetchMock).not.toHaveBeenCalled();
+      expect((screen.getByLabelText("작업 이름") as HTMLInputElement).value).toBe("외부 비교");
+    } finally {
+      Object.defineProperty(window.navigator, "onLine", { value: true, configurable: true });
+    }
   });
 
   it("explains why the registration action is disabled and avoids exposing a synthetic work-area id", () => {

@@ -45,7 +45,7 @@ export default async function LoginPage({
             <p
               role="status"
               className={`mb-4 rounded-md px-3 py-2 text-sm ${
-                localIdentity ? "bg-low-bg text-low-ink" : "bg-high-bg text-high-ink"
+                localIdentity ? "bg-sunk text-ink-1" : "bg-high-bg text-high-ink"
               }`}
             >
               {noticeText}
@@ -84,7 +84,7 @@ export default async function LoginPage({
           )}
           {runtime.manualOpaqueLoginEnabled && <LoginForm next={next ?? "/"} />}
           {runtime.localOidcStackRequired && (
-            <p role="status" className="rounded-md bg-low-bg px-3 py-2 text-sm text-low-ink">
+            <p role="status" className="rounded-md bg-sunk px-3 py-2 text-sm text-ink-1">
               로컬 개발은 OIDC 로그인 흐름으로 실행합니다. Dashboard 폴더에서 <code>npm run dev</code>
               를 실행하세요.
             </p>

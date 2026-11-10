@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 
 import { ResponsiveActionBoundary } from "@/components/responsive/ResponsiveActionBoundary";
+import { useOnlineStatus } from "@/hooks/useOnlineStatus";
 import type { TemporalCoherencePolicy } from "@/lib/core-api/types";
 import { isAccountContinuityMismatch } from "@/lib/account-continuity-mismatch";
 
@@ -77,6 +78,7 @@ export function ExternalObservationCreateForm({
   const [attempt, setAttempt] = useState<CreateAttempt | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const online = useOnlineStatus();
   const fingerprint = accountIdentity?.fingerprint;
   const canStart = typeof fingerprint === "string" && FINGERPRINT_PATTERN.test(fingerprint);
   const key = useRef<string | null>(null);
@@ -157,6 +159,14 @@ export function ExternalObservationCreateForm({
     submitAbort.current = controller;
     setBusy(true);
     setError(null);
+    // 오프라인이면 POST를 시도조차 하지 않는다 — 서버에 닿지 않았음이
+    // 확실하므로 모호한 제출로 남기지 않고 확정 차단한다. 입력·요청은 둔다.
+    if (!online) {
+      submitLock.current = false;
+      setBusy(false);
+      if (active.current && submitAbort.current === controller) setError("연결이 끊겨 요청을 보내지 않았습니다. 입력과 요청은 이 화면에 그대로 있습니다. 연결이 돌아오면 같은 요청으로 다시 시도하세요. 새로고침하면 입력과 요청이 사라집니다.");
+      return;
+    }
     try {
       const headers: Record<string, string> = {
         "content-type": "application/json",
