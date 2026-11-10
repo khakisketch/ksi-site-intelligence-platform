@@ -12,7 +12,6 @@ import { SiteHeader } from "@/app/sites/[siteId]/SiteHeader";
 import { AssetRequestDialog } from "./AssetRequestDialog";
 import { SpatialDataRequestAction } from "./SpatialDataRequestAction";
 import { AssetProvenanceNote } from "./AssetProvenanceNote";
-import { EmptyState } from "@/components/ui/EmptyState";
 import { StateBadge } from "@/components/ui/StatusBadge";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { CoreApiError } from "@/lib/core-api/client";
@@ -1354,10 +1353,11 @@ export default async function SpatialAssetsPage({
           {selection.notices.samePair && <p role="status" className="text-[12px] text-ink-2">같은 자료를 두 번 선택했습니다. 한 장으로 둡니다.</p>}
 
           {page.assets.length === 0 && !sideA && !sideB
-            ? <>
-              <EmptyState compact title="이 작업구역에 등록된 자료가 없습니다" description="관측 자료가 이 작업구역에 등록되면 해당 자료의 메타데이터와 검사 상태를 여기에서 확인할 수 있습니다." />
-              {renderEmptyActions()}
-            </>
+            ? <div className="console-stage-empty">
+              <p className="max-w-sm text-[15px] font-bold break-keep">이 작업구역에 등록된 자료가 없습니다</p>
+              <p className="max-w-sm text-[13px] leading-5 break-keep text-ink-2">관측 자료가 이 작업구역에 등록되면 해당 자료의 메타데이터와 검사 상태를 여기에서 확인할 수 있습니다.</p>
+              <div className="mt-1">{renderEmptyActions()}</div>
+            </div>
             : <SpatialWorkbenchFrame
                 contextBar={renderContextBar()}
                 catalog={renderCatalog()}

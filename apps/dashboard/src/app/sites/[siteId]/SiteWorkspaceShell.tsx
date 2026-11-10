@@ -1076,7 +1076,7 @@ export function SiteWorkspaceShell({
           </p>
         )}
         {exploreIsEmpty && selected && exploreNextAction && (
-          <div className="flex min-h-[320px] flex-1 flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-line-strong bg-surface px-6 py-10 text-center md:min-h-[420px]">
+          <div className="console-stage-empty">
             <p className="max-w-sm text-[15px] font-bold break-keep">이 구역에 확인할 관측이 없습니다</p>
             <p className="max-w-sm text-[13px] leading-5 break-keep text-ink-2">외부 관측이 등록되면 이 자리에서 지도와 함께 확인할 수 있습니다.</p>
             <div className="mt-2">

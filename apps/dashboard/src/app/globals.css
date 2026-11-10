@@ -79,9 +79,51 @@
   padding: 48px 24px;
   text-align: center;
 }
+
+/*
+ * 작업 화면 레이아웃층. 목록·양식용 .console-page(최대 1440px, 여백 24px)와
+ * 달리 작업공간·분석·자료 화면은 전체 너비를 쓰는 작업대다. 이 층은 세 가지만
+ * 고정한다: 바깥 여백, 구역 간격, 스테이지 최소 높이. 나머지는 각 화면에 둔다.
+ */
+.console-work {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+}
+.console-work-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+/*
+ * 보는 곳(stage). 지도·비교·결과가 들어가는 자리로, 내용이 비어도 같은
+ * 높이를 유지해 화면이 접히지 않게 한다. 빈 상태는 이 안에서 가운데에 둔다.
+ */
+.console-stage {
+  display: flex;
+  flex-direction: column;
+  min-height: 420px;
+}
+.console-stage-empty {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 1px dashed var(--line-strong);
+  border-radius: 12px;
+  background: var(--surface);
+  padding: 40px 24px;
+  text-align: center;
+}
 @media (max-width: 639px) {
   .console-page { padding: 16px; gap: 20px; }
   .console-page-title { font-size: 22px; }
+  .console-work { padding: 12px; gap: 10px; }
+  .console-stage { min-height: 320px; }
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
