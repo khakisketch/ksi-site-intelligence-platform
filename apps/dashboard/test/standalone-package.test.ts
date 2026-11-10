@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -9,7 +9,10 @@ import { packageStandalone } from "../scripts/package-standalone.mjs";
 
 const temporary: string[] = [];
 function scratch() {
-  const root = mkdtempSync(join(tmpdir(), "ksi-standalone-test-"));
+  // macOS의 tmpdir()은 /var → /private/var 심볼릭 링크다. packageStandalone이
+  // projectRoot를 realpath로 정규화하므로 fixture도 해석된 경로에서 만든다
+  // (playwright.analysis.config.ts의 runtimeRoot와 같은 이유).
+  const root = mkdtempSync(join(realpathSync(tmpdir()), "ksi-standalone-test-"));
   temporary.push(root);
   return root;
 }

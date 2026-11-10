@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { SiteListProvider } from "@/components/nav/SiteListContext";
 import { SpatialWorkbenchFrame } from "@/components/site/SpatialWorkbenchFrame";
+import { installFakeLocalStorage } from "./storage-fakes";
 
 vi.mock("next/navigation", () => ({
   usePathname: () => "/sites/site-1/spatial-assets",
@@ -11,6 +12,8 @@ vi.mock("next/navigation", () => ({
 }));
 
 beforeEach(() => {
+  // 이 jsdom 설정에는 localStorage가 없으므로 가짜를 깐다.
+  installFakeLocalStorage();
   window.localStorage.clear();
 });
 
@@ -18,7 +21,6 @@ afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
-  window.localStorage.clear();
 });
 
 function viewerFrame() {
