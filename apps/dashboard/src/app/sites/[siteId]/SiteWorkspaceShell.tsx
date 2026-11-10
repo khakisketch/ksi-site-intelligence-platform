@@ -1067,7 +1067,7 @@ export function SiteWorkspaceShell({
         )}
         {mode === "explore" && captureOptions.length > 0 && <p id="workspace-capture-help" className="sr-only">관측을 선택하면 표시가 바뀝니다.</p>}
         {mode === "explore" && !exploreIsEmpty && selectedCaption && captionFact && (
-          <p data-workbench-stage-inset="true" className="shrink-0 break-words text-[12px] leading-5 text-ink-2">
+          <p data-workbench-stage-inset="true" role="status" className="shrink-0 break-words text-[12px] leading-5 text-ink-2">
             선택 중 · {(() => {
               const line = entryCaptureLine(captionFact);
               const version = `등록 버전 ${captionFact.revision}`;

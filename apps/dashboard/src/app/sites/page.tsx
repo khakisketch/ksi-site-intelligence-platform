@@ -1,3 +1,4 @@
+import { ConsolePage } from "@/components/nav/ConsolePage";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { SiteListControls } from "@/components/site/SiteListControls";
@@ -195,7 +196,7 @@ export default async function SitesPage({
 
   return (
     // 화면 이름은 topbar 가 이미 '현장'을 찍는다 — 본문에서 h1 을 또 찍지 않는다.
-    <div className="console-page">
+    <ConsolePage>
       <header className="console-page-heading">
         <div><h2 className="console-page-title">현장 목록</h2><p className="console-page-description">현장을 선택해 관측 자료와 분석 기록을 확인하세요.</p></div>
         <RegisterSiteAction availability={registrationAvailability} />
@@ -362,6 +363,6 @@ export default async function SitesPage({
           </section>
         </>
       )}
-    </div>
+    </ConsolePage>
   );
 }

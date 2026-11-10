@@ -5,6 +5,7 @@ import { cache } from "react";
 
 import { SiteAoiEditor } from "./SiteAoiEditor";
 import { SiteHeader } from "./SiteHeader";
+import { ConsoleWork } from "@/components/nav/ConsolePage";
 import type { SiteSpatialAssetsState } from "./SiteSpatialOverview";
 import { SiteWorkspaceShell } from "./SiteWorkspaceShell";
 import { buildWorkspaceServerFacts } from "./site-workspace-server-facts";
@@ -416,7 +417,7 @@ export default async function SiteDetailPage({
           }
         : null}
     />
-    <div className={tab === "workspace" ? `flex w-full min-w-0 min-h-0 flex-1 flex-col gap-2 overflow-x-clip px-2 py-2 sm:px-3${workspaceViewer ? " lg:gap-0 lg:p-0" : ""}` : "flex flex-col gap-4 p-4 sm:p-5"}>
+    <ConsoleWork className={tab === "workspace" ? `min-h-0 flex-1 overflow-x-clip${workspaceViewer ? " lg:gap-0 lg:p-0" : ""}` : "flex-1"}>
       {tab === "workspace" && <div className="flex min-w-0 min-h-0 flex-1 flex-col gap-2">
         <h2 className="sr-only">작업공간</h2>
         <SiteWorkspaceShell
@@ -525,6 +526,6 @@ export default async function SiteDetailPage({
           })}</ul>}
         </SectionCard>
       </div>}
-    </div>
+    </ConsoleWork>
   </div>;
 }

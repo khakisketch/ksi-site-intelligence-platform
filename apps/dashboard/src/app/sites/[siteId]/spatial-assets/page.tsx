@@ -8,6 +8,7 @@ import type { ReactNode } from "react";
 import { OperationsSessionFailure } from "@/app/field/OperationsSessionFailure";
 import { resolveFieldSession } from "@/app/field/resolve-session";
 import { SiteHeader } from "@/app/sites/[siteId]/SiteHeader";
+import { ConsoleWork } from "@/components/nav/ConsolePage";
 
 import { AssetRequestDialog } from "./AssetRequestDialog";
 import { SpatialDataRequestAction } from "./SpatialDataRequestAction";
@@ -1331,7 +1332,7 @@ export default async function SpatialAssetsPage({
       scopedAssetRef={sideA ? sideA.assetRef : null}
       visualContext={headerVisualContext}
     />
-    <div className="flex w-full min-w-0 min-h-0 flex-1 flex-col gap-2 overflow-x-clip px-2 py-2 sm:px-3 lg:gap-0 lg:p-0">
+    <ConsoleWork className="min-h-0 flex-1 overflow-x-clip lg:gap-0 lg:p-0">
       <h2 className="sr-only">자료</h2>
       <div data-viewer-page-notice className="flex flex-col gap-1">
         {areas.workAreas.length === 0 && <p className="text-[12.5px] leading-5 text-ink-2">현장에 등록된 작업구역이 없습니다. 자료를 확인하려면 작업구역을 먼저 등록하세요.</p>}
@@ -1383,7 +1384,7 @@ export default async function SpatialAssetsPage({
       {!page && (
         <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1.5">{renderContextBar()}</div>
       )}
-    </div>
+    </ConsoleWork>
   </div>;
 }
 

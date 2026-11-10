@@ -13,6 +13,15 @@
   flex-direction: column;
   gap: 24px;
 }
+.console-page-dense {
+  max-width: none;
+}
+.console-page-section {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 8px;
+}
 .console-page-heading {
   display: flex;
   align-items: flex-end;

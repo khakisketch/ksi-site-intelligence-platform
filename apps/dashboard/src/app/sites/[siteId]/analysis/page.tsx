@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import { OperationsSessionFailure } from "@/app/field/OperationsSessionFailure";
 import { resolveFieldSession } from "@/app/field/resolve-session";
 import { SiteHeader } from "@/app/sites/[siteId]/SiteHeader";
+import { ConsolePage } from "@/components/nav/ConsolePage";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { CoreApiError } from "@/lib/core-api/client";
 import { getAnalysis, listAnalyses, listAnalysisObservations } from "@/lib/core-api/analysis";
@@ -300,11 +301,11 @@ export default async function SiteAnalysisPage({ params, searchParams }: {
       scopedAssetRef={headerAssetRef}
       visualContext={visualContext && visualContext.workAreaId === effectiveWorkAreaId ? visualContext : null}
     />
-    <div className="mx-auto flex w-full max-w-[1440px] flex-col gap-4 p-4 sm:p-6">
-      <header className="flex flex-wrap items-end justify-between gap-2 border-b border-line pb-2.5">
+    <ConsolePage density="dense">
+      <header className="console-page-heading border-b border-line pb-2.5">
         <div>
-          <h2 className="mt-1 text-[24px] font-bold tracking-[-0.03em] sm:text-[26px]">현장 변화 분석</h2>
-          <p className="mt-1 max-w-2xl text-[13px] leading-6 text-ink-2">기준 자료와 비교할 자료를 고르고 변화량과 근거를 살펴보세요.</p>
+          <h2 className="console-page-title mt-1">현장 변화 분석</h2>
+          <p className="console-page-description">기준 자료와 비교할 자료를 고르고 변화량과 근거를 살펴보세요.</p>
         </div>
         <div className="flex flex-wrap items-center gap-2.5">
           {historyState === "ready" && !areasUnavailable && !observationsUnavailable && !attributionUnavailable && (loaded.analyses.items.length > 0 || loaded.analyses.nextCursor) && (
@@ -377,6 +378,6 @@ export default async function SiteAnalysisPage({ params, searchParams }: {
           compact={loaded.areas.workAreas.length > 0 && loaded.attributedObservations.length >= 2}
         />}
       </>
-    </div>
+    </ConsolePage>
   </>;
 }

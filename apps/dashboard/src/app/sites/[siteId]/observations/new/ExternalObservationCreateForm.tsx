@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 
+import { ConsolePage } from "@/components/nav/ConsolePage";
 import { ResponsiveActionBoundary } from "@/components/responsive/ResponsiveActionBoundary";
 import { useOnlineStatus } from "@/hooks/useOnlineStatus";
 import type { TemporalCoherencePolicy } from "@/lib/core-api/types";
@@ -253,7 +254,7 @@ export function ExternalObservationCreateForm({
   };
 
   return (
-    <div className="console-page !max-w-[800px]">
+    <ConsolePage density="dense" className="!max-w-[800px]">
       <div>
         <div className="mt-1 flex flex-wrap items-center justify-between gap-2">
           <h2 className="console-page-title">관측 자료 등록</h2>
@@ -335,6 +336,6 @@ export function ExternalObservationCreateForm({
         </ResponsiveActionBoundary>
       )}
       <Link href={`/sites/${encodeURIComponent(siteId)}/observations`} className="tap-target inline-flex w-fit items-center text-[12px] text-ink-2 underline">외부 비교 기록 확인</Link>
-    </div>
+    </ConsolePage>
   );
 }
