@@ -713,6 +713,65 @@ def test_historical_gets_serve_sealed_history(tmp_path: Path) -> None:
         assert client.get("/v1/processing-jobs/no-such-job", headers=headers).status_code == 404
 
 
+def test_retired_source_media_verify_points_at_kept_history_read() -> None:
+    """Retired unfenced verify stays 409 but must not name a removed endpoint.
+
+    The ``detail`` may only direct callers at a route that still exists
+    (the kept bundle-inspection GET in the same router) — never at the
+    deleted processing-job lease/verify-input surface.
+    """
+    from ksi_core.domains.artifacts.source_media import build_source_media_router
+
+    app = FastAPI()
+    mount_auth(
+        app,
+        AuthRegistry(
+            [
+                PrincipalTokenRecord(
+                    token_sha256=_digest_hex("worker"),
+                    principal=Principal(
+                        principal_id="worker-1",
+                        kind=PrincipalKind.PROCESSING_WORKER,
+                        role=None,
+                        device_id=None,
+                    ),
+                )
+            ]
+        ),
+    )
+    store = SimpleNamespace()
+    app.include_router(build_source_media_router(store, _StorageStub()))  # type: ignore[arg-type]
+    routes = _routes(app)
+    assert ("GET", "/v1/missions/{mission_id}/source-media") in routes
+    headers = {"Authorization": "Bearer worker"}
+    with TestClient(app) as client:
+        response = client.post(
+            f"/v1/missions/{_MISSION_ID}/source-media/verify",
+            json={
+                "measurements": [
+                    {
+                        "mediaId": "m1",
+                        "sha256": "a" * 64,
+                        "bytes": 10,
+                        "width": 100,
+                        "height": 100,
+                    }
+                ]
+            },
+            headers=headers,
+        )
+    assert response.status_code == 409, response.text
+    body = response.json()
+    assert body["verdict"] == "LEASE_FENCE_REQUIRED"
+    assert body["detail"] == (
+        "unfenced mission verification is retired with managed execution; "
+        "no replacement endpoint exists — inspect sealed bundle state via "
+        "GET /v1/missions/{mission_id}/source-media"
+    )
+    assert "processing-job lease endpoint" not in body["detail"]
+    assert "verify-input" not in body["detail"]
+
+
 def test_no_store_means_no_processing_surface() -> None:
     from ksi_core.composition.routes.processing import mount_processing_routes
 

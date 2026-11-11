@@ -92,7 +92,9 @@ Enforcing invariants (names; SSOT is `docs/product/DOMAIN_INVARIANTS.md`):
   derived products never back success or measurement authority; external
   imports cannot forge source authority.
 - **INV-053** — quantitative comparison only on the admitted compatibility
-  rule (managed same-`processingProfileDigest` path, or the narrow external
+  rule (the sealed history-replay same-`processingProfileDigest` binding for
+  pre-retirement journals — managed issuance is retired, so no live
+  same-digest comparison path exists — or the narrow external
   V1 rule in the quantitative specification); anything else is a typed
   blocker. This protocol grants no eligibility.
 - **INV-054** — product-owned external runtime images are exact
@@ -236,7 +238,10 @@ undecided; research informs but does not close them):
   INV-053. The only closed quantitative rule is the narrow external
   relative-volume V1 rule in
   `docs/superpowers/specs/2026-09-09-external-quantitative-authority-v1.md`;
-  this protocol adds no cross-engine mapping.
+  this protocol adds no cross-engine mapping. The retired managed
+  same-`processingProfileDigest` path remains referenceable only as sealed
+  history-replay binding for pre-retirement journals, never as a live
+  comparison route.
 
 ## 6. Trial/commercial distinction (retained without trial execution)
 

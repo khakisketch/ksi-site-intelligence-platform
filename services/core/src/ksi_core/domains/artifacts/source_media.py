@@ -1874,8 +1874,9 @@ def build_source_media_router(store: SourceMediaStore, storage: EvidenceStorage)
         return SourceMediaVerifyResponse(
             verdict="LEASE_FENCE_REQUIRED",
             detail=(
-                "unfenced mission verification is disabled; use the current "
-                "processing-job lease endpoint"
+                "unfenced mission verification is retired with managed execution; "
+                "no replacement endpoint exists — inspect sealed bundle state via "
+                "GET /v1/missions/{mission_id}/source-media"
             ),
         )
 
