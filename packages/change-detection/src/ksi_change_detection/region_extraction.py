@@ -1,17 +1,22 @@
-"""설계 대비 잔량의 diffRaster에서 변화 영역을 뽑는다 — 문턱→연결영역→최소면적→정렬 (M4-E).
+"""설계 대비 잔량 또는 2시점 DSM 차분의 diff 격자에서 변화 영역을 뽑는다
+— 문턱→연결영역→최소면적→정렬 (M4-E + 전수 조사 Task 1).
 
 ## 새 원본이 아니라 이미 계산된 격자를 다시 읽는 것
 
 ``DesignConformanceReport.diffRaster`` 가 이미 담고 있는 표고차 격자를 읽어
-"어디가 바뀌었나"를 구역이 아니라 **연결영역**으로 뽑는다. 그래서 이 모듈은
-DSM 을 다시 차분하지 않는다 — 입력은 ``diff_raster.read_diff_geotiff`` 가
-돌려주는 :class:`~ksi_change_detection.dsm_diff.DiffResult` 하나뿐이다.
+"어디가 바뀌었나"를 구역이 아니라 **연결영역**으로 뽑는다. 그래서 설계 경로
+모듈은 DSM 을 다시 차분하지 않는다 — 입력은 ``diff_raster.read_diff_geotiff``
+가 돌려주는 :class:`~ksi_change_detection.dsm_diff.DiffResult` 하나뿐이다.
+전수 조사 진입점(:func:`compute_survey_regions`)도 같은 ``DiffResult`` 를
+읽는다 — 다만 설계 잔량이 아니라 ``align_and_diff`` 로 맞춘 2시점 DSM 차분
+전체를 스캔한다. 라벨링·최소면적·``MAX_REGIONS``·cut/fill·벡터화·bbox·hull
+초안은 두 경로가 하나의 코어(``_extract``)를 공유한다.
 
 ## 결정적이어야 한다 — AI/학습 모델을 쓰지 않는다
 
 문턱값 비교·``scipy.ndimage.label``·픽셀 개수 필터·``rasterio.features.
 shapes`` 벡터화는 전부 같은 입력에 같은 출력을 낸다. 이 결정성이 이 모듈의
-유일한 계약 조건이다(테스트: 같은 diff GeoTIFF 를 2회 추출해 region_id
+유일한 계약 조건이다(테스트: 같은 diff 격자를 2회 추출해 region_id
 집합·폴리곤 좌표열·cut/fill 값이 완전히 동일함을 강제한다).
 
 ## 절토·성토 산식은 ``volume_delta_in_polygon`` 과 동형이되 공유 헬퍼로 뽑지 않는다
@@ -42,6 +47,7 @@ from ksi_event_contracts.change_region_report import (
     ChangeRegionSetReport,
 )
 from ksi_event_contracts.region_extraction_policy import RegionExtractionPolicy
+from ksi_event_contracts.survey_extraction_policy import SurveyExtractionPolicy
 from ksi_event_contracts.volume_change_report import ZoneVolumeDelta
 from ksi_geo_spatial.crs import ReprojectionFailedError, normalise_crs, reproject_geometry
 from rasterio import features
@@ -62,6 +68,22 @@ _REGION_UNCERTAINTY_NOTE = (
     "이 영역은 설계 대비 잔량 diffRaster 에서 파생됐다 — 원본 리포트와 같은 이유로 "
     "오차한계가 없다(설계면은 측정물이 아니라 검증된 RMSE 가 없다, INV-024)"
 )
+
+#: 영역의 오차한계 — 전수 조사 diff 에서 파생된 값이라 항상 없다. 설계 경로와
+#: 달리 양쪽 입력이 실측 DSM 이지만, 양 epoch 모두 검증된 RMSE 를 갖지 않으면
+#: 차분의 오차를 말할 수 없다(INV-024, ``dsm_diff`` 모듈 docstring).
+_SURVEY_UNCERTAINTY_NOTE = (
+    "이 영역은 2시점 DSM 전수 조사 diff 에서 파생됐다 — 양 epoch 의 검증된 "
+    "RMSE 가 없어 오차한계가 없다(INV-024)"
+)
+
+#: 전수 조사 리포트의 계보 앵커(``ChangeRegionSetReport.designConformanceId``
+#: 자리)에 싣는 접두사. 조사에는 설계 대비 계산이 없으므로 그 id 를 그대로
+#: 싣는 대신 ``survey:<surveyId>`` 형태로 싣는다 — 설계 리포트로 오인되지
+#: 않게(접두사 없는 값은 설계 리포트 id 로 해석될 수 있다), 그리고 이 값으로
+#: 설계 리포트를 조회하면 존재하지 않아 fail-closed 로 막히게. 계약 필드의
+#: 타입·필수 조건은 그대로 두고, 값의 출처만 명시한다.
+_SURVEY_ANCHOR_PREFIX = "survey:"
 
 _WGS84_CRS = "EPSG:4326"
 
@@ -92,15 +114,112 @@ def compute_change_regions(
             ``MAX_REGIONS`` 를 넘거나, 벡터화가 빈 결과를 냈다(마스크·라벨
             불일치 — 발생하면 이 함수의 버그다).
     """
+    return _extract(
+        diff,
+        threshold_m=threshold_m,
+        min_region_area_m2=policy.min_region_area_m2,
+        connectivity=policy.connectivity,
+        extraction_policy=policy,
+        uncertainty_note=_REGION_UNCERTAINTY_NOTE,
+        change_region_set_id=change_region_set_id,
+        design_conformance_id=design_conformance_id,
+        diff_raster_id=diff_raster_id,
+        computed_at=computed_at,
+    )
+
+
+def compute_survey_regions(
+    diff: DiffResult,
+    *,
+    policy: SurveyExtractionPolicy,
+    change_region_set_id: str,
+    survey_id: str,
+    diff_raster_id: str,
+    computed_at: datetime,
+) -> ChangeRegionSetReport:
+    """2시점 DSM 차분 전체를 스캔해 후보 구역을 뽑는다 — 설계 정합 전제 없음.
+
+    설계 경로(:func:`compute_change_regions`)와 라벨링·최소면적·``MAX_REGIONS``
+    fail-closed·per-label cut/fill·벡터화·bbox·hull 초안 코어(``_extract``)를
+    공유한다. 다른 점은 셋뿐이다: 문턱값이 조사 정책 안에서 오고(따로 받지
+    않는다 — 갈라질 자리가 없다), 오차한계 없음의 근거 문구가 조사 사유이며,
+    계보 앵커(``designConformanceId`` 자리)에 설계 리포트 id 대신
+    ``survey:<surveyId>`` 를 싣는다(모듈 상수 ``_SURVEY_ANCHOR_PREFIX``).
+
+    Args:
+        diff: ``align_and_diff`` 로 맞춘 2시점 DSM 차분 전체.
+        policy: 이번 조사가 쓰는 기준값 한 벌 — 문턱 포함.
+        change_region_set_id: 결과 리포트의 id — 호출자가 준다(이 함수가 만들면
+            재실행마다 다른 리포트가 된다).
+        survey_id: 이 조사를 낸 전수 조사 실행의 id — 계보 앵커의 뒷부분.
+        diff_raster_id: 이 차분 격자를 낸 2시점 diff 자산 id — 새로 만들지 않고
+            그대로 싣는다(이 함수는 새 래스터를 쓰지 않는다).
+        computed_at: 결정성을 위해 인자로 받는다.
+
+    Raises:
+        RegionExtractionError: 유효 셀이 하나도 없거나(``align_and_diff`` 가 이미
+            막은 all-NoData 가 어떤 경로로든 여기까지 오면 숫자를 내지 않는다 —
+            "변화 0" 과 "잴 수 없음" 은 다른 사실이다), 문턱값이 유효하지
+            않거나, 생존 영역이 ``MAX_REGIONS`` 를 넘거나, 벡터화가 빈 결과를
+            냈다. INV-053 위반·CRS/수직기준 불일치·무효 중첩은 이 함수 앞단
+            (``align_and_diff``·수직기준 브리지·Core preflight)의 기존 typed
+            blocker/fail-closed 가 그대로 맡는다 — 이 함수는 그 게이트를
+            우회하는 숫자를 만들지 않는다.
+    """
+    if not survey_id:
+        raise RegionExtractionError("survey_id 가 비었다 — 계보 앵커를 지을 수 없다")
+    if not diff.valid.any():
+        raise RegionExtractionError(
+            "차분에 유효 셀이 하나도 없다 — 전부 nodata 거나 겹치는 영역이 없다. "
+            "'변화 0' 이 아니라 '잴 수 없음' 이므로 리포트를 만들지 않는다"
+        )
+    return _extract(
+        diff,
+        threshold_m=policy.threshold_m,
+        min_region_area_m2=policy.min_region_area_m2,
+        connectivity=policy.connectivity,
+        extraction_policy=RegionExtractionPolicy(
+            policy_version=policy.policy_version,
+            min_region_area_m2=policy.min_region_area_m2,
+            connectivity=policy.connectivity,
+        ),
+        uncertainty_note=_SURVEY_UNCERTAINTY_NOTE,
+        change_region_set_id=change_region_set_id,
+        design_conformance_id=f"{_SURVEY_ANCHOR_PREFIX}{survey_id}",
+        diff_raster_id=diff_raster_id,
+        computed_at=computed_at,
+    )
+
+
+def _extract(
+    diff: DiffResult,
+    *,
+    threshold_m: float,
+    min_region_area_m2: float,
+    connectivity: int,
+    extraction_policy: RegionExtractionPolicy,
+    uncertainty_note: str,
+    change_region_set_id: str,
+    design_conformance_id: str,
+    diff_raster_id: str,
+    computed_at: datetime,
+) -> ChangeRegionSetReport:
+    """두 진입점이 공유하는 추출 코어 — 순서·산식·fail-closed 가 여기 하나뿐이다.
+
+    순서(모듈 docstring): 문턱 비교 → 연결영역 라벨링 → 픽셀 개수로 최소면적
+    미달 사전 필터(벡터화 이전에 걸러 비싼 연산을 생존자에게만 돌린다) →
+    ``MAX_REGIONS`` 상한 검사(초과 시 fail-closed) → 생존 라벨마다 절토/성토·
+    벡터화·bbox 측정불가율·hull 초안.
+    """
     if threshold_m < 0.0 or not math.isfinite(threshold_m):
         raise RegionExtractionError(f"threshold_m 은 0 이상의 finite 여야 한다: {threshold_m!r}")
 
     binary = diff.valid & (np.abs(diff.diff_m) >= threshold_m)
-    structure = ndimage.generate_binary_structure(2, 1 if policy.connectivity == 4 else 2)
+    structure = ndimage.generate_binary_structure(2, 1 if connectivity == 4 else 2)
     labeled, n_labels = ndimage.label(binary, structure=structure)
 
     counts = np.bincount(labeled.ravel(), minlength=n_labels + 1)
-    min_pixels = max(1, math.ceil(policy.min_region_area_m2 / diff.cell_area_m2))
+    min_pixels = max(1, math.ceil(min_region_area_m2 / diff.cell_area_m2))
     survivor_labels = [label for label in range(1, n_labels + 1) if counts[label] >= min_pixels]
     filtered_region_count = n_labels - len(survivor_labels)
 
@@ -139,7 +258,7 @@ def compute_change_regions(
                     area_m2=area_m2,
                     threshold_m=threshold_m,
                     uncertainty_m3=None,
-                    uncertainty_note=_REGION_UNCERTAINTY_NOTE,
+                    uncertainty_note=uncertainty_note,
                 ),
                 pixel_count=pixel_count,
                 polygon=polygon,
@@ -162,7 +281,7 @@ def compute_change_regions(
         diff_raster_id=diff_raster_id,
         crs=diff.crs,
         threshold_m=threshold_m,
-        extraction_policy=policy,
+        extraction_policy=extraction_policy,
         regions=regions,
         filtered_region_count=filtered_region_count,
         unmeasurable_cell_ratio=unmeasurable_cell_ratio,
@@ -300,4 +419,5 @@ __all__ = [
     "HULL_CONSISTENCY_CHECK_FAILED",
     "RegionExtractionError",
     "compute_change_regions",
+    "compute_survey_regions",
 ]
