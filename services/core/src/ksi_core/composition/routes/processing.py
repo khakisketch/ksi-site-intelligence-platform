@@ -38,6 +38,16 @@ def mount_processing_routes(
     design_surface_store: Any = None,
     landxml_ingress_enabled: bool = False,
 ) -> None:
+    """Mount history reads plus the staying analysis/equipment surfaces.
+
+    ``site_lifecycle`` is consumed solely by the spatial-model mount below
+    (epoch-driven site auto-advance).  It is intentionally NOT forwarded to
+    the processing history mounts: with issuance retired there is no
+    issue/transition event left to advance a site from, so the history
+    router takes no lifecycle.  Kept as a parameter (rather than inlining
+    the lifecycle construction here) because ``app_factory`` already builds
+    it for the spatial mount from the staying site/processing-job stores.
+    """
     if processing_job_store is not None:
         # evidence_storage 는 위 결합 검증이 이미 보장한다(등록된 산출물 바이트를
         # 꺼낼 다운로드 URL 발급에 필요 — GET .../artifacts/{id}/download).

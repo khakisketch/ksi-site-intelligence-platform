@@ -52,6 +52,10 @@ from ksi_event_contracts.processing_artifact import (
     ProcessingArtifactKind,
     processing_artifact_wire_dict,
 )
+from ksi_event_contracts.processing_resource_policy import (
+    ProcessingResourcePolicyV1,
+    processing_resource_policy_wire_dict,
+)
 
 _MISSION_ID = "mission-a"
 _SITE_ID = "site-a"
@@ -66,13 +70,34 @@ _T4 = _T1 + timedelta(seconds=1800)
 class _SourceMediaStub:
     """Minimal sealed-bundle authority for replay input-verification reads."""
 
-    def __init__(self, *, digest: str = _SOURCE_DIGEST) -> None:
+    def __init__(
+        self,
+        *,
+        digest: str = _SOURCE_DIGEST,
+        media: tuple[Any, ...] = (),
+        organization_id: str = "org-a",
+        sealed: bool = True,
+    ) -> None:
         self._digest = digest
+        self._media = media
+        self._sealed = sealed
+        self._mission_store = SimpleNamespace(
+            get=lambda mission_id: (
+                SimpleNamespace(organization_id=organization_id)
+                if mission_id == _MISSION_ID
+                else None
+            ),
+        )
 
     def get(self, mission_id: str) -> Any:
         if mission_id != _MISSION_ID:
             return None
-        return SimpleNamespace(is_verified=True, source_bundle_digest=self._digest)
+        return SimpleNamespace(
+            is_verified=True,
+            is_sealed=self._sealed,
+            source_bundle_digest=self._digest,
+            media=self._media,
+        )
 
     def mission_is_visible(self, mission_id: str) -> bool:
         return mission_id == _MISSION_ID
@@ -106,10 +131,30 @@ def _artifact(
     )
 
 
+def _sealed_policy(**overrides: Any) -> ProcessingResourcePolicyV1:
+    """One sealed historical admission envelope (fixture data, not issuance).
+
+    Defaults mirror the retired single-customer pilot envelope; overrides pin
+    a different sealed historical fact for negative replay tests.
+    """
+    values: dict[str, Any] = {
+        "resource_policy_id": "ksi-civil-pilot-r1",
+        "max_source_media_files": 5_000,
+        "max_source_media_file_bytes": 1_073_741_824,
+        "max_source_bundle_bytes": 1_099_511_627_776,
+        "max_total_megapixels": 150_000.0,
+        "max_active_processing_jobs_per_organization": 20,
+    }
+    values.update(overrides)
+    return ProcessingResourcePolicyV1(**values).sealed()
+
+
 def _issued_raw(
     *,
     profile_id: str | None = HISTORICAL_KSI_ODM_CIVIL_V1_ID,
     profile_digest: str | None = HISTORICAL_KSI_ODM_CIVIL_V1_DIGEST,
+    resource_policy: ProcessingResourcePolicyV1 | None = None,
+    resource_policy_digest: str | None = None,
 ) -> dict[str, Any]:
     raw: dict[str, Any] = {
         "kind": "processing-job-issued",
@@ -140,6 +185,15 @@ def _issued_raw(
         raw["processingProfileId"] = profile_id
     if profile_digest is not None:
         raw["processingProfileDigest"] = profile_digest
+    if resource_policy is not None:
+        raw["resourcePolicy"] = processing_resource_policy_wire_dict(resource_policy)
+        raw["resourcePolicyDigest"] = (
+            resource_policy_digest
+            if resource_policy_digest is not None
+            else resource_policy.resource_policy_digest
+        )
+    elif resource_policy_digest is not None:
+        raw["resourcePolicyDigest"] = resource_policy_digest
     return raw
 
 
@@ -154,6 +208,8 @@ def _versioned_journal(
         ProcessingArtifactKind.DTM,
     ),
     accepted_generation: int = 1,
+    resource_policy: ProcessingResourcePolicyV1 | None = None,
+    resource_policy_digest: str | None = None,
 ) -> Path:
     """Sealed manifest-aware history: issued → leased → RUNNING → 3 candidates → SUCCEEDED."""
     worker = str(uuid4())
@@ -169,7 +225,14 @@ def _versioned_journal(
     journal_path = tmp_path / "processing-job.jsonl"
     journal = DurableJournal(journal_path)
     try:
-        journal.append(_issued_raw(profile_id=profile_id, profile_digest=profile_digest))
+        journal.append(
+            _issued_raw(
+                profile_id=profile_id,
+                profile_digest=profile_digest,
+                resource_policy=resource_policy,
+                resource_policy_digest=resource_policy_digest,
+            )
+        )
         journal.append(
             {
                 "kind": "processing-job-leased",
@@ -281,10 +344,19 @@ def _versioned_journal(
     return journal_path
 
 
-def _open_store(journal_path: Path, *, digest: str = _SOURCE_DIGEST) -> ProcessingJobStore:
+def _open_store(
+    journal_path: Path,
+    *,
+    digest: str = _SOURCE_DIGEST,
+    media: tuple[Any, ...] = (),
+    organization_id: str = "org-a",
+    sealed: bool = True,
+) -> ProcessingJobStore:
     return ProcessingJobStore(
         DurableJournal(journal_path),
-        source_media_store=_SourceMediaStub(digest=digest),  # type: ignore[arg-type]
+        source_media_store=_SourceMediaStub(  # type: ignore[arg-type]
+            digest=digest, media=media, organization_id=organization_id, sealed=sealed
+        ),
         site_store=SiteStore(DurableJournal(journal_path.parent / "sites.jsonl")),
     )
 
@@ -346,6 +418,48 @@ def test_half_profile_binding_is_fail_closed(tmp_path: Path) -> None:
     path = _versioned_journal(tmp_path, profile_digest=None)
     with pytest.raises(ProcessingJobRecoveryError, match="반쪽"):
         _open_store(path)
+
+
+def _policy_media() -> tuple[Any, ...]:
+    return (
+        SimpleNamespace(width=4000, height=3000, size_bytes=5_000_000),
+        SimpleNamespace(width=4000, height=3000, size_bytes=5_000_000),
+    )
+
+
+def test_policy_bound_history_replays_snapshot_gate(tmp_path: Path) -> None:
+    """Policy-bound journals replay against their sealed snapshot (no registry).
+
+    This is why ``_resource_policy_violation`` and its helpers survive the
+    execution retirement: the live issuer is gone, but historical journals
+    carrying a resource-policy snapshot still re-apply the gate at replay.
+    """
+    policy = _sealed_policy()
+    path = _versioned_journal(tmp_path, resource_policy=policy)
+    store = _open_store(path, media=_policy_media())
+
+    record = store.get(_JOB_ID)
+    assert record is not None
+    assert record.status.value == "SUCCEEDED"
+    assert record.resource_policy_id == "ksi-civil-pilot-r1"
+    assert record.resource_policy_digest == policy.resource_policy_digest
+
+
+def test_tampered_policy_digest_is_fail_closed(tmp_path: Path) -> None:
+    path = _versioned_journal(
+        tmp_path,
+        resource_policy=_sealed_policy(),
+        resource_policy_digest="sha256:" + "0" * 64,
+    )
+    with pytest.raises(ProcessingJobRecoveryError, match="snapshot digest"):
+        _open_store(path, media=_policy_media())
+
+
+def test_policy_violating_bundle_is_fail_closed(tmp_path: Path) -> None:
+    tiny = _sealed_policy(max_total_megapixels=1.0)
+    path = _versioned_journal(tmp_path, resource_policy=tiny)
+    with pytest.raises(ProcessingJobRecoveryError, match="위반"):
+        _open_store(path, media=_policy_media())
 
 
 def test_legacy_job_without_profile_binding_replays(tmp_path: Path) -> None:

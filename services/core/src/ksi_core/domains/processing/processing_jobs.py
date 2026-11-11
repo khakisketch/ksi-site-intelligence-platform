@@ -490,7 +490,9 @@ class ProcessingJobRecord:
     capture_window: CaptureWindow = CaptureWindow.incomplete()
     # Current policy jobs bind the full sealed snapshot, while pre-policy
     # records remain honestly absent.  The policy is operational admission
-    # evidence, not a mutable organization quota setting.
+    # evidence, not a mutable organization quota setting.  Task 2 note: this
+    # snapshot is what ``_replay_issued`` validates policy-bound history
+    # against — the live registry is gone, the journal fact is not.
     resource_policy: ProcessingResourcePolicyV1 | None = None
 
     @property
@@ -739,6 +741,12 @@ def _resource_policy_violation(
     All values come from sealed SourceMedia claims or Core projections.  This
     is deliberately not a client-facing quota calculator: it is the shared
     live/replay fail-closed policy gate.
+
+    Task 2 note: the live issuer is gone, but this gate is NOT dead code —
+    ``_replay_issued`` re-applies it to historical journals that carry a
+    resource-policy snapshot, against that snapshot (never a live registry).
+    Removing it would either reject genuine history or silently accept
+    journals the live gate could never have written.
     """
     if len(media) > policy.max_source_media_files:
         return (
@@ -1465,11 +1473,15 @@ class ProcessingJobStore:
         which every source bundle was admitted; this narrow read keeps that
         existing authority boundary while the resource gate needs a same-org
         count.
+
+        Task 2 note: retained for ``_replay_issued`` — policy-bound history
+        replays against the mission/source-bundle authority, not a live store.
         """
         mission = self._source_media._mission_store.get(mission_id)  # noqa: SLF001
         return mission.organization_id if mission is not None else None
 
     def _active_job_count_for_organization_locked(self, organization_id: str) -> int:
+        """Active-job count for the replay-time policy gate (see Task 2 note above)."""
         return sum(
             1
             for record in self._jobs.values()
