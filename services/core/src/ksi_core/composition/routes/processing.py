@@ -1,4 +1,11 @@
-"""Processing, analysis, and equipment route mounting."""
+"""Processing history reads, analysis, and equipment route mounting.
+
+Processing execution is retired (Task 2): this module mounts only authorized
+historical reads (mission/site lists, detail, artifact download). There is no
+managed POST/worker-mutation surface, no pending queue, no executable profile
+or resource-policy catalog, and no auth_registry fallback mounting — nothing
+here can re-enable execution.
+"""
 
 from __future__ import annotations
 
@@ -13,7 +20,6 @@ def mount_processing_routes(
     processing_job_store: Any,
     evidence_storage: Any,
     site_lifecycle: Any,
-    auth_registry: Any,
     checkpoint_validation_store: Any,
     checkpoint_validation_registration_enabled: bool,
     site_store: Any,
@@ -33,24 +39,14 @@ def mount_processing_routes(
     landxml_ingress_enabled: bool = False,
 ) -> None:
     if processing_job_store is not None:
-        # evidence_storage 는 위 결합 검증이 이미 보장한다(워커가 원본을 받아갈
-        # 다운로드 URL 발급에 필요 — GET .../input).
+        # evidence_storage 는 위 결합 검증이 이미 보장한다(등록된 산출물 바이트를
+        # 꺼낼 다운로드 URL 발급에 필요 — GET .../artifacts/{id}/download).
         assert evidence_storage is not None  # noqa: S101 -- 위 결합 검증의 사후조건
         from ksi_core.processing_jobs import mount_processing_jobs
 
-        mount_processing_jobs(app, processing_job_store, evidence_storage, site_lifecycle)
-    elif auth_registry is not None:
-        # 처리 실행 표면은 evidence storage 없이는 계속 404다. 다만 Resource Policy는
-        # tenant 데이터나 실행 상태가 아닌 Core 전역의 고정 admission envelope다.
-        # 인증된 축소 조립(dev/E2E 포함)에서도 이를 조회할 수 있어야 Dashboard가
-        # "정책을 모름"과 "실행 인프라가 없음"을 혼동하지 않는다. 수정 API는 없고,
-        # processing_job_store가 있는 조립은 위에서 같은 store registry를 노출한다.
-        from ksi_core.processing_jobs import build_processing_resource_policies_router
-        from ksi_core.processing_resource_policy import ProcessingResourcePolicyRegistry
-
-        app.include_router(
-            build_processing_resource_policies_router(ProcessingResourcePolicyRegistry())
-        )
+        mount_processing_jobs(app, processing_job_store, evidence_storage)
+    # 실행 catalog·fallback 장착 없음: store 가 없는 조립에서는 처리 표면이
+    # 존재하지 않는다. 없는 편이 정직하다.
 
     if checkpoint_validation_store is not None:
         # evidence_storage 는 위 결합 검증이 보장한다. 등록 flag가 false여도 sealed

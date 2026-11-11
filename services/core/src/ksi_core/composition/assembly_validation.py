@@ -304,12 +304,11 @@ _ASSEMBLY_REQUIREMENTS: tuple[tuple[str, tuple[tuple[str, ...], ...], str], ...]
         "processing_job_store",
         (("source_media_store", "site_store", "evidence_storage"),),
         "processing_job_store 는 source_media_store·site_store·evidence_storage 와"
-        " 함께 주어져야 한다(ADR-KSI-012, INV-050) — 처리 작업의 입력(장수·화소·"
-        "digest)은 봉인된 번들이 정하고 반출 허용 여부는 현장이 정한다. 하나라도"
-        " 없으면 그 값들을 요청이 스스로 주장하는 구성이 되므로 조립하지 않는다."
-        " evidence_storage 는 워커가 원본을 받아갈 다운로드 URL 발급에 필요하다"
-        " — 없으면 워커가 바이트를 읽을 수 없어 실측 대조가 성립하지 않고,"
-        " 그러면 SUCCEEDED 게이트가 영구히 닫힌 조립이 된다",
+        " 함께 주어져야 한다(ADR-KSI-012, INV-050, Task 2 retirement) — 역사"
+        " 조회의 가시성·입력 검증 대조는 봉인된 번들과 현장 원장을 읽고,"
+        " 산출물 다운로드는 스토리지를 읽는다. 하나라도 없으면 조회가"
+        " 거짓 표면을 내거나(없는 원장을 빈 목록으로 답함) 다운로드가 성립하지"
+        " 않으므로 조립하지 않는다",
     ),
     (
         "checkpoint_validation_store",

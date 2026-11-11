@@ -10,7 +10,9 @@ from typing import Any
 
 import pytest
 from jsonschema import Draft202012Validator
-from ksi_core.processing_profiles import ksi_odm_civil_v1
+from ksi_core.domains.processing.historical_processing_profiles import (
+    HISTORICAL_KSI_ODM_CIVIL_V1_DIGEST,
+)
 from PIL import Image
 
 _ROOT = Path(__file__).resolve().parents[2]
@@ -108,7 +110,9 @@ def _fixture(tmp_path: Path) -> tuple[Path, Path, dict[str, Any]]:
             },
         },
         "processingProfileId": "ksi-odm-civil-v1",
-        "processingProfileDigest": ksi_odm_civil_v1().profile_digest,
+        # Sealed historical fixture — the executable recipe is retired (Task 2),
+        # so the manifest pins the recorded historical digest, never a live one.
+        "processingProfileDigest": HISTORICAL_KSI_ODM_CIVIL_V1_DIGEST,
         "crs": "EPSG:5186",
         "verticalReference": dict(vertical),
         "epochs": [

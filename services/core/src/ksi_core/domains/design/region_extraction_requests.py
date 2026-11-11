@@ -64,10 +64,10 @@ from ksi_core.domains.artifacts.evidence import (
     EvidenceStorage,
     EvidenceStorageError,
 )
-from ksi_core.domains.processing.processing_jobs import DEFAULT_LEASE_TTL
 from ksi_core.foundation.api_base import JOURNAL_SEALED_DETAIL, CamelModel, iso_utc
 from ksi_core.foundation.durable_journal import DurableJournal, JournalSealedError
 from ksi_core.foundation.leasing import (
+    DEFAULT_LEASE_TTL,
     JobLease,
     LeaseDenialReason,
     LeaseFence,
