@@ -52,21 +52,21 @@ export function SurveyRegionInspector(props: {
       ) : (
         <dl className="mt-1 divide-y divide-line">
           <Row label="후보" value={region.regionId} />
-          <Row label="절토" value={`${formatNumberKo(region.volume.cutM3)} ㎥`} />
-          <Row label="성토" value={`${formatNumberKo(region.volume.fillM3)} ㎥`} />
-          <Row label="순변화" value={`${formatNumberKo(region.volume.netM3)} ㎥`} />
-          <Row label="면적" value={`${formatNumberKo(region.volume.areaM2)} ㎡`} />
+          <Row label="절토" value={`${formatNumberKo(region.volume.cutM3)} m³`} />
+          <Row label="성토" value={`${formatNumberKo(region.volume.fillM3)} m³`} />
+          <Row label="순변화" value={`${formatNumberKo(region.volume.netM3)} m³`} />
+          <Row label="면적" value={`${formatNumberKo(region.volume.areaM2)} m²`} />
           <Row label="픽셀 수" value={`${formatCountKo(region.pixelCount)} 개`} />
           <Row
             label="측정 불가 비율"
-            value={formatNumberKo(region.unmeasurableRatio * 100)}
+            value={`${formatNumberKo(region.unmeasurableRatio * 100)}%`}
           />
           <Row
             label="껍질 과대포함 비율"
             value={
               region.hullOvercaptureRatio === null
                 ? "계산 안 됨"
-                : formatNumberKo(region.hullOvercaptureRatio)
+                : `${formatNumberKo(region.hullOvercaptureRatio)}배`
             }
           />
           {region.aoiDraftUnavailableReason && (
@@ -76,6 +76,7 @@ export function SurveyRegionInspector(props: {
       )}
       <p className="mt-1 text-xs leading-5 text-ink-2">
         서버가 계산한 값의 표시이며, 판정·정산 적합성을 나타내지 않습니다.
+        껍질 과대포함 비율은 볼록 껍질 면적 ÷ 실제 면적이며 1.0 이상입니다.
       </p>
     </section>
   );

@@ -65,6 +65,10 @@ describe("SurveyRegionInspector", () => {
     expect(section.textContent).toContain("10.5");
     // formatNumberKo SSOT: 소수 1자리 반올림 표기.
     expect(section.textContent).toContain("8.3");
+    // 표기 통일: 측정불가율 % 기호, 껍질 비율 배율 단위와 눈금 안내.
+    expect(section.textContent).toContain("5%");
+    expect(section.textContent).toContain("1.2배");
+    expect(section.textContent).toContain("1.0 이상입니다");
   });
 
   it("prompts for selection when nothing is selected", async () => {
