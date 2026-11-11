@@ -1024,6 +1024,22 @@ describe("analysis V2 panel", () => {
     expect(router.refresh).toHaveBeenCalled();
   });
 
+  it("shares scope recovery links when candidate and history reads are both unconfirmed", () => {
+    renderPanel({ canCreate: false, initialPage: listPage([]), initialSelectedDetail: null, initialAnalysisId: null,
+      initialWorkAreaId: "area-1", listsState: { workAreas: "unconfirmed", observations: "unconfirmed", workOrders: "ready", history: "unconfirmed", historyMessage: "현장 변화 분석 이력을 확인할 수 없습니다." } });
+    expect(screen.getByText("목록을 확인할 수 없습니다")).toBeTruthy();
+    expect(screen.getByText("분석 이력을 확인할 수 없습니다")).toBeTruthy();
+    expect(screen.getAllByRole("button", { name: "목록 다시 불러오기" })).toHaveLength(1);
+    expect(screen.getAllByRole("button", { name: "이력 다시 불러오기" })).toHaveLength(1);
+    const recovery = screen.getByRole("navigation", { name: "공통 범위 복구" });
+    expect(within(recovery).getByRole("link", { name: "등록 자료 보기" }).getAttribute("href"))
+      .toBe("/sites/site-1/spatial-assets?workAreaId=area-1");
+    expect(within(recovery).getByRole("link", { name: "작업공간으로 돌아가기" }).getAttribute("href"))
+      .toBe("/sites/site-1?workAreaId=area-1");
+    expect(screen.getAllByRole("link", { name: "등록 자료 보기" })).toHaveLength(1);
+    expect(screen.getAllByRole("link", { name: "작업공간으로 돌아가기" })).toHaveLength(1);
+  });
+
   it("offers scopeless returns when candidate lists fail before area selection", () => {
     renderPanel({ canCreate: true, initialPage: listPage([]), initialSelectedDetail: null, initialAnalysisId: null,
       initialWorkAreaId: "", listsState: { workAreas: "denied", observations: "ready", workOrders: "ready", history: "ready" } });
@@ -1032,13 +1048,16 @@ describe("analysis V2 panel", () => {
     expect(screen.getByRole("link", { name: "현장 현황 보기" }).getAttribute("href")).toBe("/sites/site-1");
   });
 
-  it("offers scoped exits when history is unconfirmed without asserting empty history", () => {
+  it("offers one history-specific scoped exit when candidate lists are available", () => {
     renderPanel({ canCreate: false, initialPage: listPage([]), initialSelectedDetail: null, initialAnalysisId: null,
       initialWorkAreaId: "area-1", listsState: { workAreas: "ready", observations: "ready", workOrders: "ready", history: "unconfirmed", historyMessage: "현장 변화 분석 이력을 확인할 수 없습니다. 현장 범위를 확인하거나 다시 불러오세요. 이 안내는 등록 자료의 상태를 판단하지 않습니다." } });
     expect(screen.getByRole("alert").textContent).toContain("등록 자료의 상태를 판단하지 않습니다");
     expect(screen.queryByText(/아직 변화 분석 요청이 없습니다/)).toBeNull();
-    expect(screen.getByRole("link", { name: "등록 자료 보기" }).getAttribute("href")).toBe("/sites/site-1/spatial-assets?workAreaId=area-1");
-    expect(screen.getByRole("link", { name: "현장 현황 보기" }).getAttribute("href")).toBe("/sites/site-1?workAreaId=area-1");
+    const recovery = within(screen.getByRole("navigation", { name: "이력 범위 복구" }));
+    expect(recovery.getByRole("link", { name: "등록 자료 보기" }).getAttribute("href")).toBe("/sites/site-1/spatial-assets?workAreaId=area-1");
+    expect(recovery.getByRole("link", { name: "현장 현황 보기" }).getAttribute("href")).toBe("/sites/site-1?workAreaId=area-1");
+    expect(screen.getAllByRole("link", { name: "등록 자료 보기" })).toHaveLength(1);
+    expect(screen.getAllByRole("link", { name: "현장 현황 보기" })).toHaveLength(1);
   });
 
   it("names the broken attribution link instead of claiming an empty area", () => {

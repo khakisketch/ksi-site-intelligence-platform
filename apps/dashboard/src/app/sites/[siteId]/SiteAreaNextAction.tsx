@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { EXACT_ANALYSIS_HINT_QUERY_KEYS, VISUAL_PAIR_QUERY_KEYS } from "./site-visual-pair";
+import { ResponsiveActionBoundary } from "@/components/responsive/ResponsiveActionBoundary";
 
 /**
  * 선택 구역의 다음 행동 — 탐색 첫 화면과 구역 상세 화면이 같은 것을 본다.
@@ -109,18 +110,20 @@ export function SiteAreaNextActionNav({
   if (compact) {
     return (
       <nav className="flex flex-col gap-1.5" aria-label={label}>
-        <Link href={action.primary.href} className="btn btn-primary w-fit">
-          {action.primary.label}
-        </Link>
+        {action.primary.label === "관측 자료 등록" ? (
+          <ResponsiveActionBoundary action="WORK_ORDERS_WRITE" reason="자료 등록은 노트북 이상의 화면에서 진행하세요.">
+            <Link href={action.primary.href} className="btn btn-primary w-fit">{action.primary.label}</Link>
+          </ResponsiveActionBoundary>
+        ) : <Link href={action.primary.href} className="btn btn-primary w-fit">{action.primary.label}</Link>}
         <details className="text-[12px] text-ink-2">
           <summary className="tap-target cursor-pointer font-semibold">다른 보기</summary>
           <div className="mt-1.5 flex flex-col gap-2">
             {(action.secondaryRegisterHref || action.secondaryCompareHref) && (
               <p className="flex flex-wrap gap-2">
                 {action.secondaryRegisterHref && (
-                  <Link href={action.secondaryRegisterHref} className="btn w-fit">
-                    이 구역 자료 등록
-                  </Link>
+                  <ResponsiveActionBoundary action="WORK_ORDERS_WRITE" reason="자료 등록은 노트북 이상의 화면에서 진행하세요.">
+                    <Link href={action.secondaryRegisterHref} className="btn w-fit">이 구역 자료 등록</Link>
+                  </ResponsiveActionBoundary>
                 )}
                 {action.secondaryCompareHref && (
                   <Link href={action.secondaryCompareHref} className="btn w-fit">
@@ -157,15 +160,19 @@ export function SiteAreaNextActionNav({
   }
   return (
     <nav className="flex flex-col gap-2" aria-label={label}>
-      <Link href={action.primary.href} className="btn btn-primary w-fit">
-        {action.primary.label}
-      </Link>
+      {action.primary.label === "관측 자료 등록" ? (
+        <ResponsiveActionBoundary action="WORK_ORDERS_WRITE" reason="자료 등록은 노트북 이상의 화면에서 진행하세요.">
+          <Link href={action.primary.href} className="btn btn-primary w-fit">{action.primary.label}</Link>
+        </ResponsiveActionBoundary>
+      ) : (
+        <Link href={action.primary.href} className="btn btn-primary w-fit">{action.primary.label}</Link>
+      )}
       {(action.secondaryRegisterHref || action.secondaryCompareHref) && (
         <p className="flex flex-wrap gap-2">
           {action.secondaryRegisterHref && (
-            <Link href={action.secondaryRegisterHref} className="btn w-fit">
-              이 구역 자료 등록
-            </Link>
+            <ResponsiveActionBoundary action="WORK_ORDERS_WRITE" reason="자료 등록은 노트북 이상의 화면에서 진행하세요.">
+              <Link href={action.secondaryRegisterHref} className="btn w-fit">이 구역 자료 등록</Link>
+            </ResponsiveActionBoundary>
           )}
           {action.secondaryCompareHref && (
             <Link href={action.secondaryCompareHref} className="btn w-fit">

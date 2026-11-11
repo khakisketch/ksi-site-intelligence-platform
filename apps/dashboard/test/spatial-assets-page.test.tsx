@@ -482,6 +482,18 @@ describe("spatial asset catalog page", () => {
     expect(html).not.toContain("9,007,199,254,740,992 bytes");
   });
 
+  it("keeps the selected work-area label and selector in an empty catalog", async () => {
+    mocked.areas.mockResolvedValueOnce({ workAreas: [workArea, { ...workArea, workAreaId: "area-2", name: "남측 작업구역" }] });
+    mocked.catalog.mockResolvedValueOnce({ siteId: "site-1", workAreaId: "area-1", scopePolicy: "SINGLE_WORK_AREA_WORK_ORDERS_ONLY", scopeNote: "scope", assets: [], nextCursor: null, hasMore: false });
+    const html = renderToStaticMarkup(await callPage({ workAreaId: "area-1" }));
+    expect(html).toContain("작업구역 · 북측 작업구역");
+    expect(html).toContain('id="empty-materials-work-area"');
+    expect(html).toContain('value="area-1" selected');
+    expect(html).toContain("남측 작업구역");
+    expect(html).toContain("이 작업구역에 등록된 자료가 없습니다");
+    expect(html).not.toContain(">다른 자료로 자동 전환</button>");
+  });
+
   it("keeps a foreign or stale WorkArea 404 distinct from a genuinely empty catalog", async () => {
     const { CoreApiError } = await import("@/lib/core-api/client");
     mocked.catalog.mockRejectedValueOnce(new CoreApiError(404, {}));
@@ -491,6 +503,19 @@ describe("spatial asset catalog page", () => {
     const empty = renderToStaticMarkup(await callPage({ workAreaId: "area-1" }));
     expect(empty).toContain("이 작업구역에 등록된 자료가 없습니다");
     expect(empty).toContain("관측 자료가 이 작업구역에 등록되면 해당 자료의 메타데이터와 검사 상태를 여기에서 확인할 수 있습니다.");
+  });
+
+  it("keeps the selected work area visible on an empty catalog", async () => {
+    mocked.session.mockResolvedValueOnce({ kind: "ready", principal: { organizationId: "org-1", principalId: "operator-1", permissions: ["SITES_READ"] } });
+    mocked.areas.mockResolvedValueOnce({ workAreas: [workArea, { ...workArea, workAreaId: "area-2", name: "남측 작업구역" }] });
+    mocked.catalog.mockResolvedValueOnce({ siteId: "site-1", workAreaId: "area-1", scopePolicy: "SINGLE_WORK_AREA_WORK_ORDERS_ONLY", scopeNote: "scope", assets: [], nextCursor: null, hasMore: false });
+    const html = renderToStaticMarkup(await callPage({ workAreaId: "area-1" }));
+    expect(html).toContain("작업구역 · 북측 작업구역");
+    expect(html).toContain('id="empty-materials-work-area"');
+    expect(html).toContain('value="area-1" selected');
+    expect(html).toContain("남측 작업구역");
+    expect(html).toContain("이 작업구역에 등록된 자료가 없습니다");
+    expect(html).not.toContain("다른 자료로 자동 전환");
   });
 
   it("keeps the register and records entries on a genuinely empty catalog when authorized", async () => {

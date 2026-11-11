@@ -1354,11 +1354,22 @@ export default async function SpatialAssetsPage({
           {selection.notices.samePair && <p role="status" className="text-[12px] text-ink-2">같은 자료를 두 번 선택했습니다. 한 장으로 둡니다.</p>}
 
           {page.assets.length === 0 && !sideA && !sideB
-            ? <div className="console-stage-empty">
+            ? <>
+              {effectiveWorkAreaId && <div data-empty-materials-scope="true" className="flex min-w-0 flex-wrap items-center gap-2 rounded-lg border border-line bg-surface px-3 py-2 text-[12px]">
+                {selectedArea ? <p className="min-w-0 flex-1 truncate font-semibold text-ink-1">작업구역 · {areaDisplayName}{selectedArea.status === "ARCHIVED" ? " (보관됨)" : ""}</p> : <p role="status" className="min-w-0 flex-1 text-ink-2">현재 작업구역을 확인할 수 없습니다.</p>}
+                {areas.workAreas.length > 1 && <SiteSelectionForm action={basePath} className="flex min-w-0 items-center gap-1.5">
+                  <label className="sr-only" htmlFor="empty-materials-work-area">자료를 확인할 작업구역 선택</label>
+                  <select id="empty-materials-work-area" name="workAreaId" className="input min-w-0 w-auto max-w-44" defaultValue={effectiveWorkAreaId}>
+                    {areas.workAreas.map((area) => <option key={area.workAreaId} value={area.workAreaId}>{area.name}{area.status === "ARCHIVED" ? " · 보관됨" : ""}</option>)}
+                  </select>
+                </SiteSelectionForm>}
+              </div>}
+              <div className="console-stage-empty">
               <p className="max-w-sm text-[15px] font-bold break-keep">이 작업구역에 등록된 자료가 없습니다</p>
               <p className="max-w-sm text-[13px] leading-5 break-keep text-ink-2">관측 자료가 이 작업구역에 등록되면 해당 자료의 메타데이터와 검사 상태를 여기에서 확인할 수 있습니다.</p>
               <div className="mt-1">{renderEmptyActions()}</div>
-            </div>
+              </div>
+            </>
             : <SpatialWorkbenchFrame
                 contextBar={renderContextBar()}
                 catalog={renderCatalog()}

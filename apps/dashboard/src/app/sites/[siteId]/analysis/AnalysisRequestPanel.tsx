@@ -2065,6 +2065,22 @@ export function AnalysisRequestPanel({
       {!attributionReady && <p>{listsState.workOrders === "denied" ? "관측과 작업구역의 연결 정보를 조회할 권한이 없습니다. 현장 담당자에게 조회 권한을 요청하세요." : listsState.workOrders === "unconfirmed" ? "관측과 작업구역의 연결 정보를 확인할 수 없습니다. 현장 범위를 확인하거나 다시 불러오세요." : "관측과 작업구역의 연결 정보를 불러오지 못했습니다."}</p>}
     </>
   );
+  // 구역 범위 복귀 링크는 후보·이력 상태가 함께 닫힐 때 한 번만 둔다.
+  const hasCommonScopeRecovery = listsBlockedForArea && !historyReady && workAreaId !== "";
+  const commonScopeRecovery = hasCommonScopeRecovery ? (
+    <nav aria-label="공통 범위 복구" className="flex flex-wrap gap-x-4 gap-y-2 text-[12.5px] leading-5 text-ink-2">
+      <Link className="font-semibold text-accent-text underline underline-offset-4" href={`/sites/${encodeURIComponent(siteId)}/spatial-assets?workAreaId=${encodeURIComponent(workAreaId)}`}>등록 자료 보기</Link>
+      <Link className="font-semibold text-accent-text underline underline-offset-4" href={`/sites/${encodeURIComponent(siteId)}?workAreaId=${encodeURIComponent(workAreaId)}`}>작업공간으로 돌아가기</Link>
+      {visualReturnHref && <Link className="font-semibold text-accent-text underline underline-offset-4" href={visualReturnHref}>독립 보기로 돌아가기</Link>}
+    </nav>
+  ) : null;
+  const historyScopeRecovery = !listsBlockedForArea && !historyReady
+    && listsState?.history === "unconfirmed" && workAreaId !== "" ? (
+      <nav aria-label="이력 범위 복구" className="flex flex-wrap gap-x-4 gap-y-2 text-[12.5px] leading-5 text-ink-2">
+        <Link className="font-semibold text-accent-text underline underline-offset-4" href={`/sites/${encodeURIComponent(siteId)}/spatial-assets?workAreaId=${encodeURIComponent(workAreaId)}`}>등록 자료 보기</Link>
+        <Link className="font-semibold text-accent-text underline underline-offset-4" href={`/sites/${encodeURIComponent(siteId)}?workAreaId=${encodeURIComponent(workAreaId)}`}>현장 현황 보기</Link>
+      </nav>
+    ) : null;
   // 목록 실패로 구역 후보를 보여줄 수 없을 때는 후보 없음으로 단정하지 않는다.
   const listsBlockedBlock = listsBlockedForArea && (
     <div className="mt-4 rounded-lg border border-line bg-sunk/50 px-4 py-3">
@@ -2077,7 +2093,7 @@ export function AnalysisRequestPanel({
       <div className="mt-1 text-[12.5px] leading-5 text-ink-2">{listFailureDetails}</div>
       <div className="mt-2.5 flex flex-wrap items-center gap-x-4 gap-y-2">
         <button type="button" className="btn min-h-11" onClick={() => router.refresh()}>목록 다시 불러오기</button>
-        <p className="text-[12.5px] leading-5 text-ink-2">
+        {!hasCommonScopeRecovery && <p className="text-[12.5px] leading-5 text-ink-2">
           또는 <Link className="font-semibold text-accent-text underline underline-offset-4" href={`/sites/${encodeURIComponent(siteId)}/spatial-assets?workAreaId=${encodeURIComponent(workAreaId)}`}>등록 자료와 검사 상태 확인</Link>
           {" · "}
           <Link className="font-semibold text-accent-text underline underline-offset-4" href={`/sites/${encodeURIComponent(siteId)}?workAreaId=${encodeURIComponent(workAreaId)}`}>작업공간으로 돌아가기</Link>
@@ -2085,7 +2101,7 @@ export function AnalysisRequestPanel({
             {" · "}
             <Link className="font-semibold text-accent-text underline underline-offset-4" href={visualReturnHref}>독립 보기로 돌아가기</Link>
           </>)}
-        </p>
+        </p>}
       </div>
     </div>
   );
@@ -2364,18 +2380,13 @@ export function AnalysisRequestPanel({
       <p className="text-[13px] font-bold">분석 이력을 확인할 수 없습니다</p>
       <p className="mt-1 text-[12.5px] leading-5 text-ink-2">{listsState?.historyMessage ?? "현장 변화 분석 이력을 불러오지 못했습니다."}</p>
       {(listsState?.history === "failed" || listsState?.history === "unconfirmed") && <div className="mt-2"><button type="button" className="btn min-h-11" disabled={listLoading || (historyRetryWait ?? 0) > 0} onClick={() => void refreshAnalyses()}>{(historyRetryWait ?? 0) > 0 ? `${historyRetryWait}초 후 다시 시도` : listLoading ? "이력 불러오는 중" : "이력 다시 불러오기"}</button></div>}
-      {listsState?.history === "unconfirmed" && <p className="mt-2 text-[12.5px] leading-5 text-ink-2">
-        등록 자료나 현장 현황에서 범위를 먼저 확인할 수 있습니다.{" "}
-        <Link className="font-semibold text-accent-text underline underline-offset-4" href={workAreaId ? `/sites/${encodeURIComponent(siteId)}/spatial-assets?workAreaId=${encodeURIComponent(workAreaId)}` : `/sites/${encodeURIComponent(siteId)}/spatial-assets`}>등록 자료 보기</Link>
-        {" · "}
-        <Link className="font-semibold text-accent-text underline underline-offset-4" href={workAreaId ? `/sites/${encodeURIComponent(siteId)}?workAreaId=${encodeURIComponent(workAreaId)}` : `/sites/${encodeURIComponent(siteId)}`}>현장 현황 보기</Link>
-      </p>}
     </div>
   );
 
   const recordsColumn = (
     <div className="flex min-w-0 flex-col gap-3">
       {historyErrorBlock}
+      {commonScopeRecovery ?? historyScopeRecovery}
       {latestRow && <section aria-label="최근 변화 분석 요약" className="rounded-xl border border-line bg-surface px-4 py-3.5">
         <div className="flex flex-wrap items-baseline justify-between gap-2">
           <p className="text-[13px] leading-5 text-ink-2">

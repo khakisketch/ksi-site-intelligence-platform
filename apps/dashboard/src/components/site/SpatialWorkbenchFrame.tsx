@@ -2,7 +2,6 @@
 
 import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 
-import { ViewerSiteLabel } from "@/components/nav/ViewerSiteLabel";
 import { ViewerSiteNav } from "@/components/nav/ViewerSiteNav";
 import { useDesktopNavCollapsed } from "@/components/nav/desktop-nav-preference";
 
@@ -299,15 +298,15 @@ export function SpatialWorkbenchFrame({
               aria-expanded={false}
               aria-controls="workbench-catalog"
               onClick={openCatalog}
-              aria-label="레이어 패널 열기"
-              title="레이어 패널 열기"
+              aria-label={`${catalogLabel} 열기`}
+              title={`${catalogLabel} 열기`}
               className="tap-target inline-flex h-9 shrink-0 items-center gap-2 rounded-md border border-line bg-surface px-2 text-ink-2 hover:bg-sunk"
             >
               <svg aria-hidden="true" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7">
                 <path d="m12 3 9 5-9 5-9-5Z" />
                 <path d="m3 12 9 5 9-5M3 16l9 5 9-5" />
               </svg>
-              <ViewerSiteLabel />
+              <span className="text-[11.5px] text-ink-muted">{catalogLabel}</span>
             </button>
           )}
           <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-1.5">{contextBar}</div>
@@ -415,13 +414,15 @@ export function SpatialWorkbenchFrame({
             type="button"
             aria-expanded={catalogOpen}
             aria-controls="workbench-catalog"
+            aria-label={catalogOpen ? `${catalogLabel} 닫기` : `${catalogLabel} 열기`}
+            title={catalogOpen ? `${catalogLabel} 닫기` : `${catalogLabel} 열기`}
             onClick={() => (catalogOpen ? closeCatalog() : openCatalog())}
             className="tap-target inline-flex shrink-0 items-center gap-1.5 rounded-md border border-line bg-surface px-2.5 py-1.5 text-[12.5px] font-semibold text-ink-2"
           >
             <svg aria-hidden="true" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.7" className="flex-none">
               <path d="M3 4h10M3 8h10M3 12h10" />
             </svg>
-            <span className="max-sm:sr-only">목록</span>
+            <span className="max-sm:sr-only">{catalogLabel}</span>
           </button>
         )}
         {contextBar}

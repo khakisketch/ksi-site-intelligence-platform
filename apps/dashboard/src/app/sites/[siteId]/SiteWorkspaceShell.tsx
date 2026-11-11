@@ -912,7 +912,13 @@ export function SiteWorkspaceShell({
     ) : (
       <p className="text-[12.5px] text-ink-2" role="status">작업구역을 확인할 수 없습니다. 아래 상세에서 목록을 확인하세요.</p>
     )}
-    {mode === "explore" && <p className="text-[12px] leading-5 text-ink-2">관측 시점·층 선택은 무대의 그림 바로 위에서 합니다.</p>}
+    {mode === "explore" && (captureOptions.length > 0
+      ? <p className="text-[12px] leading-5 text-ink-2">관측 시점·층 선택은 무대의 그림 바로 위에서 합니다.</p>
+      : <p className="text-[12px] leading-5 text-ink-2">
+          {projectionState === "ready" && ordinaryEntry.status === "no-server-default" && ordinaryEntry.reason === "NO_OBSERVATIONS"
+            ? "확인된 관측이 없어 선택할 항목이 없습니다."
+            : "선택할 관측 목록을 확인할 수 없습니다. 빈 구역으로 단정하지 않았습니다."}
+        </p>)}
     {mode === "compare" && <p className="text-[12px] leading-5 text-ink-2">두 시점 선택은 무대 위에서 합니다. 각 칸의 층은 각 그림 바로 위에서 바꿉니다.</p>}
     {mode === "results" && <p className="text-[12px] leading-5 text-ink-2">결과 선택은 무대에서 합니다. 탐색 중이던 두 자료와 결과의 계산 입력은 구분합니다.</p>}
     <nav aria-label="작업공간 이동" className="flex min-w-0 flex-col gap-1 text-[12px]">
@@ -961,7 +967,7 @@ export function SiteWorkspaceShell({
         </details>
       </div>
     )}
-    {mode === "explore" && !selectedCatalog && <p>선택한 자료 사실이 없습니다. 무대에서 관측을 고르세요.</p>}
+    {mode === "explore" && !selectedCatalog && captureOptions.length > 0 && <p>선택한 자료 사실이 없습니다. 무대에서 관측을 고르세요.</p>}
     {mode === "explore" && (
       <section aria-label="자료·범위" className="flex min-w-0 flex-col gap-3">
         <SiteSpatialOverview
@@ -1079,8 +1085,17 @@ export function SiteWorkspaceShell({
         )}
         {exploreIsEmpty && selected && exploreNextAction && (
           <div className="console-stage-empty">
-            <p className="max-w-sm text-[15px] font-bold break-keep">이 구역에 확인할 관측이 없습니다</p>
-            <p className="max-w-sm text-[13px] leading-5 break-keep text-ink-2">외부 관측이 등록되면 이 자리에서 지도와 함께 확인할 수 있습니다.</p>
+            <p className="max-w-sm text-[12px] font-semibold text-ink-2">현재 작업구역 · {areaLabel}</p>
+            <p className="max-w-sm text-[15px] font-bold break-keep">
+              {ordinaryEntry.status === "no-server-default" && ordinaryEntry.reason === "NO_OBSERVATIONS"
+                ? `${areaLabel ?? "이 작업구역"}에 확인된 관측이 없습니다`
+                : "이 작업구역에서 조회한 목록에 관측이 없습니다"}
+            </p>
+            <p className="max-w-sm text-[13px] leading-5 break-keep text-ink-2">
+              {ordinaryEntry.status === "no-server-default" && ordinaryEntry.reason === "NO_OBSERVATIONS"
+                ? "현재 작업구역에 확인된 외부 관측이 없습니다."
+                : "현재 페이지에서 선택할 관측을 확인하지 못했습니다. 전체 등록 기록과 다른 자료는 자료 목록에서 다시 확인하세요."}
+            </p>
             <div className="mt-2">
               <SiteAreaNextActionNav sitePath={sitePath} workAreaId={selected.workAreaId}
                 action={exploreNextAction} archived={selected.status === "ARCHIVED"}

@@ -327,12 +327,12 @@ describe("workspace shell structure", () => {
     expect(within(modeNav).getByRole("link", { name: label }).getAttribute("aria-current")).toBe("page");
     expect(modeNav.querySelectorAll('[aria-current="page"]')).toHaveLength(1);
     // 세그먼트 앞의 보이는 라벨이 접근 이름과 같다.
-    expect(screen.getByText("보기 방식")).toBeTruthy();
+    expect(within(modeNav.closest("[data-workbench-context-bar]") as HTMLElement).getByText("보기 방식")).toBeTruthy();
     // 맥락행은 라벨+이름 한 줄이다 — 탭 행과 같은 모양을 쓰지 않는다.
-    expect(screen.getByText(/작업구역 ·/)).toBeTruthy();
+    expect(within(modeNav.closest("[data-workbench-context-bar]") as HTMLElement).getByText(/작업구역 ·/)).toBeTruthy();
     // 고정 260px 선택 레일은 두지 않고, 목록은 여는 드로어로 둔다.
     expect(screen.queryByRole("complementary", { name: "작업공간 선택" })).toBeNull();
-    expect(screen.getByRole("button", { name: "목록" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "작업공간 목록 열기" })).toBeTruthy();
   });
 
   it("states the compare purpose in one line without a second mode control", async () => {
@@ -513,6 +513,23 @@ describe("workspace shell structure", () => {
     expect(within(panel).queryByRole("link", { name: "구역 자료 준비" })).toBeNull();
   });
 
+  it("does not point an empty observation state to nonexistent capture selectors", async () => {
+    mocked.areas.mockResolvedValue({ workAreas: [areaFixture()] });
+    mocked.workspace.mockResolvedValue(workspacePage({ observations: [], entryDefault: {
+      observationEpochId: null, viewAssetRef: null, reason: "NO_OBSERVATIONS",
+      detail: "No observations are registered for this Site/WorkArea scope.", tiedObservationEpochIds: [],
+    } }));
+    await renderOverview({});
+    const stage = screen.getByRole("region", { name: "선택 관측 보기" });
+    expect(within(stage).queryByLabelText("관측 시점")).toBeNull();
+    expect(within(stage).getByText("현재 작업구역 · 미세 분석 구역")).toBeTruthy();
+    expect(within(stage).getByText("미세 분석 구역에 확인된 관측이 없습니다")).toBeTruthy();
+    expect(within(stage).getByText("현재 작업구역에 확인된 외부 관측이 없습니다.")).toBeTruthy();
+    expect(within(stage).getByRole("link", { name: "등록 자료 보기" }).getAttribute("href"))
+      .toBe("/sites/site-1/spatial-assets?workAreaId=tiny-1");
+    expect(stage.textContent).not.toMatch(/무대에서.*선택|그림 바로 위에서/);
+  });
+
   it("shows registration guidance only for real absence", async () => {
     mocked.areas.mockResolvedValue({ workAreas: [areaFixture()] });
     await renderOverview({});
@@ -520,7 +537,8 @@ describe("workspace shell structure", () => {
     // 같은 등록 길과 같은 고지를 두 번 내지 않는다.
     expect(screen.queryByRole("region", { name: "기본 관측 선택 상태" })).toBeNull();
     const stage = screen.getByRole("region", { name: "선택 관측 보기" });
-    expect(within(stage).getByText("이 구역에 확인할 관측이 없습니다")).toBeTruthy();
+    expect(within(stage).getByText("현재 작업구역 · 미세 분석 구역")).toBeTruthy();
+    expect(within(stage).getByText("미세 분석 구역에 확인된 관측이 없습니다")).toBeTruthy();
     // 읽기 전용이라 등록 길 자체가 없다.
     expect(within(stage).queryByRole("link", { name: "관측 자료 등록" })).toBeNull();
   });
