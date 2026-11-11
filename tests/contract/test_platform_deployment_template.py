@@ -42,15 +42,22 @@ def test_default_and_vm_services_are_platform_only() -> None:
 
 
 def test_removed_service_preserves_named_volume_identity() -> None:
-    """Removing/renaming historical volumes or remounting ODM data loses isolation."""
+    """Task 3 removed the unused ``ksi-odm`` volume declaration; the surviving
+    ledger/object identities stay exact, and no service may remount ODM data.
+
+    The declaration removal is not a data deletion: host-side named-volume
+    data (if any) is untouched by the template change.
+    """
     base = _load_template(_ROOT / "deploy/compose.yaml")
     vm = _load_template(_ROOT / "deploy/compose.vm.yaml")
     assert base["name"] == "ksi"
-    assert base["volumes"] == {"ksi-data": None, "ksi-objects": None, "ksi-odm": None}
+    assert base["volumes"] == {"ksi-data": None, "ksi-objects": None}
     assert vm["volumes"] == {"caddy-data": None, "caddy-config": None}
     for template in (base, vm):
         for service in template["services"].values():
-            assert all(not mount.startswith("ksi-odm:") for mount in service.get("volumes", []))
+            for mount in service.get("volumes", []):
+                source = mount.split(":", 1)[0] if isinstance(mount, str) else mount["source"]
+                assert source != "ksi-odm"
 
 
 @pytest.mark.parametrize(
@@ -91,6 +98,18 @@ def test_remaining_service_configuration_is_unchanged(
 ) -> None:
     """Unapproved port/auth/mount/health/image changes must not ride with removal."""
     value = _load_template(_ROOT / "deploy" / template)["services"][service]
+    if (template, service) == ("compose.vm.yaml", "core"):
+        # Only the reviewed OIDC registry wiring may differ from the migration baseline.
+        assert value["environment"].pop("KSI_CORE_OIDC_SUBJECT_REGISTRY_FILE") == (
+            "/run/ksi-identity/oidc-subject-registry.json"
+        )
+        assert value.pop("volumes") == [{
+            "type": "bind",
+            "source": "${KSI_VM_OIDC_SUBJECT_REGISTRY_FILE:?set protected OIDC registry host file}",
+            "target": "/run/ksi-identity/oidc-subject-registry.json",
+            "read_only": True,
+            "bind": {"create_host_path": False},
+        }]
     normalized = json.dumps(value, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
     assert hashlib.sha256(normalized.encode("utf-8")).hexdigest() == expected
 

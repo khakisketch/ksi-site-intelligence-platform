@@ -243,8 +243,6 @@ def test_stage_consumes_the_canonical_generator_output_without_legacy_manifest_f
         }
 
     def canonical_repo_digest(reference: str) -> str:
-        if reference == _NODEODM_DIGEST_ONLY:
-            return reference
         name_and_tag, digest = reference.rsplit("@", maxsplit=1)
         return name_and_tag.rsplit(":", maxsplit=1)[0] + "@" + digest
 
@@ -431,6 +429,11 @@ def test_schema_enforces_external_runtime_version_tag_or_nodeodm_exception(
     assert list(validator.iter_errors(manifest)) == []
 
 
+_RETIRED_NODEODM_TAGGED = "opendronemap/nodeodm:2.2.4@sha256:" + (
+    "cb07d06e21fd6189cfad287c6fedfa0b72568100355635cd9035cb86eed42ee2"
+)
+
+
 @pytest.mark.parametrize(
     "reference",
     [
@@ -445,10 +448,23 @@ def test_generator_enforces_the_same_external_runtime_reference_boundary(referen
     with pytest.raises(tool.ReleaseEvidenceError, match="non-floating version tag"):
         tool._validate_external_runtime_image_reference(reference)
 
-    assert (
-        tool._validate_external_runtime_image_reference(_NODEODM_DIGEST_ONLY)
-        == _NODEODM_DIGEST_ONLY
-    )
+
+@pytest.mark.parametrize(
+    "reference",
+    [_NODEODM_DIGEST_ONLY, _RETIRED_NODEODM_TAGGED],
+)
+def test_generator_rejects_retired_nodeodm_images_for_new_evidence(reference: str) -> None:
+    """Task 3 closed the NodeODM exception in new release evidence.
+
+    Already-signed historical evidence still parses against the v1 schema
+    (see ``test_schema_enforces_external_runtime_version_tag_or_nodeodm_exception``);
+    the generator — which admits what a new run may bind — rejects both the
+    historical digest-only form and a normal tag+digest form.
+    """
+    tool = _tool()
+
+    with pytest.raises(tool.ReleaseEvidenceError, match="[Nn]odeODM|retired"):
+        tool._validate_external_runtime_image_reference(reference)
 
 
 def test_fixed_internal_context_produces_the_same_manifest_digest(tmp_path: Path) -> None:

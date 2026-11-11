@@ -32,8 +32,14 @@ from typing import Any
 
 _GIT_SHA = re.compile(r"[0-9a-f]{40}\Z")
 _SAFE_ARTIFACT_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}\Z")
-_NODEODM_DIGEST_ONLY = (
-    "opendronemap/nodeodm@sha256:cb07d06e21fd6189cfad287c6fedfa0b72568100355635cd9035cb86eed42ee2"
+# Task 3 closed the former NodeODM digest-only admission: new release
+# evidence must not bind the retired managed reconstruction chain, in any
+# reference form.  Already-signed historical evidence still parses against
+# the v1 schema (byte-identical readability there is unchanged); that
+# readability is never promoted to a current execution permission here.
+_RETIRED_ODM_IMAGE = re.compile(
+    r"(?:^|/)nodeodm(?=[:/@]|$)|(?:^|/)odm(?=[:/@]|$)|opendronemap/",
+    re.IGNORECASE,
 )
 _PRODUCT_IMAGE_REFERENCE = re.compile(
     r"^(?:[a-z0-9][a-z0-9._/-]*/)*ksi-[a-z0-9][a-z0-9._-]*:"
@@ -325,8 +331,10 @@ def _validate_product_image_reference(reference: str) -> str:
 
 
 def _validate_external_runtime_image_reference(reference: str) -> str:
-    if reference == _NODEODM_DIGEST_ONLY:
-        return reference
+    if _RETIRED_ODM_IMAGE.search(reference) is not None:
+        raise ReleaseEvidenceError(
+            f"retired NodeODM/ODM image is not admitted in new release evidence: {reference}"
+        )
     if _EXTERNAL_RUNTIME_IMAGE_REFERENCE.fullmatch(reference) is None:
         raise ReleaseEvidenceError(
             "external runtime image must have a non-floating version tag plus sha256 digest: "

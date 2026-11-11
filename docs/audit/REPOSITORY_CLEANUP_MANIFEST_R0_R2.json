@@ -377,11 +377,11 @@
     {
       "id": "processing-leaf-boundaries",
       "paths": ["services/processing-controller/", "services/bim-integration/", "services/defect-detection/", "packages/perception/"],
-      "dependencyEvidence": ["services/processing-controller/pyproject.toml", "archive/acquisition-2026/services/processing-controller/src/ksi_processing_controller/runner.py", "archive/acquisition-2026/services/processing-controller/src/ksi_processing_controller/odm_masking.py"],
+      "dependencyEvidence": ["services/processing-controller/pyproject.toml", "archive/acquisition-2026/services/processing-controller/src/ksi_processing_controller/runner.py", "services/processing-controller/src/ksi_processing_controller/comparison_worker.py"],
       "buildEvidence": ["services/bim-integration/pyproject.toml", "services/defect-detection/pyproject.toml", "packages/perception/pyproject.toml"],
       "ciEvidence": ["tests/contract/test_ifc_reference_model.py", "tests/contract/test_mixercseg_detector.py", "tests/replay/test_vertical_slice.py", ".github/workflows/ci.yml"],
       "before": "The orchestrator imports leaf IFC, defect, and perception implementations through separately packaged dependencies and optional model gates.",
-      "after": "UNCHANGED_R0_R2: package, import, optional-extra, and test boundaries remain intact.",
+      "after": "UNCHANGED_R0_R2: package, import, optional-extra, and test boundaries remain intact. (Task 3: the retired archive odm_masking.py evidence path now points at the surviving live comparison_worker.py; live boundary unchanged.)",
       "decision": "RETAIN_DEFER_TO_R3"
     }
   ],

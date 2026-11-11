@@ -73,7 +73,9 @@ dev = [
     "uvicorn[standard]>=0.30",
     # 같은 이유의 leaf 멤버 — 이 워커 코드를 Core 가 의존하지 않아(서버 조립 그래프
     # 밖이다) 기본 sync 에서 빠진다. CI 는 --all-packages 라 무관하지만, 맨
-    # `uv sync` 로 붙은 개발자가 ODM 어댑터 테스트에서 ImportError 를 보게 된다.
+    # `uv sync` 로 붙은 개발자가 외부 분석 워커(비교·검사점·설계면·설계 대비·영역
+    # 추출) 테스트에서 ImportError 를 보게 된다(Task 3: 관리형 재구성 퇴역 —
+    # ODM 어댑터 테스트는 아카이브와 함께 제거됐다).
     # (P3 Task 6: 아카이브된 ksi-perception leaf 항목은 여기서 함께 제거 —
     # 아래 ksi-equipment-intelligence 항목과 동일 사유.)
     "ksi-processing-controller",

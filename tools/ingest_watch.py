@@ -303,10 +303,13 @@ def build_uploader(
 ) -> Uploader:
     """``run_sync`` 를 (mission_id, directory) 시그니처로 감싼다.
 
-    봉인·재구성 발행을 **항상 켠다** — 이 도구의 계약은 "디렉터리가 채워지면 그
-    뒤는 사람 손 없이 서버까지 간다"이고, 봉인만 하고 멈추면 그 계약이 반만
-    지켜진다. ``run_sync`` 자체가 fail-closed 순서(업로드 실패 시 봉인 안 함)를
-    이미 지킨다.
+    봉인을 **항상 켠다** — 이 도구의 계약은 "디렉터리가 채워지면 그 뒤는 사람
+    손 없이 서버까지(등록·업로드·봉인) 간다"이고, 봉인 없이 멈추면 주기 실행이
+    같은 번들을 매번 재등록한다. ``run_sync`` 자체가 fail-closed 순서(업로드
+    실패 시 봉인 안 함)를 이미 지킨다.
+
+    Task 3: 재구성 발행은 이 체인에서 제거됐다(관리형 재구성 퇴역). 이 도구를
+    외부 파생 산출물 폴더 감시기로 재구축하지 않는다 — 촬영 원본 전용이다.
     """
 
     def _upload(mission_id: str, directory: Path) -> SyncOutcome:
@@ -320,7 +323,6 @@ def build_uploader(
             # 임무의 같은 파일명이 상대의 캐시를 덮는다.
             state_dir=(state_dir / "uploads" / mission_id) if state_dir else None,
             seal=True,
-            start_reconstruction=True,
         )
 
     return _upload

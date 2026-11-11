@@ -1102,12 +1102,21 @@ verify_image_binding "$2" "$3"
     assert mismatch.returncode != 0
 
 
-def test_release_image_binding_accepts_the_canonical_nodeodm_digest_only_exception() -> None:
-    """The stage accepts the same pinned NodeODM exception as release evidence v1."""
+@pytest.mark.parametrize(
+    "reference",
+    [
+        "opendronemap/nodeodm@sha256:"
+        "cb07d06e21fd6189cfad287c6fedfa0b72568100355635cd9035cb86eed42ee2",
+        "opendronemap/nodeodm:2.2.4@sha256:"
+        "cb07d06e21fd6189cfad287c6fedfa0b72568100355635cd9035cb86eed42ee2",
+    ],
+)
+def test_release_image_binding_rejects_retired_nodeodm_images(reference: str) -> None:
+    """Task 3: the stage admits no NodeODM image for a new run — digest-only
+    or normal tag+digest.  Already-signed historical evidence still parses
+    against the host-binding schema; that readability is never promoted to a
+    current image binding here."""
     stage = _BIN / "external-runtime-stage.sh"
-    reference = "opendronemap/nodeodm@sha256:" + (
-        "cb07d06e21fd6189cfad287c6fedfa0b72568100355635cd9035cb86eed42ee2"
-    )
     image_id = "sha256:" + "b" * 64
     shell = r'''source "$1"
 expected_reference="$2"
@@ -1129,7 +1138,7 @@ verify_image_binding "$2" "$3"
         check=False,
     )
 
-    assert result.returncode == 0, result.stderr
+    assert result.returncode != 0, result.stderr
 
 
 def test_product_binding_requires_canonical_digest_in_record_and_local_observation() -> None:
@@ -2192,3 +2201,20 @@ def test_template_manifest_rejects_tamper_and_symlink(tmp_path: Path) -> None:
     target.symlink_to(template_root / required[1])
     symlinked = _run_bootstrap_helper(tmp_path, command, env=env)
     assert symlinked.returncode != 0
+
+
+def test_candidate_oidc_registry_uses_the_protected_operator_bundle() -> None:
+    compose = yaml.safe_load(_text(_DEPLOY / "compose.external-reconstruction.yaml"))
+    core = compose["services"]["core"]
+    assert core["environment"].get("KSI_CORE_OIDC_SUBJECT_REGISTRY_FILE") == (
+        "/run/ksi-operator/oidc-subject-registry.json"
+    )
+    assert (
+        "${KSI_EXTERNAL_RC_OPERATOR_DIR:?set KSI_EXTERNAL_RC_OPERATOR_DIR}:/run/ksi-operator:ro"
+        in core["volumes"]
+    )
+    stage = _text(_STAGE)
+    validator = stage.split("validate_operator_directory() {", 1)[1].split(
+        "\nverify_socket_acl_proof()", 1
+    )[0]
+    assert "oidc-subject-registry.json" in validator

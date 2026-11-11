@@ -2,10 +2,8 @@ import { describe, expect, it } from "vitest";
 
 import {
   assignUniqueMediaIds,
-  canReissueProcessingJob,
   chunk,
   deriveMediaId,
-  isTerminalJobStatus,
   summarizeUploadBatch,
 } from "@/lib/source-upload";
 import type { SourceMediaItemResultView } from "@/lib/core-api/types";
@@ -211,29 +209,5 @@ describe("summarizeUploadBatch", () => {
     ]);
     expect(summary.ready.map((r) => r.mediaId)).toEqual(["ok1", "ok2"]);
     expect(summary.failed.map((f) => f.mediaId)).toEqual(["bad1"]);
-  });
-});
-
-describe("isTerminalJobStatus", () => {
-  it("QUEUED/RUNNING 은 진행 중이다(false)", () => {
-    expect(isTerminalJobStatus("QUEUED")).toBe(false);
-    expect(isTerminalJobStatus("RUNNING")).toBe(false);
-  });
-
-  it("SUCCEEDED/FAILED/CANCELLED 는 종료 상태다(true)", () => {
-    expect(isTerminalJobStatus("SUCCEEDED")).toBe(true);
-    expect(isTerminalJobStatus("FAILED")).toBe(true);
-    expect(isTerminalJobStatus("CANCELLED")).toBe(true);
-  });
-});
-
-describe("canReissueProcessingJob", () => {
-  it("FAILED/CANCELLED 종료 작업만 발행 권한으로 새 작업을 만들 수 있다", () => {
-    expect(canReissueProcessingJob("FAILED", true)).toBe(true);
-    expect(canReissueProcessingJob("CANCELLED", true)).toBe(true);
-    expect(canReissueProcessingJob("SUCCEEDED", true)).toBe(false);
-    expect(canReissueProcessingJob("RUNNING", true)).toBe(false);
-    expect(canReissueProcessingJob("FAILED", false)).toBe(false);
-    expect(canReissueProcessingJob(null, true)).toBe(false);
   });
 });
