@@ -77,7 +77,8 @@ What this protocol never does:
   such mapping.
 - Until a registry entry plus ADR exists for a candidate, its research row
   stays `AWAITING-LICENSE` / `NOT_ISSUABLE` and no job for it can be issued
-  (`UnknownProcessingProfileError` → `UNKNOWN_PROCESSING_PROFILE`).
+  (managed issuance is retired; unknown IDs fail closed at history replay
+  via `UnknownHistoricalProcessingProfileError`).
 
 Enforcing invariants (names; SSOT is `docs/product/DOMAIN_INVARIANTS.md`):
 
@@ -185,12 +186,17 @@ Rules:
   `opendronemap/nodeodm@sha256:cb07d06e21fd6189cfad287c6fedfa0b72568100355635cd9035cb86eed42ee2`
   (NodeODM 2.2.4 / ODM 3.5.6; `dsm=true`, `dtm=true`, `pc-quality=medium`,
   dynamic-object masking OFF).
-- Registry pointer (sole v1 issued entry, immutable):
-  `services/core/src/ksi_core/processing_profiles.py::ksi_odm_civil_v1`
-  (`KSI_ODM_CIVIL_V1_ID = "ksi-odm-civil-v1"`); deploy pin mirror:
-  `deploy/compose.yaml`; issuance gate:
-  `services/core/src/ksi_core/processing_jobs.py` (`UNKNOWN_PROCESSING_PROFILE`
-  for anything unregistered).
+- Registry pointer (retired issuance; sealed historical fact only):
+  `services/core/src/ksi_core/domains/processing/historical_processing_profiles.py`
+  (`ksi-odm-civil-v1`, digest
+  `sha256:d19e3ce42e9cfd34cc504c651a8cc78d781a94f36040a58d525a5cfbd7586dc1`,
+  required artifacts `point_cloud`/`dsm`/`dtm`; no image, engine version,
+  params, or issuance interface). The former live registry
+  (`services/core/src/ksi_core/processing_profiles.py::ksi_odm_civil_v1`)
+  and the `deploy/compose.yaml` `ksi-odm` pin mirror were retired with
+  managed issuance/execution; unregistered IDs fail closed at history replay
+  (`UnknownHistoricalProcessingProfileError` → `ArtifactManifestError` in
+  `services/core/src/ksi_core/domains/processing/processing_jobs.py`).
 - Existing acceptance (software only, not field acceptance):
   `docs/acceptance/CIVIL_PROCESSING_V1_ACCEPTANCE.md` (status
   `SOFTWARE_PASS / PRODUCT_E2E_PARTIAL / FIELD_NOT_EVALUATED`; matrix CP-01…
@@ -283,7 +289,6 @@ path needs no KSI execution adapter. Research does not change the
 - `docs/product/FINAL_DECISION_LEDGER_v1.0.md`
 - `docs/product/MASTER_PRD_v3.0.md`
 - `docs/product/DOMAIN_INVARIANTS.md`
-- `docs/product/MVP_SCOPE_AND_ENGINE_TRACKS.md`
 - `docs/architecture/ADR-KSI-036-customer-reconstruction-and-result-ingress.md`
 - `docs/acceptance/EXTERNAL_PRODUCT_LOOP_STAGING_ACCEPTANCE.md`
 - `docs/superpowers/plans/2026-09-06-external-reconstruction-release.md`
@@ -292,8 +297,8 @@ path needs no KSI execution adapter. Research does not change the
 - `docs/DOCUMENT_STATUS.md`
 - `docs/goals/PHASE_REGISTRY.yaml`
 - `contracts/`
-- `services/core/src/ksi_core/processing_profiles.py`
-- `services/core/src/ksi_core/processing_jobs.py`
+- `services/core/src/ksi_core/domains/processing/historical_processing_profiles.py`
+- `services/core/src/ksi_core/domains/processing/processing_jobs.py`
 - `services/processing-controller/`
 - `apps/dashboard/`
 - `deploy/compose.yaml`

@@ -152,8 +152,8 @@ curl -fsS http://127.0.0.1:8000/ready && echo   # /ready, NOT /health
 
 ```bash
 cd deploy
-docker compose ps                   # confirm core/worker/minio/nodeodm state
-docker compose logs core worker     # targeted logs (cite, don't dump)
+docker compose ps                   # confirm core/minio state (no worker/nodeodm service)
+docker compose logs core            # targeted logs (cite, don't dump)
 docker compose down                 # stop; named volumes persist
 docker compose up -d                # rerun (no --build unless images changed)
 docker compose up -d --build        # rerun after code change
@@ -212,26 +212,43 @@ jq -r '.keys[] | "key \(.keyId) \(.status) \(.notBefore) -> \(.notAfter)"' <prot
   still out-of-window inputs (including a key window that has ended) stays fatal and keeps
   the provider blocked.
 
-## Appendix H. Pre-ADR-036 managed pipeline (HISTORICAL — not the first-release route)
+## Appendix H. Pre-ADR-036 managed pipeline (RETIRED — not runnable, history only)
 
-The KSI-managed reconstruction pipeline below (`source-media` /
-`processing-jobs` / NodeODM worker) remains implemented for test/demonstration
-scope only (ADR-KSI-036 D1; `docs/product/MVP_SCOPE_AND_ENGINE_TRACKS.md` §2).
+The KSI-managed reconstruction pipeline below (`source-media` raw capture /
+`processing-jobs` / NodeODM worker) was retired, not merely scoped down:
+managed issuance (`POST /v1/missions/{mission_id}/processing-jobs` and all
+worker mutation, lease, verify, upload, artifact, pending-queue, and catalog
+routes) was removed; the NodeODM worker chain (`runner.py`, `worker.py`,
+and the managed `core_client.py` methods) was deleted; and the `ksi-odm`
+volume declaration was removed from `deploy/compose.yaml`. No new managed
+ProcessingJob can be issued and the former managed test path can no longer
+be executed. History is read-only: the history GETs
+(`GET /v1/missions/{mission_id}/processing-jobs`,
+`GET /v1/sites/{site_id}/processing-jobs`,
+`GET /v1/processing-jobs/{job_id}`,
+`GET /v1/processing-jobs/{job_id}/artifacts/{artifact_id}/download`)
+in `services/core/src/ksi_core/domains/processing/processing_jobs.py`
+(history-only router) plus manifest-aware journal replay gated by the sealed
+facts in
+`services/core/src/ksi_core/domains/processing/historical_processing_profiles.py`.
 It must not be relabeled as customer-operated results and it is not the
-first-release route. Pointers are retained so operators can still run the
-managed test path; deviations from code are resolved in favor of code.
+first-release route. Deviations from code are resolved in favor of code.
 
-- Managed submission: `POST /v1/missions/{mission_id}/source-media`,
-  `.../source-media/ground-control`, `.../source-media/seal`,
-  `POST /v1/missions/{mission_id}/processing-jobs`
-  (`services/core/src/ksi_core/source_media.py`, `processing_jobs.py`).
-- Managed worker pull loop: `services/processing-controller/src/ksi_processing_controller/runner.py`
-  (`run_pending_batch`, `run_forever`); claim-execute-report via
-  `core_client.py` → `worker.py:334-580`; failures attempt a `FAILED`
-  transition (`worker.py:581-596`).
+- Raw-capture ingress (retained; not managed execution):
+  `POST /v1/missions/{mission_id}/source-media`,
+  `.../source-media/ground-control`, `.../source-media/seal`
+  (`services/core/src/ksi_core/domains/artifacts/source_media.py`).
+- Retired issuance (removed, no replacement endpoint):
+  `POST /v1/missions/{mission_id}/processing-jobs` and all managed
+  mutations — history GETs above are the only remaining surface.
+- Retired execution (deleted, no managed worker remains): the `runner.py`
+  pull loop (`run_pending_batch`, `run_forever`), `worker.py`
+  claim-execute-report, and the managed `core_client.py` methods
+  (`list_pending`, `acquire_lease`, `get_input`, `transition`,
+  `verify_source_media`, `presign_artifact_upload`, `register_artifact`).
 - Deprecated/unfenced surface (must NOT be used):
   `POST /v1/missions/{mission_id}/source-media/verify` always returns 409
-  `LEASE_FENCE_REQUIRED` (`source_media.py:1852`).
-- Line-number detail for the managed routes no longer tracked here — the
-  pre-reconciliation revision of this runbook carried them and the code files
-  above are authoritative.
+  `LEASE_FENCE_REQUIRED`
+  (`services/core/src/ksi_core/domains/artifacts/source_media.py` verify route).
+- Line-number detail for the retired routes is no longer tracked here — the
+  code files above are authoritative.
