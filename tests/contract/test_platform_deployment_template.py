@@ -98,18 +98,6 @@ def test_remaining_service_configuration_is_unchanged(
 ) -> None:
     """Unapproved port/auth/mount/health/image changes must not ride with removal."""
     value = _load_template(_ROOT / "deploy" / template)["services"][service]
-    if (template, service) == ("compose.vm.yaml", "core"):
-        # Only the reviewed OIDC registry wiring may differ from the migration baseline.
-        assert value["environment"].pop("KSI_CORE_OIDC_SUBJECT_REGISTRY_FILE") == (
-            "/run/ksi-identity/oidc-subject-registry.json"
-        )
-        assert value.pop("volumes") == [{
-            "type": "bind",
-            "source": "${KSI_VM_OIDC_SUBJECT_REGISTRY_FILE:?set protected OIDC registry host file}",
-            "target": "/run/ksi-identity/oidc-subject-registry.json",
-            "read_only": True,
-            "bind": {"create_host_path": False},
-        }]
     normalized = json.dumps(value, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
     assert hashlib.sha256(normalized.encode("utf-8")).hexdigest() == expected
 

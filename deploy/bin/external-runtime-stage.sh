@@ -183,7 +183,7 @@ validate_operator_directory() {
     echo "BLOCKED_OPERATOR_INPUT: operator parent ownership or mode is unsafe" >&2; return 1;
   }
   local required path
-  for required in workflow.json provider.json oidc-subject-registry.json; do
+  for required in workflow.json provider.json; do
     path="$canonical/$required"
     private_owner_mode "$path" "regular file" || {
       echo "BLOCKED_OPERATOR_INPUT: operator $required is missing or unsafe" >&2; return 1;

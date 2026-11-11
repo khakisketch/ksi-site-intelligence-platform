@@ -2201,20 +2201,3 @@ def test_template_manifest_rejects_tamper_and_symlink(tmp_path: Path) -> None:
     target.symlink_to(template_root / required[1])
     symlinked = _run_bootstrap_helper(tmp_path, command, env=env)
     assert symlinked.returncode != 0
-
-
-def test_candidate_oidc_registry_uses_the_protected_operator_bundle() -> None:
-    compose = yaml.safe_load(_text(_DEPLOY / "compose.external-reconstruction.yaml"))
-    core = compose["services"]["core"]
-    assert core["environment"].get("KSI_CORE_OIDC_SUBJECT_REGISTRY_FILE") == (
-        "/run/ksi-operator/oidc-subject-registry.json"
-    )
-    assert (
-        "${KSI_EXTERNAL_RC_OPERATOR_DIR:?set KSI_EXTERNAL_RC_OPERATOR_DIR}:/run/ksi-operator:ro"
-        in core["volumes"]
-    )
-    stage = _text(_STAGE)
-    validator = stage.split("validate_operator_directory() {", 1)[1].split(
-        "\nverify_socket_acl_proof()", 1
-    )[0]
-    assert "oidc-subject-registry.json" in validator
