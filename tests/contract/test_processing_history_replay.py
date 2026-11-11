@@ -556,11 +556,42 @@ class _StorageStub:
         return f"https://storage.invalid/get/{object_key}"
 
 
+class _RecordingStorage(_StorageStub):
+    """Proves the denial probes caused no storage side effect.
+
+    Any presign call is recorded; any storage method beyond the download-URL
+    helper raises instead of silently standing in for a real grant.
+    """
+
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, tuple[Any, ...]]] = []
+
+    def presigned_get(self, object_key: str, *, ttl: Any) -> str:
+        self.calls.append(("presigned_get", (object_key,)))
+        return super().presigned_get(object_key, ttl=ttl)
+
+    def __getattr__(self, name: str) -> Any:
+        if name.startswith("__"):
+            raise AttributeError(name)
+
+        def _unexpected(*args: Any, **kwargs: Any) -> Any:
+            del kwargs
+            self.calls.append((name, args))
+            raise AssertionError(f"unexpected storage call during denial probe: {name}")
+
+        return _unexpected
+
+
 def _digest_hex(token: str) -> str:
     return hashlib.sha256(token.encode()).hexdigest()
 
 
-def _authed_app(journal_path: Path, tmp_path: Path) -> FastAPI:
+def _authed_app(
+    journal_path: Path,
+    tmp_path: Path,
+    *,
+    storage: _StorageStub | None = None,
+) -> FastAPI:
     from ksi_core.composition.routes.processing import mount_processing_routes
 
     app = FastAPI()
@@ -588,7 +619,7 @@ def _authed_app(journal_path: Path, tmp_path: Path) -> FastAPI:
     mount_processing_routes(
         app,
         processing_job_store=store,
-        evidence_storage=_StorageStub(),
+        evidence_storage=storage if storage is not None else _StorageStub(),
         site_lifecycle=None,
         checkpoint_validation_store=None,
         checkpoint_validation_registration_enabled=False,
@@ -661,7 +692,15 @@ def test_router_mounts_only_historical_gets(tmp_path: Path) -> None:
 
 
 def test_managed_paths_are_absent_not_forbidden(tmp_path: Path) -> None:
-    app = _authed_app(_versioned_journal(tmp_path), tmp_path)
+    journal_path = _versioned_journal(tmp_path)
+    storage = _RecordingStorage()
+    app = _authed_app(journal_path, tmp_path, storage=storage)
+    # 405 only where a kept GET shares the exact path template; everywhere
+    # else the managed path must be unmounted (404). Deriving the expectation
+    # from the mounted table keeps the denial precise instead of
+    # accept-either.
+    kept_paths = {path for _, path in _routes(app)}
+    journal_before = journal_path.read_bytes()
     headers = {"Authorization": "Bearer reader"}
     with TestClient(app) as client:
         for method, path in sorted(_MANAGED_ABSENT):
@@ -672,13 +711,16 @@ def test_managed_paths_are_absent_not_forbidden(tmp_path: Path) -> None:
                 .replace("{artifact_id}", "dsm")
             )
             response = client.request(method, rendered, headers=headers)
-            # 404 (no route) or 405 (same path serves only a kept GET):
-            # either proves the managed method is not mounted.
-            assert response.status_code in (404, 405), (
+            expected = 405 if path in kept_paths else 404
+            assert response.status_code == expected, (
                 method,
                 rendered,
                 response.status_code,
+                expected,
             )
+    # Denial must leave no trace: no journal append, no presigned URL grant.
+    assert journal_path.read_bytes() == journal_before
+    assert storage.calls == []
 
 
 def test_historical_gets_serve_sealed_history(tmp_path: Path) -> None:

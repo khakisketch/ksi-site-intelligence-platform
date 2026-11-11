@@ -218,8 +218,9 @@ The KSI-managed reconstruction pipeline below (`source-media` raw capture /
 `processing-jobs` / NodeODM worker) was retired, not merely scoped down:
 managed issuance (`POST /v1/missions/{mission_id}/processing-jobs` and all
 worker mutation, lease, verify, upload, artifact, pending-queue, and catalog
-routes) was removed; the NodeODM worker chain (`runner.py`, `worker.py`,
-and the managed `core_client.py` methods) was deleted; and the `ksi-odm`
+routes) was removed; the NodeODM execution branch was cut from the archived
+`runner.py` (its non-ODM loops remain), `worker.py` and the managed
+`core_client.py` methods were deleted; and the `ksi-odm`
 volume declaration was removed from `deploy/compose.yaml`. No new managed
 ProcessingJob can be issued and the former managed test path can no longer
 be executed. History is read-only: the history GETs
@@ -241,9 +242,10 @@ first-release route. Deviations from code are resolved in favor of code.
 - Retired issuance (removed, no replacement endpoint):
   `POST /v1/missions/{mission_id}/processing-jobs` and all managed
   mutations — history GETs above are the only remaining surface.
-- Retired execution (deleted, no managed worker remains): the `runner.py`
-  pull loop (`run_pending_batch`, `run_forever`), `worker.py`
-  claim-execute-report, and the managed `core_client.py` methods
+- Retired execution (removed; no managed worker remains): the NodeODM
+  branch of the archived `runner.py` pull loop (`run_pending_batch`,
+  `run_forever` now serve the non-ODM lanes only), the deleted `worker.py`
+  claim-execute-report, and the deleted managed `core_client.py` methods
   (`list_pending`, `acquire_lease`, `get_input`, `transition`,
   `verify_source_media`, `presign_artifact_upload`, `register_artifact`).
 - Deprecated/unfenced surface (must NOT be used):
