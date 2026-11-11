@@ -45,7 +45,7 @@ Real, CC BY 4.0 Cambridge Coastcare / DataWA Floreat-f3 observations from 2021 a
 two orthomosaics and two DSMs. These are **coastal**, not construction-site observations.
 The public DSM pair has no observed vertical reference and uses EPSG:7850; the current
 relative-volume product path blocks it. Generated calculation fixtures are separately synthetic.
-See `../../docs/design/DEMO_EXPERIENCE_BRIEF.md` and its material manifest for exact identities.
+See `../../docs/design/DEMO_MATERIALS.json` for exact identities.
 
 ## Product Principles
 

@@ -2,7 +2,7 @@
 
 - Status: Active design guardrail
 - Date: 2026-08-24
-- Product authority: `docs/architecture/05_OPERATIONS_CONSOLE_PHASE_1_STANDARD.md`
+- Product authority: `docs/design/CONSOLE_CURRENT_SPEC.md`
 - Implementation authority: `apps/dashboard/src/app/globals.css` and existing shared components
 
 ## Product posture

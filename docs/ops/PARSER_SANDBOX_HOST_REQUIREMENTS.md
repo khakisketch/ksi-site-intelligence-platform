@@ -5,7 +5,7 @@ Analysis → Result/Evidence → review acceptance. This document does not chang
 behavior, authorization or acceptance: a passing probe only says the sandbox can run;
 the acceptance itself is the evidence.
 
-Related: [F-02~04 first-flow checklist](../superpowers/plans/2026-10-10-f02-04-first-flow-input-checklist.md)
+Related: [customer sample acceptance](../acceptance/SPATIAL_PLATFORM_CUSTOMER_SAMPLE.md)
 §3–§4, [rebaseline ledger](../superpowers/plans/2026-10-07-agent-first-platform-rebaseline.md)
 (`PARSER_SANDBOX_UNAVAILABLE` record), probe tool
 `tools/verify_parser_sandbox_host.py`.

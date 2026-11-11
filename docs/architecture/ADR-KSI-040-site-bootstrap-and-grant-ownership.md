@@ -7,7 +7,7 @@
   승인 provenance와 상세 계획 결속은
   [rebaseline 원장](../superpowers/plans/2026-10-07-agent-first-platform-rebaseline.md)의
   "F-01 상세 구현 계획 승인 — 2026-10-10" 항목을 따른다.
-- Origin: [F-01 결정 제안 v2](../superpowers/plans/2026-10-09-f01-site-bootstrap-and-grant-ownership.md)
+- Origin: F-01 owner decision
   (SHA256 `bc5143828d9be6e4195d045d74cfedc18b2dda9c8dd4ba4bb29ed9732e599305`),
   상세 계획 `/home/ksi/.opencode/plan/2026-10-10-0103-feat-f01-bootstrap-grant-implementation-plan.md`
   (SHA256 `cbba7fe5924a4caca810b9c52a476d212222a133e6282dd70dde44d12ba649ca`, repo 밖 승인 산출물)

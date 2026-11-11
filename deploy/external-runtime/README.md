@@ -121,8 +121,14 @@ Make an owner-protected `0600` environment file outside the repository from
 It must name the existing `KSI_EXTERNAL_RC_OPERATOR_DIR` at exactly one
 dedicated candidate root (`/etc/ksi-external-runtime/operator` or
 `/var/lib/ksi-external-runtime/operator`). The directory must already contain
-`workflow.json`, `provider.json`, `secrets/`, and `signing/`; it cannot be a
+`workflow.json`, `provider.json`, `oidc-subject-registry.json`, `secrets/`, and `signing/`; it cannot be a
 repository, candidate state, customer-data, or shared project directory.
+Core reads the supplied registry at `/run/ksi-operator/oidc-subject-registry.json`.
+It must be a single-link regular non-symlink file owned by UID/GID `10001:10001`
+with mode `0600`, using the exact configured issuer and only approved subject,
+organization and resource-scope mappings. The lifecycle gate requires the file;
+Core validates its protected path, contents and mappings at startup. No default
+identity grants are generated.
 Its `authorityJournalPath` is fixed to
 `/var/lib/ksi/data/external-quantitative-authority.jsonl`; an operator path or
 `/tmp` path is refused.
@@ -213,7 +219,7 @@ blobs are hash-checked, **not signature-verified**. A successful historical imag
 link does not make it a clean-current-source release: both config revision and
 canonical source must genuinely agree. Core/Dashboard/registry/security/signed
 execution/current Core/live socket and application bundle gates are unchanged.
-See [local evidence](../../docs/ops/SPATIAL_DATA_LOCAL_VERIFICATION.md#python-repair-and-native-scanner-consumer--2026-10-04).
+See [release evidence requirements](../../docs/ops/RELEASE_EVIDENCE.md).
 
 ## Application bundle preparation
 

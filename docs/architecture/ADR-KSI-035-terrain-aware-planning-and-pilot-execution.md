@@ -3,7 +3,7 @@
 - Status: ACCEPTED — design decision only
 - Date: 2026-09-06
 - Human approval provenance: 2026-09-06 approved decision record and
-  `docs/superpowers/plans/2026-09-06-terrain-aware-planning-design-baseline.md`
+  `docs/design/TERRAIN_AWARE_OBSERVATION_PLANNING_CONTRACT.md`
 - Requirements: REQ-MSN-101/104, REQ-ACQ-101, REQ-UX-101, REQ-INT-102/103
 - Invariants: preserves INV-001/002, INV-011/012, INV-020/024, INV-051/053/060;
   scopes the future application of INV-016 and the claim boundaries of INV-017/018.
@@ -107,7 +107,6 @@ successor packets are in:
 
 - [planning design contract](../design/TERRAIN_AWARE_OBSERVATION_PLANNING_CONTRACT.md);
 - [Pilot MVP acceptance](../acceptance/TERRAIN_AWARE_PILOT_MVP_ACCEPTANCE.md); and
-- [successor roadmap](../goals/TERRAIN_AWARE_PLANNING_ROADMAP.md).
 
 Public primary-source research is candidate evidence only. Dataset/supplier licensing, coverage
 or safety thresholds, and planning optimization objectives require their own evidence-backed

@@ -77,8 +77,15 @@ build_platform_production_app` 이다(Docker 이미지 CMD·CI 스모크 동일)
 `KSI_CORE_EXTERNAL_AUTHORITY_PROVIDER_CONFIG`, 함께 아니면 전무)다. Analysis 활성화에는
 등록된 `ANALYSIS_WORKER`가 정확히 하나여야 한다. 경로를 채우는 것만으로 신뢰·권리·
 worker 기동이 생기지 않는다. 나머지 로그/저널/공개 S3 등의 기존 옵션은 실제 팩토리를 따른다.
-보호된 파일의 안전한 공급/접근 경로는 운영 입력으로 따로 검증해야 하며, 이 템플릿 변경이
-파일·자격·마운트·워커 서비스를 추가하지 않는다.
+보호된 파일의 안전한 공급/접근 경로는 운영 입력으로 따로 검증해야 한다.
+VM overlay는 `KSI_VM_OIDC_SUBJECT_REGISTRY_FILE`의 기존 host 파일을
+`/run/ksi-identity/oidc-subject-registry.json`으로 읽기 전용 마운트한다. 파일이 없으면
+디렉터리를 자동 생성하지 않고 거부한다. Core UID/GID `10001:10001` 소유의 `0600`
+regular/non-symlink/single-link 파일과 안전한 상위 경로를 운영자가 공급해야 한다.
+실제 issuer/subject·조직·현장/구역 매핑은 승인된 값만 사용하고 Git에 넣지 않는다.
+기본 `compose.yaml`만 쓰는 DUAL/OIDC 운영은 별도 보호 파일 마운트가 필요하다.
+VM 예제의 container 경로만 설정하고 마운트를 생략하면 Core는 닫힌 상태로 기동을 거부한다.
+이 연결은 subject 매핑·자격·워커를 생성하거나 운영 배포를 승인하지 않는다.
 
 현재 production 팩토리는 `spatial_data`를 주입하지 않는다. 실제 로컬 공간데이터 조립은
 `SpatialDataLocalAssemblyConfig`를 명시하는 별도 경로다. 이 구성 정리로 새 production
@@ -139,7 +146,7 @@ post-`1.1` journal을 truncate, delete, rename, rewrite할 권한을 주지 않�
 principal/token을 없앤다고 legacy producer record를 삭제하거나 broad Edge token으로 바꾸지
 않는다.
 
-외부 VM profile은 `docs/ops/VM_DEPLOYMENT_READINESS.md`를 따른다. 현재 release gate는
+외부 VM profile은 `docs/ops/RELEASE_EVIDENCE.md`를 따른다. 현재 release gate는
 개발·합성 데이터까지이며, Cloud 사업자 적법성 승인과 실제 고객 데이터 배포는
 `docs/security/CLOUD_PROVIDER_DUE_DILIGENCE.md`가 열려 있는 동안 금지다.
 

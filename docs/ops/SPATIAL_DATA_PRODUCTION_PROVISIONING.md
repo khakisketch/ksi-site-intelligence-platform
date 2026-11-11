@@ -170,7 +170,7 @@ grant/revocation·job/receipt/audit·원본은 보존되며 삭제되지 않는�
 5. **수용 envelope**: 검사 봉투(입력/pixels)가 실자료를 못 담으면 MEASURED가 불가하다 — 수용
    목적의 서명 봉투 재발급(제품 정책 아님)이 선행돼야 한다.
 
-증거·하네스: `docs/audit/SPATIAL_DATA_CODEX_LOCAL_ACCEPTANCE_2026-10-14.md`,
+증거·하네스: `docs/acceptance/SPATIAL_PLATFORM_CUSTOMER_SAMPLE.md`,
 `/tmp/opencode/ksi-sdata-vm-sandbox/`(운영자 자재), `evidence/public-sample/`(rig).
 
 ### 9.1 하네스 제품측 검토 결과 (2026-10-14, OPEN 해소)

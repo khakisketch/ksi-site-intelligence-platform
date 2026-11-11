@@ -1,7 +1,7 @@
 # Spatial display cache measurement evidence (measured 2026-10-21)
 
 Bounded MEASUREMENT unit for the persistent-display-cache + scheduler-first
-direction (`docs/design/SPATIAL_DISPLAY_PERSISTENT_CACHE_AND_MEASUREMENT_PLAN_2026-10-21.md`,
+direction (`dated persistent cache proposal`,
 metrics M1–M5, reference run R1–R5). No product source/contract/runtime/policy/
 worker change, no commits, no new Core jobs beyond 4 bounded windows of the
 already-granted asset, no shared-host action, no inspection launch, no

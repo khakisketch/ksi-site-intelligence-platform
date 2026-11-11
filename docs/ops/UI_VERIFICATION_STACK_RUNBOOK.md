@@ -1,7 +1,7 @@
 # UI 검증용 합성 스택 런북 (Stage-1 live UI verification)
 
 Status: 2026-10-12 작성. synthetic 전용 — 고객 데이터·정량 E2E·배포 증거가 아니다.
-Owner: Dashboard/Platform 검증 작업. 관련: [BROWSER_E2E_CHECKLIST](BROWSER_E2E_CHECKLIST.md),
+Owner: Dashboard/Platform 검증 작업. 관련: [Console acceptance](../acceptance/OPERATIONS_CONSOLE_PHASE_1_ACCEPTANCE.md),
 [DEV_EXTERNAL_RUNBOOK](DEV_EXTERNAL_RUNBOOK.md), rebaseline 원장의 Stage-1 기록.
 
 ## 목적

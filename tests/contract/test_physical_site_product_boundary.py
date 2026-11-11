@@ -13,7 +13,6 @@ shallow-CI checkouts are safe. No invented status enum is accepted: the
 mapping must equal the pinned snapshot exactly.
 """
 
-import hashlib
 from pathlib import Path
 
 import pytest
@@ -32,22 +31,11 @@ DOC_STATUS = "docs/DOCUMENT_STATUS.md"
 OVERVIEW = "docs/architecture/00_SYSTEM_OVERVIEW.md"
 REPO_STRUCTURE = "REPOSITORY_STRUCTURE.md"
 PRODUCT_STATE = "docs/superpowers/product-state.md"
-PRODUCT_STATE_HISTORY = "docs/superpowers/product-state-history-2026-10-26.md"
 PHASE_REGISTRY = "docs/goals/PHASE_REGISTRY.yaml"
 ROADMAP = "docs/superpowers/plans/2026-09-30-spatial-data-platform-roadmap.md"
 ADR036 = "docs/architecture/ADR-KSI-036-customer-reconstruction-and-result-ingress.md"
 ADR037 = "docs/architecture/ADR-KSI-037-api-first-earthwork-evidence-and-integration.md"
 ADR038 = "docs/architecture/ADR-KSI-038-spatial-data-and-analysis-platform.md"
-
-# Literal baseline digests (sha256 of the section-normalized text below) taken
-# from 738b4a950e6b202a3a65982cea570e3a2ba4c8b7 before any authority edit.
-# Witness: fix1-logs/baseline-digests.txt in the task scratch folder.
-MILESTONES_SHA256 = (
-    "08c3d0ae2b0e707d3d32c565d666d1add2ca08d8e61eb6f299c607e49c6d1231"
-)
-CURRENT_SLICE_SHA256 = (
-    "42ac39a86f4fe6d95edf4e5ca425472333e29acff2e103099cdc385248058993"
-)
 
 # Exact registry status/state mapping by dotted path at the same baseline.
 EXPECTED_REGISTRY_STATUSES = {
@@ -93,6 +81,7 @@ SHARED_DEFINITION = (
     "근거형 Site State와 Change로 바꾸는 기반이다"
 )
 SHARED_NONEXCLUSIVE = "건설·토공 운영이 첫 시장이며, 플랫폼의 배타적 정체성이 아니다"
+LINEAGE_INVARIANTS = ("INV-040", "INV-050", "INV-051", "INV-053", "INV-060", "INV-061")
 
 # Invariants that stay effective in their applicable domains per the boundary.
 EFFECTIVE_INVARIANTS = [
@@ -226,19 +215,19 @@ def test_prd_goals_and_completion_are_scoped() -> None:
     assert "transitional" in goals or "역사적" in goals
 
     vertical = _section(prd, "## 23.1 첫 번째 Vertical", "## ")
-    assert "ADR-KSI-039" in vertical
-    assert "역사적" in vertical
+    assert "첫 실증 시장" in vertical
+    assert "별도 수락" in vertical
 
-    phases = _section(prd, "# 25. 구현 단계", "# 26.")
-    assert "ADR-KSI-039" in phases
-    assert "out-of-product" in phases
-
-    completion = _section(prd, "# 26. 제품 완료 기준", "END-OF-PRD")
-    assert "ADR-KSI-039" in completion
-    assert "out-of-product" in completion
-    # Useful reliability/governance content is preserved, not labelled obsolete.
-    assert "Mock·Placeholder" in completion
-    assert "License Registry" in completion
+    completion = _section(prd, "# 26. 제품 완료 기준", "")
+    assert "현재 slice" in completion and "host/customer acceptance" in completion
+    assert "ADR-KSI-039" in completion and "완료조건이 아니다" in completion
+    assert "P-AC" not in completion and "EXT-VAL" in completion
+    assert "실제 근거" in completion
+    # Existing contracts, not a separate PRD checklist, own acceptance details.
+    acceptance = _read("docs/acceptance/CIVIL_PROCESSING_V1_ACCEPTANCE.md")
+    assert "survey-grade" in acceptance and "field acceptance" in acceptance
+    for invariant in LINEAGE_INVARIANTS:
+        assert invariant in _read(INVARIANTS)
 
 
 def test_constitution_and_ledger_passages_carry_scope() -> None:
@@ -274,20 +263,12 @@ def test_historical_decisions_have_explicit_supersession() -> None:
     # Routing index marks the boundary active.
     assert "ADR-KSI-039" in _read(DOC_STATUS)
 
-    # Dated Milestones moved to history; the literal preservation digest stays
-    # unchanged. Current slice remains at the live path with its original hash.
+    # Current product scope is enforced from the live product slice and
+    # accepted phase registry; retired milestone narratives are not authority.
     state = _read(PRODUCT_STATE)
-    history = _section(_read(PRODUCT_STATE_HISTORY), "## Milestones", "## Current slice")
-    assert hashlib.sha256(history.encode()).hexdigest() == MILESTONES_SHA256
-    assert (
-        hashlib.sha256(_section(state, "## Current slice", "## ").encode()).hexdigest()
-        == CURRENT_SLICE_SHA256
-    )
-
-    # Historical Milestones rows are preserved as history, separately from marking.
-    for item in EXCLUDED_FUTURE_IDS:
-        assert item in history, item
-    assert "false_positive_complete" in history
+    assert "EXT-VAL-01" in state and "EXT-VAL-08" in state
+    _assert_next_slice_markers(state)
+    assert _status_snapshot(yaml.safe_load(_read(PHASE_REGISTRY))) == EXPECTED_REGISTRY_STATUSES
 
 
 def test_open_acceptance_is_not_relabelled_done() -> None:
@@ -305,10 +286,12 @@ def test_open_acceptance_is_not_relabelled_done() -> None:
     assert "registration" in pilot and "inspection" in pilot
     assert "excluded" in pilot
 
-    # Mixed tracks scope acquisition-only pieces instead of whole-track deletion.
-    for track in ("- phase-4:", "- phase-5:"):
-        line = next(ln for ln in state.splitlines() if ln.startswith(track))
-        assert "acquisition-only pieces" in line, track
+    # Platform and any remaining shared phases keep acquisition excluded and
+    # spatial/inspection work in scope under the accepted responsibility split.
+    for track in ("- phase-3:", "- phase-4:", "- phase-5:"):
+        line = next((ln for ln in state.splitlines() if ln.startswith(track)), None)
+        if line is not None:
+            assert "acquisition-only pieces" in line or "ADR-KSI-039" in line, track
 
     # Registry keeps every status/state value pinned; no new enum allowed.
     registry_text = _read(PHASE_REGISTRY)
@@ -317,7 +300,10 @@ def test_open_acceptance_is_not_relabelled_done() -> None:
 
     roadmap = _read(ROADMAP)
     assert "ADR-KSI-039" in roadmap
-    assert "out-of-product" in roadmap
+    assert "customer/data rights and operational gates" in roadmap
+    assert "active acceptance or task-selection authority" in roadmap
+    for invariant in ("INV-040", "INV-051", "INV-053", "INV-060", "INV-061"):
+        assert invariant in _read(INVARIANTS)
 
 
 @pytest.mark.parametrize("item", EXCLUDED_FUTURE_IDS)

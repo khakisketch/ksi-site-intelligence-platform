@@ -10,46 +10,23 @@ This page owns the current product goal, slice, next-slice direction, and open p
 - Name: 외부 재구성 산출물 파일 검사와 용도별 사용 적합성 판정
 - Acceptance (user-visible end-to-end): EXT-VAL-01 actual sealed derived bytes format and spatial metadata inspection; EXT-VAL-02 customer declarations separated from measured facts; EXT-VAL-03 versioned Core per-use display comparison height volume decisions with evidence-bound positive and negative paths; EXT-VAL-04 explicit remediation without blanket raw-upload or DSM absence denial; EXT-VAL-05 bounded resources transient retry fencing tenant isolation and restart replay; EXT-VAL-06 mounted Core and processing-controller workflow without managed identity impersonation; EXT-VAL-07 reviewed detailed plan contracts tests independent and integrated verification; EXT-VAL-08 durable docs goal evidence and local versus release acceptance boundaries
 - Plan ledger: docs/superpowers/plans/2026-09-07-external-artifact-validation.md
-## Next slices
-- phase-3: Phase 3 (PRD §25)
-- phase-4: Phase 4 (PRD §25) — acquisition-only pieces out-of-product per ADR-KSI-039; spatial/inspection reuse scope retained (not a completion claim)
-- phase-5: Phase 5 (PRD §25) — acquisition-only pieces out-of-product per ADR-KSI-039; industry reuse scope retained (not a completion claim)
-- track-a: Track A: DJI Hardware Capability Spike — **out-of-product** per ADR-KSI-039 (planning reference only; never a completion candidate)
-- track-b: Track B: Perception Vertical Slice (실기 입력 전환) — **out-of-product** per ADR-KSI-039 (planning reference only; never a completion candidate)
-- autonomous-acquisition-closed-loop: Autonomous Acquisition Closed Loop — 실제 M4D 기준 종단 폐루프 1회 완주 — **out-of-product** per ADR-KSI-039 (planning reference only; never a completion candidate)
-- aol-1-spatial-model-lifecycle: AOL-1 G1: 공간모델 생애주기 — 현장이 '공간모델 없음/있음/오래됨'을 서버가 판단한다
-- aol-1-capture-auto-ingest: AOL-1 G4: 촬영 → 서버 자동 ingest — 사람 손 사진 업로드 제거 (ADR-KSI-018 P1) — **out-of-product** per ADR-KSI-039 (planning reference only; never a completion candidate)
-- aol-1-mission-to-aircraft-delivery: AOL-1 G3: 임무를 기체까지 보내는 공식 경로 — 현재는 운영자가 KMZ 를 손으로 옮긴다 — **out-of-product** per ADR-KSI-039 (planning reference only; never a completion candidate)
-- aol-3-terrain-aware-planning: AOL-3 G6: 공간모델 인지 경로계획 — DSM/Point Cloud 를 경로계획 입력으로 (AOL-1 이후에만 착수) — **out-of-product** per ADR-KSI-039 (planning reference only; never a completion candidate)
-- field-0-ground-integration: FIELD-0 지상 통합 — 비행 없이 매니폴드·기체·임무파일이 실제로 이어지는지 확인 — **out-of-product** per ADR-KSI-039 (planning reference only; never a completion candidate)
-- field-1-first-mapping-flight: FIELD-1 첫 실제 매핑 비행 — 우리 현장 사진으로 공간모델이 처음 만들어진다 — **out-of-product** per ADR-KSI-039 (planning reference only; never a completion candidate)
-- field-2-reobservation-loop-field: FIELD-2 현장 폐루프 — 1회차 분석이 만든 재관측 임무로 2회차를 실제로 난다 — **out-of-product** per ADR-KSI-039 (planning reference only; never a completion candidate)
-- field-3-terrain-aware-flight: FIELD-3 지형추종 비행 — 웨이포인트마다 다른 고도가 실제 비행파일에 실린다 — **out-of-product** per ADR-KSI-039 (planning reference only; never a completion candidate)
-- decision-psdk-flight-execution-authorization: KSI가 매니폴드를 통해 기체를 직접 실행시키는 것을 허용할 것인가 (FIELD-1 이후 판단) — **out-of-product** per ADR-KSI-039 (planning reference only; never a completion candidate)
-- field-0a-kmz-acceptance: FIELD-0a 비행파일 수용성 + 카메라 실측 — 조종기만 있으면 오늘 할 수 있다 (FIELD-1의 유일한 전제) — **out-of-product** per ADR-KSI-039 (planning reference only; never a completion candidate)
-- decision-flight-ceiling-reference-split: 법적 비행 상한과 DJI 고도 기준을 어떻게 분리할 것인가 (FIELD-3 전 확정) — **out-of-product** per ADR-KSI-039 (planning reference only; never a completion candidate)
-- flight-execution-c2-s1-upload-only: C2-S1: 임무 업로드만 (Action 없이) — 빌드 자물쇠 1단계 개방 — **out-of-product** per ADR-KSI-039 (planning reference only; never a completion candidate)
-- flight-execution-c2-s2-propellerless-start: C2-S2: 프로펠러 없는 START — 개념적으로 안전하지 않은 단계, 매 진입 대표자 서면 승인 — **out-of-product** per ADR-KSI-039 (planning reference only; never a completion candidate)
-- flight-execution-c2-s3-supervised-flight: C2-S3: 사람 감시 하 실비행 — ADR-KSI-022(수직기준) 완료가 전제, 빌드 자물쇠는 안 늘어난다 — **out-of-product** per ADR-KSI-039 (planning reference only; never a completion candidate)
-- flight-execution-c2-s4-routine-operation: C2-S4: 일상 운용 — arming TTL 을 세션 단위로 완화 — **out-of-product** per ADR-KSI-039 (planning reference only; never a completion candidate)
-- field-1-ground-control: FIELD-1 조사에 한국 좌표계 기준점(GCP) 부착 — 두 시점 비교의 전제 — **out-of-product** per ADR-KSI-039 (planning reference only; never a completion candidate)
-- terrain-aware-planning-software: 지형 인지 정사 계획·다운로드·사후 증거 소프트웨어 흐름 — **out-of-product** per ADR-KSI-039 (planning reference only; never a completion candidate)
-- terrain-aware-planning-field-acceptance: M4D·Pilot 실제 계획 운용과 관측 품질 수용 — **out-of-product** per ADR-KSI-039 (planning reference only; never a completion candidate)
-- pilot-default-external-reconstruction-release: 고객 원본 보관·외부 재구성 기반 KSI Pilot-default 첫 출시 완성 — open as KSI external derived-result registration, inspection and customer/ops acceptance only; capture/customer engine execution excluded per ADR-KSI-039
+## Next slice
+
+- Open, user-approved work belongs in its named acceptance owner. Obsolete PRD acquisition phases do not create executable or active product scope (ADR-KSI-039).
+- The pilot first-release gate remains open: customer-owned reconstruction plus KSI-derived-result registration, inspection, suitability, and customer/operations acceptance. Capture and customer production reconstruction are excluded from KSI responsibility.
+
+### 에이전트 목표 방향 (2026-11-11 사용자 결정)
+
+- 목표는 업무 완수형 AI다. 첫 검증 시나리오는 2시점 DSM 변화 전수 조사 → 이상 구역 탐색·지도 표시 → 근거 포함 보고서 초안 생성이며, 성공 기준은 절차 미지정 상태에서의 자율 수행·지도와 결과물 반영·미검증 수치 미생성이다. 권한 경계와 상세 목표는 [제품 헌법](../product/PRODUCT_CONSTITUTION.md)의 에이전트 목표와 실행 경계를 따른다. 이 방향은 EXT-VAL-01..08이나 별도 host/customer 수락을 변경하지 않는다.
+
+### 개발 우선 방향 (2026-11-11 사용자 결정)
+
+- 기존 사진측량 산출물의 자료등록 자동화, DSM 분석의 정확성·정합 안정성·근거 검증, 대용량 영상 표시, 작업구역 편집 UX에 집중한다. 정상 구현을 보존하고 실제 사용자 불편과 수락 기준에 연결되는 부분만 개선한다. 이 방향은 EXT-VAL-01..08이나 별도 host/customer 수락을 변경하지 않는다.
+- 우선 검토 대상은 Pix4D·Terra 결과 폴더 인식으로 기존 등록 화면과 검사 경로의 반복 입력을 줄이는 것이다. 실제 구현 범위는 기존 등록 경로·실행 위치·고객 자료를 확인해 확정하며, 범용 수집 프레임워크나 재구성 실행을 만들지 않는다.
+- GDAL 신규 통계·비교 기능과 xDEM은 기존 워커를 대체할 기본 엔진이 아니라 필요한 기능의 비교 실험 후보로 둔다. GRASS/QGIS는 필요할 때 독립 검증 환경에서 사용한다. 동일 데이터·구역·유효 픽셀·허용오차에 대한 수치 차이, 시간·메모리·실패 처리와 대상 OS의 GDAL/PROJ/GEOS 패키징 비용을 확인한 뒤 부분 채택한다. 속도·정확도 개선은 아직 입증되지 않았다.
+- rio-tiler·COG·Terra Draw 등은 기존 부분 읽기·표시·편집 기능의 부족이 확인될 때 검토한다. 새 타일 서버·지도 엔진 교체·STAC·공간 DB·3D 플랫폼은 선행 과제가 아니다. 설계면 비교와 벤더 API 확장은 기존 계약과 별도 고객 수락 범위에서 판단한다.
 
 ## Backlog
-- 플랫폼 SDP-01..10 / GAP-01..10과 고객 표본·계약·권리/운영 검증은 [플랫폼 원장](plans/2026-09-30-spatial-data-platform-roadmap.md)에서 추적한다. 기존 EXT-VAL에 소급 추가하지 않는다.
-- 카탈로그의 유한 조회 예산·부하/페이지 재설계는 [카탈로그 계획](plans/2026-09-30-spatial-asset-catalog-v1.md)을 따른다. 이 문서 정리는 기존256/2048/256/128/64 한도나 명시적503 의미를 변경하지 않는다.
-- 외부 authority의 시간 창 밖 안전 부팅은 `docs/superpowers/specs/2026-10-15-external-authority-degraded-boot.md` §6의 승인·구현 상태를 따른다. 만료·미발효·catalog binding·signing-key 네 게이트는 이미 구현되어 있으며, 2026-10-27 현 checkout의 관련 production-factory 계약 테스트7개가 다시 통과했다. 손상된 서명/체인과 누락된 필수 설정은 여전히 fatal이며, 자동 활성화나 운영 배포 수용은 뜻하지 않는다.
-- [경험 개선 원장](plans/2026-09-17-dashboard-experience-improvements.md)의 남은 항목과 SV-3b 선택 직후 reload 지연은 각각의 기록을 유지한다. rehearsal M-3 보고서 digest 설명은 [SV-4 기록](plans/2026-09-18-single-volume-sv4.md)에 2026-10-15 보완 완료로 기록되어 있다. 당시 machine-local 증거 파일은 현재 checkout에서 재확인되지 않았다.
-- 이미 정정·종결한 중복 mapping·음수0·날짜표시·환경 실패 가설 등은 [분리 전 Backlog](product-state-history-2026-10-26.md#backlog)에 보존한다. 현재 실패로 재등록하지 않는다.
 
-## Out of product
-
-Acquisition/flight/autonomous-execution work is not a future slice candidate under ADR-KSI-039. Historical plans remain available as provenance, not as active backlog.
-
-## Routing
-
-- Active checkout task: `.opencode/working-state.md` when present and its named task ledger; otherwise use [`../ledger/CURRENT.md`](../ledger/CURRENT.md) and named owner work records.
-- Product decisions and supersessions: [`../00_READ_FIRST.md`](../00_READ_FIRST.md).
-- Dated milestone and former backlog history: [`product-state-history-2026-10-26.md`](product-state-history-2026-10-26.md); history does not select work.
+- 공간데이터 제공과 반복분석의 고객·권리·운영 수락은 EXT-VAL과 별도로 남아 있다. 새 scope나 우선순위는 사람의 현재 지시와 검증 가능한 현행 acceptance owner로 확정한다.
+- [현재 작업과 출시 제한](../ledger/CURRENT.md)

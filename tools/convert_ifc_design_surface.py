@@ -7,7 +7,7 @@
 하나다. 검증(``design_surface_verifier``)·잔량 계산(``run_design_conformance``)·
 차분(``diff_raster``)이 전부 래스터 전제라, IFC 를 네이티브로 받으려면 그 전부를
 이원화해야 한다(M4-B — 실데이터가 GeoTIFF 로 충분하면 우선순위가 내려간다,
-``docs/goals/REMAINING_WORK_PLAN.md`` §4). 대신 이 도구가 IFC 를 설계면 GeoTIFF
+``docs/geo/IFC_DESIGN_SURFACE_CONVERSION.md``). 대신 이 도구가 IFC 를 설계면 GeoTIFF
 로 변환해 **기존 등록 경로(업로드 → 선언 vs 관측 대조 → 잔량)에 그대로 태운다**
 — digest 대조·Core 재해싱·CRS 검증을 공짜로 상속한다. 전례:
 ``tools/convert_geoid_grid.py`` (외부 포맷 → 파이프라인이 읽는 GeoTIFF).

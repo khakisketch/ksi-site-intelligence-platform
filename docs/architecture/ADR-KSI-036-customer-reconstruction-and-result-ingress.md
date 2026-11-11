@@ -6,7 +6,7 @@
 - Requirements: REQ-INT-101/102/103/104, REQ-SEC-101, REQ-OPS-102
 - Invariants: preserves INV-024, INV-051, INV-053, and INV-060; no invariant or schema is changed.
 - Runtime status: the bounded Core registration and byte-seal API has local software evidence in
-  the [verification audit](../audit/EXTERNAL_RECONSTRUCTION_INGRESS_API_VERIFICATION.md). This ADR
+  the verification audit (historical local verification). This ADR
   remains product direction, not a vendor/export compatibility decision, deployment, or release.
   Public revision addressing uses server-issued opaque `submissionRef`; it does not repurpose the
   customer declaration ID as a URL segment or change raw journal/object-key identity.
@@ -86,7 +86,7 @@ slice separates producer declarations from server-observed derived bytes. Regist
 identity do not grant comparison eligibility. Subsequent validation must define versioned external
 evidence/compatibility policy rather than impersonate a managed profile or remove its safeguards.
 The local Core API evidence is recorded separately in the
-[verification audit](../audit/EXTERNAL_RECONSTRUCTION_INGRESS_API_VERIFICATION.md); it does not
+verification audit (historical local verification); it does not
 decide this ADR's remaining product, compatibility, deployment, or acceptance work.
 
 ### D5 — Quantitative V1 detailed specification and remaining specifications

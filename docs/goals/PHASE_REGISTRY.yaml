@@ -19,7 +19,6 @@ spatial_data_platform:
   # this index never selects or automatically resumes that work.
   execution_status: PAUSED_BY_USER
   execution_record: docs/superpowers/plans/2026-10-07-agent-first-platform-rebaseline.md
-  verification_record: docs/audit/PHYSICAL_SITE_REBASELINE_INTEGRATED_VERIFICATION.md
   scope: >-
     Spatial-data delivery and reproducible analysis for external agents and industrial software.
     First platform validation: DSM/ortho area-data reuse plus the existing earthwork analysis case.
@@ -36,7 +35,6 @@ terrain_aware_planning:
     docs/acceptance/TERRAIN_AWARE_PILOT_MVP_ACCEPTANCE.md
   current_goal: terrain-aware-planning-design-baseline
   current_goal_status: COMPLETED
-  design_baseline_evidence: docs/audit/TERRAIN_AWARE_PLANNING_DESIGN_BASELINE_REVIEW.md
   design_status: APPROVED
   software_status: NOT_IMPLEMENTED
   physical_acceptance_status: NOT_VERIFIED
@@ -429,7 +427,7 @@ confirmed_next_improvements:
       local_loop_evidence_2026_09_16: >-
         Local-only synthetic loop PASS 8/8 (register -> upload/seal -> inspection ->
         evidence -> use decision -> relative volume -> review -> successor WorkOrder);
-        audit at docs/audit/EXTERNAL_PRODUCT_LOOP_LOCAL_RUN_2026-09-16.md. This PASS is
+        dated local audit. This PASS is
         local software evidence only and does NOT satisfy the staging-acceptance
         'Synthetic product loop' row above (still NOT_RUN) — NOT staging/deployment,
         NOT customer export compatibility, NOT HIL/field acceptance.
@@ -443,7 +441,7 @@ confirmed_next_improvements:
         Local software evidence only — NOT staging/deployment, NOT vendor export
         compatibility, NOT HIL/field, NOT a happy-path proof; the staging-acceptance
         'Synthetic product loop' row remains NOT_RUN. Audit at
-        docs/audit/EXTERNAL_PRODUCT_LOOP_BROWSER_PASS_2026-09-17.md.
+        the dated browser check.
 
 # 제품 구조(2축 폐루프)의 정본은 PRODUCT_CONSTITUTION §두 축과 폐루프이고,
 # 그 근거는 ADR-KSI-016 D2 다. **이 파일이 소유하는 것은 "지금 어느 축이
@@ -466,14 +464,14 @@ axes:
     note: >-
       **우선순위가 낮아서가 아니라 차단돼 있다.** [2026-08-17 갱신] 이전 서술
       ("H1~H4 가 전부 장비 조달·PSDK 개발자 승인 대기")은 낡았다 — 2026-08-13
-      실측으로 **장비도 자격도 확보됐고**(REMAINING_WORK_PLAN.md §하드웨어 트랙),
+      실측으로 **장비도 자격도 확보됐고**(당시 하드웨어 검토 기록),
       남은 조달은 H2(셀룰러 동글+유심) 하나뿐이다. 2026-08-14의 실제 관문은
       **매니폴드가 네트워크에 없다는 것**이었으나, 2026-08-26 유선 read-only
       재검증에서 Manifold SSH와 M4D DUSS/Liveview 링크는 다시 확인됐다. 현재 관문은
       RC Plus 2 세션, 정확한 device-bound approval, propeller-off 장비 write 조건,
       upload-only PSDK archive 격리와 MSDK/Dock 입력이다. 현재
       edge/ 에 있는 것은 명령 유효성 판정·안전 상태기·PSDK 탭이며 perception·
-      tracking·next-best-view 는 미착수 — 목표 아키텍처(03_EDGE_AUTONOMY.md)가
+      tracking·next-best-view 는 미착수 — 목표 아키텍처(보관된 취득 런타임 설계)가
       곧 현재 능력이 아니다. 게이트가 열리는 즉시 착수한다.
 
 phases:
@@ -574,7 +572,7 @@ phases:
 
   - id: phase-2
     title: "Baseline Mapping & Unified Mission"
-    # Coverage Recovery 의 Edge 실시간 gap-fill(03_EDGE_AUTONOMY.md COVERAGE_RECOVERY
+    # Coverage Recovery 의 Edge 실시간 gap-fill(보관된 취득 런타임 설계 COVERAGE_RECOVERY
     # 상태)은 하드웨어 종속(Track A/B 계열)이므로 phase-2 전체는 DONE 이 아니다.
     # [2026-08-17] phase-0 과 같다 — 이 IN_PROGRESS 는 하드웨어 포함 전체 기준이고
     # 원장 goal `phase-2` 는 소프트웨어 범위만 추적한다. 충돌이 아니다.
@@ -597,7 +595,7 @@ phases:
 
     hardware_deferred:
       - >-
-        Coverage Recovery 의 Edge 실시간 촬영공백 보완(03_EDGE_AUTONOMY.md
+        Coverage Recovery 의 Edge 실시간 촬영공백 보완(보관된 취득 런타임 설계
         EVENT→REJOIN→COVERAGE_RECOVERY→RETURN) — Manifold/Edge 소관, Track A/B 와
         동일 계열 하드웨어 종속. 이번 세션은 Core 측 대체 신호(원본 site AOI 재발급
         권고, CoverageReportView.recoveryRecommended)만 구현했다.
@@ -621,7 +619,7 @@ phases:
       #   아니라는 사실을 완료 판정에 그대로 남긴다.
       - >-
         MASTER_PRD §15.2 의 ②(이벤트 시 Adaptive Patrol 분기)는 여전히 미구현이다 —
-        03_EDGE_AUTONOMY.md 상태머신 소관이라 Manifold/Edge 하드웨어 트랙에 속하며
+        보관된 취득 런타임 설계 상태머신 소관이라 Manifold/Edge 하드웨어 트랙에 속하며
         (Track A/B 와 동일 계열), 이 저장소의 소프트웨어 트랙에서 닫을 수 있는
         항목이 아니다. ①·④·⑤ 는 닫혔다(위 주석 참조).
       # 2026-08-08 실사(technical-product-audit)로 확인: 아래 2건은 이미 해소됨

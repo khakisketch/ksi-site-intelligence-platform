@@ -90,3 +90,14 @@ design/**/index.html
 # 검증 지적). tests/ 도 같은 리터럴을 담고 런타임과 무관하다.
 scripts/
 tests/
+
+# Operator configuration and credentials are runtime mounts, never image inputs.
+.env
+.env.*
+**/.env
+**/.env.*
+deploy/secrets/
+deploy/signing-keys/
+**/*.secret
+**/*.private.pem
+**/oidc-subject-registry.json

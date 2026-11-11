@@ -68,6 +68,11 @@ def test_platform_required_env_is_documented_in_deploy_example() -> None:
     )
 
 
+def test_platform_oidc_env_is_documented_in_deploy_example() -> None:
+    example_names = _core_env_names(_ENV_EXAMPLE)
+    assert example_names >= _PLATFORM_OIDC, sorted(_PLATFORM_OIDC - example_names)
+
+
 def test_platform_optional_env_sets_are_code_ssot() -> None:
     # Fail-closed on factory env drift: every platform env name must be read
     # from exactly one of the two platform sources.

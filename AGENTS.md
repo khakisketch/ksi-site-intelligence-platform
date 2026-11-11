@@ -1,27 +1,18 @@
-# KSI Site Intelligence Agent Instructions
+# KSI Site Intelligence 작업 지침
 
-KSI connects physical-site observations to reusable spatial data and evidence-based analysis. Customers own original data and reconstruction execution; KSI owns registration, inspection, permitted use, and evidence for submitted derived outputs. Flight, autonomous acquisition, tactical control, and customer production reconstruction are outside current product responsibility (ADR-KSI-036/038/039).
+- 제품·계약의 권위와 작업 진입점은 [제품 및 개발 기준](docs/00_READ_FIRST.md)을 따른다. 해당 소유자 코드·계약·테스트를 함께 확인한다.
+- [도메인 불변식](docs/product/DOMAIN_INVARIANTS.md)을 지킨다. 기계 검증이나 RTK FIX만으로 정량·정산·현장·고객 수락을 주장하지 않는다.
+- 참조 저장소를 런타임에서 직접 가져오거나 명시적 요청 없이 핀을 바꾸지 않는다. [이관 검증 입력](docs/audit/REPOSITORY_MIGRATION_MANIFEST_R3.json)을 보존한다.
+- 계획·진행·검토 기록은 대화에서 다룬다. 계속 유지해야 할 계약은 기존 정본에 반영한다.
 
-## Start here
+## 구현과 외부 기술 채택
 
-- Product identity, authority order, and supersessions: [`docs/00_READ_FIRST.md`](docs/00_READ_FIRST.md).
-- Current repository ownership/runtime map: [`REPOSITORY_STRUCTURE.md`](REPOSITORY_STRUCTURE.md).
-- Active vs historical document routing: [`docs/DOCUMENT_STATUS.md`](docs/DOCUMENT_STATUS.md).
-- Current bounded work: check `.opencode/working-state.md` when present; otherwise use [`docs/ledger/CURRENT.md`](docs/ledger/CURRENT.md) and its explicitly named work ledger.
-- Product slice, only when no active bounded task exists: [`docs/superpowers/product-state.md`](docs/superpowers/product-state.md) and its named slice ledger.
-- Console direction: [`docs/design/CONSOLE_CURRENT_SPEC.md`](docs/design/CONSOLE_CURRENT_SPEC.md).
-
-Read only the relevant owner README, contract, entrypoint, and tests for the task. Revalidate Git and source-bound evidence; cached memory and historical plans are not authority. Do not duplicate current status across documents.
-
-## Rules
-
-- Follow the product authority precedence in `docs/00_READ_FIRST.md`; supporting designs, ledgers, and prototypes cannot change product decisions or acceptance.
-- Enforce affected invariants in `docs/product/DOMAIN_INVARIANTS.md` and contracts. Accepted direction alone does not authorize an endpoint, runtime permission, deployment, or product acceptance.
-- `REPOSITORY_STRUCTURE.md` owns current source/runtime responsibility; independently operated lifecycles belong in `services/`, import-only reusable code in `packages/`.
-- Preserve `docs/audit/REPOSITORY_MIGRATION_MANIFEST_R3.json`. Do not import runtime code from `references/` or modify reference repositories unless the task explicitly says `UPDATE_REFERENCE_PIN`.
-- Treat `archive/acquisition-2026/`, `.ksi/`, retired harness records, and dated plans as historical unless current authority explicitly selects them. Do not restore retired roles, routes, or workflows.
-- Do not claim accuracy, settlement suitability, vendor/field support, deployment, or customer acceptance from registration, RTK FIX, mocks, imports, or software tests alone. Keep unknowns explicit; use contract/replay tests and real-device/HIL gates where applicable.
-- Never let an LLM emit executable flight coordinates or bypass safety policy. Retained historical control boundaries remain in their accepted contracts; they do not activate those routes.
+- KSI는 외부 사진측량 소프트웨어의 산출물을 활용하는 전문 분석 플랫폼이다. 원본 사진 처리·매핑·재구성 엔진 개발과 실행은 제품 범위에서 제외한다. 상세 경계는 [제품 요구사항](docs/product/MASTER_PRD_v3.0.md)을 따른다.
+- 먼저 해당 기능의 기존 구현·의존성·계약·테스트를 확인한다. 직접 구현하기 전에 검증된 오픈소스·라이브러리·SDK·CLI의 재사용 가능성을 검토하되, 기존 의존성으로 해결되면 새 의존성을 추가하지 않는다.
+- 자체 구현은 필요성이 입증될 때만 개발한다. 외부 검증 기술·기존 의존성으로 해결되는 문제는 직접 만들지 않으며, 직접 구현을 택하려면 동일 입력·구역·허용오차 기준의 비교로 유지보수·성능·안정성·라이선스·보안·패키징·배포 비용의 실질적 이점이 입증되어야 한다.
+- 정상 작동하는 기능은 불필요하게 교체하지 않는다. 외부 기술은 자체 구현 대비 유지보수·성능·안정성·라이선스·보안·패키징·배포 비용의 실질적 이점이 확인되는 부분만 채택한다. 새 버전이나 기능 목록만으로 성능·정확도 향상을 주장하지 않는다.
+- 기존 워커에서 라이브러리를 직접 호출하는 것으로 충분하면 별도 추상화 계층·커넥터 프레임워크·서비스를 만들지 않는다. 에이전트 활용만을 이유로 새 데이터베이스·메타데이터 표준을 선행 도입하지 않는다.
+- 분석 엔진·버전·전처리 변경은 동일 입력과 구역에 대한 수치 허용오차·NoData·경계 픽셀·실패 처리·자원 사용을 비교한다. 채택 시 기존 결과와 계보를 덮어쓰지 않고 해당 버전·프로필·주요 설정을 결속하며, 품질 판정과 권한·수락 경계는 KSI가 유지한다.
 
 ## 은퇴 상태와 에이전트 파일 처리
 

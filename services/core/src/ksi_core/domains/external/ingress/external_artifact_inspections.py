@@ -512,11 +512,14 @@ class ExternalArtifactInspectionStore:
                 return InspectionIssueResult(
                     InspectionVerdict.IDEMPOTENT, self._records[existing_id].request
                 )
+            # Revoked/expired queued history cannot be claimed. It must not
+            # consume current capacity; use only local authority under the guard.
             queue_depth = sum(
                 1
                 for record in self._records.values()
                 if record.request.subject.organization_id == subject.organization_id
                 and record.state == "QUEUED"
+                and self._policy_is_locally_current(record, now)
             )
             if queue_depth >= policy.resource_envelope.max_queue_depth:
                 return InspectionIssueResult(InspectionVerdict.QUEUE_FULL)
