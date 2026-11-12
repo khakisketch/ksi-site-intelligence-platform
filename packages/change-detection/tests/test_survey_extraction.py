@@ -198,7 +198,7 @@ def test_per_label_cut_and_fill_match_volume_delta_in_polygon() -> None:
 
     expected_fill = volume_delta_in_polygon(
         diff,
-        _rect_polygon(row0=2, row1=5, col0=3, col1=7),  # type: ignore[arg-type]
+        _rect_polygon(row0=2, row1=5, col0=3, col1=7),
         zone_id="fill",
         from_crs="EPSG:5186",
         threshold_m=0.05,
@@ -206,7 +206,7 @@ def test_per_label_cut_and_fill_match_volume_delta_in_polygon() -> None:
     )
     expected_cut = volume_delta_in_polygon(
         diff,
-        _rect_polygon(row0=6, row1=8, col0=0, col1=2),  # type: ignore[arg-type]
+        _rect_polygon(row0=6, row1=8, col0=0, col1=2),
         zone_id="cut",
         from_crs="EPSG:5186",
         threshold_m=0.05,
