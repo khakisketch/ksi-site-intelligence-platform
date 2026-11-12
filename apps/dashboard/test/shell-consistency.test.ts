@@ -80,7 +80,7 @@ describe("console shell boundary", () => {
     const frame = readSource("src/components/site/SpatialWorkbenchFrame.tsx");
     const css = readSource("src/app/globals.css");
     expect(frame).toContain("data-catalog-open");
-    expect(frame).toContain('aria-label="레이어 패널 열기"');
+    expect(frame).toContain("aria-label={`${catalogLabel} 열기`}");
     expect(frame).toContain("data-viewer-panel");
     expect(frame).toContain("data-viewer-columns");
     expect(frame).toContain("data-inspector-open");

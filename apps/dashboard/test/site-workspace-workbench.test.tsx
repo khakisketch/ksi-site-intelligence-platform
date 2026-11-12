@@ -35,7 +35,7 @@ describe("workspace workbench overlay", () => {
     const { container } = frame();
     expect(container.querySelector("#workbench-catalog")).toBeNull();
     expect(screen.getByText("실제 화면")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "목록" }));
+    fireEvent.click(screen.getByRole("button", { name: "작업공간 목록 열기" }));
     expect(container.querySelector("#workbench-catalog")).toBeTruthy();
     expect(screen.getByText("실제 화면")).toBeTruthy();
   });

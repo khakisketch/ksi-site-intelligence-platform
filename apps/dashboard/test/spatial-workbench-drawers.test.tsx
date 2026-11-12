@@ -42,7 +42,7 @@ describe("workbench drawer keyboard ownership", () => {
   it("opens the catalog as a full-height mobile sheet above the context bar", async () => {
     vi.stubGlobal("matchMedia", () => ({ matches: false }));
     render(<FrameCase />);
-    fireEvent.click(screen.getByRole("button", { name: "목록" }));
+    fireEvent.click(screen.getByRole("button", { name: "자료 목록 열기" }));
     const sheet = screen.getByRole("region", { name: "자료 목록" });
     await waitFor(() => expect(sheet.style.top).toBe("8px"));
     expect(sheet.getAttribute("data-mobile-sheet")).toBe("catalog");
@@ -64,7 +64,7 @@ describe("workbench drawer keyboard ownership", () => {
       inspectorId="test-info"
       inspectorLabel="선택 정보"
     />);
-    fireEvent.click(screen.getByRole("button", { name: "목록" }));
+    fireEvent.click(screen.getByRole("button", { name: "자료 목록 열기" }));
     await waitFor(() => expect(screen.getByRole("region", { name: "자료 목록" }).style.top).toBe("64px"));
   });
   it("closes the catalog sheet from the selection footer and restores the trigger", async () => {
@@ -79,7 +79,9 @@ describe("workbench drawer keyboard ownership", () => {
       catalogFooter={<p>현재 선택 · A · 정사영상</p>}
       catalogDismissLabel="이 선택으로 보기"
     />);
-    const toggle = screen.getByRole("button", { name: "목록" });
+    // 열려 있을 때는 시트 머리맡의 「닫기」와 토글이 같은 이름을 쓰므로
+    // aria-expanded로 맥락막대 토글만 고른다.
+    const toggle = screen.getByRole("button", { name: "자료 목록 닫기", expanded: true });
     fireEvent.click(screen.getByRole("button", { name: "이 선택으로 보기" }));
     expect(screen.queryByRole("region", { name: "자료 목록" })).toBeNull();
     expect(document.activeElement).toBe(toggle);
@@ -101,12 +103,13 @@ describe("workbench drawer keyboard ownership", () => {
       inspectorLabel="선택 정보"
     />);
     await waitFor(() => expect(screen.getByText("자료 선택").closest("[data-desktop-catalog]")).toBeTruthy());
-    expect(screen.queryByRole("button", { name: "목록" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "자료 목록 열기" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "자료 목록 닫기" })).toBeNull();
   });
 
   it("focuses the opened catalog and restores its trigger on Escape", async () => {
     render(<FrameCase />);
-    const toggle = screen.getByRole("button", { name: "목록" });
+    const toggle = screen.getByRole("button", { name: "자료 목록 열기" });
     fireEvent.click(toggle);
     const region = screen.getByRole("region", { name: "자료 목록" });
     await waitFor(() => expect(document.activeElement).toBe(region));
@@ -128,7 +131,7 @@ describe("workbench drawer keyboard ownership", () => {
 
   it("does not consume Escape from a palette outside the drawer", () => {
     render(<FrameCase />);
-    fireEvent.click(screen.getByRole("button", { name: "목록" }));
+    fireEvent.click(screen.getByRole("button", { name: "자료 목록 열기" }));
     const outside = screen.getByRole("textbox", { name: "팔레트 바깥 검색" });
     outside.focus();
     fireEvent.keyDown(outside, { key: "Escape" });

@@ -245,7 +245,7 @@ describe("Site spatial overview honesty", () => {
     ] });
     await renderDefaultTab({});
     // 구역 선택은 목록 드로어에 있다 — 열어야 보인다.
-    fireEvent.click(screen.getByRole("button", { name: "목록" }));
+    fireEvent.click(screen.getByRole("button", { name: "작업공간 목록 열기" }));
     const options = screen.getByRole("combobox").querySelectorAll("option");
     expect([...options].map((o) => o.textContent)).toEqual(["같은 구역 · dup-1", "같은 구역 · dup-2"]);
   });
