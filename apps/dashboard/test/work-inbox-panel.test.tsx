@@ -9,8 +9,8 @@ afterEach(() => cleanup());
 describe("WorkInboxPanel", () => {
   it("explains what appears in an empty inbox and how the unread filter behaves", () => {
     render(<WorkInboxPanel initialUnreadOnly initialNextCursor={null} initialItems={[]} />);
-    expect(screen.getByText(/읽지 않은 업무가 없습니다/)).toBeTruthy();
-    expect(screen.getByText(/읽은 업무는 전체 목록에서 볼 수 있습니다/)).toBeTruthy();
+    expect(screen.getByText(/읽지 않은 작업이 없습니다/)).toBeTruthy();
+    expect(screen.getByText(/읽은 작업은 전체 목록에서 볼 수 있습니다/)).toBeTruthy();
     expect(screen.getByRole("button", { name: "읽지 않음" }).getAttribute("aria-pressed")).toBe("true");
     expect(screen.getByRole("button", { name: "전체" }).getAttribute("aria-pressed")).toBe("false");
   });
@@ -33,12 +33,12 @@ describe("WorkInboxPanel", () => {
     render(<WorkInboxPanel initialUnreadOnly initialNextCursor={null} initialItems={[]} />);
 
     fireEvent.click(screen.getByRole("button", { name: "전체" }));
-    expect(screen.getByRole("status").textContent).toContain("받은 업무 목록을 불러오는 중입니다.");
-    expect(screen.queryByText(/읽지 않은 받은 업무가 없습니다/)).toBeNull();
+    expect(screen.getByRole("status").textContent).toContain("받은 작업 목록을 불러오는 중입니다.");
+    expect(screen.queryByText(/읽지 않은 받은 작업이 없습니다/)).toBeNull();
 
     finishRequest?.({ ok: false, status: 503 } as Response);
-    expect((await screen.findByRole("alert")).textContent).toContain("받은 업무를 불러오지 못했습니다.");
-    expect(screen.queryByText(/읽지 않은 받은 업무가 없습니다|받은 업무가 없습니다/)).toBeNull();
+    expect((await screen.findByRole("alert")).textContent).toContain("받은 작업을 불러오지 못했습니다.");
+    expect(screen.queryByText(/읽지 않은 받은 작업이 없습니다|받은 작업이 없습니다/)).toBeNull();
   });
 
   it("offers a one-tap escape from an empty unread inbox to the full list", async () => {
@@ -53,7 +53,7 @@ describe("WorkInboxPanel", () => {
 
   it("offers a work-queue escape when the full inbox is empty", () => {
     render(<WorkInboxPanel initialUnreadOnly={false} initialNextCursor={null} initialItems={[]} />);
-    expect(screen.getByText(/받은 업무가 없습니다/)).toBeTruthy();
+    expect(screen.getByText(/받은 작업이 없습니다/)).toBeTruthy();
     expect(screen.getByRole("link", { name: "작업 목록으로 이동" }).getAttribute("href")).toBe("/field");
   });
 
@@ -61,10 +61,10 @@ describe("WorkInboxPanel", () => {
     render(<WorkInboxPanel initialUnreadOnly initialNextCursor={null} initialItems={[{ notificationRef: "notice-1", kind: "EXTERNAL_REPORT_SHARED", target: { kind: "EXTERNAL_REPORT", siteId: "site-a", reportRef: "report-a" }, senderPrincipalId: "operator-a", createdAt: "2026-09-10T00:00:00Z", unread: true }]} />);
     expect(screen.getByRole("link", { name: "공유된 결과 열기" }).getAttribute("href")).toBe("/sites/site-a/observations/report-a");
     expect(screen.getByText(/받은 시각 ·/)).toBeTruthy();
-    const senderDetails = screen.getByText("발신 계정 정보").closest("details");
+    const senderDetails = screen.getByText("발신 계정 식별 상세").closest("details");
     expect(senderDetails?.open).toBe(false);
     expect(senderDetails?.textContent).toContain("계정 ID · operator-a");
-    fireEvent.click(screen.getByText("발신 계정 정보"));
+    fireEvent.click(screen.getByText("발신 계정 식별 상세"));
     expect(senderDetails?.open).toBe(true);
   });
 

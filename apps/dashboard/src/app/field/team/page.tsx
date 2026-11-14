@@ -1,3 +1,4 @@
+import { PageHeader } from "@/components/ui/PageHeader";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { CoreApiError } from "@/lib/core-api/client";
 import { listOrganizationWorkRoster } from "@/lib/core-api/work-collaboration";
@@ -35,5 +36,5 @@ export default async function FieldTeamPage() {
     const permissionsVerified = Array.isArray(permissions) && permissions.every((permission) => typeof permission === "string");
     return fingerprint && permissionsVerified ? { fingerprint } : null;
   })();
-  return <div className="console-page"><FieldWorkNav active="team" showTeam /> <header><h2 className="console-page-title">팀 관리</h2><p className="console-page-description">작업 배정·공유에 쓰는 팀원 정보입니다. 계정 권한은 변경하지 않습니다.</p></header><div className="w-full max-w-4xl"><TeamRosterPanel initialMembers={roster.members} canManage={canManage} currentPrincipalId={session.principal.principalId} organizationId={session.principal.organizationId} accountIdentity={accountIdentity} /></div></div>;
+  return <div className="console-page"><FieldWorkNav active="team" showTeam /> <PageHeader title="팀 관리" description="작업 배정과 결과 공유에 쓰는 팀원 정보입니다." headingLevel={2} /><div className="w-full max-w-4xl"><TeamRosterPanel initialMembers={roster.members} canManage={canManage} currentPrincipalId={session.principal.principalId} organizationId={session.principal.organizationId} accountIdentity={accountIdentity} /></div></div>;
 }

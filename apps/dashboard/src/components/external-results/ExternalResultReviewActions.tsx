@@ -1,5 +1,6 @@
 "use client";
 
+import { Disclosure } from "@/components/ui/Disclosure";
 import Link from "next/link";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 
@@ -170,7 +171,7 @@ export function ExternalResultReviewActions<TReview extends ExternalAnyResultRev
     const matchesProposal = attempt?.reportRef === reportRef
       && attempt.workAreaId === targetWorkAreaId && attempt.reason === normalizedReason;
     if (!newIntentAllowed && !matchesProposal) {
-      setMessage("업무 종료 상태에서는 새 재관측 제안을 기록할 수 없습니다.");
+      setMessage("작업 종료 상태에서는 새 재관측 제안을 기록할 수 없습니다.");
       return;
     }
     if (!matchesProposal) {
@@ -207,7 +208,7 @@ export function ExternalResultReviewActions<TReview extends ExternalAnyResultRev
       && attempt.reportRef === currentProposal.proposal.reportRef
       && attempt.expectedVersion === currentProposal.proposal.version;
     if (!newIntentAllowed && !matchesApproval) {
-      setMessage("업무 종료 상태에서는 새 후속 작업 승인을 시작할 수 없습니다.");
+      setMessage("작업 종료 상태에서는 새 후속 작업 승인을 시작할 수 없습니다.");
       return;
     }
     if (!matchesApproval) {
@@ -252,9 +253,9 @@ export function ExternalResultReviewActions<TReview extends ExternalAnyResultRev
 
   return (
     <>
-      {review ? <><p>결과 검토 기록이 있습니다. · {formatKoreanDateTime(review.reviewedAt, { dateStyle: "short", timeStyle: "short" })}</p>{renderReviewDetail?.(review)}</> : canReview ? <ResponsiveActionBoundary action="WORK_ORDERS_WRITE" reason={reviewReason}><button className="btn w-fit" disabled={busy !== null} onClick={() => void submitReview()}>{busy === "review" ? "결과 검토 기록 중" : "결과 검토 기록"}</button></ResponsiveActionBoundary> : newIntentAllowed ? <ActionUnavailable label="결과 검토 기록" description="결과 검토를 기록할 권한이 없습니다. 현장 담당자에게 확인하세요." /> : <p className="text-ink-2">업무 종료 상태에서는 새 결과 검토를 기록할 수 없습니다.</p>}
-      {review && (canProposal ? <ResponsiveActionBoundary action="WORK_ORDERS_WRITE" reason="재관측 제안은 노트북 이상의 화면에서 기록합니다."><div className="flex flex-col gap-2"><label className="flex flex-col gap-1">재관측 제안 사유<input className="input" aria-label="재관측 제안 사유" value={reason} disabled={busy !== null || !newIntentAllowed} onChange={(event) => { setReason(event.target.value); setProposalAttempt(null); }} /></label><p className="text-ink-2">{targetLabel}</p>{!currentProposal && <button className="btn w-fit" disabled={busy !== null} onClick={() => void createProposal()}>{busy === "proposal" ? "제안 기록 중" : "이 작업구역으로 재관측 제안"}</button>}</div></ResponsiveActionBoundary> : newIntentAllowed ? <ActionUnavailable label="이 작업구역으로 재관측 제안" description="재관측 제안을 기록할 권한이 없습니다. 현장 담당자에게 확인하세요." /> : <p className="text-ink-2">업무 종료 상태에서는 새 재관측 제안을 기록할 수 없습니다.</p>)}
-      {currentProposal && <div className="rounded border border-line p-3"><p>재관측 제안이 기록되었습니다.</p><p className="mt-1 text-ink-2">{targetLabel}</p>{approvalReceipt ? <div className="mt-2 flex flex-wrap items-center gap-2"><p>후속 작업이 생성되었습니다.</p><Link href={`/field/work-orders/${encodeURIComponent(approvalReceipt.successorWorkOrderId)}`} className="btn">후속 작업 보기</Link></div> : canApprove ? <ResponsiveActionBoundary action="REOBSERVATION_APPROVE" reason="후속 작업 승인은 노트북 이상의 화면에서 별도로 기록합니다."><button className="btn mt-2 w-fit" disabled={busy !== null} onClick={() => void approve()}>{busy === "approval" ? "승인 기록 중" : "재관측 후속 작업 승인"}</button></ResponsiveActionBoundary> : newIntentAllowed ? <ActionUnavailable className="mt-2" label="재관측 후속 작업 승인" description="후속 작업을 승인할 권한이 없습니다. 현장 담당자에게 확인하세요." /> : <p className="mt-2 text-ink-2">업무 종료 상태에서는 새 후속 작업 승인을 시작할 수 없습니다.</p>}<details className="mt-2 text-[12px] text-ink-2"><summary className="cursor-pointer font-semibold">전문가 정보</summary><p className="mt-1 break-all">제안 {currentProposal.proposal.proposalRef} · v{currentProposal.proposal.version} · 대상 {currentProposal.proposal.targetWorkAreas?.map((item) => item.workAreaId).join(", ") || "기록 없음"}{approvalReceipt ? ` · 후속 작업 ${approvalReceipt.successorWorkOrderId}` : ""}</p></details></div>}
+      {review ? <><p>결과 검토 기록이 있습니다. · {formatKoreanDateTime(review.reviewedAt, { dateStyle: "short", timeStyle: "short" })}</p>{renderReviewDetail?.(review)}</> : canReview ? <ResponsiveActionBoundary action="WORK_ORDERS_WRITE" reason={reviewReason}><button className="btn w-fit" disabled={busy !== null} onClick={() => void submitReview()}>{busy === "review" ? "결과 검토 기록 중" : "결과 검토 기록"}</button></ResponsiveActionBoundary> : newIntentAllowed ? <ActionUnavailable label="결과 검토 기록" description="결과 검토를 기록할 권한이 없습니다. 현장 담당자에게 확인하세요." /> : <p className="text-ink-2">작업 종료 상태에서는 새 결과 검토를 기록할 수 없습니다.</p>}
+      {review && (canProposal ? <ResponsiveActionBoundary action="WORK_ORDERS_WRITE" reason="재관측 제안은 노트북 이상의 화면에서 기록합니다."><div className="flex flex-col gap-2"><label className="flex flex-col gap-1">재관측 제안 사유<input className="input" aria-label="재관측 제안 사유" value={reason} disabled={busy !== null || !newIntentAllowed} onChange={(event) => { setReason(event.target.value); setProposalAttempt(null); }} /></label><p className="text-ink-2">{targetLabel}</p>{!currentProposal && <button className="btn w-fit" disabled={busy !== null} onClick={() => void createProposal()}>{busy === "proposal" ? "제안 기록 중" : "이 작업구역으로 재관측 제안"}</button>}</div></ResponsiveActionBoundary> : newIntentAllowed ? <ActionUnavailable label="이 작업구역으로 재관측 제안" description="재관측 제안을 기록할 권한이 없습니다. 현장 담당자에게 확인하세요." /> : <p className="text-ink-2">작업 종료 상태에서는 새 재관측 제안을 기록할 수 없습니다.</p>)}
+      {currentProposal && <div className="rounded border border-line p-3"><p>재관측 제안이 기록되었습니다.</p><p className="mt-1 text-ink-2">{targetLabel}</p>{approvalReceipt ? <div className="mt-2 flex flex-wrap items-center gap-2"><p>후속 작업이 생성되었습니다.</p><Link href={`/field/work-orders/${encodeURIComponent(approvalReceipt.successorWorkOrderId)}`} className="btn">후속 작업 보기</Link></div> : canApprove ? <ResponsiveActionBoundary action="REOBSERVATION_APPROVE" reason="후속 작업 승인은 노트북 이상의 화면에서 별도로 기록합니다."><button className="btn mt-2 w-fit" disabled={busy !== null} onClick={() => void approve()}>{busy === "approval" ? "승인 기록 중" : "재관측 후속 작업 승인"}</button></ResponsiveActionBoundary> : newIntentAllowed ? <ActionUnavailable className="mt-2" label="재관측 후속 작업 승인" description="후속 작업을 승인할 권한이 없습니다. 현장 담당자에게 확인하세요." /> : <p className="mt-2 text-ink-2">작업 종료 상태에서는 새 후속 작업 승인을 시작할 수 없습니다.</p>}<Disclosure label="식별 상세" className="mt-2 text-caption text-ink-2"><p className="mt-1 break-all">제안 {currentProposal.proposal.proposalRef} · v{currentProposal.proposal.version} · 대상 {currentProposal.proposal.targetWorkAreas?.map((item) => item.workAreaId).join(", ") || "기록 없음"}{approvalReceipt ? ` · 후속 작업 ${approvalReceipt.successorWorkOrderId}` : ""}</p></Disclosure></div>}
       {message && <p role="status">{message}</p>}
     </>
   );

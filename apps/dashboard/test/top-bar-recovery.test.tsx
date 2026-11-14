@@ -9,7 +9,7 @@ vi.mock("next/headers", () => ({
     ...(mocks.returnTo === null ? [] : [["x-return-to", mocks.returnTo]] as Array<[string, string]>),
   ]),
 }));
-vi.mock("next/navigation", () => ({ usePathname: () => mocks.pathname }));
+vi.mock("next/navigation", () => ({ usePathname: () => mocks.pathname, useSearchParams: () => new URLSearchParams() }));
 vi.mock("next/link", () => ({ default: ({ href, children }: { href: string; children: React.ReactNode }) => createElement("a", { href }, children) }));
 vi.mock("@/lib/core-api/auth", () => ({ whoAmI: mocks.whoami }));
 vi.mock("@/lib/core-api/session", () => ({ MissingSessionError: class MissingSessionError extends Error {} }));

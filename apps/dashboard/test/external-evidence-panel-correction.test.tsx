@@ -260,7 +260,7 @@ it("keeps sealed ortho-only display subjects visible while distinguishing an agg
 it("keeps evidence readable but blocks new evidence and use decisions after closure", async () => {
   render(<ExternalEvidencePanel workOrderId="current" siteId="site-1" revisions={[current]} canWrite newIntentAllowed={false} />);
 
-  expect(await screen.findByText(/업무 종료 상태입니다. 새 증거와 사용 결정은 요청할 수 없지만/)).toBeTruthy();
+  expect(await screen.findByText(/작업 종료 상태입니다. 새 증거와 사용 결정은 요청할 수 없지만/)).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: /current\.tif/ }));
   expect((screen.getByRole("button", { name: "화면 표시 다시 확인" }) as HTMLButtonElement).disabled).toBe(true);
   expect((screen.getByLabelText("독립 검사점 CSV") as HTMLInputElement).disabled).toBe(true);
@@ -338,11 +338,11 @@ it("keeps same-work-order and cross-work-order baselines human-readable, sends a
       zoneId: "area-1",
     },
   ]);
-  expect(onRelativeVolumeDecisionChange).toHaveBeenLastCalledWith(expect.objectContaining({
+  await waitFor(() => expect(onRelativeVolumeDecisionChange).toHaveBeenLastCalledWith(expect.objectContaining({
     decisionId: `external-use-decision-${"R".repeat(32)}`,
     decisionDigest: `sha256:${"R".repeat(64)}`,
     verdict: "RESTRICTED",
-  }));
+  })));
 });
 
 it("reuses an uncertain decision key and never publishes its late response after subject selection changes", async () => {
@@ -627,7 +627,7 @@ it("names incomplete same-site baselines and retries every exact choice after a 
 
   render(<ExternalEvidencePanel workOrderId="current" siteId="site-1" revisions={[current]} canWrite accountIdentity={fp()} />);
   fireEvent.click(await screen.findByRole("button", { name: /current\.tif/ }));
-  expect((await screen.findByRole("alert")).textContent).toContain("일부 같은 현장 작업의 비교 대상을 읽지 못했습니다: 누락 기준. 목록이 완전하지 않습니다.");
+  expect((await screen.findByRole("alert")).textContent).toContain("일부 같은 작업의 비교 대상을 읽지 못했습니다: 누락 기준. 목록이 완전하지 않습니다.");
   expect(screen.getByLabelText("비교할 이전 등록 버전").querySelectorAll("option")).toHaveLength(2);
 
   recovered = true;
@@ -1951,7 +1951,7 @@ describe("decision frozen path, response binding, and read-only discoverability"
     fireEvent.change(screen.getByLabelText("변화 분석 구역"), { target: { value: "area-1" } });
     fireEvent.click(screen.getByRole("button", { name: "변화 분석 다시 확인" }));
     expect(await screen.findByText(/현재 분석 시스템 판정: 변화 분석/)).toBeTruthy();
-    expect(onRelativeVolumeDecisionChange).toHaveBeenLastCalledWith(expect.objectContaining({ verdict: "RESTRICTED" }));
+    await waitFor(() => expect(onRelativeVolumeDecisionChange).toHaveBeenLastCalledWith(expect.objectContaining({ verdict: "RESTRICTED" })));
     expect(calls).toHaveLength(1);
 
     // 문맥이 바뀌면 새 요청 없이 부모 발급도 fail-closed로 닫는다.
@@ -2094,7 +2094,7 @@ describe("decision frozen path, response binding, and read-only discoverability"
     expect(calls).toHaveLength(2);
     expect(calls[1].key).toBe(calls[0].key);
     expect(calls[1].body).toEqual(calls[0].body);
-    expect(onRelativeVolumeDecisionChange).toHaveBeenLastCalledWith(expect.objectContaining({ verdict: "ELIGIBLE" }));
+    await waitFor(() => expect(onRelativeVolumeDecisionChange).toHaveBeenLastCalledWith(expect.objectContaining({ verdict: "ELIGIBLE" })));
   });
 
   it("rejects a single-volume response bound to another use", async () => {

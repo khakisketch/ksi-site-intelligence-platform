@@ -1,5 +1,6 @@
 "use client";
 
+import { Disclosure } from "@/components/ui/Disclosure";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { ResponsiveActionBoundary } from "@/components/responsive/ResponsiveActionBoundary";
@@ -1138,8 +1139,8 @@ export function DeltaPublicationPanel(props: DeltaPublicationPanelProps) {
     <section aria-label="차분 파일" aria-busy={busy} className="rounded-lg border border-line bg-surface">
       <div className="flex flex-wrap items-start justify-between gap-3 px-4 py-3">
         <div className="min-w-0">
-          <h3 className="text-[14px] font-bold">차분 파일</h3>
-          <p className="mt-1 text-[12px] leading-5 text-ink-2">
+          <h3 className="text-lead font-bold">차분 파일</h3>
+          <p className="mt-1 text-caption leading-5 text-ink-2">
             {workAreaLabel} · 계산 상태와 별개인 내보내기용 결과물입니다. 형식 FLOAT64 · 현재−기준 · 미터.
           </p>
         </div>
@@ -1160,10 +1161,10 @@ export function DeltaPublicationPanel(props: DeltaPublicationPanelProps) {
 
       <div className="border-t border-line px-4 py-3">
         {configError ? (
-          <p className="rounded-md border border-crit bg-crit-bg px-3 py-2 text-[12px] leading-5 text-crit-ink">{configError}</p>
+          <p className="rounded-md border border-crit bg-crit-bg px-3 py-2 text-caption leading-5 text-crit-ink">{configError}</p>
         ) : phase === "idle" ? (
           <>
-            <p className="text-[12px] leading-5 text-ink-2">
+            <p className="text-caption leading-5 text-ink-2">
               아직 내보내기를 요청하지 않았습니다. 요청하면 서버가 현재−기준 차이 격자를 별도 파일로 준비합니다.
               수치 결과는 그대로 유지됩니다.
             </p>
@@ -1175,7 +1176,7 @@ export function DeltaPublicationPanel(props: DeltaPublicationPanelProps) {
               >
                 <button
                   type="button"
-                  className="btn btn-primary mt-3 min-h-11"
+                  className="btn mt-3 min-h-11"
                   onClick={() => void requestExport({ freshKey: true })}
                 >
                   내보내기 준비 요청
@@ -1191,10 +1192,10 @@ export function DeltaPublicationPanel(props: DeltaPublicationPanelProps) {
             )}
           </>
         ) : phase === "requesting" ? (
-          <p className="text-[12px] leading-5 text-ink-2">내보내기 준비를 요청하는 중입니다. 계산 상태와 수치 결과는 바뀌지 않습니다.</p>
+          <p className="text-caption leading-5 text-ink-2">내보내기 준비를 요청하는 중입니다. 계산 상태와 수치 결과는 바뀌지 않습니다.</p>
         ) : phase === "pending" ? (
           <>
-            <p className="text-[12px] leading-5 text-ink-2">
+            <p className="text-caption leading-5 text-ink-2">
               게시된 파일을 확인하지 못했습니다. 준비 중인지 확정할 수 없어
               {intent && <> 유효 기한 {formatKoreanDateTime(intent.expiresAt, { dateStyle: "medium", timeStyle: "short" })}까지</>} 다시 확인합니다.
               수치 결과는 그대로 유지됩니다.
@@ -1203,11 +1204,11 @@ export function DeltaPublicationPanel(props: DeltaPublicationPanelProps) {
               <button type="button" className="btn min-h-11" onClick={() => void refreshStatus()}>상태 다시 확인</button>
               <button type="button" className="btn min-h-11" onClick={stopChecking}>확인 중단</button>
             </div>
-            {errorMessage && <p className="mt-2 text-[12px] leading-5 text-ink-2">{errorMessage}</p>}
+            {errorMessage && <p className="mt-2 text-caption leading-5 text-ink-2">{errorMessage}</p>}
           </>
         ) : phase === "ready" && detail ? (
           <>
-            <dl className="grid gap-2 text-[12px] text-ink-2 sm:grid-cols-2">
+            <dl className="grid gap-2 text-caption text-ink-2 sm:grid-cols-2">
               <div><dt className="text-ink-muted">형식</dt><dd className="font-semibold text-ink-1">{dtypeLabel(detail.descriptor.dtype)}</dd></div>
               <div><dt className="text-ink-muted">부호</dt><dd className="font-semibold text-ink-1">{signLabel(detail.descriptor.deltaSign)}</dd></div>
               <div><dt className="text-ink-muted">단위</dt><dd className="font-semibold text-ink-1">{unitLabel(detail.descriptor.verticalUnit)}</dd></div>
@@ -1216,29 +1217,28 @@ export function DeltaPublicationPanel(props: DeltaPublicationPanelProps) {
               <div><dt className="text-ink-muted">파일 크기</dt><dd className="num">{formatBytesKo(detail.descriptor.outputSizeBytes)}</dd></div>
               <div className="sm:col-span-2"><dt className="text-ink-muted">유효 기한</dt><dd>{formatKoreanDateTime(detail.expiresAt, { dateStyle: "medium", timeStyle: "short" })}</dd></div>
             </dl>
-            <details className="mt-2 text-[11.5px] text-ink-muted">
-              <summary className="tap-target cursor-pointer font-semibold">출처 확인값 보기</summary>
+            <Disclosure label="출처 식별 상세" className="mt-2 text-caption text-ink-muted">
               <dl className="mt-1 grid gap-1 break-all border-l-2 border-line pl-3">
                 <div><dt>계산 신원 확인값</dt><dd>{detail.descriptor.sourceCalculationIdentityDigest}</dd></div>
                 <div><dt>수치 결과 확인값</dt><dd>{detail.descriptor.sourceNumericResultIdentityDigest}</dd></div>
                 <div><dt>범위 근거 확인값</dt><dd>{detail.descriptor.sourceCoverageWitnessDigest}</dd></div>
                 <div><dt>파일 확인값</dt><dd>{detail.descriptor.outputSha256}</dd></div>
               </dl>
-            </details>
-            <p className="mt-2 text-[12px] leading-5 text-ink-muted">
+            </Disclosure>
+            <p className="mt-2 text-caption leading-5 text-ink-muted">
               절토·성토·순변화 수치 결과는 이 파일과 별개로 유지됩니다. 내보내기 준비·실패가 수치 결과를 바꾸거나 가리지 않습니다.
             </p>
             <div className="mt-3 flex flex-wrap items-center gap-2">
               <button
                 type="button"
-                className="btn btn-primary min-h-11"
+                className="btn min-h-11"
                 disabled={download.state === "downloading"}
                 onClick={() => void downloadFile()}
               >
                 {download.state === "downloading" ? "내려받는 중" : "차분 파일 내려받기"}
               </button>
               {download.state === "downloading" && (
-                <p className="num text-[12px] text-ink-2">
+                <p className="num text-caption text-ink-2">
                   {formatBytesKo(download.loaded)} / {formatBytesKo(download.total)}
                 </p>
               )}
@@ -1255,15 +1255,15 @@ export function DeltaPublicationPanel(props: DeltaPublicationPanelProps) {
               </div>
             )}
             {download.state === "done" && (
-              <p className="mt-2 text-[12px] leading-5 text-ink-2">내려받기 전후로 파일 정보를 대조한 뒤 내려받았습니다.</p>
+              <p className="mt-2 text-caption leading-5 text-ink-2">내려받기 전후로 파일 정보를 대조한 뒤 내려받았습니다.</p>
             )}
             {download.state === "error" && (
-              <p className="mt-2 rounded-md border border-crit bg-crit-bg px-3 py-2 text-[12px] leading-5 text-crit-ink">{download.message}</p>
+              <p className="mt-2 rounded-md border border-crit bg-crit-bg px-3 py-2 text-caption leading-5 text-crit-ink">{download.message}</p>
             )}
           </>
         ) : phase === "expired" ? (
           <>
-            <p className="text-[12px] leading-5 text-ink-2">
+            <p className="text-caption leading-5 text-ink-2">
               준비된 파일의 유효 기한이 지났습니다. 다시 요청하면 새 식별자로 준비합니다. 수치 결과에는 영향이 없습니다.
             </p>
             {canRequest ? (
@@ -1274,7 +1274,7 @@ export function DeltaPublicationPanel(props: DeltaPublicationPanelProps) {
               >
                 <button
                   type="button"
-                  className="btn btn-primary mt-3 min-h-11"
+                  className="btn mt-3 min-h-11"
                   onClick={() => void requestExport({ freshKey: true })}
                 >
                   다시 요청
@@ -1291,14 +1291,13 @@ export function DeltaPublicationPanel(props: DeltaPublicationPanelProps) {
           </>
         ) : (
           <>
-            <p className="text-[12px] leading-5 text-ink-2">
+            <p className="text-caption leading-5 text-ink-2">
               {errorMessage ?? "차분 파일을 사용할 수 없습니다. 수치 결과에는 영향이 없습니다."}
             </p>
             {technicalDetail && (
-              <details className="mt-2 text-[11.5px] text-ink-muted">
-                <summary className="tap-target cursor-pointer font-semibold">기술 정보</summary>
+              <Disclosure label="내보내기 기술 상세" className="mt-2 text-caption text-ink-muted">
                 <p className="mt-1 break-all border-l-2 border-line pl-3">{technicalDetail}</p>
-              </details>
+              </Disclosure>
             )}
             <div className="mt-3 flex flex-wrap gap-2">
               {canRequest && retryable ? (

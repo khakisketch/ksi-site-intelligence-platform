@@ -15,7 +15,7 @@ import {
   parseContinuityClaim,
 } from "@/lib/core-api/work-order-continuity";
 
-/** 현장 안에서 새 관측 작업 초안을 만들거나 현재 원장을 읽는다. */
+/** 현장 안에서 새 작업 초안을 만들거나 현재 원장을 읽는다. */
 export async function GET(
   _request: NextRequest,
   { params }: { params: Promise<{ siteId: string }> },

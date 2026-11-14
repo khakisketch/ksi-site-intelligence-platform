@@ -82,3 +82,18 @@ describe("deriveExternalWorkOrderStage", () => {
     expect(deriveExternalWorkOrderStage({ ...base, planningOnly: true })).toMatchObject({ stage: "REGISTER", label: "승인된 재관측 산출물 등록" });
   });
 });
+
+describe("external stage step position", () => {
+  it("maps each retained stage to the step shown as current", async () => {
+    const { EXTERNAL_STAGE_STEPS, externalStageStepIndex } = await import("@/app/field/external-work-order-stage");
+    expect(EXTERNAL_STAGE_STEPS).toHaveLength(4);
+    expect(externalStageStepIndex("REGISTER")).toBe(0);
+    expect(externalStageStepIndex("SEAL")).toBe(1);
+    expect(externalStageStepIndex("DECIDE")).toBe(2);
+    expect(externalStageStepIndex("REVIEW")).toBe(3);
+    expect(externalStageStepIndex("PROPOSE")).toBe(3);
+    // 후속 관측까지 계획되면 모든 단계가 지난 것으로, 종료된 작업은 현재 단계 없이 둔다.
+    expect(externalStageStepIndex("DONE")).toBe(EXTERNAL_STAGE_STEPS.length);
+    expect(externalStageStepIndex("CLOSED")).toBeNull();
+  });
+});

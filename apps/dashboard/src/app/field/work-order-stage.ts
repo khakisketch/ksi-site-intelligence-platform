@@ -25,7 +25,7 @@ export function presentWorkOrder(
     return {
       step: 2,
       label: "자료 등록·검사 확인",
-      detail: "관측 작업이 승인되었습니다. 제출된 자료와 검사 상태는 작업을 열어 확인하세요. 승인만으로 자료 등록이나 분석 완료를 뜻하지 않으며 비행이나 장비 실행을 시작하지 않습니다.",
+      detail: "작업이 승인되었습니다. 제출된 자료와 검사 상태는 작업을 열어 확인하세요. 승인만으로 자료 등록이나 분석 완료를 뜻하지 않으며 비행이나 장비 실행을 시작하지 않습니다.",
       tone: "progress",
       action: "REFRESH",
       actionLabel: "등록 상태 확인",

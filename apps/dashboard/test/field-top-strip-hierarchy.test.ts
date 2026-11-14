@@ -3,7 +3,7 @@ import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-// 상단 세 갈래(관측 작업·받은 업무·팀 관리)가 같은 무게의 버튼으로 나란히 있으면
+// 상단 세 갈래(작업·받은 작업·팀 관리)가 같은 무게의 버튼으로 나란히 있으면
 // 우선순위가 없다(F18). 이 화면의 유일한 새 작업 시작 동작인 "관측 자료 등록"이
 // 1차 액션이어야 하고, 보기 전환은 탭(현재 보기만 강조)으로 물러난다.
 const PAGE = readFileSync(join(process.cwd(), "src/app/field/page.tsx"), "utf8");
