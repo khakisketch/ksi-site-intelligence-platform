@@ -47,7 +47,7 @@ export function SiteProgressBar({ status }: { status: SiteStatus }) {
           />
         ))}
       </span>
-      {note && <span className="text-[10.5px] break-keep text-ink-muted">{note}</span>}
+      {note && <span className="text-micro break-keep text-ink-muted">{note}</span>}
     </span>
   );
 }

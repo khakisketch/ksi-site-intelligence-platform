@@ -66,11 +66,10 @@ afterEach(() => {
 });
 
 describe("외부 관측 이력 상세", () => {
-  it("routes an empty external-results state to the site's analysis record", () => {
+  it("keeps an empty external-results state concise", () => {
     render(<ExternalObservationHistory siteId="site-1" items={[]} workAreaNames={new Map()} />);
 
-    expect(screen.getByRole("link", { name: "변화 분석에서 결과 확인" }).getAttribute("href"))
-      .toBe("/sites/site-1/analysis");
+    expect(screen.getByText("조회된 외부 비교 기록이 없습니다.")).toBeTruthy();
   });
 
   it("shows every relative metric, its common coverage, and its limitation as labeled compact facts", () => {

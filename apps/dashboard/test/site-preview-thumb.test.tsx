@@ -158,7 +158,7 @@ describe("SitePreviewThumb", () => {
     // Attribution is available OUTSIDE the link — hover-only title is not the path.
     expect(link.hasAttribute("title")).toBe(false);
     expect(link.querySelector("details,summary")).toBeNull();
-    const info = screen.getByText("자료 정보").closest("details")!;
+    const info = screen.getByText("미리보기 출처 상세").closest("details")!;
     expect(link.contains(info)).toBe(false);
     expect(info.textContent).toContain("Floreat common-extent");
     expect(info.textContent).toContain("등록 버전 1");
@@ -259,7 +259,7 @@ describe("SitePreviewThumb", () => {
     expect(caption).not.toContain("등록 버전");
     expect(caption).not.toContain("제출 GSD");
     expect(caption).not.toContain("Floreat common-extent");
-    const info = screen.getByText("자료 정보").closest("details")!;
+    const info = screen.getByText("미리보기 출처 상세").closest("details")!;
     expect(info.textContent).toContain("Floreat common-extent");
     expect(info.textContent).toContain("등록 버전 1");
     expect(info.textContent).toContain("제출 GSD 0.05m");

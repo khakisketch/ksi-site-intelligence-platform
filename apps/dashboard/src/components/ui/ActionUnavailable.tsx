@@ -83,7 +83,7 @@ function RetryRefreshButton() {
       type="button"
       disabled={isPending}
       onClick={() => startTransition(() => router.refresh())}
-      className="btn tap-target px-3 text-[12.5px]"
+      className="btn tap-target px-3 text-body"
     >
       {isPending ? "확인 중…" : "권한 다시 확인"}
     </button>
@@ -287,13 +287,13 @@ export function ActionUnavailable({
       >
         {open && (
           <>
-            <p className="text-[12.5px] leading-5 break-keep text-ink-2">{description}</p>
+            <p className="text-body leading-5 break-keep text-ink-2">{description}</p>
             <div className="mt-2 flex flex-wrap gap-2">
               {retry && <RetryRefreshButton />}
               <button
                 type="button"
                 onClick={() => closePanel(true)}
-                className="btn tap-target px-3 text-[12.5px]"
+                className="btn tap-target px-3 text-body"
               >
                 안내 닫기
               </button>

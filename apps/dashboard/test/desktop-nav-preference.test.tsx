@@ -7,7 +7,7 @@ import { ShellLayoutMode } from "@/components/nav/ShellPathBoundary";
 import { setDesktopNavCollapsed } from "@/components/nav/desktop-nav-preference";
 import { installFakeLocalStorage } from "./storage-fakes";
 
-const route = vi.hoisted(() => ({ pathname: "/sites/site-1/spatial-assets", query: new URLSearchParams() }));
+const route = vi.hoisted(() => ({ pathname: "/sites/site-1", query: new URLSearchParams() }));
 vi.mock("next/navigation", () => ({
   usePathname: () => route.pathname,
   useSearchParams: () => route.query,
@@ -20,7 +20,7 @@ beforeEach(() => {
   // 이 jsdom 설정에는 localStorage가 없으므로 가짜를 깐다.
   installFakeLocalStorage();
   window.localStorage.clear();
-  route.pathname = "/sites/site-1/spatial-assets";
+  route.pathname = "/sites/site-1";
 });
 afterEach(() => {
   cleanup();

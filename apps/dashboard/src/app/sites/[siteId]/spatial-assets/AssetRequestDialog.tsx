@@ -100,14 +100,14 @@ export function AssetRequestDialog({
         {open && (
           <div className="flex max-h-[calc(100dvh-3rem)] flex-col">
             <header className="flex shrink-0 items-center justify-between gap-3 border-b border-line px-4 py-3">
-              <h2 id={titleId} className="text-[15px] font-bold">
+              <h2 id={titleId} className="text-title font-bold">
                 {title}
               </h2>
               <button
                 ref={closeRef}
                 type="button"
                 onClick={() => setOpen(false)}
-                className="tap-target min-h-10 rounded-md border border-line px-3 text-[12px] font-semibold text-ink-2 hover:bg-sunk"
+                className="tap-target min-h-10 rounded-md border border-line px-3 text-caption font-semibold text-ink-2 hover:bg-sunk"
               >
                 닫기
               </button>

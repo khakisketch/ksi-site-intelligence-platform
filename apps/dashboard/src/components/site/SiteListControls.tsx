@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 
 import { buildSiteListHref, type SiteListParams } from "./site-list-query";
 import { SITE_LIST_CANCEL_EVENT, SITE_LIST_PAGE_EVENT, SiteListNavLink } from "./SiteListNavLink";
+import { ActionMenu } from "@/components/ui/ActionMenu";
 import { SITE_GROUPS } from "@/lib/core-api/site-progress";
 
 const DEBOUNCE_MS = 300;
@@ -66,9 +67,9 @@ function ClearIcon() {
  *   검색 지우기는 q만, 초기화는 전체 조건을 되돌린다. POST 없음.
  * - 폰(<640)에서는 바깥 정렬 셀렉트를 숨기고(`sm:hidden` 패널이 유일한
  *   보이는 정렬), 검색 아래 건수+`필터·정렬` 행을 둔다. 패널 적용은
- *   묶음·정렬 선택과 최신 검색 초안을 함께 push 하고 닫은 뒤 요약으로
+ *   묶음·정렬 선택과 최신 검색 초안을 함께 push 하고 닫은 뒤 필터 단추로
  *   포커스를 돌린다. 적용 없이 닫으면 미확정 선택을 버린다.
- * - 부모는 리마운트하지 않는다(폰 적용 후 요약 포커스를 살린다). 묶음·상태
+ * - 부모는 리마운트하지 않는다(폰 적용 후 필터 단추의 포커스를 살린다). 묶음·상태
  *   prop 변화는 패널 셀렉트의 key가 따라가고, 대기 타이머는 기준 링크 클릭
  *   의도 이벤트(SITE_LIST_CANCEL_EVENT)·예약 시점 조건표와 주소창 대조·
  *   popstate가 취소하므로 옛 기준으로 새 필터를 되돌리지 못한다.
@@ -113,8 +114,6 @@ export function SiteListControls({
   const composingRef = useRef(false);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
-  const phoneDetailsRef = useRef<HTMLDetailsElement>(null);
-  const phoneSummaryRef = useRef<HTMLElement>(null);
   const phoneGroupRef = useRef<HTMLSelectElement>(null);
   const phoneSortRef = useRef<HTMLSelectElement>(null);
   /** 적용 버튼으로 닫을 때는 닫힘 정리를 건너뛴다(적용한 값을 유지한다). */
@@ -272,9 +271,10 @@ export function SiteListControls({
     inputRef.current?.focus();
   }
 
-  function closePhonePanel() {
-    phoneDetailsRef.current?.removeAttribute("open");
-    phoneSummaryRef.current?.focus();
+  function closePhonePanel(from: HTMLElement) {
+    const popover = from.closest<HTMLElement>("[popover]");
+    popover?.hidePopover?.();
+    popover?.parentElement?.querySelector<HTMLButtonElement>("[data-action-menu-trigger]")?.focus();
   }
 
   function resetPhoneSelects(groupValue: string, sortValue: string) {
@@ -282,9 +282,8 @@ export function SiteListControls({
     if (phoneSortRef.current) phoneSortRef.current.value = sortValue;
   }
 
-  function handlePhoneToggle() {
-    const details = phoneDetailsRef.current;
-    if (!details || details.open) return;
+  function handlePhoneToggle(open: boolean) {
+    if (open) return;
     // 적용으로 닫은 게 아니면 미확정 선택을 버리고 확정 조건으로 되돌린다.
     if (phoneAppliedRef.current) {
       phoneAppliedRef.current = false;
@@ -316,10 +315,10 @@ export function SiteListControls({
     if (href !== `${window.location.pathname}${window.location.search}`) {
       router.push(href, { scroll: false });
     }
-    closePhonePanel();
+    closePhonePanel(event.currentTarget);
   }
 
-  function handlePhoneReset() {
+  function handlePhoneReset(event: React.MouseEvent<HTMLAnchorElement>) {
     // 전체 초기화는 확정 조건으로 되돌린다 — 패널이 열린 채 낡은 선택을 두지 않는다.
     // URL이 이미 /sites 면 응답이 와도 q effect가 돌지 않으므로 초안도 여기서 비운다.
     phoneAppliedRef.current = true;
@@ -327,7 +326,7 @@ export function SiteListControls({
     appliedRef.current = "";
     setDraft("");
     resetPhoneSelects("all", "attention");
-    closePhonePanel();
+    closePhonePanel(event.currentTarget);
   }
 
   return (
@@ -369,7 +368,7 @@ export function SiteListControls({
           }}
           // 지우개가 있을 때만 오른쪽을 비운다 — 390에서도 자리가 좁아지지 않게.
           // 브라우저 기본 지우개(webkit cancel)는 끈다. 둘이 겹치면 두 번 지워진다.
-          className={`input tap-target site-list-search w-full pl-9 text-[13px] ${
+          className={`input tap-target site-list-search w-full pl-9 text-body ${
             draft.length > 0 ? "pr-11" : "pr-3"
           }`}
         />
@@ -397,7 +396,7 @@ export function SiteListControls({
           name="sort"
           value={sort}
           onChange={(event) => handleSortChange(event.target.value)}
-          className="input tap-target w-[164px] pr-8 pl-9 text-[13px]"
+          className="input tap-target w-[164px] pr-8 pl-9 text-body"
         >
           <option value="attention">확인 필요 순</option>
           <option value="updated">최근 갱신 순</option>
@@ -428,32 +427,20 @@ export function SiteListControls({
     {/* 폰(<640) 전용 건수+필터 행 — 검색 아래 같은 줄에 붙는다.
         바깥 정렬 셀렉트는 폰에서 숨으므로(중복 포커스 방지) 묶음·정렬 선택은
         여기서만 보인다. 폼을 나누어 중첩 폼을 만들지 않는다. */}
-    <details ref={phoneDetailsRef} onToggle={handlePhoneToggle} className="mt-2 sm:hidden">
-      <summary
-        ref={phoneSummaryRef}
-        className="flex cursor-pointer items-center justify-between gap-2 px-1 py-2 text-[12.5px]"
-      >
-        <span className="num text-ink-muted">
-          {visibleCount} / {totalCount}곳 표시
-        </span>
-        <span className="inline-flex items-center gap-1 font-semibold">
-          필터·정렬
-          <svg aria-hidden="true" viewBox="0 0 16 16" className="size-3.5" fill="none" stroke="currentColor" strokeWidth="2">
-            <path d="m4 6 4 4 4-4" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
-        </span>
-      </summary>
+    <div className="mt-2 flex items-center justify-between gap-2 sm:hidden">
+      <span className="num text-caption text-ink-muted">{visibleCount} / {totalCount}곳 표시</span>
+      <ActionMenu label="필터·정렬" onOpenChange={handlePhoneToggle} panelClassName="w-64">
       <form
         action="/sites"
         method="get"
         aria-label="현장 필터"
         onSubmit={handlePhoneApply}
-        className="grid gap-2 rounded-lg border border-line bg-surface p-3"
+        className="grid gap-2 p-2"
       >
         {/* noJS 대체용. JS 적용은 최신 draft를 직접 쓰므로 낡은 값을 쓰지 않는다. */}
         {committedQuery && <input type="hidden" name="q" value={committedQuery} />}
         {status && <input type="hidden" name="status" value={status} />}
-        <label htmlFor={phoneGroupId} className="grid gap-1 text-[12px] font-medium text-ink-2">
+        <label htmlFor={phoneGroupId} className="grid gap-1 text-caption font-medium text-ink-2">
           현장 상태
           <select
             ref={phoneGroupRef}
@@ -461,14 +448,14 @@ export function SiteListControls({
             id={phoneGroupId}
             name="group"
             defaultValue={committedGroup}
-            className="input tap-target w-full text-[13px]"
+            className="input tap-target w-full text-body"
           >
             {SITE_GROUPS.map((option) => (
               <option key={option.key} value={option.key}>{option.label}</option>
             ))}
           </select>
         </label>
-        <label htmlFor={phoneSortId} className="grid gap-1 text-[12px] font-medium text-ink-2">
+        <label htmlFor={phoneSortId} className="grid gap-1 text-caption font-medium text-ink-2">
           정렬 기준
           <select
             ref={phoneSortRef}
@@ -476,7 +463,7 @@ export function SiteListControls({
             id={phoneSortId}
             name="sort"
             defaultValue={sort}
-            className="input tap-target w-full text-[13px]"
+            className="input tap-target w-full text-body"
           >
             <option value="attention">확인 필요 순</option>
             <option value="updated">최근 갱신 순</option>
@@ -490,7 +477,8 @@ export function SiteListControls({
           </SiteListNavLink>
         </div>
       </form>
-    </details>
+      </ActionMenu>
+    </div>
     </>
   );
 }

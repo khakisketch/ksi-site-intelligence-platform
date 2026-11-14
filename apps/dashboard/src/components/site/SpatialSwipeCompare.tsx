@@ -160,7 +160,7 @@ export function SpatialSwipeCompare({
         style={{ left: `${shown}%` }}
       />
       {(shown === 0 || shown === 100) && (
-        <span className="pointer-events-none absolute top-2 left-2 z-10 rounded bg-surface/95 px-2 py-1 text-[11.5px] font-semibold text-ink-1">
+        <span className="pointer-events-none absolute top-2 left-2 z-10 rounded bg-surface/95 px-2 py-1 text-caption font-semibold text-ink-1">
           현재 보기 · {shown === 0 ? rightLabel : leftLabel}
         </span>
       )}

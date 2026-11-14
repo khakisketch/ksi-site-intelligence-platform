@@ -1,24 +1,29 @@
 import {
   capturePeriodTitle,
   dataKindLabel,
+  isSupportedDataKind,
 } from "@/lib/operator-language";
-import { isSupportedDataKind } from "@/lib/operator-language";
 import type { SpatialAssetCatalogItem } from "@/lib/core-api/spatial-assets";
 
-/**
- * 자료 시각 탐색의 순수 선택·주소 규칙 (INV-020/051/053).
- *
- * - 판정·재계산을 하지 않는다. Core가 준 카탈로그 순서·사실에서만 고른다.
- * - 명시 참조(visualA/visualB/legacy assetRef)는 정확한 일치가 있을 때만
- *   쓴다. 모양이 어긋나거나 목록에 없으면 그쪽만 비우고 이유를 둔다 —
- *   조용히 다른 자료로 바꾸지 않는다.
- * - 기본 미리보기는 목록의 첫 자료(결정적 허용 카탈로그 첫 항목)다.
- *   두 번째(B)는 미리 고르지 않는다 — 사용자가 직접 고른다.
- * - 비교는 같은 화면에 나란히 두는 독립 보기다. 동기화·정합·수치 비교를
- *   주장하지 않으며, 새 비교 의미(공유 카메라·swipe)를 만들지 않는다.
- */
-
 const EXACT_ASSET_REF_PATTERN = /^ksa-v1-[0-9a-f]{64}$/;
+
+type SearchValue = string | string[] | undefined;
+export type MaterialsSearchParams = Partial<Record<
+  "workAreaId" | "cursor" | "assetRef" | "visualAAssetRef" | "visualBAssetRef" | "q" | "kind" | "state" | "info",
+  SearchValue
+>>;
+
+export function exactMaterialsAssetRef(raw: unknown): string | null {
+  return typeof raw === "string" && EXACT_ASSET_REF_PATTERN.test(raw) ? raw : null;
+}
+
+
+export function isMetadataOnly(item: SpatialAssetCatalogItem): boolean {
+  return item.dataAccess === "NOT_AVAILABLE_FROM_CATALOG"
+    && item.analysisStatus === "NOT_EVALUATED"
+    && item.supportedActions.length === 1
+    && item.supportedActions[0] === "VIEW_METADATA";
+}
 
 /** 미리보기 픽셀을 둘 수 있는 종류 — 정사영상·DSM만 실제 화면으로 둔다. */
 export function isViewableRasterKind(kind: string): boolean {
@@ -39,93 +44,6 @@ export function shortKindLabel(kind: string): string {
   if (kind === "tiles_3d") return "3D 타일";
   if (kind === "report") return "보고서";
   return "자료 종류 확인 필요";
-}
-
-type RawRef = { kind: "absent" } | { kind: "invalid" } | { kind: "single"; value: string };
-
-function parseVisualRef(raw: unknown): RawRef {
-  if (raw === undefined) return { kind: "absent" };
-  if (typeof raw !== "string" || !EXACT_ASSET_REF_PATTERN.test(raw)) return { kind: "invalid" };
-  return { kind: "single", value: raw };
-}
-
-export interface VisualSelection {
-  sideA: SpatialAssetCatalogItem | null;
-  sideB: SpatialAssetCatalogItem | null;
-  /** 양쪽이 모두 정해지고 서로 다를 때만 "compare" — 그 밖은 한 장 보기다. */
-  mode: "single" | "compare";
-  /** 기본값(목록 첫 자료)으로 A를 둔 경우 true — 최신 단언이 아니다. */
-  defaultedA: boolean;
-  /** 옛 assetRef를 A로 읽은 경우 true. */
-  legacyMapped: boolean;
-  notices: {
-    invalidA: boolean;
-    invalidB: boolean;
-    foreignA: boolean;
-    foreignB: boolean;
-    samePair: boolean;
-  };
-}
-
-/**
- * 시각 선택 해소 — 후보 풀은 이미 범위 확인된 목록 순서 그대로 둔다.
- * legacyRef는 호출자가 모양 검증까지 마친 단일 값(또는 undefined)이다.
- */
-export function resolveVisualSelection(input: {
-  pool: readonly SpatialAssetCatalogItem[];
-  visualARaw: unknown;
-  visualBRaw: unknown;
-  legacyRef?: string | undefined;
-}): VisualSelection {
-  const pool = [...input.pool];
-  const byRef = new Map(pool.map((item) => [item.assetRef, item]));
-  const aParsed = parseVisualRef(input.visualARaw);
-  const bParsed = parseVisualRef(input.visualBRaw);
-  const notices = { invalidA: false, invalidB: false, foreignA: false, foreignB: false, samePair: false };
-
-  let sideA: SpatialAssetCatalogItem | null = null;
-  let legacyMapped = false;
-  if (aParsed.kind === "invalid") {
-    notices.invalidA = true;
-  } else if (aParsed.kind === "single") {
-    const found = byRef.get(aParsed.value) ?? null;
-    if (found) sideA = found;
-    else notices.foreignA = true;
-  } else if (input.legacyRef) {
-    const found = byRef.get(input.legacyRef) ?? null;
-    if (found) {
-      sideA = found;
-      legacyMapped = true;
-    } else {
-      notices.foreignA = true;
-    }
-  }
-  if (!sideA && aParsed.kind === "absent" && !input.legacyRef) {
-    sideA = pool[0] ?? null;
-  }
-
-  let sideB: SpatialAssetCatalogItem | null = null;
-  if (bParsed.kind === "invalid") {
-    notices.invalidB = true;
-  } else if (bParsed.kind === "single") {
-    const found = byRef.get(bParsed.value) ?? null;
-    if (found) sideB = found;
-    else notices.foreignB = true;
-  }
-
-  if (sideA && sideB && sideA.assetRef === sideB.assetRef) {
-    notices.samePair = true;
-    sideB = null;
-  }
-
-  return {
-    sideA,
-    sideB,
-    mode: sideA && sideB ? "compare" : "single",
-    defaultedA: aParsed.kind === "absent" && !input.legacyRef && sideA !== null,
-    legacyMapped,
-    notices,
-  };
 }
 
 /**
@@ -166,7 +84,9 @@ export function observationGroupDateLine(items: readonly SpatialAssetCatalogItem
 export interface MaterialsScope {
   visualA?: string | null;
   visualB?: string | null;
-  /** 옛 assetRef 진입의 왕복용 — 새 선택에는 싣지 않는다. */
+  baseline?: string | null;
+  current?: string | null;
+  compare?: boolean;
   assetRef?: string | null;
   cursor?: string | null;
   q?: string;
@@ -182,19 +102,23 @@ export interface MaterialsScope {
  */
 export function materialsHref(
   siteId: string,
-  workAreaId: string,
+  workAreaId: string | null,
   scope: MaterialsScope = {},
 ): string {
-  const query = new URLSearchParams({ workAreaId });
+  const query = new URLSearchParams({ panel: "materials" });
+  if (workAreaId) query.set("workAreaId", workAreaId);
   if (scope.visualA) query.set("visualAAssetRef", scope.visualA);
   if (scope.visualB) query.set("visualBAssetRef", scope.visualB);
+  if (scope.baseline) query.set("baselineAssetRef", scope.baseline);
+  if (scope.current) query.set("currentAssetRef", scope.current);
+  if (scope.compare || (scope.visualA && scope.visualB)) query.set("mode", "compare");
   if (scope.assetRef) query.set("assetRef", scope.assetRef);
   if (scope.q) query.set("q", scope.q);
   if (scope.kind) query.set("kind", scope.kind);
   if (scope.state) query.set("state", scope.state);
   if (scope.cursor) query.set("cursor", scope.cursor);
   if (scope.info) query.set("info", scope.info);
-  return `/sites/${encodeURIComponent(siteId)}/spatial-assets?${query.toString()}`;
+  return `/sites/${encodeURIComponent(siteId)}?${query.toString()}`;
 }
 
 /** 목록 필터 — Core 카탈로그는 정렬·검색 계약을 따로 받지 않으므로, 불러온
@@ -230,18 +154,6 @@ export function applyCatalogFilters(
     }
     return true;
   });
-}
-
-export function catalogCounts(items: readonly SpatialAssetCatalogItem[]): {
-  total: number;
-  inspected: number;
-  attention: number;
-} {
-  return {
-    total: items.length,
-    inspected: items.filter((item) => item.inspection.outcome === "MEASURED").length,
-    attention: items.filter(needsCatalogAttention).length,
-  };
 }
 
 /** 목록 필터 값 정리 — 지원하지 않는 종류·상태는 빈 값으로 둔다. */

@@ -9,20 +9,17 @@ import { ConsoleWork } from "@/components/nav/ConsolePage";
 import type { SiteSpatialAssetsState } from "./SiteSpatialOverview";
 import { SiteWorkspaceShell } from "./SiteWorkspaceShell";
 import { buildWorkspaceServerFacts } from "./site-workspace-server-facts";
-import { SiteStartGuidance } from "./SiteStartGuidance";
 import { SiteTransitionActions } from "./SiteTransitionActions";
 import { ResponsiveActionBoundary } from "@/components/responsive/ResponsiveActionBoundary";
 import { AoiPolygonMap } from "@/components/map/AoiPolygonMap";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { ActionUnavailable } from "@/components/ui/ActionUnavailable";
 import { ErrorState } from "@/components/ui/ErrorState";
-import { StateBadge } from "@/components/ui/StatusBadge";
 import { CoreApiError } from "@/lib/core-api/client";
 import { SITE_STATUS_LABEL, humanizeApiError } from "@/lib/core-api/labels";
 import { listObservationWorkOrders } from "@/lib/core-api/observation-work-orders";
 import { hasAllPermissions } from "@/lib/core-api/permissions";
 import { whoAmI } from "@/lib/core-api/auth";
-import { listSiteExternalVolumeHistory } from "@/lib/core-api/external-result-workflow";
 import { getSite } from "@/lib/core-api/sites";
 import { listSpatialAssets } from "@/lib/core-api/spatial-assets";
 import { getAnalysis, listAnalyses, type AnalysisView } from "@/lib/core-api/analysis";
@@ -43,11 +40,15 @@ import {
 import { analysisHandoffHref } from "./site-visual-pair";
 import { toPreparedWindowJob } from "@/lib/site-windowed-pixel-viewer";
 import { listWorkAreas } from "@/lib/core-api/workAreas";
-import { formatKoreanDate, formatKoreanDateTime } from "@/lib/datetime";
+import { formatKoreanDate } from "@/lib/datetime";
 import { SITE_DETAIL_DOCUMENT_TITLE } from "@/lib/site-detail-title";
 import { normalizeSiteTab } from "@/lib/site-epochs";
-import { presentWorkOrder } from "@/app/field/work-order-stage";
-import { parseScopeId, pickFootprintAsset, resolveSelectedAssetRef, resolveSelectedWorkAreaId } from "./site-spatial";
+import { parseScopeId, pickFootprintAsset, resolveSelectedWorkAreaId } from "./site-spatial";
+
+import { PageHeader } from "@/components/ui/PageHeader";
+import { Disclosure } from "@/components/ui/Disclosure";
+import { exactMaterialsAssetRef, isMetadataOnly, materialsHref, normalizeCatalogFilters, type MaterialsSearchParams } from "./materials/materials-visual";
+import { readAssetHistory, readScopedAsset, scopeMaterialsPage } from "./materials/asset-reads";
 
 const getSiteForDetail = cache(getSite);
 
@@ -57,7 +58,7 @@ export const metadata: Metadata = { title: SITE_DETAIL_DOCUMENT_TITLE };
 
 function SectionCard({ title, children }: { title: string; children: React.ReactNode }) {
   return <section className="overflow-hidden rounded-lg border border-line bg-surface">
-    <div className="border-b border-line px-4 py-2.5"><h2 className="text-[13.5px] font-bold tracking-tight break-keep">{title}</h2></div>
+    <div className="border-b border-line px-4 py-2.5"><h2 className="text-lead font-bold tracking-tight break-keep">{title}</h2></div>
     <div className="px-4 py-3">{children}</div>
   </section>;
 }
@@ -67,12 +68,33 @@ export default async function SiteDetailPage({
   searchParams,
 }: {
   params: Promise<{ siteId: string }>;
-  searchParams: Promise<{ section?: string | string[]; tab?: string | string[]; workAreaId?: string | string[]; assetRef?: string | string[]; mode?: string | string[]; baselineAssetRef?: string | string[]; currentAssetRef?: string | string[]; visualAAssetRef?: string | string[]; visualBAssetRef?: string | string[]; analysisId?: string | string[] }>;
+  searchParams: Promise<MaterialsSearchParams & { section?: string | string[]; tab?: string | string[]; panel?: string | string[]; mode?: string | string[]; baselineAssetRef?: string | string[]; currentAssetRef?: string | string[]; analysisId?: string | string[] }>;
 }) {
   const [{ siteId }, query] = await Promise.all([params, searchParams]);
   const firstValue = (value: string | string[] | undefined): string | undefined =>
     Array.isArray(value) ? value[0] : value;
-  const tab = normalizeSiteTab(firstValue(query.section) ?? firstValue(query.tab));
+  const legacySection = firstValue(query.section) ?? firstValue(query.tab);
+  const tab = normalizeSiteTab(legacySection);
+  const siteHref = `/sites/${encodeURIComponent(siteId)}`;
+  if (tab === "work-orders") {
+    const next = new URLSearchParams({ panel: "intake" });
+    const area = parseScopeId(query.workAreaId);
+    if (area) next.set("workAreaId", area);
+    redirect(`${siteHref}?${next}`);
+  }
+  if (legacySection === "materials" || legacySection === "assets" || legacySection === "spatial-assets") {
+    redirect(materialsHref(siteId, parseScopeId(query.workAreaId), {
+      assetRef: exactMaterialsAssetRef(query.assetRef),
+      ...normalizeCatalogFilters({ q: firstValue(query.q), kind: firstValue(query.kind), state: firstValue(query.state) }),
+    }));
+  }
+  const panel = query.panel === "materials" || query.panel === "intake" ? query.panel : null;
+  const cursor = typeof query.cursor === "string" && query.cursor.length <= 1024 ? query.cursor || undefined : undefined;
+  const filters = normalizeCatalogFilters({
+    q: typeof query.q === "string" ? query.q : undefined,
+    kind: typeof query.kind === "string" ? query.kind : undefined,
+    state: typeof query.state === "string" ? query.state : undefined,
+  });
   let site: Awaited<ReturnType<typeof getSite>>;
   try {
     site = await getSiteForDetail(siteId);
@@ -84,7 +106,7 @@ export default async function SiteDetailPage({
     return <div className="flex flex-col gap-4 p-4 sm:p-5"><ErrorState message={message} retryable /></div>;
   }
 
-  const [canTransitionResult, canCreateResult, canApproveResult, canReadDataResult, canRequestDataResult, areasResult, ordersResult, historyResult] = await Promise.allSettled([
+  const [canTransitionResult, canCreateResult, canApproveResult, canReadDataResult, canRequestDataResult, areasResult, ordersResult] = await Promise.allSettled([
     hasAllPermissions("SITES_WRITE"),
     hasAllPermissions("WORK_ORDERS_WRITE"),
     hasAllPermissions("SITES_AUTONOMY_APPROVE"),
@@ -92,7 +114,6 @@ export default async function SiteDetailPage({
     hasAllPermissions("SPATIAL_DATA_REQUEST"),
     listWorkAreas(site.siteId, { includeArchived: true }),
     listObservationWorkOrders(site.siteId),
-    listSiteExternalVolumeHistory(site.siteId, { limit: 50 }),
   ]);
   const canTransition = canTransitionResult.status === "fulfilled" && canTransitionResult.value;
   const canCreateWorkOrder = canCreateResult.status === "fulfilled" && canCreateResult.value;
@@ -104,7 +125,7 @@ export default async function SiteDetailPage({
   // hasAllPermissions deliberately collapses identity/read failures to false.
   // Only a verified permission list can distinguish denial from unknown here.
   let workAreaWrite: "allowed" | "denied" | "unknown" = canTransition ? "allowed" : "unknown";
-  if (!canTransition && tab === "workspace" && areasResult.status === "fulfilled" && areas.length === 0) {
+  if (!canTransition && tab === "space" && areasResult.status === "fulfilled" && areas.length === 0) {
     try {
       const principal = await whoAmI();
       if (Array.isArray(principal.permissions) && principal.permissions.every((permission) => typeof permission === "string")) {
@@ -114,24 +135,11 @@ export default async function SiteDetailPage({
       // Unknown remains closed; do not present an outage as a permission denial.
     }
   }
-  const areaNames = new Map(allAreas.map((area) => [area.workAreaId, area.name]));
-  const siteStartCounts = {
-    workAreaCount: areasResult.status === "fulfilled" ? areas.length : null,
-    observationWorkOrderCount: ordersResult.status === "fulfilled" ? ordersResult.value.length : null,
-    externalResultCount: historyResult.status === "fulfilled" ? historyResult.value.items.length : null,
-    hasMoreExternalResults: historyResult.status === "fulfilled" ? historyResult.value.nextCursor !== null : null,
-  };
-  const latestExternalReport = historyResult.status === "fulfilled"
-    ? historyResult.value.items.flatMap((item) => item.result ? [item.result.reportedAt] : []).toSorted().at(-1) ?? null
-    : null;
   const sitePath = `/sites/${encodeURIComponent(site.siteId)}`;
   const status = SITE_STATUS_LABEL[site.status];
 
-  // 기본 탭(작업공간)의 읽기 전용 공간 확인은 bounded 추가 읽기 2건으로 족하다 —
-  // Core 분석 목록 50건 1회, 선택 구역의 공간 자산 20건 1회. 둘 다 실패해도
-  // unknown으로 두고 빈 목록으로 단정하지 않는다. 다른 탭에서는 읽지 않는다.
-  // 선택 구역은 이미 읽은 관측 작업·분석 목록의 묶임으로 고른다(추가 조회 없음).
-  const wantSpatial = tab === "workspace";
+  // 공간 읽기는 50건 단위로 한정한다. 구역 선택은 이미 읽은 작업·분석 목록의 연결을 사용한다.
+  const wantSpatial = tab === "space";
   const analysesResult = wantSpatial
     ? await listAnalyses(site.siteId, { limit: 50 }).then(
       (page) => ({ ok: true as const, page }),
@@ -142,22 +150,28 @@ export default async function SiteDetailPage({
   const boundWorkOrderAreaIds = ordersResult.status === "fulfilled"
     ? ordersResult.value.flatMap((order) => Array.isArray(order.workAreaIds) ? order.workAreaIds : [])
     : [];
-  const selectedWorkAreaId = wantSpatial && areasResult.status === "fulfilled"
+  const areaQueryInvalid = panel === "materials" && areasResult.status === "fulfilled" && query.workAreaId !== undefined
+    && !allAreas.some((area) => area.workAreaId === parseScopeId(query.workAreaId));
+  const cursorInvalid = query.cursor !== undefined && query.cursor !== "" && cursor === undefined;
+  const selectionMalformed = panel === "materials" && query.assetRef !== undefined && query.assetRef !== ""
+    && exactMaterialsAssetRef(query.assetRef) === null;
+  const selectedWorkAreaId = wantSpatial && areasResult.status === "fulfilled" && !areaQueryInvalid
     ? resolveSelectedWorkAreaId(areasResult.value.workAreas, firstValue(query.workAreaId), {
       workOrderAreaIds: boundWorkOrderAreaIds,
       analysisAreaIds: analysesPage?.items.map((item) => item.workAreaId) ?? [],
     })
     : null;
-  const assetsResult = wantSpatial
+  const assetsResult = wantSpatial && !cursorInvalid
     ? await (selectedWorkAreaId
-      ? listSpatialAssets(site.siteId, selectedWorkAreaId, { limit: 50 }).then(
+      ? listSpatialAssets(site.siteId, selectedWorkAreaId, cursor ? { limit: 50, cursor } : { limit: 50 })
+        .then((page) => scopeMaterialsPage(page, site.siteId, selectedWorkAreaId)).then(
         (page) => ({ ok: true as const, page }),
         (error: unknown) => ({ ok: false as const, denied: error instanceof CoreApiError && error.status === 403 }),
       )
       : Promise.resolve({ ok: false as const, denied: false, skipped: true as const }))
     : { ok: false as const, denied: false, skipped: true as const };
   let assetsState: SiteSpatialAssetsState = { status: "not-requested" };
-  if (wantSpatial && selectedWorkAreaId) {
+  if (wantSpatial && selectedWorkAreaId && !cursorInvalid) {
     if (assetsResult.ok) assetsState = { status: "ready", page: assetsResult.page };
     else if (!("skipped" in assetsResult)) assetsState = { status: assetsResult.denied ? "denied" : "unavailable" };
   }
@@ -216,7 +230,7 @@ export default async function SiteDetailPage({
   const mode = wantSpatial ? parseWorkspaceMode(firstValue(query.mode)) : "explore" as const;
   // Viewer-first covers spatial exploration; the workspace result-review mode
   // stays dense (decision A — 결과/검토 are list/form-first).
-  const workspaceViewer = tab === "workspace" && mode !== "results";
+  const workspaceViewer = tab === "space" && mode !== "results";
   const facts = wantSpatial
     ? buildWorkspaceServerFacts({
       siteId: site.siteId,
@@ -234,31 +248,32 @@ export default async function SiteDetailPage({
     ? resolveOrdinaryEntry(facts)
     : { status: "no-server-default", reason: "NO_PROJECTION", detail: null, tiedObservationEpochIds: [], defaultNotOnPage: false };
 
-  // 선택 자료 — 명시 힌트가 있으면 그대로, 없으면 서버 기본의 표시 버전을
-  // 카탈로그에서 확인하고, 그것도 없으면 첫 검사 footprint(전이 선택)로 둔다.
-  // 전이 선택은 기본인 척하지 않는다(진입 패널이 밝힌다).
-  const hintedAssetRef = assetsState.status === "ready"
-    ? resolveSelectedAssetRef(assetsState.page, firstValue(query.assetRef))
-    : null;
+  const catalogAssets = assetsState.status === "ready" ? assetsState.page.assets : [];
+  const requestedAssetRef = parseScopeId(query.assetRef);
+  const requestedRefs = mode === "results" ? [] : [query.assetRef, query.visualAAssetRef, query.visualBAssetRef];
+  const outsideRefs = [...new Set(requestedRefs.map(exactMaterialsAssetRef).filter((ref): ref is string =>
+    ref !== null && !catalogAssets.some((item) => item.assetRef === ref)))];
+  const assetPool = assetsState.status === "ready" && selectedWorkAreaId && !selectionMalformed
+    ? [...catalogAssets, ...(await Promise.all(outsideRefs.map((ref) => readScopedAsset(site.siteId, selectedWorkAreaId, ref))))
+      .filter((item) => item !== null)]
+    : catalogAssets;
+  const hintedAssetRef = assetPool.find((item) => item.assetRef === requestedAssetRef)?.assetRef ?? null;
   const serverViewAssetRef = ordinaryEntry.status === "ready" ? ordinaryEntry.observation.viewAssetRef : null;
-  const serverViewInCatalog = serverViewAssetRef !== null && assetsState.status === "ready"
-    && assetsState.page.assets.some((item) => item.assetRef === serverViewAssetRef)
-    ? serverViewAssetRef
-    : null;
-  const selectedAssetRef = hintedAssetRef
-    ?? serverViewInCatalog
-    ?? (assetsState.status === "ready"
-      ? pickFootprintAsset(assetsState.page.assets, null)?.assetRef ?? null
-      : null);
+  const serverViewInCatalog = assetPool.some((item) => item.assetRef === serverViewAssetRef) ? serverViewAssetRef : null;
+  const currentScopeAssets = mode === "explore" ? catalogAssets : assetPool;
+  const selectedAssetRef = query.assetRef
+    ? hintedAssetRef
+    : serverViewInCatalog ?? pickFootprintAsset(currentScopeAssets, null)?.assetRef ?? currentScopeAssets[0]?.assetRef ?? null;
   const transitionalSelection = hintedAssetRef === null && serverViewInCatalog === null && selectedAssetRef !== null;
-  // 명시된 workAreaId/assetRef가 조회 범위 안에 없으면 알린다 — 조용히 다른
-  // 대상을 보여주지 않는다. 원문 id는 그대로 두지 않고(범위 밖 값) 공지만 둔다.
-  const requestedWorkAreaId = wantSpatial ? parseScopeId(firstValue(query.workAreaId)) : null;
-  const requestedAssetRef = assetsState.status === "ready" ? parseScopeId(firstValue(query.assetRef)) : null;
-  const scopeNotice = wantSpatial && (
-    (requestedWorkAreaId !== null && !allAreas.some((area) => area.workAreaId === requestedWorkAreaId))
-    || (requestedAssetRef !== null && selectedAssetRef !== requestedAssetRef)
-  );
+  const issue = areaQueryInvalid ? "작업구역을 확인할 수 없거나 접근 권한이 없습니다."
+    : cursorInvalid ? "페이지 주소가 올바르지 않습니다. 자료 목록을 처음부터 다시 여세요."
+    : selectionMalformed ? "자료 주소가 올바르지 않습니다. 자료 목록에서 다시 선택하세요."
+    : query.assetRef && hintedAssetRef === null && assetsState.status === "ready"
+      ? "자료를 찾을 수 없거나 현재 조회할 수 없습니다."
+      : null;
+  const requestedWorkAreaId = wantSpatial ? parseScopeId(query.workAreaId) : null;
+  const scopeNotice = wantSpatial && !issue && requestedWorkAreaId !== null
+    && !allAreas.some((area) => area.workAreaId === requestedWorkAreaId);
   // 헤더 직접 링크용 검증 범위 — 어느 탭에서도 추가 조회 없이 승인된 현행
   // 활성 구역만 싣는다. 원문 쿼리를 그대로 두지 않고, 조용히 다른 구역으로
   // 바꾸지도 않는다. 공간 탭에서는 이미 고른 선택을 그대로 쓴다.
@@ -277,28 +292,10 @@ export default async function SiteDetailPage({
     ? null
     : wantSpatial && selectedWorkAreaId === headerWorkAreaId && selectedAssetRef
       ? selectedAssetRef
-      : parseScopeId(firstValue(query.assetRef));
+      : wantSpatial ? null : parseScopeId(firstValue(query.assetRef));
 
-  // '등록 자료'·'분석·검토 기록' 영역은 실제 라우트가 주인이다. 옛
-  // `?section=materials|analysis` 깊은 링크는 범위를 그대로 실어 실제 목적지로
-  // 보낸다(두 번째 클릭을 두는 중간 진입 화면을 두지 않는다). 외부 비교 기록은
-  // observations 경로와 분석 화면의 기존 버튼에서 그대로 둔다.
-  // 옛 `?section=external-results`는 외부 비교 기록(observations) 전용 진입이었다.
-  // KSI 계산 기록(analysis)과 섞지 않고, 기존 observations 경로로 보낸다.
-  // observations 화면은 구역 필터를 받지 않으므로 범위 쿼리를 그대로 싣지 않는다.
-  if (firstValue(query.section) === "external-results") {
-    redirect(`${sitePath}/observations`);
-  }
-  if (tab === "materials") {
-    const target = new URLSearchParams();
-    if (headerWorkAreaId) target.set("workAreaId", headerWorkAreaId);
-    if (headerAssetRef) target.set("assetRef", headerAssetRef);
-    const search = target.toString();
-    redirect(search
-      ? `${sitePath}/spatial-assets?${search}`
-      : `${sitePath}/spatial-assets`);
-  }
-  if (tab === "results") {
+  if (legacySection === "external-results") redirect(`${sitePath}/observations`);
+  if (tab === "analysis") {
     const target = new URLSearchParams();
     if (headerWorkAreaId) target.set("workAreaId", headerWorkAreaId);
     if (headerAssetRef) target.set("assetRef", headerAssetRef);
@@ -340,7 +337,7 @@ export default async function SiteDetailPage({
       workAreaId: query.workAreaId,
       visualAAssetRef: rawVisualAAssetRef,
       visualBAssetRef: rawVisualBAssetRef,
-    }, assetsState.status === "ready" ? assetsState.page.assets : []);
+    }, assetPool.filter(isMetadataOnly));
   }
   if (mode === "compare" && (rawVisualAAssetRef != null || rawVisualBAssetRef != null)
     && (rawBaselineAssetRef != null || rawCurrentAssetRef != null)) {
@@ -397,16 +394,36 @@ export default async function SiteDetailPage({
     }
   }
 
+  const inspectedRefs = mode === "compare"
+    ? visualPair.status === "ready" ? [visualPair.sideA.assetRef, visualPair.sideB.assetRef]
+      : comparison.status === "ready" ? [comparison.baseline.assetRef, comparison.current.assetRef] : []
+    : mode === "explore" && selectedAssetRef ? [selectedAssetRef] : [];
+  const identity = inspectedRefs.some((ref) => exactMaterialsAssetRef(ref)) ? await whoAmI().catch(() => null) : null;
+  const selectedMaterialDetails = await Promise.all(inspectedRefs.map(async (assetRef) => {
+    const catalogItem = assetPool.find((item) => item.assetRef === assetRef);
+    const detail = selectedWorkAreaId && exactMaterialsAssetRef(assetRef) && catalogAssets.some((item) => item.assetRef === assetRef)
+      ? await readScopedAsset(site.siteId, selectedWorkAreaId, assetRef)
+      : catalogItem ?? null;
+    return {
+      assetRef,
+      detail,
+      history: detail && isMetadataOnly(detail) && identity?.organizationId
+        ? await readAssetHistory(detail, identity.organizationId)
+        : null,
+    };
+  }));
+  const workOrderNames = new Map(
+    ordersResult.status === "fulfilled" && identity
+      ? ordersResult.value.filter((order) => order.siteId === site.siteId && order.organizationId === identity.organizationId)
+        .map((order) => [order.workOrderId, order.name])
+      : [],
+  );
+
   return <div className="flex min-w-0 min-h-0 flex-1 flex-col">
     <SiteHeader
       site={site}
       selectedEpochId={null}
-      tab={tab}
-      latestExternalReportAt={latestExternalReport}
-      latestExternalReportKnown={historyResult.status === "fulfilled"}
-      canCreateWorkOrder={canCreateWorkOrder}
-      canEditAoi={canTransition}
-      workOrderRecordOwnsAction={tab === "work-orders"}
+      tab={mode === "results" ? "analysis" : tab}
       scopedWorkAreaId={headerWorkAreaId}
       scopedAssetRef={headerAssetRef}
       visualContext={visualPair.status === "ready" && selectedWorkAreaId === headerWorkAreaId
@@ -417,9 +434,9 @@ export default async function SiteDetailPage({
           }
         : null}
     />
-    <ConsoleWork className={tab === "workspace" ? `min-h-0 flex-1 overflow-x-clip${workspaceViewer ? " lg:gap-0 lg:p-0" : ""}` : "flex-1"}>
-      {tab === "workspace" && <div className="flex min-w-0 min-h-0 flex-1 flex-col gap-2">
-        <h2 className="sr-only">작업공간</h2>
+    <ConsoleWork className={tab === "space" ? `min-h-0 flex-1 overflow-x-clip${workspaceViewer ? " lg:gap-0 lg:p-0" : ""}` : "flex-1"}>
+      {tab === "space" && <div className="flex min-w-0 min-h-0 flex-1 flex-col gap-2">
+        {mode !== "results" && <h2 className="sr-only">공간</h2>}
         <SiteWorkspaceShell
           sitePath={sitePath}
           mode={mode}
@@ -430,10 +447,16 @@ export default async function SiteDetailPage({
           orders={ordersResult.status === "fulfilled" ? ordersResult.value : null}
           analyses={analysesPage?.items ?? null}
           analysesKnown={analysesPage !== null}
-          analysesHasMore={analysesPage?.nextCursor !== null && analysesPage !== null}
-          legacy={historyResult.status === "fulfilled" ? historyResult.value.items : null}
-          legacyHasMore={historyResult.status === "fulfilled" && historyResult.value.nextCursor !== null}
           assetsState={assetsState}
+          assetPool={assetPool}
+          materialPanel={panel}
+          materialsScope={{
+            ...filters, cursor, info: query.info === "1" ? "1" : null,
+            visualA: visualARequestedRef, visualB: visualBRequestedRef,
+          }}
+          materialIssue={issue}
+          materialDetails={selectedMaterialDetails}
+          workOrderNames={workOrderNames}
           selectedWorkAreaId={selectedWorkAreaId}
           selectedAssetRef={selectedAssetRef}
           canCreateWorkOrder={canCreateWorkOrder}
@@ -471,61 +494,24 @@ export default async function SiteDetailPage({
           jobsState={preparedJobsState}
           canReadData={canReadData}
           canRequestData={canRequestData}
-          // 하단 고정 건수 바를 두지 않는다 — 같은 현황을 정보 서랍 맨 위에 둔다.
-          // unknown·빈 목록·다음 확인 규율은 그대로 둔다.
-          inspectorStatus={<SiteStartGuidance
-            siteId={site.siteId}
-            {...siteStartCounts}
-            hasWorkspaceActions={selectedWorkAreaId !== null}
-          />}
         />
       </div>}
 
       {tab === "manage" && <div className="flex flex-col gap-4">
-        <SectionCard title="작업구역">
-          {areasResult.status === "rejected" ? <ErrorState message="작업구역을 불러오지 못했습니다." retryable /> : areas.length === 0 ? <EmptyState title="등록된 작업구역이 없습니다" description="자료를 연결할 작업구역을 먼저 확인하세요." action={{ label: "작업구역 확인", href: `${sitePath}/work-areas` }} /> : <ul className="divide-y divide-line">{areas.map((area) => <li key={area.workAreaId} className="py-3 text-[13px]">
-            <p className="break-words font-semibold">{area.name || "이름을 확인할 수 없는 구역"}</p>
-            <p className="mt-1 text-[12px] text-ink-2">등록 {formatKoreanDateTime(area.createdAt, { dateStyle: "medium", timeStyle: "short" })}</p>
-            <details className="mt-1 text-[12px] text-ink-2"><summary className="tap-target cursor-pointer">구역 식별 정보</summary><p className="break-all font-mono">{area.workAreaId}</p></details>
-          </li>)}</ul>}
-          <div className="mt-3 flex flex-wrap gap-2"><Link href={`${sitePath}/work-areas`} className="btn">작업구역 관리</Link><Link href={`${sitePath}/spatial-assets`} className="btn">자료 보기</Link><Link href={`${sitePath}/spatial-data-requests`} className="btn">구역 자료 준비</Link></div>
-        </SectionCard>
-        <SectionCard title="현장 전체 경계 · 선택 설정">
+        <PageHeader title="현장 설정" headingLevel={2} />
+        <SectionCard title="현장 범위">
           <div id="site-aoi" className="scroll-mt-5">
           {site.aoi ? <AoiPolygonMap value={site.aoi.vertices} readOnly /> : site.status === "UNMAPPED" && canTransition ? <ResponsiveActionBoundary action="SITE_DEVICE_TRANSITION" reason={`${site.name}의 전체 경계 편집은 노트북에서 진행하세요. 이 설정 없이도 작업구역의 관측 자료를 확인할 수 있습니다.`}><SiteAoiEditor siteId={site.siteId} siteFrame={site.siteFrame} /></ResponsiveActionBoundary> : <EmptyState compact title="현장 전체 경계는 아직 설정하지 않았습니다" description="전체 경계는 선택 설정입니다. 관측 자료는 각 작업구역에 연결해 사용합니다." />}
           </div>
         </SectionCard>
         <SectionCard title={`현장 상태 · ${status.label}`}>
-          {canTransition ? <details><summary className="tap-target cursor-pointer text-[13px] font-semibold">관리자 상태 전이</summary><div className="mt-3"><SiteTransitionActions siteId={site.siteId} status={site.status} resumeTarget={site.resumeTarget} canApproveAutonomy={canApproveAutonomy} /></div></details> : <ActionUnavailable label="현장 상태 변경" description="현재 계정으로는 현장 상태를 변경할 수 없습니다. 현장 쓰기 권한이 있는 담당자에게 문의하세요." />}
-          <dl className="mt-3 grid gap-2 border-t border-line pt-3 text-[12px] sm:grid-cols-2"><div><dt className="text-ink-muted">등록</dt><dd>{formatKoreanDate(site.registeredAt)}</dd></div><div><dt className="text-ink-muted">최근 갱신</dt><dd>{formatKoreanDate(site.updatedAt)}</dd></div></dl>
-          <details className="mt-2 text-[12px] text-ink-2"><summary className="tap-target cursor-pointer font-semibold">좌표계·변환 정보</summary><dl className="mt-1 grid gap-1"><div><dt className="text-ink-muted">좌표계</dt><dd>{site.siteFrame.crs}</dd></div><div><dt className="text-ink-muted">변환 버전</dt><dd>{site.siteFrame.transformVersion}</dd></div></dl></details>
+          {canTransition ? <SiteTransitionActions siteId={site.siteId} status={site.status} resumeTarget={site.resumeTarget} canApproveAutonomy={canApproveAutonomy} /> : <ActionUnavailable label="현장 상태 변경" description="현재 계정으로는 현장 상태를 변경할 수 없습니다. 현장 쓰기 권한이 있는 담당자에게 문의하세요." />}
+          <dl className="mt-3 grid gap-2 border-t border-line pt-3 text-caption sm:grid-cols-2"><div><dt className="text-ink-muted">등록</dt><dd>{formatKoreanDate(site.registeredAt)}</dd></div><div><dt className="text-ink-muted">최근 갱신</dt><dd>{formatKoreanDate(site.updatedAt)}</dd></div></dl>
+          <Disclosure label="좌표계·변환 상세" className="mt-2"><dl className="mt-1 grid gap-1"><div><dt className="text-ink-muted">좌표계</dt><dd>{site.siteFrame.crs}</dd></div><div><dt className="text-ink-muted">변환 버전</dt><dd>{site.siteFrame.transformVersion}</dd></div></dl></Disclosure>
         </SectionCard>
+        <Link href={`${sitePath}/work-areas`} className="btn w-fit">작업구역 관리</Link>
       </div>}
 
-      {tab === "work-orders" && <div className="flex flex-col gap-4">
-        <SectionCard title="관측 작업 기록">
-          <p className="mb-3 text-[13px] leading-5 text-ink-2">이 현장의 관측 작업과 진행 상태를 확인합니다. 제출된 파일과 검사 상태는 자료에서 볼 수 있습니다.</p>
-          <div className="mb-3 flex flex-wrap items-center gap-2">
-            <Link href={`${sitePath}/spatial-assets`} className="btn">등록 자료 보기</Link>
-            {canCreateWorkOrder && areasResult.status === "fulfilled" && areas.length > 0 && <ResponsiveActionBoundary action="WORK_ORDERS_WRITE" reason="관측 자료 등록은 노트북 이상의 화면에서 진행하세요."><Link href={`${sitePath}/observations/new${headerWorkAreaId ? `?workAreaId=${encodeURIComponent(headerWorkAreaId)}` : ""}`} className="btn btn-primary">관측 자료 등록</Link></ResponsiveActionBoundary>}
-            {areasResult.status === "fulfilled" && areas.length === 0 && <Link href={`${sitePath}/work-areas`} className="btn">작업구역 확인</Link>}
-          </div>
-          {areasResult.status === "rejected" && <p className="mb-3 text-[13px] text-ink-2">작업구역을 확인하지 못했습니다. 등록 전 작업구역을 다시 확인하세요.</p>}
-          {areasResult.status === "fulfilled" && areas.length === 0 && <p className="mb-3 text-[13px] text-ink-2">관측 자료를 등록하려면 먼저 활성 작업구역을 확인하세요.</p>}
-          {!canCreateWorkOrder && <p className="mb-3 text-[13px] text-ink-2">등록 권한이 없거나 확인되지 않았습니다. 현장 담당자에게 권한을 확인하세요.</p>}
-          {ordersResult.status === "rejected" ? <ErrorState message="관측 작업을 불러오지 못했습니다." retryable /> : ordersResult.value.length === 0 ? <EmptyState title="등록된 관측 작업이 없습니다" description="새 관측 작업이 생성되면 이 목록에 표시됩니다." /> : <ul className="divide-y divide-line">{ordersResult.value.map((order) => {
-            const presentation = presentWorkOrder(order.status, order.executionMode);
-            const names = order.workAreaIds.map((id) => areaNames.get(id) || "이름을 확인할 수 없는 구역");
-            return <li key={order.workOrderId} className="py-3">
-              <Link href={`/field/work-orders/${encodeURIComponent(order.workOrderId)}`} className="tap-target flex flex-wrap items-start justify-between gap-3">
-                <span className="min-w-0 flex-1 break-words"><span className="block text-[13px] font-semibold">{order.name || "이름을 확인할 수 없는 관측 작업"}</span><span className="mt-1 block text-[12px] text-ink-2">{names.length ? names.join(" · ") : "연결된 작업구역 없음"} · {order.cycleNumber}회차</span><span className="mt-1 block text-[12px] text-ink-muted">갱신 {formatKoreanDateTime(order.updatedAt, { dateStyle: "medium", timeStyle: "short" })}</span></span>
-                <StateBadge label={presentation.label} tone={presentation.tone} />
-              </Link>
-              <details className="text-[12px] text-ink-2"><summary className="tap-target cursor-pointer">작업 식별 정보</summary><p className="break-all font-mono">{order.workOrderId}</p></details>
-            </li>;
-          })}</ul>}
-        </SectionCard>
-      </div>}
     </ConsoleWork>
   </div>;
 }

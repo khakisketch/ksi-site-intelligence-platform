@@ -29,7 +29,7 @@ export function SiteListPager({
   const announcePageIntent = () => {
     window.dispatchEvent(new Event(SITE_LIST_PAGE_EVENT));
   };
-  const control = "btn tap-target min-w-9 px-2.5 text-[12.5px]";
+  const control = "btn tap-target min-w-9 px-2.5 text-body";
   const current = "border-line-strong bg-sunk font-bold";
   const idle = "border-line bg-surface hover:border-line-strong";
 

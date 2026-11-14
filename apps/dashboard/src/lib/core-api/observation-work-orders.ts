@@ -66,7 +66,7 @@ export async function listObservationWorkOrders(
 
 export type WorkOrderActionGroup = "DECISION_REQUIRED" | "IN_PROGRESS" | "COMPLETED";
 
-/** 조직 범위의 전역 작업 큐. Core가 organization scope를 먼저 적용한 뒤 필터링한다. */
+/** 조직 범위의 전역 작업 목록. Core가 organization scope를 먼저 적용한 뒤 필터링한다. */
 export async function listObservationWorkOrdersForOrganization(filters: {
   siteId?: string;
   status?: string;

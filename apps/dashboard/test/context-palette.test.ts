@@ -11,11 +11,11 @@ const items = [{ key: "site:one", label: "남측 현장", group: "현장", href:
 describe("current Site task vocabulary", () => {
   it("offers human tasks only for a known authorized Site, not a pathname guess", () => {
     expect(contextPaletteItems(items, "/sites/site-1").map((i) => i.label)).toEqual([
-      "작업공간",
-      "자료",
-      "결과",
-      "관측 작업 기록",
-      "설정",
+      "공간",
+      "자료 패널",
+      "분석",
+      "등록 진행",
+      "현장 설정",
       "구역 자료 준비",
     ]);
     const hrefs = contextPaletteItems(items, "/sites/site-1/analysis").map((i) => i.href);
@@ -26,7 +26,7 @@ describe("current Site task vocabulary", () => {
     expect(contextPaletteItems(items, "/")).toEqual([]);
   });
   it("finds operator words and original identities without printing them as a hint", () => {
-    expect(filterPaletteItems(contextPaletteItems(items, "/sites/site-1"), "사진")[0].label).toBe("자료");
+    expect(filterPaletteItems(contextPaletteItems(items, "/sites/site-1"), "사진")[0].label).toBe("자료 패널");
     expect(filterPaletteItems(items, "opaque-source-1")).toEqual(items);
     expect(items[0].hint).not.toContain("opaque-source-1");
   });
@@ -35,10 +35,10 @@ describe("current Site task vocabulary", () => {
     const scoped = contextPaletteItems(items, "/sites/site-1", "?workAreaId=wa-a&assetRef=ksa-v1-" + "b".repeat(64));
     const hrefs = new Map(scoped.map((item) => [item.label, item.href]));
     // 헤더 메뉴와 같은 목적지·같은 범위다. 현황으로 돌아가도 관측을 잃지 않는다.
-    expect(hrefs.get("작업공간")).toBe("/sites/site-1?workAreaId=wa-a&assetRef=ksa-v1-" + "b".repeat(64));
-    expect(hrefs.get("자료")).toBe("/sites/site-1/spatial-assets?workAreaId=wa-a&assetRef=ksa-v1-" + "b".repeat(64));
+    expect(hrefs.get("공간")).toBe("/sites/site-1?workAreaId=wa-a&assetRef=ksa-v1-" + "b".repeat(64));
+    expect(hrefs.get("자료 패널")).toBe("/sites/site-1?panel=materials&workAreaId=wa-a&assetRef=ksa-v1-" + "b".repeat(64));
     // 분석 기록의 assetRef는 복귀용 항해 맥락일 뿐 선택자가 아니다.
-    expect(hrefs.get("결과")).toBe("/sites/site-1/analysis?workAreaId=wa-a&assetRef=ksa-v1-" + "b".repeat(64));
+    expect(hrefs.get("분석")).toBe("/sites/site-1/analysis?workAreaId=wa-a&assetRef=ksa-v1-" + "b".repeat(64));
   });
 
   it("fails closed on malformed or foreign scope instead of echoing it", () => {
@@ -185,7 +185,7 @@ describe("palette modal interaction", () => {
     fireEvent.keyDown(input, { key: "ArrowDown" });
     fireEvent.keyDown(input, { key: "Enter" });
     // pathname /sites/site-1 의 두 번째 맥락 항목 = 자료.
-    expect(push).toHaveBeenCalledWith("/sites/site-1/spatial-assets");
+    expect(push).toHaveBeenCalledWith("/sites/site-1?panel=materials");
     expect(screen.queryByRole("dialog")).toBeNull();
   });
 
@@ -241,10 +241,10 @@ describe("palette scoped cross-screen round trip", () => {
     // 같은 구역·관측으로 Header와 같은 목적지에 간다 — 새 읽기 없이 주소만 싣는다.
     const options = screen.getAllByRole("option");
     const labels = options.map((option) => option.textContent);
-    expect(labels.some((text) => text?.includes("작업공간"))).toBe(true);
-    const scoped = options.find((option) => option.textContent?.startsWith("자료"));
+    expect(labels.some((text) => text?.includes("공간"))).toBe(true);
+    const scoped = options.find((option) => option.textContent?.startsWith("자료 패널"));
     fireEvent.click(scoped!);
-    expect(push).toHaveBeenCalledWith(`/sites/site-1/spatial-assets?workAreaId=wa-a&assetRef=${ref}`);
+    expect(push).toHaveBeenCalledWith(`/sites/site-1?panel=materials&workAreaId=wa-a&assetRef=${ref}`);
     // 목적지로 이동하면 팔레트는 닫힌다.
     expect(screen.queryByRole("dialog")).toBeNull();
   });
@@ -260,9 +260,9 @@ describe("palette scoped cross-screen round trip", () => {
     window.history.replaceState({}, "", "/sites/site-1?workAreaId=wa-a&assetRef=bogus");
     render(h(CommandPalette, { items: paletteItems }));
     openPalette();
-    const scoped = screen.getAllByRole("option").find((option) => option.textContent?.startsWith("자료"));
+    const scoped = screen.getAllByRole("option").find((option) => option.textContent?.startsWith("자료 패널"));
     fireEvent.click(scoped!);
-    expect(push).toHaveBeenCalledWith("/sites/site-1/spatial-assets?workAreaId=wa-a");
+    expect(push).toHaveBeenCalledWith("/sites/site-1?panel=materials&workAreaId=wa-a");
   });
 
   it("closes with Escape and returns focus to the trigger", () => {
@@ -311,9 +311,9 @@ describe("palette server-resolved scope bridge", () => {
     window.history.replaceState({}, "", "/sites/site-1/analysis?analysisId=a9");
     renderWithBridge({ "data-site-id": "site-1", "data-work-area-id": "wa-b", "data-asset-ref": ref });
     openPalette();
-    const scoped = screen.getAllByRole("option").find((option) => option.textContent?.startsWith("자료"));
+    const scoped = screen.getAllByRole("option").find((option) => option.textContent?.startsWith("자료 패널"));
     fireEvent.click(scoped!);
-    expect(push).toHaveBeenCalledWith(`/sites/site-1/spatial-assets?workAreaId=wa-b&assetRef=${ref}`);
+    expect(push).toHaveBeenCalledWith(`/sites/site-1?panel=materials&workAreaId=wa-b&assetRef=${ref}`);
   });
 
   it("never overwrites an explicit URL scope with the bridge", () => {
@@ -321,9 +321,9 @@ describe("palette server-resolved scope bridge", () => {
     window.history.replaceState({}, "", "/sites/site-1/analysis?workAreaId=wa-a");
     renderWithBridge({ "data-site-id": "site-1", "data-work-area-id": "wa-b", "data-asset-ref": ref });
     openPalette();
-    const scoped = screen.getAllByRole("option").find((option) => option.textContent?.startsWith("자료"));
+    const scoped = screen.getAllByRole("option").find((option) => option.textContent?.startsWith("자료 패널"));
     fireEvent.click(scoped!);
-    expect(push).toHaveBeenCalledWith("/sites/site-1/spatial-assets?workAreaId=wa-a");
+    expect(push).toHaveBeenCalledWith("/sites/site-1?panel=materials&workAreaId=wa-a");
   });
 
   it("fails closed on malformed or cross-site bridge values", () => {
@@ -332,17 +332,17 @@ describe("palette server-resolved scope bridge", () => {
     window.history.replaceState({}, "", "/sites/site-1/analysis?analysisId=a9");
     renderWithBridge({ "data-site-id": "site-1", "data-work-area-id": "wa-b", "data-asset-ref": "bogus" });
     openPalette();
-    let scoped = screen.getAllByRole("option").find((option) => option.textContent?.startsWith("자료"));
+    let scoped = screen.getAllByRole("option").find((option) => option.textContent?.startsWith("자료 패널"));
     fireEvent.click(scoped!);
-    expect(push).toHaveBeenCalledWith("/sites/site-1/spatial-assets?workAreaId=wa-b");
+    expect(push).toHaveBeenCalledWith("/sites/site-1?panel=materials&workAreaId=wa-b");
     cleanup();
 
     // 다른 현장의 브리지는 무시한다.
     renderWithBridge({ "data-site-id": "site-2", "data-work-area-id": "wa-x", "data-asset-ref": ref });
     openPalette();
-    scoped = screen.getAllByRole("option").find((option) => option.textContent?.startsWith("자료"));
+    scoped = screen.getAllByRole("option").find((option) => option.textContent?.startsWith("자료 패널"));
     fireEvent.click(scoped!);
-    expect(push).toHaveBeenCalledWith("/sites/site-1/spatial-assets");
+    expect(push).toHaveBeenCalledWith("/sites/site-1?panel=materials");
   });
 
   it("fills a missing asset only from the matching header area, never another area", () => {
@@ -351,17 +351,17 @@ describe("palette server-resolved scope bridge", () => {
     window.history.replaceState({}, "", "/sites/site-1?workAreaId=wa-a");
     renderWithBridge({ "data-site-id": "site-1", "data-work-area-id": "wa-a", "data-asset-ref": ref });
     openPalette();
-    let scoped = screen.getAllByRole("option").find((option) => option.textContent?.startsWith("자료"));
+    let scoped = screen.getAllByRole("option").find((option) => option.textContent?.startsWith("자료 패널"));
     fireEvent.click(scoped!);
-    expect(push).toHaveBeenCalledWith(`/sites/site-1/spatial-assets?workAreaId=wa-a&assetRef=${ref}`);
+    expect(push).toHaveBeenCalledWith(`/sites/site-1?panel=materials&workAreaId=wa-a&assetRef=${ref}`);
     cleanup();
 
     // 다른 구역의 관측은 가져오지 않는다 — 명시 구역이 이긴다.
     renderWithBridge({ "data-site-id": "site-1", "data-work-area-id": "wa-b", "data-asset-ref": ref });
     openPalette();
-    scoped = screen.getAllByRole("option").find((option) => option.textContent?.startsWith("자료"));
+    scoped = screen.getAllByRole("option").find((option) => option.textContent?.startsWith("자료 패널"));
     fireEvent.click(scoped!);
-    expect(push).toHaveBeenCalledWith("/sites/site-1/spatial-assets?workAreaId=wa-a");
+    expect(push).toHaveBeenCalledWith("/sites/site-1?panel=materials&workAreaId=wa-a");
   });
 
   it("leaves an explicitly present asset reference alone even when malformed", () => {
@@ -371,9 +371,9 @@ describe("palette server-resolved scope bridge", () => {
       window.history.replaceState({}, "", `/sites/site-1?workAreaId=wa-a&${assetQuery}`);
       renderWithBridge({ "data-site-id": "site-1", "data-work-area-id": "wa-a", "data-asset-ref": ref });
       openPalette();
-      const scoped = screen.getAllByRole("option").find((option) => option.textContent?.startsWith("자료"));
+      const scoped = screen.getAllByRole("option").find((option) => option.textContent?.startsWith("자료 패널"));
       fireEvent.click(scoped!);
-      expect(push).toHaveBeenCalledWith(`/sites/site-1/spatial-assets?workAreaId=wa-a`);
+      expect(push).toHaveBeenCalledWith(`/sites/site-1?panel=materials&workAreaId=wa-a`);
       cleanup();
       push.mockClear();
     }
@@ -381,9 +381,9 @@ describe("palette server-resolved scope bridge", () => {
     window.history.replaceState({}, "", `/sites/site-1?workAreaId=wa-a&assetRef=${ref}&assetRef=${ref}`);
     renderWithBridge({ "data-site-id": "site-1", "data-work-area-id": "wa-a", "data-asset-ref": ref });
     openPalette();
-    const scoped = screen.getAllByRole("option").find((option) => option.textContent?.startsWith("자료"));
+    const scoped = screen.getAllByRole("option").find((option) => option.textContent?.startsWith("자료 패널"));
     fireEvent.click(scoped!);
-    expect(push).toHaveBeenCalledWith("/sites/site-1/spatial-assets");
+    expect(push).toHaveBeenCalledWith("/sites/site-1?panel=materials");
   });
 
   it("keeps no asset when the header itself has none", () => {
@@ -391,8 +391,8 @@ describe("palette server-resolved scope bridge", () => {
     window.history.replaceState({}, "", "/sites/site-1?workAreaId=wa-a");
     renderWithBridge({ "data-site-id": "site-1", "data-work-area-id": "wa-a" });
     openPalette();
-    const scoped = screen.getAllByRole("option").find((option) => option.textContent?.startsWith("자료"));
+    const scoped = screen.getAllByRole("option").find((option) => option.textContent?.startsWith("자료 패널"));
     fireEvent.click(scoped!);
-    expect(push).toHaveBeenCalledWith("/sites/site-1/spatial-assets?workAreaId=wa-a");
+    expect(push).toHaveBeenCalledWith("/sites/site-1?panel=materials&workAreaId=wa-a");
   });
 });

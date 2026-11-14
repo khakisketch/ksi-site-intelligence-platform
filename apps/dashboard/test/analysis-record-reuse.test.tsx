@@ -36,7 +36,8 @@ describe("record lineage and reuse disclosure", () => {
     const { container } = render(<AnalysisRecordReuse record={record} inputLabels={{ baseline: "10월 6일 관측", current: "10월 13일 관측" }} />);
     const detail = container.querySelector("details")!;
     expect(detail.open).toBe(false);
-    fireEvent.click(screen.getByText("결과 계보·재사용 정보"));
+    expect(screen.getByRole("link", { name: "이 분석 기록의 링크 열기" }).closest("details")).toBeNull();
+    fireEvent.click(screen.getByText("결과 계보·식별 상세"));
     expect(screen.getByText("10월 6일 관측")).toBeTruthy();
     expect(screen.getByText("등록 버전 3")).toBeTruthy();
     expect(screen.getByText("submission-a")).toBeTruthy();
@@ -45,7 +46,7 @@ describe("record lineage and reuse disclosure", () => {
     expect(href).toBe("/sites/site-1/analysis?workAreaId=area-1&analysisId=analysis-1");
     expect(href).not.toMatch(/visual|hint|token|returnTo/);
     expect(container.querySelector("form,button")).toBeNull();
-    expect(screen.getByText(/링크 자체에 열람 권한은 없으며/)).toBeTruthy();
+    expect(screen.getByText(/로그인과 현장 접근 권한을 확인합니다/)).toBeTruthy();
     expect(screen.getByText(/기록된 계산 결과와 현재 활용 가능 여부는 별개/)).toBeTruthy();
   });
 

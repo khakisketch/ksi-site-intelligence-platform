@@ -131,7 +131,7 @@ export function MobileSiteSwitcher({
         aria-controls="mobile-site-switcher"
         aria-label={`현장 변경: ${current.name}`}
         onClick={() => setOpen(true)}
-        className="tap-target inline-flex h-9 shrink-0 items-center gap-1 rounded-md border border-line bg-surface px-2 text-[11.5px] font-semibold text-ink-2 hover:bg-sunk lg:hidden"
+        className="tap-target inline-flex h-9 shrink-0 items-center gap-1 rounded-md border border-line bg-surface px-2 text-caption font-semibold text-ink-2 hover:bg-sunk lg:hidden"
       >
         <svg aria-hidden="true" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.6" className="size-4">
           <path d="M4 7h11l-2.5-2.5M16 13H5l2.5 2.5" />
@@ -164,11 +164,11 @@ export function MobileSiteSwitcher({
         {open && (
           <>
             <div className="flex shrink-0 items-center justify-between gap-2 border-b border-line px-4 py-3">
-              <h3 id={titleId} className="text-[14px] font-bold">현장 변경</h3>
+              <h3 id={titleId} className="text-lead font-bold">현장 변경</h3>
               <button
                 type="button"
                 onClick={() => setOpen(false)}
-                className="tap-target rounded-md px-2 py-1 text-[12px] font-semibold text-ink-2 hover:bg-sunk"
+                className="tap-target rounded-md px-2 py-1 text-caption font-semibold text-ink-2 hover:bg-sunk"
               >
                 닫기
               </button>
@@ -179,15 +179,15 @@ export function MobileSiteSwitcher({
                   <>
                     <span
                       aria-hidden="true"
-                      className="grid size-8 flex-none place-items-center rounded-md bg-sunk text-[11px] font-bold text-ink-2"
+                      className="grid size-8 flex-none place-items-center rounded-md bg-sunk text-micro font-bold text-ink-2"
                     >
                       {siteMark(site.name)}
                     </span>
                     <span className="min-w-0 flex-1">
-                      <span className="block truncate text-[12.5px] font-semibold" title={site.name}>
+                      <span className="block truncate text-body font-semibold" title={site.name}>
                         {siteShortName(site.name)}
                       </span>
-                      <span className="mt-0.5 block text-[10.5px] text-ink-muted">
+                      <span className="mt-0.5 block text-micro text-ink-muted">
                         {SITE_STATUS_LABEL[site.status].label}
                       </span>
                     </span>
@@ -204,7 +204,7 @@ export function MobileSiteSwitcher({
                         className="flex w-full items-center gap-2.5 rounded-md bg-sunk px-2 py-2.5 text-left"
                       >
                         {content}
-                        <span aria-hidden="true" className="text-[11px] text-mid-ink">✓</span>
+                        <span aria-hidden="true" className="text-micro text-mid-ink">✓</span>
                         <span className="sr-only">현재 현장</span>
                       </button>
                     ) : (
@@ -224,7 +224,7 @@ export function MobileSiteSwitcher({
             <Link
               href="/sites"
               onClick={() => setOpen(false)}
-              className="flex shrink-0 items-center justify-between border-t border-line px-4 py-3 text-[12px] font-semibold text-ink-2 hover:bg-sunk"
+              className="flex shrink-0 items-center justify-between border-t border-line px-4 py-3 text-caption font-semibold text-ink-2 hover:bg-sunk"
             >
               <span>전체 현장</span>
               <span aria-hidden="true">→</span>

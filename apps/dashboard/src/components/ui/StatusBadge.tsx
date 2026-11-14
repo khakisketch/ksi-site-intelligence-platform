@@ -38,7 +38,7 @@ const STATE_TONE_CLASSES: Record<Tone, string> = {
 export function StatusBadge({ label, tone }: { label: string; tone: Tone }) {
   return (
     <span
-      className={`inline-flex items-center gap-1.5 rounded-[4px] px-2 py-0.5 text-[11.5px] font-bold break-keep whitespace-nowrap ${TONE_CLASSES[tone]}`}
+      className={`inline-flex items-center gap-1.5 rounded-[4px] px-2 py-0.5 text-caption font-bold break-keep whitespace-nowrap ${TONE_CLASSES[tone]}`}
     >
       <span aria-hidden="true" className="size-1.5 rounded-full bg-current" />
       {label}
@@ -50,7 +50,7 @@ export function StatusBadge({ label, tone }: { label: string; tone: Tone }) {
 export function StateBadge({ label, tone }: { label: string; tone: Tone }) {
   return (
     <span
-      className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11.5px] break-keep whitespace-nowrap ${STATE_TONE_CLASSES[tone]}`}
+      className={`inline-flex items-center rounded-full border px-2 py-0.5 text-caption break-keep whitespace-nowrap ${STATE_TONE_CLASSES[tone]}`}
     >
       {label}
     </span>

@@ -28,7 +28,7 @@ export function MobileBottomNav() {
             key={item.key}
             href={item.href}
             aria-current={active ? "page" : undefined}
-            className={`flex min-h-[var(--mobile-bottom-nav-row-height)] flex-1 flex-col items-center justify-center gap-0.5 py-1 text-[11px] break-keep ${ active ? "text-accent-text font-semibold" : "text-ink-2" }`}
+            className={`flex min-h-[var(--mobile-bottom-nav-row-height)] flex-1 flex-col items-center justify-center gap-0.5 py-1 text-micro break-keep ${ active ? "text-accent-text font-semibold" : "text-ink-2" }`}
           >
             <NavIcon name={item.icon} className="size-5" />
             {item.label}

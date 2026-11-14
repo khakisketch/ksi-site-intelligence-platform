@@ -1,5 +1,6 @@
 "use client";
 
+import { Disclosure } from "@/components/ui/Disclosure";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { AoiPolygonMap, type AoiMapPendingState, type AoiRawSnapshot } from "@/components/map/AoiPolygonMap";
@@ -98,18 +99,17 @@ function WorkAreaCard({
   return (
     <li className="flex flex-col gap-2 rounded-lg border border-line bg-surface p-3">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <span className="text-[13px] font-bold break-keep">{area.name}</span>
+        <span className="text-body font-bold break-keep">{area.name}</span>
         <StateBadge label={status.label} tone={status.tone} />
       </div>
 
-      <p className="text-[12px] break-keep text-ink-2">{status.description}</p>
+      <p className="text-caption break-keep text-ink-2">{status.description}</p>
 
-      <details className="text-[12px] text-ink-2">
-      <summary className="tap-target cursor-pointer">구역 등록 정보</summary>
-      <dl className="mt-1 grid grid-cols-2 gap-x-3 gap-y-1 text-[11.5px] sm:grid-cols-4">
+      <Disclosure label="구역 등록 상세" className="text-caption text-ink-2">
+      <dl className="mt-1 grid grid-cols-2 gap-x-3 gap-y-1 text-caption sm:grid-cols-4">
         <div className="flex flex-col">
           <dt className="break-keep text-ink-muted">기술 참조</dt>
-          <dd className="num break-token font-mono text-[10.5px] text-ink-muted">{area.workAreaId}</dd>
+          <dd className="num break-token font-mono text-micro text-ink-muted">{area.workAreaId}</dd>
         </div>
         <div className="flex flex-col">
           <dt className="break-keep text-ink-muted">등록</dt>
@@ -126,13 +126,13 @@ function WorkAreaCard({
       </dl>
 
       {area.supersedes !== null && (
-        <p className="text-[11.5px] break-keep text-ink-muted">
+        <p className="text-caption break-keep text-ink-muted">
           이전 구역을 대신해 등록된 구역입니다 — 기술 참조 ·{" "}
-          <span className="num break-token font-mono text-[10.5px]">{area.supersedes}</span>
+          <span className="num break-token font-mono text-micro">{area.supersedes}</span>
         </p>
       )}
 
-      </details>
+      </Disclosure>
 
       {/* 읽기 전용 미리보기 — 카드마다 지도를 두지 않고, 고른 구역 하나만 펼친다.
           작은 화면에서도 열리므로 현장에서 "어디 범위인지"를 먼저 확인할 수 있다. */}
@@ -148,7 +148,7 @@ function WorkAreaCard({
         (previewResult !== null && previewResult.ok ? (
           <AoiPolygonMap readOnly value={previewResult.vertices} />
         ) : (
-          <p className="rounded-md border border-line bg-sunk px-3 py-2 text-[12px] break-keep text-ink-2">
+          <p className="rounded-md border border-line bg-sunk px-3 py-2 text-caption break-keep text-ink-2">
             {previewResult !== null && !previewResult.ok
               ? previewResult.reason
               : "이 구역의 모양을 지도에 올리지 못했습니다."}
@@ -183,7 +183,7 @@ function WorkAreaCard({
             </button>
           </div>
           {archiveBlockedByDraft && (
-            <p className="text-[12px] break-keep text-ink-2">
+            <p className="text-caption break-keep text-ink-2">
               입력 중인 경계를 반영하거나 되돌린 뒤 구역을 보관할 수 있습니다.
             </p>
           )}
@@ -192,7 +192,7 @@ function WorkAreaCard({
       {archiveError && (
         <div
           role="alert"
-          className="rounded-md bg-crit-bg px-3 py-2 text-[12px] break-keep text-crit-ink"
+          className="rounded-md bg-crit-bg px-3 py-2 text-caption break-keep text-crit-ink"
         >
           <p className="font-semibold leading-5">{archiveError}</p>
           <button
@@ -1538,12 +1538,14 @@ export function WorkAreaPanel({
       {draftGate === "failed" && <><p>확인이 끝나기 전에는 이 화면에서 작업구역 목록도 볼 수 없습니다. 저장된 원문은 변경하지 않습니다.</p><button type="button" className="btn mt-2" onClick={() => recheckIdentity.current?.()}>{canWrite ? "계정과 저장 상태 다시 확인" : "계정 다시 확인"}</button></>}
     </div>}
     <div ref={sensitiveRootRef} hidden={!scopeReady} style={{display: !scopeReady ? "none" : undefined}} className="flex flex-col gap-5">
-      {scopeReady && <p className="text-[12px] text-ink-2">이름과 경계 편집 원문 및 첫 전송 원본을 이 탭에 임시 저장합니다. 탭을 닫으면 사라질 수 있으며, 진행 중인 지도 포인터 동작은 복구되지 않습니다. 첫 요청과 재전송 기록은 이 탭에만 보관됩니다. 재전송은 별도의 비멱등 요청이므로 중복 구역이 생길 수 있습니다.</p>}
+      {scopeReady && <Disclosure label="임시 저장 상세" className="text-caption text-ink-2">
+        <p className="mt-1 max-w-[80ch] leading-5">이름과 경계 편집 원문 및 첫 전송 원본을 이 탭에 임시 저장합니다. 탭을 닫으면 사라질 수 있으며, 진행 중인 지도 포인터 동작은 복구되지 않습니다. 첫 요청과 재전송 기록은 이 탭에만 보관됩니다. 재전송은 별도의 비멱등 요청이므로 중복 구역이 생길 수 있습니다.</p>
+      </Disclosure>}
       {scopeReady && draftMessage && <p role="alert" className="rounded-md bg-crit-bg px-3 py-2 text-crit-ink">{draftMessage}</p>}
       {canWrite && scopeReady && error && (
         <p
           role="alert"
-          className="rounded-md bg-crit-bg px-3 py-2 text-[12.5px] font-semibold break-keep text-crit-ink"
+          className="rounded-md bg-crit-bg px-3 py-2 text-body font-semibold break-keep text-crit-ink"
         >
           {error}
         </p>
@@ -1553,7 +1555,7 @@ export function WorkAreaPanel({
         <div
           role="alert"
           data-testid="work-area-unknown-panel"
-          className="flex flex-col gap-2 rounded-md border border-line-strong bg-sunk px-3 py-2 text-[12.5px] break-keep text-ink-1"
+          className="flex flex-col gap-2 rounded-md border border-line-strong bg-sunk px-3 py-2 text-body break-keep text-ink-1"
         >
           <p className="font-bold">등록 결과를 확인하지 못했습니다</p>
           <p className="break-keep text-ink-2">
@@ -1563,23 +1565,23 @@ export function WorkAreaPanel({
           <p className="break-keep text-ink-2">
             첫 요청 원본은 이 탭에 임시 보관됩니다. 탭을 닫으면 사라질 수 있습니다. 서버에 도착하거나 등록됐는지는 알 수 없습니다. 재전송은 별도 요청으로 기록되며 첫 요청의 불명을 해소하지 않습니다. 목록에서 기술 참조(workAreaId)를 먼저 확인하세요.
           </p>
-          <dl className="grid gap-1 text-[12px] text-ink-2 sm:grid-cols-2">
+          <dl className="grid gap-1 text-caption text-ink-2 sm:grid-cols-2">
             <div>
-              <dt className="text-[11.5px] text-ink-muted">보낸 이름</dt>
+              <dt className="text-caption text-ink-muted">보낸 이름</dt>
               <dd className="font-medium break-keep">{unknownSubmission.name}</dd>
             </div>
             <div>
-              <dt className="text-[11.5px] text-ink-muted">보낸 범위</dt>
+              <dt className="text-caption text-ink-muted">보낸 범위</dt>
               <dd className="num">
                 꼭짓점 {unknownSubmission.vertexCount}개 · {unknownSubmission.crs}
               </dd>
             </div>
             {unknownSubmission.supersedes !== null && (
               <div className="sm:col-span-2">
-                <dt className="text-[11.5px] text-ink-muted">대체 대상</dt>
+                <dt className="text-caption text-ink-muted">대체 대상</dt>
                 <dd className="break-keep">
                   {unknownSubmission.supersedesName ?? "이전 구역"}(
-                  <span className="num break-token font-mono text-[11px]">
+                  <span className="num break-token font-mono text-micro">
                     {unknownSubmission.supersedes}
                   </span>
                   ) — 보관됐는지 알 수 없습니다.
@@ -1630,14 +1632,14 @@ export function WorkAreaPanel({
               입력 비우고 새로 시작
             </button>
           </div>
-          <p className="text-[11.5px] break-keep text-ink-muted">
+          <p className="text-caption break-keep text-ink-muted">
             새 요청으로 다시 등록하면 중복 구역이 생길 수 있습니다. 먼저 목록을 확인하세요.
             재전송은 별도 요청으로 기록되며 중복 구역이 생길 수 있습니다. 계정을 바꿨다면
             입력 비우기로 새로 시작하세요(새 입력은 지금 로그인된 계정으로 등록됩니다).
             입력을 비워도 서버에 만들어졌을 수 있는 구역은 사라지지 않으며, 지금까지의
             확인 기록은 아래 이전 확인 기록에 남습니다.
           </p>
-          <p className="text-[11.5px] break-keep text-ink-muted lg:hidden">
+          <p className="text-caption break-keep text-ink-muted lg:hidden">
             작은 화면에서는 새 요청 다시 등록이 열리지 않습니다. 노트북에서 같은 계정으로
             이 현장의 ‘작업구역’ 화면을 열어 목록을 먼저 확인하세요. 이 탭의 임시 기록은
             다른 기기로 옮겨가지 않습니다. 원래 기록으로 재전송하려면 이 탭의 화면 폭을 1024px 이상으로 넓히세요.
@@ -1646,7 +1648,7 @@ export function WorkAreaPanel({
             <p
               data-testid="work-area-continuity-blocked"
               role="alert"
-              className="rounded-md border border-line bg-surface px-2 py-1 text-[12px] break-keep text-ink-2"
+              className="rounded-md border border-line bg-surface px-2 py-1 text-caption break-keep text-ink-2"
             >
               {continuityBlocked}
             </p>
@@ -1657,7 +1659,7 @@ export function WorkAreaPanel({
           {retryHistory.length > 0 && (
             <div
               data-testid="work-area-retry-history"
-              className="flex flex-col gap-1 rounded-md border border-line bg-surface px-2 py-1 text-[12px] break-keep text-ink-2"
+              className="flex flex-col gap-1 rounded-md border border-line bg-surface px-2 py-1 text-caption break-keep text-ink-2"
             >
               {retryHistory.map((record) => (
                 <p key={record.seq} data-testid="work-area-retry-outcome" data-seq={record.seq}>
@@ -1678,7 +1680,7 @@ export function WorkAreaPanel({
           {unknownVerifyMessage && (
             <p
               data-testid="work-area-verify-outcome"
-              className="rounded-md border border-line bg-surface px-2 py-1 text-[12px] break-keep text-ink-2"
+              className="rounded-md border border-line bg-surface px-2 py-1 text-caption break-keep text-ink-2"
             >
               {unknownVerifyMessage}
             </p>
@@ -1687,7 +1689,7 @@ export function WorkAreaPanel({
       )}
 
       {canWrite && scopeReady && notice && (
-        <p className="rounded-md border border-line bg-sunk px-3 py-2 text-[12.5px] break-keep text-ink-2">
+        <p className="rounded-md border border-line bg-sunk px-3 py-2 text-body break-keep text-ink-2">
           {notice}
         </p>
       )}
@@ -1699,7 +1701,7 @@ export function WorkAreaPanel({
           data-testid="work-area-episode-log"
           className="flex flex-col gap-2 rounded-lg border border-line bg-surface p-3"
         >
-          <h2 className="text-[13px] font-bold break-keep text-ink-1">
+          <h2 className="text-body font-bold break-keep text-ink-1">
             이전 확인 기록(새 입력과 별개)
           </h2>
           {episodeLog.map((episode) => (
@@ -1707,7 +1709,7 @@ export function WorkAreaPanel({
               key={episode.episode}
               data-testid="work-area-episode-record"
               data-episode={episode.episode}
-              className="flex flex-col gap-1 rounded-md border border-line bg-sunk px-2 py-1 text-[12px] break-keep text-ink-2"
+              className="flex flex-col gap-1 rounded-md border border-line bg-sunk px-2 py-1 text-caption break-keep text-ink-2"
             >
               <p className="font-semibold">
                 묶음 {episode.episode} — 첫 요청 &ldquo;{episode.name}&rdquo;
@@ -1717,7 +1719,7 @@ export function WorkAreaPanel({
                   {episode.confirmed.map((item) => (
                     <li key={item.workAreaId}>
                       확정된 등록: &ldquo;{item.name}&rdquo;(기술 참조{" "}
-                      <span className="num break-token font-mono text-[11px]">
+                      <span className="num break-token font-mono text-micro">
                         {item.workAreaId}
                       </span>
                       ) — 이 화면에서 서버 응답으로 확인한 등록입니다. 목록에서 기술 참조로 대조하세요.
@@ -1733,15 +1735,14 @@ export function WorkAreaPanel({
               </p>
               {episode.original !== null && (
                 <>
-                  <details>
-                    <summary className="cursor-pointer">원래 요청 상세 보기</summary>
+                  <Disclosure label="원래 요청 상세">
                     <p>좌표계: {episode.original.crs} · 대체 대상: {episode.original.supersedes ?? "없음"}</p>
                     <ol>
                       {episode.original.vertices.map((point, index) => (
                         <li key={index}>꼭짓점 {index + 1}: 위도 {String(point.latDeg)}, 경도 {String(point.lonDeg)}</li>
                       ))}
                     </ol>
-                  </details>
+                  </Disclosure>
                   <button
                     type="button"
                     className="btn mt-1 w-fit"
@@ -1758,7 +1759,7 @@ export function WorkAreaPanel({
               )}
             </div>
           ))}
-          <p className="text-[11.5px] break-keep text-ink-muted">
+          <p className="text-caption break-keep text-ink-muted">
             이 기록은 이 탭에만 임시 보관되며 탭을 닫으면 사라질 수 있습니다. 다른 계정의 목록 접근 가능 여부나 원래 요청의 성공은 알 수 없습니다.
           </p>
         </section>
@@ -1785,7 +1786,7 @@ export function WorkAreaPanel({
           <h2
             ref={formHeadingRef}
             tabIndex={-1}
-            className="text-[13px] font-bold tracking-tight break-keep text-ink-2"
+            className="text-body font-bold tracking-tight break-keep text-ink-2"
           >
             {correcting ? "구역 다시 그리기" : "새 작업구역 등록"}
           </h2>
@@ -1802,10 +1803,10 @@ export function WorkAreaPanel({
                 if (event.key === "Escape") resolveAbandon(false);
               }}
             >
-              <h3 className="text-[12.5px] font-bold break-keep text-ink-1">
+              <h3 className="text-body font-bold break-keep text-ink-1">
                 입력 중인 내용이 있습니다
               </h3>
-              <p className="text-[12.5px] break-keep text-ink-2">
+              <p className="text-body break-keep text-ink-2">
                 지도에 반영하지 않은 입력은 이동하면 사라집니다. 기존에 반영된
                 범위와 등록된 구역은 그대로 남습니다. Esc를 누르면 계속 입력합니다.
               </p>
@@ -1830,7 +1831,7 @@ export function WorkAreaPanel({
 
           {correcting ? (
             <div className="flex flex-col gap-2 rounded-md border border-dashed border-line-strong bg-sunk px-3 py-2">
-              <p className="text-[12.5px] break-keep text-ink-2">
+              <p className="text-body break-keep text-ink-2">
                 <strong className="font-bold">{correcting.name}</strong>을 대신할 새 구역을
                 그립니다 —{" "}
                 {correctionReady
@@ -1852,7 +1853,7 @@ export function WorkAreaPanel({
               </button>
             </div>
           ) : (
-            <p className="text-[12.5px] break-keep text-ink-muted">
+            <p className="text-body break-keep text-ink-muted">
               이름을 붙여 등록해 두면 이후 비교마다 이 구역을 고르기만 하면 됩니다.{" "}
               <strong className="font-bold">등록한 모양은 고칠 수 없습니다</strong> — 잘못
               그렸으면 목록에서 &ldquo;다시 그리기&rdquo;로 대신할 구역을 등록하세요.
@@ -1860,7 +1861,7 @@ export function WorkAreaPanel({
           )}
 
           <label className="flex flex-col gap-1">
-            <span className="text-[11.5px] break-keep text-ink-muted">
+            <span className="text-caption break-keep text-ink-muted">
               이름 — 현장에서 부르는 말로 적으세요(예: 3공구 성토부)
             </span>
             <input
@@ -1873,7 +1874,7 @@ export function WorkAreaPanel({
           </label>
 
           <div className="flex flex-col gap-1">
-            <span className="text-[11.5px] break-keep text-ink-muted">
+            <span className="text-caption break-keep text-ink-muted">
               범위 — 지도에서 폴리곤을 그리세요(꼭짓점 3개 이상)
             </span>
             <AoiPolygonMap
@@ -1888,7 +1889,7 @@ export function WorkAreaPanel({
               // 대기 중 입력 자체를 잠근다. 원래 값은 그대로 보존된다.
               readOnly={formLocked}
             />
-            <span className="text-[11.5px] break-keep text-ink-muted">
+            <span className="text-caption break-keep text-ink-muted">
               {displayedVertices.length >= 3
                 ? `꼭짓점 ${displayedVertices.length}개 — 이 모양으로 굳습니다.`
                 : "아직 구역이 되지 않았습니다 — 꼭짓점을 3개 이상 찍으세요."}{" "}
@@ -1899,7 +1900,7 @@ export function WorkAreaPanel({
               <p
                 role="status"
                 data-testid="work-area-map-pending"
-                className="rounded-md border border-line bg-sunk px-3 py-2 text-[12.5px] break-keep text-ink-1"
+                className="rounded-md border border-line bg-sunk px-3 py-2 text-body break-keep text-ink-1"
               >
                 {recoveredGeometry === "checking" ? "복구한 경계를 확인하는 중입니다. 확인이 끝나기 전에는 등록할 수 없습니다." : recoveredGeometry === "invalid" ? "복구한 경계를 안전하게 확인하지 못했습니다. 원본을 확인한 뒤 지도에서 다시 반영하거나 그려 주세요." : mapPending.reason ?? "입력한 내용을 지도에 반영하거나 되돌리기 전에는 등록할 수 없습니다."}
               </p>
@@ -1933,8 +1934,8 @@ export function WorkAreaPanel({
       </div>}
       <section className="flex flex-col gap-3">
         <div className="flex flex-wrap items-baseline justify-between gap-2">
-          <h2 className="text-[15px] font-bold break-keep">사용 중인 작업구역</h2>
-          <span className="num text-[11.5px] whitespace-nowrap text-ink-muted">
+          <h2 className="text-lead font-bold break-keep">사용 중인 작업구역</h2>
+          <span className="num text-caption whitespace-nowrap text-ink-muted">
             {workAreaListError ? "확인할 수 없음" : `${active.length}건`}
           </span>
         </div>
@@ -1947,7 +1948,7 @@ export function WorkAreaPanel({
             retryAfterSeconds={workAreaListError.retryAfterSeconds}
           />
         ) : active.length === 0 ? (
-          <p className="rounded-lg border border-dashed border-line-strong bg-surface px-4 py-8 text-center text-[13px] break-keep text-ink-muted">
+          <p className="rounded-lg border border-dashed border-line-strong bg-surface px-4 py-8 text-center text-body break-keep text-ink-muted">
             {canWrite ? (
               <>
                 아직 등록된 작업구역이 없습니다. 위 지도에서 이름과 범위를 정해 등록하세요.
@@ -1999,12 +2000,12 @@ export function WorkAreaPanel({
       {archived.length > 0 && (
         <section className="flex flex-col gap-3">
           <div className="flex flex-wrap items-baseline justify-between gap-2">
-            <h2 className="text-[15px] font-bold break-keep">보관된 작업구역</h2>
-            <span className="num text-[11.5px] whitespace-nowrap text-ink-muted">
+            <h2 className="text-lead font-bold break-keep">보관된 작업구역</h2>
+            <span className="num text-caption whitespace-nowrap text-ink-muted">
               {archived.length}건
             </span>
           </div>
-          <p className="text-[12.5px] break-keep text-ink-muted">
+          <p className="text-body break-keep text-ink-muted">
             보관은 삭제가 아닙니다 — 새 비교에서 고를 수 없게 될 뿐, 이 구역으로 이미 낸
             리포트는 그대로 남아 그때의 범위를 가리킵니다.
           </p>

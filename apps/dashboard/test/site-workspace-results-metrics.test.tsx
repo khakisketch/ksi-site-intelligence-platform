@@ -110,7 +110,7 @@ function explicitDetail(overrides: Record<string, unknown> = {}): AnalysisView {
 
 function renderResults(options: {
   detail?: AnalysisView | null;
-  explicit?: typeof explicitResult | null;
+  explicit?: Parameters<typeof SiteWorkspaceResults>[0]["explicitResult"];
   visualContext?: { workAreaId: string; visualAAssetRef: string; visualBAssetRef: string } | null;
   areaAnalyses?: Parameters<typeof SiteWorkspaceResults>[0]["areaAnalyses"];
 }) {
@@ -132,6 +132,14 @@ function renderResults(options: {
 }
 
 describe("site workspace explicit result metrics", () => {
+  it("orders the recorded pair, status, value and evidence under the analysis result title", () => {
+    const html = renderResults({});
+    const sections = ["분석 결과", "원래 입력 2건", "계산 수치 있음", "절토", "자료·근거와 검토 보기"];
+    for (const [index, section] of sections.entries()) {
+      expect(html.indexOf(section)).toBeGreaterThan(index === 0 ? -1 : html.indexOf(sections[index - 1]!));
+    }
+  });
+
   it("shows Core-recorded tiny quantities with explicit limits on the explicit branch", () => {
     const html = renderResults({});
     // 0.02가 소수 첫째 자리 반올림으로 0이 되지 않는다(AnalysisRequestPanel과 같은 규칙).
@@ -171,13 +179,33 @@ describe("site workspace explicit result metrics", () => {
     expect(html).toContain("링크의 원래 기록을 그대로 보여줍니다");
   });
 
+  it("does not substitute the latest result when the requested record cannot be resolved", () => {
+    const html = renderResults({
+      explicit: { status: "unresolvable", intent: "result", reason: "unknown-result", headline: "요청한 기록 확인 불가", detail: "분석 이력에서 다시 선택하세요." },
+      areaAnalyses: [{
+        analysisId: "latest-record",
+        siteId: "site-1",
+        workAreaId: "area-1",
+        executionState: "COMPLETED",
+        suitabilityState: "EVALUATED",
+        createdAt: "2026-10-25T10:25:00Z",
+        resultId: "res-1",
+        metrics: { cutM3: 0.02, fillM3: 0.02, netM3: 0, thresholdM: 0.1, uncertaintyM3: null },
+        limitationCount: 0,
+        analysisHref: "/analysis",
+      }],
+    });
+    expect(html).toContain("요청한 기록 확인 불가");
+    expect(html).not.toContain("latest-record");
+  });
+
   it("keeps the frozen pair while the browsed pair stays a separate return", () => {
     const html = renderResults({
       visualContext: { workAreaId: "area-1", visualAAssetRef: "a-vis", visualBAssetRef: "b-vis" },
     });
     // frozen 입력(원래 기록 선택자)은 그대로 두고 탐색 쌍으로 바꾸지 않는다.
     expect(html).toContain("원래 입력 2건이 현재 관측 목록에 있습니다");
-    expect(html).toContain("탐색 중 자료와 이 결과의 계산 입력은 다를 수 있습니다");
+    expect(html).toContain("이 결과의 계산 입력과는 다를 수 있습니다");
     expect(html).toContain("독립 보기로 돌아가기");
     expect(html).toContain("visualAAssetRef=a-vis");
     // frozen 근거 링크는 원래 기록 식별자를 유지한 채 탐색 복귀 맥락만 덧붙인다.

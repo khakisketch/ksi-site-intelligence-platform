@@ -73,8 +73,7 @@ function Grid({ grid }: { grid: CoverageGrid }) {
       </ul>
       <p className="mt-2">기준 관측의 행·열 순서로 그린 계산 격자입니다. 현장 영상이나 배경지도 위의 위치·정확도를 나타내지 않습니다. 색과 무늬는 물량의 크기가 아닌 셀의 사용 상태입니다.</p>
     </figcaption>
-    <details className="mt-2 text-xs text-ink-2">
-      <summary className="tap-target cursor-pointer font-semibold">셀 위치 확인</summary>
+    <section className="mt-2 text-xs text-ink-2"><h4 className="font-semibold">셀 위치 확인</h4>
       <div className="mt-2 flex flex-wrap items-end gap-3">
         <label htmlFor={`${id}-row`} className="block">확인할 행
           <input id={`${id}-row`} className="input mt-1 block min-h-11 w-28 text-base" type="number" min={1} max={grid.rows} step={1} value={row} onChange={(e) => setRow(e.target.value)} />
@@ -85,7 +84,7 @@ function Grid({ grid }: { grid: CoverageGrid }) {
       </div>
       <p className="mt-2 leading-5" role="status">{state ? `${labels[state]} — ${descriptions[state]}` : `행은 1–${formatCountKo(grid.rows)}, 열은 1–${formatCountKo(grid.columns)} 사이의 정수로 입력하세요.`}</p>
       {valid && <p className="mt-1 text-ink-muted">기준 격자 행 {formatCountKo(grid.rowOffset + r)} · 열 {formatCountKo(grid.columnOffset + c)} (0부터 시작하는 원본 인덱스)</p>}
-    </details>
+    </section>
   </figure>;
 }
 

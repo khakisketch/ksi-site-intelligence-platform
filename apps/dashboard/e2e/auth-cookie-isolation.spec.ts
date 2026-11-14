@@ -13,7 +13,6 @@ function dashboardCookieUrl(): string {
 
 test("같은 host의 다른 Auth.js state cookie가 KSI OIDC callback을 망가뜨리지 않는다", async ({ page }) => {
   await page.goto("/login");
-  await page.getByText("권한별 화면 테스트", { exact: true }).click();
   await page.getByRole("button", { name: "다른 개발 계정 선택" }).click();
   await expect(page).toHaveURL(/\/authorize/);
 
@@ -36,7 +35,6 @@ test("같은 host의 다른 Auth.js state cookie가 KSI OIDC callback을 망가�
 
 test("KSI callback 검증 실패는 generic server error 대신 로그인 복구 화면으로 돌아온다", async ({ page }) => {
   await page.goto("/login");
-  await page.getByText("권한별 화면 테스트", { exact: true }).click();
   await page.getByRole("button", { name: "다른 개발 계정 선택" }).click();
   await expect(page).toHaveURL(/\/authorize/);
 

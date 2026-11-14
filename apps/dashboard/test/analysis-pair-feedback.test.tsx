@@ -51,6 +51,7 @@ function renderPairPanel(overrides: Partial<Parameters<typeof AnalysisRequestPan
     initialSelectedDetail={null}
     canCreate
     initialAnalysisId={null}
+    openRequestOnEntry
     {...overrides}
   />);
   return { ...view, fetchMock };
@@ -69,6 +70,17 @@ afterEach(() => {
 });
 
 describe("analysis pair feedback", () => {
+  it("opens the request form from history and returns to history without stacking both views", () => {
+    renderPairPanel({ openRequestOnEntry: false });
+    expect(screen.queryByLabelText("기준 관측")).toBeNull();
+    expect(screen.getByText(/아직 변화 분석 요청이 없습니다/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "새 분석 요청" }));
+    expect(screen.getByLabelText("기준 관측")).toBeTruthy();
+    expect(screen.queryByText(/아직 변화 분석 요청이 없습니다/)).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "분석 이력으로 돌아가기" }));
+    expect(screen.queryByLabelText("기준 관측")).toBeNull();
+  });
+
   it("auto-suggests the latest prior baseline only while none is chosen", () => {
     renderPairPanel();
     fireEvent.change(screen.getByLabelText("작업구역"), { target: { value: "area-1" } });
@@ -165,7 +177,7 @@ describe("analysis pair feedback", () => {
   });
 
   it("keeps full work names in native options and a two-column selector layout from 1024px", () => {
-    const longName = "한강 하류 3공구 성토부 주간 비교 관측 작업 이름이 매우 긴 경우";
+    const longName = "한강 하류 3공구 성토부 주간 비교 작업 이름이 매우 긴 경우";
     renderPairPanel({ workOrderNames: { "work-a": longName } });
     const form = document.querySelector("form")!;
     expect(form.className).toContain("lg:grid-cols-2");
@@ -212,16 +224,18 @@ describe("analysis pair feedback", () => {
         }],
         nextCursor: null,
       },
+      openRequestOnEntry: false,
       initialSelectedDetail: completed,
       initialAnalysisId: "analysis-1",
     });
     const summary = screen.getByLabelText("최근 변화 분석 요약");
-    const request = screen.getByText("새 변화 분석 요청");
+    const request = screen.getByRole("button", { name: "새 분석 요청" });
     expect(summary.textContent).toContain("최근 실행 상태: 실행 완료. 적합성 상태: 평가 근거 있음.");
     expect(summary.textContent).toContain("정확도 보증이 아닙니다");
-    expect(summary.compareDocumentPosition(request) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    const history = screen.getByRole("region", { name: "변화 분석 이력" });
-    expect(history.compareDocumentPosition(request) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(screen.getByRole("link", { name: "변화 분석 이력으로 이동" }).getAttribute("href")).toBe("#analysis-history");
+    expect(screen.getByRole("region", { name: "변화 분석 이력" })).toBeTruthy();
+    expect(screen.queryByLabelText("기준 관측")).toBeNull();
+    fireEvent.click(request);
+    expect(screen.getByLabelText("기준 관측")).toBeTruthy();
+    expect(screen.queryByRole("region", { name: "변화 분석 이력" })).toBeNull();
   });
 });

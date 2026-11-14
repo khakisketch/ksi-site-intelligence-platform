@@ -161,7 +161,7 @@ describe("작업 맥락 이름 표시", () => {
     expect(formatHomeReviewTechnicalRef("analysis-1", "wa-1")).toContain("wa-1");
   });
 
-  it("받은 업무 맥락은 작업·현장을 별도 줄로 나눠 긴 이름도 현장을 가리지 않는다", () => {
+  it("받은 작업 맥락은 작업·현장을 별도 줄로 나눠 긴 이름도 현장을 가리지 않는다", () => {
     expect(splitInboxItemContext("WORK_ORDER_ASSIGNED", { workName: "t2 관측", siteName: "한강 현장" })).toEqual({ title: "t2 관측", siteLine: "한강 현장" });
     expect(splitInboxItemContext("WORK_ORDER_ASSIGNED", { workName: "t2 관측", siteName: null })).toEqual({ title: "t2 관측", siteLine: null });
     expect(splitInboxItemContext("WORK_ORDER_ASSIGNED", { workName: null, siteName: null })).toEqual({ title: null, siteLine: null });

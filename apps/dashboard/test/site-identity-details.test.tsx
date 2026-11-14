@@ -11,7 +11,7 @@ describe("same-name Site identification", () => {
     expect(html).toContain("같은 이름의 현장");
     expect(html).toContain("2026. 10. 17.");
     expect(html).toContain("19:30:01");
-    expect(html).toContain("<details><summary");
+    expect(html).toMatch(/<details[^>]*><summary/);
     expect(html).toContain("opaque-site-999</p></details>");
     expect(html).not.toContain("999회차");
     expect(html).not.toContain("open=");

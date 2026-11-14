@@ -265,13 +265,12 @@ describe("workspace shell structure", () => {
     const mobileLink = stage.getByRole("link", { name: "작업구역 목록 보기" });
     expect(mobileLink.getAttribute("href")).toBe("/sites/site-1/work-areas");
     expect(mobileLink.className).toContain("lg:hidden");
-    expect(stage.getByText(/모바일에서는 작업구역 목록을 볼 수 있습니다.*같은 계정/)).toBeTruthy();
     expect(mocked.areas).toHaveBeenCalledWith("site-1", { includeArchived: true });
     expect(mocked.workspace).not.toHaveBeenCalled();
     expect(stage.queryByText("관측 목록을 확인할 수 없습니다")).toBeNull();
     const context = screen.getByRole("navigation", { name: "보기 방식" }).closest("[data-workbench-context-bar]");
     expect(context).toBeTruthy();
-    expect(within(context as HTMLElement).getByText("등록된 작업구역 없음")).toBeTruthy();
+    expect(within(context as HTMLElement).getByRole("button", { name: "작업구역 선택" })).toBeTruthy();
   });
   it.each([
     ["denied", { permissions: [] }, "작업구역 등록 권한이 없습니다"],
@@ -294,7 +293,7 @@ describe("workspace shell structure", () => {
     expect(stage.queryByRole("link", { name: "작업구역 등록" })).toBeNull();
     const context = screen.getByRole("navigation", { name: "보기 방식" }).closest("[data-workbench-context-bar]");
     expect(context).toBeTruthy();
-    expect(within(context as HTMLElement).getByText("작업구역 목록 확인 불가")).toBeTruthy();
+    expect(within(context as HTMLElement).getByRole("button", { name: "작업구역 선택" })).toBeTruthy();
   });
   it("selects an archived-only fallback and verifies write denial independently", async () => {
     mocked.areas.mockResolvedValue({ workAreas: [{ ...areaFixture(), status: "ARCHIVED" }] });
@@ -310,11 +309,11 @@ describe("workspace shell structure", () => {
   it("does not call an unavailable work-area list an empty comparison", async () => {
     mocked.areas.mockRejectedValue(new CoreApiError(503, { detail: "unavailable" }));
     await renderOverview({ mode: "compare" });
-    expect(screen.getByText("작업구역 목록을 불러오지 못했습니다. 잠시 후 다시 확인하세요.")).toBeTruthy();
+    expect(screen.getByText("작업구역 목록을 불러오지 못했습니다.")).toBeTruthy();
     expect(screen.queryByText("비교할 수 있는 관측이 아직 없습니다. 뷰어에서 사유를 확인하세요.")).toBeNull();
     const context = screen.getByRole("navigation", { name: "보기 방식" }).closest("[data-workbench-context-bar]");
     expect(context).toBeTruthy();
-    expect(within(context as HTMLElement).getByText("작업구역 목록 확인 불가")).toBeTruthy();
+    expect(within(context as HTMLElement).getByRole("button", { name: "작업구역 선택" })).toBeTruthy();
   });
   it.each([
     ["explore", "단일 시점"], ["compare", "두 시점 비교"],
@@ -332,15 +331,14 @@ describe("workspace shell structure", () => {
     expect(within(modeNav.closest("[data-workbench-context-bar]") as HTMLElement).getByText(/작업구역 ·/)).toBeTruthy();
     // 고정 260px 선택 레일은 두지 않고, 목록은 여는 드로어로 둔다.
     expect(screen.queryByRole("complementary", { name: "작업공간 선택" })).toBeNull();
-    expect(screen.getByRole("button", { name: "작업공간 목록 열기" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "자료 패널 열기" })).toBeTruthy();
   });
 
   it("states the compare purpose in one line without a second mode control", async () => {
     await renderOverview({ mode: "compare" });
     const bar = screen.getByRole("navigation", { name: "보기 방식" }).closest("[data-workbench-context-bar]")!;
-    expect(within(bar as HTMLElement).getByText(/관측을 둘러보고 비교/)).toBeTruthy();
-    // 용도 문구는 맥락막대에 한 줄만 둔다.
-    expect(screen.getAllByText(/관측을 둘러보고 비교/)).toHaveLength(1);
+    expect(within(bar as HTMLElement).getByRole("link", { name: "두 시점 비교" })).toBeTruthy();
+    expect(within(bar as HTMLElement).queryByText(/관측을 둘러보고 비교/)).toBeNull();
     // 세그먼트는 탭 행이 아니다 — 서로 다른 pill 행을 두지 않는다.
     const segmented = screen.getByRole("navigation", { name: "보기 방식" });
     expect(segmented.tagName).toBe("NAV");
@@ -382,15 +380,12 @@ describe("workspace shell structure", () => {
     }));
     mocked.assets.mockResolvedValue({ ...EMPTY_CATALOG, assets: [rasterAsset("first-raster"), rasterAsset("disp-2022")] });
     await renderOverview({});
-    const panel = screen.getByRole("region", { name: "기본 관측 선택 상태" });
+    fireEvent.click(screen.getByRole("button", { name: "정보" }));
+    const panel = within(screen.getByRole("region", { name: "자료 정보" })).getByRole("region", { name: "기본 관측 선택 상태" });
     expect(panel.textContent).toContain("보여주는 관측");
     expect(panel.textContent).toContain("등록 순서로 고르지 않았습니다");
     expect(panel.textContent).toContain("사유 코드 · LATEST_EXACT_VIEW_AVAILABLE");
-    // 선택 사실은 정보 서랍의 개요에서 직접 둔다 — 무대에는 펼침 벽을 두지 않는다.
-    fireEvent.click(screen.getByRole("button", { name: "정보" }));
-    const overviewSelected = within(screen.getByRole("region", { name: "작업공간 정보" }))
-      .getByRole("link", { name: /선택 중/ });
-    expect(overviewSelected.getAttribute("href")).toContain("assetRef=disp-2022");
+    expect((screen.getByLabelText("관측 시점") as HTMLSelectElement).value).toBe("disp-2022");
   });
 
   it("shows a truthful no-view state without calling anything latest", async () => {
@@ -415,7 +410,8 @@ describe("workspace shell structure", () => {
     // 무대 보기가 회복 안내를 먼저 둔다 — 진입 패널은 같은 준비 길을 반복하지
     // 않고 상태·원인만 둔다. 읽기 권한이 없어도 무대 회복이 1차 안내다.
     expect(within(stage).getByText("준비 기록을 조회할 권한이 없습니다.")).toBeTruthy();
-    const panel = screen.getByRole("region", { name: "기본 관측 선택 상태" });
+    fireEvent.click(screen.getByRole("button", { name: "정보" }));
+    const panel = within(screen.getByRole("region", { name: "자료 정보" })).getByRole("region", { name: "기본 관측 선택 상태" });
     // "자료가 없다"가 아니라 "표시용 파생물이 아직 없다"로 구분한다 — 확인된
     // 관측이 있는 현장인데도 없는 것처럼 읽히면 안 된다.
     expect(panel.textContent).toContain("표시용 파생물이 아직 준비되지 않았습니다");
@@ -469,8 +465,8 @@ describe("workspace shell structure", () => {
     await renderOverview({ assetRef: "v1" });
     // 같은 층의 준비 기록이 모두 보관 만료로 확인되면 진입 패널은 무대의
     // 만료 안내를 반복하지 않고, 보존·복구 한 줄만 덧붙인다.
-    const stage = screen.getByRole("region", { name: "선택 관측 보기" });
-    const panel = within(stage).getByRole("region", { name: "기본 관측 선택 상태" });
+    fireEvent.click(screen.getByRole("button", { name: "정보" }));
+    const panel = within(screen.getByRole("region", { name: "자료 정보" })).getByRole("region", { name: "기본 관측 선택 상태" });
     expect(panel.textContent).toContain("보관 만료는 등록 자료·검사 기록을 삭제하지 않았습니다");
     expect(panel.textContent).toContain("복구는 위의 보기(선택한 자료에서 다시 준비)를 따르세요");
     expect(panel.textContent).not.toContain("미리보기 보관 기간이 끝났습니다");
@@ -504,7 +500,8 @@ describe("workspace shell structure", () => {
     const stage = screen.getByRole("region", { name: "선택 관측 보기" });
     // 무대 보기가 회복 안내를 먼저 둔다 — 같은 준비 길을 진입 패널이 반복하지 않는다.
     expect(within(stage).getByText("준비 기록을 불러오지 못했습니다.")).toBeTruthy();
-    const panel = screen.getByRole("region", { name: "기본 관측 선택 상태" });
+    fireEvent.click(screen.getByRole("button", { name: "정보" }));
+    const panel = within(screen.getByRole("region", { name: "자료 정보" })).getByRole("region", { name: "기본 관측 선택 상태" });
     expect(panel.textContent).toContain("표시용 파생물이 아직 준비되지 않았습니다");
     expect(panel.textContent).toContain("확인된 관측은 1건입니다");
     expect(panel.textContent).toContain("표시용 출력의 봉인이 끝나지 않았습니다");
@@ -522,11 +519,9 @@ describe("workspace shell structure", () => {
     await renderOverview({});
     const stage = screen.getByRole("region", { name: "선택 관측 보기" });
     expect(within(stage).queryByLabelText("관측 시점")).toBeNull();
-    expect(within(stage).getByText("현재 작업구역 · 미세 분석 구역")).toBeTruthy();
     expect(within(stage).getByText("미세 분석 구역에 확인된 관측이 없습니다")).toBeTruthy();
-    expect(within(stage).getByText("현재 작업구역에 확인된 외부 관측이 없습니다.")).toBeTruthy();
-    expect(within(stage).getByRole("link", { name: "등록 자료 보기" }).getAttribute("href"))
-      .toBe("/sites/site-1/spatial-assets?workAreaId=tiny-1");
+    expect(within(stage).getByRole("list", { name: "자료 등록 순서" })).toBeTruthy();
+    expect(stage.querySelectorAll(".btn-primary")).toHaveLength(1);
     expect(stage.textContent).not.toMatch(/무대에서.*선택|그림 바로 위에서/);
   });
 
@@ -537,10 +532,9 @@ describe("workspace shell structure", () => {
     // 같은 등록 길과 같은 고지를 두 번 내지 않는다.
     expect(screen.queryByRole("region", { name: "기본 관측 선택 상태" })).toBeNull();
     const stage = screen.getByRole("region", { name: "선택 관측 보기" });
-    expect(within(stage).getByText("현재 작업구역 · 미세 분석 구역")).toBeTruthy();
     expect(within(stage).getByText("미세 분석 구역에 확인된 관측이 없습니다")).toBeTruthy();
     // 읽기 전용이라 등록 길 자체가 없다.
-    expect(within(stage).queryByRole("link", { name: "관측 자료 등록" })).toBeNull();
+    expect(within(stage).queryByRole("link", { name: "자료 등록" })).toBeNull();
   });
 
   it("keeps exactly one primary register link for a true empty area", async () => {
@@ -548,7 +542,7 @@ describe("workspace shell structure", () => {
     mocked.areas.mockResolvedValue({ workAreas: [areaFixture()] });
     await renderOverview({});
     const stage = screen.getByRole("region", { name: "선택 관측 보기" });
-    const registerLinks = within(stage).getAllByRole("link", { name: "관측 자료 등록" });
+    const registerLinks = within(stage).getAllByRole("link", { name: "자료 등록" });
     expect(registerLinks).toHaveLength(1);
     expect(registerLinks[0]!.getAttribute("href")).toBe("/sites/site-1/observations/new?workAreaId=tiny-1");
     // 진입 패널 본문은 같은 등록 길을 반복하지 않는다.
@@ -570,7 +564,8 @@ describe("workspace shell structure", () => {
       },
     }));
     await renderOverview({});
-    const panel = screen.getByRole("region", { name: "기본 관측 선택 상태" });
+    fireEvent.click(screen.getByRole("button", { name: "정보" }));
+    const panel = within(screen.getByRole("region", { name: "자료 정보" })).getByRole("region", { name: "기본 관측 선택 상태" });
     expect(panel.textContent).toContain("자동으로 고르지 않았습니다");
     expect(panel.textContent).not.toContain("보여주는 관측");
   });
@@ -615,8 +610,8 @@ describe("workspace compare mode", () => {
     expect(screen.queryByText(/나란히 보기 안내/)).toBeNull();
     // 조건·다른 작업·동기화 한계는 정보 서랍의 한 면에 둔다.
     fireEvent.click(screen.getByRole("button", { name: "정보" }));
-    const inspector = screen.getByRole("region", { name: "작업공간 정보" });
-    expect(within(inspector).getByText("비교 조건과 다른 작업 확인")).toBeTruthy();
+    const inspector = screen.getByRole("region", { name: "자료 정보" });
+    expect(within(inspector).getByText("비교 조건 상세")).toBeTruthy();
     // 동기화 불가 고지는 서랍 펼침 안에서 그대로 둔다.
     expect(within(inspector).getByText(/동기화된 공간 비교\(같은 범위 맞춤·같은 색 눈금\)는 지원하지 않습니다/)).toBeTruthy();
     expect(within(inspector).getByText("지원하지 않는 동기화 비교")).toBeTruthy();
@@ -670,9 +665,9 @@ describe("workspace compare mode", () => {
     expect(screen.queryByRole("button", { name: "변화량 분석" })).toBeNull();
     // 조건·수치 한계는 정보 서랍의 한 면에 둔다.
     fireEvent.click(screen.getByRole("button", { name: "정보" }));
-    const inspector = screen.getByRole("region", { name: "작업공간 정보" });
-    expect(within(inspector).getByText("비교 조건과 다른 작업 확인")).toBeTruthy();
-    expect(within(inspector).getByText(/수치가 필요할 때만/)).toBeTruthy();
+    const inspector = screen.getByRole("region", { name: "자료 정보" });
+    expect(within(inspector).getByText("비교 조건 상세")).toBeTruthy();
+    expect(within(inspector).getByText(/미리보기를 준비해도 시간 순서와 위치 정합은 별도로 확인/)).toBeTruthy();
   });
 
   it("renders two equal-weight map slots once both inputs are chosen", async () => {
@@ -721,7 +716,7 @@ describe("workspace compare mode", () => {
     expect(screen.queryByRole("button", { name: "독립 보기로 나란히 두기" })).toBeNull();
     // 칸 카드는 정보 서랍의 한 면에 둔다.
     fireEvent.click(screen.getByRole("button", { name: "정보" }));
-    const inspector = screen.getByRole("region", { name: "작업공간 정보" });
+    const inspector = screen.getByRole("region", { name: "자료 정보" });
     expect(within(inspector).getByRole("region", { name: "기준 자료" })).toBeTruthy();
     expect(within(inspector).getByRole("region", { name: "비교 자료" })).toBeTruthy();
   });
@@ -738,7 +733,7 @@ describe("workspace compare mode", () => {
     expect(alert.textContent).toContain("자동으로 다른 자료로 바꾸지 않았습니다");
     // 조건 목록·정밀도 표기는 정보 서랍의 한 면에 둔다.
     fireEvent.click(screen.getByRole("button", { name: "정보" }));
-    const inspector = screen.getByRole("region", { name: "작업공간 정보" });
+    const inspector = screen.getByRole("region", { name: "자료 정보" });
     expect(within(inspector).getByText(/시간 순서 비교 후보는 아니지만 둘러볼 수 있습니다/)).toBeTruthy();
     expect(within(inspector).getAllByText(/날짜만 확인 · 시각 미상/).length).toBeGreaterThan(0);
   });
@@ -885,14 +880,14 @@ describe("workspace results mode", () => {
   it("shows existing record content with limitations before any new-request form", async () => {
     mocked.analyses.mockResolvedValue({ siteId: "site-1", items: [analysisItem()], nextCursor: null });
     await renderOverview({ mode: "results" });
-    expect(screen.getByRole("heading", { name: /결과와 근거/ })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "분석 결과" })).toBeTruthy();
     expect(screen.getByText("사용 조건 재확인 필요")).toBeTruthy();
     expect(screen.getByText(/제한 1건/)).toBeTruthy();
     const openLink = screen.getByRole("link", { name: "자료·근거와 검토 보기" });
     // Core의 API href가 아니라 실제 Console의 정확한 구역·결과 화면으로 간다.
     expect(openLink.getAttribute("href")).toBe("/sites/site-1/analysis?workAreaId=tiny-1&analysisId=a1");
-    expect(screen.getByRole("heading", { name: "새 변화량 분석 요청" })).toBeTruthy();
-    expect(screen.getByText(/새 변화량 분석은 기준·현재 두 시점을 다시 고릅니다/)).toBeTruthy();
+    expect(screen.getByRole("link", { name: "분석 이력" }).getAttribute("href")).toBe("/sites/site-1/analysis");
+    expect(screen.queryByRole("form")).toBeNull();
   });
 
   it("shows the recorded quantities with their limitation on the first results screen", async () => {
@@ -1173,13 +1168,10 @@ describe("browse source round trip", () => {
     readySelection();
     await renderOverview({ workAreaId: "tiny-1", assetRef: "disp-2022" });
     // 같은 구역·관측을 가리키는 직접 목적지 — 돌아올 때 정확한 관측을 잃지 않는다.
-    expect(screen.getByRole("link", { name: "자료" }).getAttribute("href")).toBe(
-      "/sites/site-1/spatial-assets?workAreaId=tiny-1&assetRef=disp-2022",
-    );
-    expect(screen.getByRole("link", { name: "결과" }).getAttribute("href")).toBe(
+    expect(screen.getByRole("link", { name: "분석" }).getAttribute("href")).toBe(
       "/sites/site-1/analysis?workAreaId=tiny-1&assetRef=disp-2022",
     );
-    expect(screen.getByRole("link", { name: "작업공간" }).getAttribute("href")).toBe(
+    expect(screen.getByRole("link", { name: "공간" }).getAttribute("href")).toBe(
       "/sites/site-1?workAreaId=tiny-1&assetRef=disp-2022",
     );
     // 선택 중인 관측·층·등록 버전은 title hover 없이 그대로 읽힌다.
@@ -1189,11 +1181,9 @@ describe("browse source round trip", () => {
   it("announces an unknown browse hint instead of quietly substituting another observation", async () => {
     readySelection();
     await renderOverview({ workAreaId: "tiny-1", assetRef: "ghost-asset" });
-    expect(screen.getByText(/요청한 구역·자료가 조회 범위에 없어/)).toBeTruthy();
-    // 모르는 참조는 그대로 돌려주지 않는다 — 공지된 서버 기본(검증값)으로 돌아간다.
-    const materialsHref = screen.getByRole("link", { name: "자료" }).getAttribute("href");
-    expect(materialsHref).toBe("/sites/site-1/spatial-assets?workAreaId=tiny-1&assetRef=disp-2022");
-    expect(materialsHref).not.toContain("ghost-asset");
+    expect(screen.getByText(/자료를 찾을 수 없거나 현재 조회할 수 없습니다/)).toBeTruthy();
+    expect(screen.getByRole("link", { name: "공간" }).getAttribute("href")).not.toContain("ghost-asset");
+    expect(screen.queryByText(/^선택 중 ·/)).toBeNull();
   });
 
   it("renders date-only precision once with version in single-observation caption", async () => {

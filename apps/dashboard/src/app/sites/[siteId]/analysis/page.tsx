@@ -6,6 +6,7 @@ import { resolveFieldSession } from "@/app/field/resolve-session";
 import { SiteHeader } from "@/app/sites/[siteId]/SiteHeader";
 import { ConsolePage } from "@/components/nav/ConsolePage";
 import { ErrorState } from "@/components/ui/ErrorState";
+import { PageHeader } from "@/components/ui/PageHeader";
 import { CoreApiError } from "@/lib/core-api/client";
 import { getAnalysis, listAnalyses, listAnalysisObservations } from "@/lib/core-api/analysis";
 import { getSpatialAsset, type SpatialAssetCatalogItem } from "@/lib/core-api/spatial-assets";
@@ -16,15 +17,16 @@ import { resolveMaskUploadConfig } from "@/lib/mask-upload-config";
 import { listWorkAreas } from "@/lib/core-api/workAreas";
 
 import { AnalysisStartGuide } from "./AnalysisStartGuide";
+import { AnalysisTabs } from "./AnalysisTabs";
 import { resolveAnalysisCurrentHint, resolveAnalysisScope, resolveExactAnalysisSelectorHints, parseVisualBrowsingContext, visualBrowsingReturnHref } from "@/lib/operator-journey";
 import { AnalysisRequestPanel, type CatalogInspectPair } from "./AnalysisRequestPanel";
 import { parseScopeId } from "../site-spatial";
 
-export const metadata = { title: "현장 변화 분석 · KSI" };
+export const metadata = { title: "분석 · KSI" };
 
 export default async function SiteAnalysisPage({ params, searchParams }: {
   params: Promise<{ siteId: string }>;
-  searchParams: Promise<{ analysisId?: string | string[]; workAreaId?: string | string[]; currentWorkOrderId?: string | string[]; assetRef?: string | string[]; visualAAssetRef?: string | string[]; visualBAssetRef?: string | string[]; hintBaselineWorkOrderId?: string | string[]; hintBaselineSubmissionRef?: string | string[]; hintBaselineRevision?: string | string[]; hintCurrentWorkOrderId?: string | string[]; hintCurrentSubmissionRef?: string | string[]; hintCurrentRevision?: string | string[] }>;
+  searchParams: Promise<{ request?: string | string[]; analysisId?: string | string[]; workAreaId?: string | string[]; currentWorkOrderId?: string | string[]; assetRef?: string | string[]; visualAAssetRef?: string | string[]; visualBAssetRef?: string | string[]; hintBaselineWorkOrderId?: string | string[]; hintBaselineSubmissionRef?: string | string[]; hintBaselineRevision?: string | string[]; hintCurrentWorkOrderId?: string | string[]; hintCurrentSubmissionRef?: string | string[]; hintCurrentRevision?: string | string[] }>;
 }) {
   const [{ siteId }, query] = await Promise.all([params, searchParams]);
   const single = (value: string | string[] | undefined): string | undefined =>
@@ -79,7 +81,7 @@ export default async function SiteAnalysisPage({ params, searchParams }: {
   const historyMessage: string | null =
     historyState === "ready" ? null
     : historyState === "denied" ? "현장 변화 분석 이력을 조회할 권한이 없습니다. 현장 담당자에게 변화 분석 기록 조회 권한을 요청하세요."
-    : historyState === "unconfirmed" ? "현장 변화 분석 이력을 확인할 수 없습니다. 현장 범위를 확인하거나 다시 불러오세요. 이 안내는 등록 자료의 상태를 판단하지 않습니다."
+    : historyState === "unconfirmed" ? "현장 범위를 확인하거나 다시 불러오세요. 이 안내는 등록 자료의 상태를 판단하지 않습니다."
     : "현장 변화 분석 이력을 불러오지 못했습니다. 다시 불러오면 최신 이력을 확인할 수 있습니다.";
   // 목록을 읽지 못해 검증된 범위가 없을 때는 다듬은 값만 복귀 링크에 싣는다(기존).
   const areasUnavailable = areasValue === null;
@@ -294,42 +296,31 @@ export default async function SiteAnalysisPage({ params, searchParams }: {
     <SiteHeader
       site={site}
       selectedEpochId={null}
-      tab="results"
-      canCreateWorkOrder={session.principal.permissions.includes("WORK_ORDERS_WRITE")}
-      canEditAoi={canCreate}
+      tab="analysis"
       scopedWorkAreaId={effectiveWorkAreaId || null}
       scopedAssetRef={headerAssetRef}
       visualContext={visualContext && visualContext.workAreaId === effectiveWorkAreaId ? visualContext : null}
     />
     <ConsolePage density="dense">
-      <header className="console-page-heading border-b border-line pb-2.5">
-        <div>
-          <h2 className="console-page-title mt-1">현장 변화 분석</h2>
-          <p className="console-page-description">기준 자료와 비교할 자료를 고르고 변화량과 근거를 살펴보세요.</p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2.5">
-          {historyState === "ready" && !areasUnavailable && !observationsUnavailable && !attributionUnavailable && (loaded.analyses.items.length > 0 || loaded.analyses.nextCursor) && (
-            <p aria-label="분석 요약" className="rounded-lg border border-line bg-sunk/40 px-3 py-1.5 text-[12px] text-ink-2">
-              <span className="font-semibold text-ink-1">분석 기록 {loaded.analyses.items.length}{loaded.analyses.nextCursor ? "+" : ""}건</span>
-              <span aria-hidden="true" className="mx-1.5 text-line-strong">·</span>
-              <span>작업구역 {loaded.areas.workAreas.length}개</span>
-              <span aria-hidden="true" className="mx-1.5 text-line-strong">·</span>
-              <span>관측 자료 {loaded.attributedObservations.length}건</span>
-            </p>
-          )}
-          <Link href={`/sites/${encodeURIComponent(siteId)}/observations`} className="tap-target inline-flex min-h-11 items-center text-[12px] font-semibold text-accent-text hover:underline">외부 비교 기록</Link>
-        </div>
-      </header>
+      <PageHeader title="분석" headingLevel={2} />
+      <AnalysisTabs siteId={siteId} active="change" />
       {/* 기록 구역·요청 구역은 서로의 실패에 닫히지 않는다. 각 구역이
           확인할 수 없었던 목록을 밝히고, unavailable을 empty로 두지 않는다. */}
       {missingDetail && <div className="flex flex-col gap-3">
         <ErrorState message="선택한 분석 기록을 찾을 수 없거나 접근할 수 없습니다. 분석 목록에서 다른 기록을 확인하세요." tone="idle" />
         <Link className="btn w-fit" href={fallbackScope ? `/sites/${encodeURIComponent(siteId)}/analysis?workAreaId=${encodeURIComponent(fallbackScope)}` : `/sites/${encodeURIComponent(siteId)}/analysis`}>분석 목록 보기</Link>
       </div>}
-      <>
-        {/* 기록이 있으면 결과 요약·이력이 먼저 보인다. 기록이 없으면 실제
-            선택 폼이 먼저 오고, 시작 안내는 접힌 도움말로 뒤에 둔다. */}
-        <AnalysisRequestPanel
+      <AnalysisRequestPanel
+          openRequestOnEntry={!hasDeepLink && (query.request === "new" || query.currentWorkOrderId !== undefined || hintModeSupplied)}
+          emptyHistoryGuide={historyState === "ready" && !areasUnavailable && !observationsUnavailable && !attributionUnavailable && loaded.analyses.items.length === 0 ? <AnalysisStartGuide
+            workAreaId={effectiveWorkAreaId || null}
+            siteId={siteId}
+            workAreaCount={loaded.areas.workAreas.length}
+            observationCount={loaded.attributedObservations.length}
+            analysisCount={loaded.analyses.items.length}
+            hasMoreAnalyses={loaded.analyses.nextCursor !== null}
+            canCreate={canCreate}
+          /> : null}
           deltaExportConfig={resolveDeltaExportDeliveryConfig()}
           maskUploadBudgetBytes={resolveMaskUploadConfig()?.uploadBudgetBytes ?? null}
           siteId={siteId}
@@ -366,18 +357,7 @@ export default async function SiteAnalysisPage({ params, searchParams }: {
               ? (analysesSettled.reason.retryAfterSeconds ?? null)
               : null,
           }}
-        />
-        {historyState === "ready" && !areasUnavailable && !observationsUnavailable && !attributionUnavailable && loaded.analyses.items.length === 0 && <AnalysisStartGuide
-          workAreaId={effectiveWorkAreaId || null}
-          siteId={siteId}
-          workAreaCount={loaded.areas.workAreas.length}
-          observationCount={loaded.attributedObservations.length}
-          analysisCount={loaded.analyses.items.length}
-          hasMoreAnalyses={loaded.analyses.nextCursor !== null}
-          canCreate={canCreate}
-          compact={loaded.areas.workAreas.length > 0 && loaded.attributedObservations.length >= 2}
-        />}
-      </>
+      />
     </ConsolePage>
   </>;
 }

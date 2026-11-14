@@ -1,3 +1,4 @@
+import { PageHeader } from "@/components/ui/PageHeader";
 import { ConsolePage } from "@/components/nav/ConsolePage";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { ErrorState } from "@/components/ui/ErrorState";
@@ -197,40 +198,33 @@ export default async function SitesPage({
   return (
     // 화면 이름은 topbar 가 이미 '현장'을 찍는다 — 본문에서 h1 을 또 찍지 않는다.
     <ConsolePage>
-      <header className="console-page-heading">
-        <div><h2 className="console-page-title">현장 목록</h2><p className="console-page-description">현장을 선택해 관측 자료와 분석 기록을 확인하세요.</p></div>
-        <RegisterSiteAction availability={registrationAvailability} />
-      </header>
+      <PageHeader
+        title="현장 목록"
+        description="현장을 선택해 관측 자료와 분석 기록을 확인하세요."
+        headingLevel={2}
+        actions={<RegisterSiteAction availability={registrationAvailability} />}
+      />
       {/* 상태 선택과 검색·정렬을 다른 줄에 둔다. 검색은 300ms 디바운스 자동 적용·ENTER 확정, 정렬은 즉시 적용한다. */}
       <div className="flex flex-wrap items-start gap-3">
         {sites !== null && sites.length > 0 && (
           <>
-            <details className="hidden w-full rounded-lg border border-line bg-surface sm:block lg:hidden">
-              <summary className="tap-target flex cursor-pointer items-center justify-between px-3 text-[13px] font-semibold">
-                <span>상태 필터</span>
-                <span className="text-[11.5px] font-normal text-ink-muted">
-                  {SITE_GROUPS.find((option) => option.key === group)?.label ?? "전체"}
-                  {hasFilter ? " · 적용 중" : ""}
-                </span>
-              </summary>
-              <form action="/sites" className="grid gap-2 border-t border-line p-3">
+            <div className="hidden w-full sm:block lg:hidden">
+              <form action="/sites" className="flex flex-wrap items-end gap-2">
                 {params.q && <input type="hidden" name="q" value={params.q} />}
                 <input type="hidden" name="sort" value={sort} />
                 {status && <input type="hidden" name="status" value={status} />}
-                <label className="grid gap-1 text-[12px] font-medium text-ink-2">
+                <label className="grid gap-1 text-caption font-medium text-ink-2">
                   현장 상태
-                  <select key={group} name="group" defaultValue={group} className="input tap-target w-full text-[13px]">
+                  <select key={group} name="group" defaultValue={group} className="input tap-target text-body">
                     {SITE_GROUPS.map((option) => (
                       <option key={option.key} value={option.key}>{option.label}</option>
                     ))}
                   </select>
                 </label>
-                <div className="flex gap-2">
-                  <button type="submit" className="btn btn-primary tap-target flex-1">적용</button>
-                  {hasFilter && <SiteListNavLink href="/sites" className="btn tap-target flex-1 justify-center">초기화</SiteListNavLink>}
-                </div>
+                <button type="submit" className="btn tap-target">적용</button>
+                {hasFilter && <SiteListNavLink href="/sites" className="btn tap-target">초기화</SiteListNavLink>}
               </form>
-            </details>
+            </div>
 
             <div className="w-full lg:hidden">
               {/* 컨트롤은 리마운트하지 않는다 — 폰 적용 후 요약 포커스를 살린다.
@@ -262,14 +256,14 @@ export default async function SitesPage({
                     key={option.key}
                     href={hrefWith(params, { group: option.key === "all" ? undefined : option.key })}
                     current={active}
-                    className={`tap-target inline-flex items-center gap-1.5 rounded-md border px-2.5 text-[12.5px] break-keep transition-colors ${
+                    className={`tap-target inline-flex items-center gap-1.5 rounded-md border px-2.5 text-caption break-keep transition-colors ${
                       active
                         ? "border-line-strong bg-sunk font-bold"
                         : "border-line bg-surface hover:border-line-strong"
                     }`}
                   >
                     {option.label}
-                    <span className="num text-[11px] text-ink-muted">{count}</span>
+                    <span className="num text-micro text-ink-muted">{count}</span>
                   </SiteListNavLink>
                 );
               })}
@@ -277,7 +271,7 @@ export default async function SitesPage({
               {status && (
                 <SiteListNavLink
                   href={hrefWith(params, { status: undefined })}
-                  className="tap-target inline-flex items-center rounded-md border border-line-strong bg-sunk px-2.5 text-[12.5px] break-keep"
+                  className="tap-target inline-flex items-center rounded-md border border-line-strong bg-sunk px-2.5 text-caption break-keep"
                 >
                   {SITE_STATUS_LABEL[status].label} 필터 해제
                 </SiteListNavLink>
@@ -352,8 +346,8 @@ export default async function SitesPage({
           <section className="flex flex-col gap-2 lg:hidden" aria-label="현장 목록">
             {/* 폰에서는 검색 아래 건수+필터 행이 수를 말하므로 제목 줄을 두지 않는다. */}
             <div className="hidden items-baseline gap-2 px-1 sm:flex">
-              <h2 className="text-[14px] font-bold">현장</h2>
-              <span className="text-[11.5px] text-ink-muted">
+              <h2 className="text-lead font-bold">현장</h2>
+              <span className="text-caption text-ink-muted">
                 {sites !== null ? `${siteRows.length} / ${sites.length}곳 표시` : undefined}
               </span>
             </div>

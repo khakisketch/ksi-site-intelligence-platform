@@ -3,15 +3,15 @@ import { describe, expect, it } from "vitest";
 import { isViewerPath } from "@/components/nav/viewer-path";
 
 describe("viewer-first path boundary", () => {
-  it("treats site space and materials as viewer surfaces", () => {
+  it("uses the frame only for the space route", () => {
     expect(isViewerPath("/sites/floreat")).toBe(true);
     expect(isViewerPath("/sites/floreat/")).toBe(true);
     expect(isViewerPath("/sites/floreat?section=workspace")).toBe(true);
     expect(isViewerPath("/sites/floreat?mode=compare")).toBe(true);
     expect(isViewerPath("/sites/floreat?mode=explore&workAreaId=a1")).toBe(true);
-    expect(isViewerPath("/sites/floreat/spatial-assets")).toBe(true);
-    expect(isViewerPath("/sites/floreat/spatial-assets/")).toBe(true);
-    expect(isViewerPath("/sites/floreat/spatial-assets?assetRef=x&info=1")).toBe(true);
+    expect(isViewerPath("/sites/floreat/spatial-assets")).toBe(false);
+    expect(isViewerPath("/sites/floreat/spatial-assets/")).toBe(false);
+    expect(isViewerPath("/sites/floreat?panel=materials&assetRef=x&info=1")).toBe(true);
     expect(isViewerPath("/sites/floreat%20north")).toBe(true);
   });
 
@@ -19,7 +19,7 @@ describe("viewer-first path boundary", () => {
     expect(isViewerPath("/sites/floreat?section=work-orders")).toBe(false);
     expect(isViewerPath("/sites/floreat?section=manage")).toBe(false);
     expect(isViewerPath("/sites/floreat?section=results")).toBe(false);
-    expect(isViewerPath("/sites/floreat?section=materials")).toBe(false);
+    expect(isViewerPath("/sites/floreat?panel=intake")).toBe(true);
     expect(isViewerPath("/sites/floreat?mode=results")).toBe(false);
     expect(isViewerPath("/sites/floreat/analysis")).toBe(false);
     expect(isViewerPath("/sites/floreat/spatial-data-requests")).toBe(false);

@@ -2,6 +2,10 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { ErrorState } from "@/components/ui/ErrorState";
+import { InlineNotice } from "@/components/ui/InlineNotice";
+import { PageHeader } from "@/components/ui/PageHeader";
+import { ConsolePage } from "@/components/nav/ConsolePage";
+import { SiteHeader } from "@/app/sites/[siteId]/SiteHeader";
 import { PrintReportButton } from "@/components/reports/PrintReportButton";
 import { isSingleVolumeResult } from "@/components/external-results/SingleVolumeResult";
 import { TeamReportShare } from "@/components/external-results/TeamReportShare";
@@ -119,19 +123,16 @@ function ObservationDetailReadFailure({
       ? `${subject}를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.`
       : `${subject}를 확인할 수 없습니다.`;
 
-  return <div className="mx-auto flex max-w-5xl flex-col gap-4 p-4 sm:p-5">
-    <header className="border-b border-line pb-3">
-      {siteName && <p className="text-[12.5px] text-ink-2">{siteName}</p>}
-      <h1 className="mt-1 text-[22px] font-bold tracking-tight">외부 관측 결과</h1>
-    </header>
+  return <ConsolePage density="dense">
+    <PageHeader title="외부 비교 결과" description={siteName} headingLevel={2} />
     <ErrorState
       message={message}
       tone={denied ? "high" : retryable ? "crit" : "idle"}
       retryable={retryable}
       retryAfterSeconds={apiError?.retryAfterSeconds}
-      action={{ label: "관측 이력", href: `/sites/${encodeURIComponent(siteId)}/observations` }}
+      action={{ label: "외부 비교 이력", href: `/sites/${encodeURIComponent(siteId)}/observations` }}
     />
-  </div>;
+  </ConsolePage>;
 }
 
 export default async function SiteObservationDetailPage({
@@ -216,21 +217,14 @@ export default async function SiteObservationDetailPage({
       organizationId,
       siteId,
     });
-  return <div className="mx-auto flex max-w-5xl flex-col gap-4 p-4 sm:p-5">
-    <header className="flex flex-wrap items-end justify-between gap-3 border-b border-line pb-3">
-      <div>
-        <p className="text-[12.5px] text-ink-2">{site.name}</p>
-        {single ? <>
-          <h1 className="mt-1 text-[22px] font-bold tracking-tight">단일 시점 체적 결과</h1>
-          <p className="mt-1 text-[13px] leading-5 text-ink-2">한 시점 관측으로 측정한 보관 체적 결과입니다.</p>
-        </> : <>
-          <h1 className="mt-1 text-[22px] font-bold tracking-tight">외부 관측 비교 결과</h1>
-          <p className="mt-1 text-[13px] leading-5 text-ink-2">기준 관측과 현재 관측을 비교한 보관 결과입니다.</p>
-        </>}
-      </div>
-      <div className="flex flex-wrap gap-2"><PrintReportButton /><Link href={`/sites/${encodeURIComponent(siteId)}/observations`} className="btn">관측 이력</Link></div>
-    </header>
-    {areaNamesUnavailable && <p role="status" className="rounded-lg bg-sunk px-3 py-2 text-[12.5px] leading-5 text-ink-2">작업구역 이름을 불러오지 못했습니다. 이름이 없는 행은 작업구역으로 표시됩니다.</p>}
+  return <>
+    <div className="print:hidden">
+      <SiteHeader site={site} selectedEpochId={null} tab="analysis" />
+    </div>
+    <ConsolePage density="dense">
+      <PageHeader title={single ? "단일 시점 체적 결과" : "외부 비교 결과"} headingLevel={2}
+        actions={<><PrintReportButton /><Link href={`/sites/${encodeURIComponent(siteId)}/observations`} className="btn">외부 비교 이력</Link></>} />
+    {areaNamesUnavailable && <InlineNotice>작업구역 이름을 불러오지 못했습니다. 이름이 없는 행은 작업구역으로 표시됩니다.</InlineNotice>}
     <ExternalObservationHistory siteId={siteId} detailMode items={[{ reportRef, state: projection.state === "AVAILABLE" ? "AVAILABLE" : "HISTORICAL_SOURCE_UNAVAILABLE", result: projection.result ?? null }]} workAreaNames={names} />
     {detailReadError !== null && <ErrorState
       message={detailReadError instanceof CoreApiError && detailReadError.status === 403
@@ -260,8 +254,9 @@ export default async function SiteObservationDetailPage({
       successors={successors}
     />}
     {verifiedDetail === null && resultProjection !== null && <section className="rounded-xl border border-line bg-surface p-4">
-      <h2 className="text-[16px] font-bold tracking-tight">검토·재관측 흐름</h2>
-      <p className="mt-1 text-[13px] leading-5 text-ink-2">상세 근거를 확인할 수 없어 검토·재관측 상태를 표시하지 않습니다. 관측 이력에서 보관 결과를 확인할 수 있습니다.</p>
+      <h2 className="text-title font-bold tracking-tight">검토·재관측 흐름</h2>
+      <p className="mt-1 text-body leading-5 text-ink-2">상세 근거를 확인할 수 없어 검토·재관측 상태를 표시하지 않습니다.</p>
     </section>}
-  </div>;
+    </ConsolePage>
+  </>;
 }

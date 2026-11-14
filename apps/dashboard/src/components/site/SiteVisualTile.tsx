@@ -159,7 +159,7 @@ export function SiteVisualTile({ tile, size }: { tile: SiteVisualTileDescriptor;
         <RingPolygon tile={tile} />
         <span
           aria-hidden="true"
-          className="absolute right-0 bottom-0 rounded-tl border border-b-0 border-line bg-surface px-1 text-[9px] font-semibold text-ink-2"
+          className="absolute right-0 bottom-0 rounded-tl border border-b-0 border-line bg-surface px-1 text-micro font-semibold text-ink-2"
         >
           도식
         </span>
@@ -182,10 +182,10 @@ export function SiteVisualTile({ tile, size }: { tile: SiteVisualTileDescriptor;
           <RingPolygon tile={tile} />
         </span>
         <figcaption className="shrink-0 border-t border-line bg-surface px-4 py-2">
-          <span className="block text-[12px] font-semibold break-keep">
+          <span className="block text-caption font-semibold break-keep">
             범위 도식 · 사진 아님
           </span>
-          <span className="num mt-0.5 block min-w-0 text-[10.5px] break-keep text-ink-2">
+          <span className="num mt-0.5 block min-w-0 text-micro break-keep text-ink-2">
             {visualTileCountLine(tile)}
             <span className="mt-px block min-w-0">{visualTileFactLine(tile)}</span>
           </span>

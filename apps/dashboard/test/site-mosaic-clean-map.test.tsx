@@ -122,7 +122,7 @@ describe("site mosaic clean map", () => {
     // Canvas itself remains with native pixel label.
     expect(await within(frame).findByRole("img", { name: /이어 보기 1022 × 915 픽셀/ })).toBeTruthy();
     // Aggregate honesty stays outside the map.
-    expect(screen.getByText("준비 과정·상세 상태")).toBeTruthy();
+    expect(screen.getByText("준비 상태 상세")).toBeTruthy();
     expect(screen.getAllByText(/그린 창|부분 보기/).length).toBeGreaterThan(0);
   });
 
@@ -180,7 +180,7 @@ describe("site mosaic clean map", () => {
     expect(screen.getByText("0 – 915")).toBeTruthy();
     expect(screen.getByText(/1022 × 915 네이티브 픽셀/)).toBeTruthy();
     // Aggregate honesty stays outside the map.
-    expect(screen.getByText("준비 과정·상세 상태")).toBeTruthy();
+    expect(screen.getByText("준비 상태 상세")).toBeTruthy();
   });
 
   it("does not overlay the work area across differing planes and says so", () => {

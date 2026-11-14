@@ -18,8 +18,8 @@ export function SiteAreaPicker({
   return (
     <div className="flex flex-col gap-4 p-4 sm:p-5">
       <div className="flex flex-col gap-1">
-        <h2 className="text-[17px] font-bold tracking-tight break-keep">{title}</h2>
-        <p className="text-[12.5px] break-keep text-ink-2">{description}</p>
+        <h2 className="text-title font-bold tracking-tight break-keep">{title}</h2>
+        <p className="text-body break-keep text-ink-2">{description}</p>
       </div>
       {sites.length === 0 ? (
         <EmptyState
@@ -37,8 +37,8 @@ export function SiteAreaPicker({
                   href={`/sites/${encodeURIComponent(site.siteId)}?section=${section}`}
                   className="tap-target flex h-full min-h-24 flex-col justify-between gap-3 rounded-lg border border-line bg-surface p-4 hover:border-line-strong hover:bg-sunk"
                 >
-                  <span className="text-[14px] font-bold break-keep">{site.name}</span>
-                  <span className="text-[12px] break-keep text-ink-2">{status.label}</span>
+                  <span className="text-lead font-bold break-keep">{site.name}</span>
+                  <span className="text-caption break-keep text-ink-2">{status.label}</span>
                 </Link>
               </li>
             );

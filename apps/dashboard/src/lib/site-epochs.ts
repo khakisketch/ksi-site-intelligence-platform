@@ -93,36 +93,25 @@ export function ambiguousEpochDays(epochs: readonly SiteEpoch[]): Set<string> {
   return new Set([...counts].filter(([, n]) => n > 1).map(([key]) => key));
 }
 
-// ── 탭 ────────────────────────────────────────────────────────────────────
-//
-// 현장 상세는 예전에 카드 여덟 장을 세로로 쌓아, 각 카드가 "이런 기능이 있습니다"를
-// 설명하고 링크 하나를 주는 안내판이었다. 탭은 그 안내를 **일 단위**로 접는다:
-// 지금 무엇을 보려는지 고르면 그 아래는 그 일에 필요한 것만 남는다.
-
-// 메뉴는 "무엇을 하러 오는가"로 나눈다: 작업공간(workspace)·자료(materials)·
-// 결과(results)를 머리에서 바로 보인다. 관측 작업 기록(work-orders) 키와
-// 현장 설정(manage) 키는 옛 URL(?section=...) 호환을 위해 남기되,
-// 최상위 메뉴가 아니라 각각 자료 안의 하위 길과 머리 설정 메뉴로 둔다.
-// 외부 비교 기록 같은 별도 목록은 결과 안의 하위 보기로 두고,
-// KSI 계산 결과와 출처를 섞지 않는다.
 export const SITE_TABS = [
-  { key: "workspace", label: "작업공간" },
-  { key: "materials", label: "자료" },
-  { key: "results", label: "결과" },
-  { key: "work-orders", label: "관측 작업 기록" },
-  { key: "manage", label: "설정" },
+  { key: "space", label: "공간" },
+  { key: "analysis", label: "분석" },
 ] as const;
 
 export type SiteTabKey = (typeof SITE_TABS)[number]["key"];
+export type SiteRouteSection = SiteTabKey | "manage" | "work-orders";
 
-export function normalizeSiteTab(raw: string | null | undefined): SiteTabKey {
-  const hit = SITE_TABS.find((tab) => tab.key === raw);
-  if (hit) return hit.key;
-  // 이전 URL·다른 화면의 옛 키는 가장 가까운 현재 영역으로만 옮긴다 — 원문 키를
-  // 화면에 다시 노출하지 않는다. 기본 진입은 작업공간(workspace)이다.
-  if (raw === "overview" || raw === "observations") return "workspace";
-  if (raw === "spatial-assets" || raw === "data" || raw === "volume" || raw === "design") return "materials";
-  if (raw === "work" || raw === "records") return "work-orders";
-  if (raw === "analysis" || raw === "external-results" || raw === "reports" || raw === "review-items") return "results";
-  return "workspace";
+export function normalizeSiteTab(raw: string | null | undefined): SiteRouteSection {
+  switch (raw) {
+    case "manage": return "manage";
+    case "work-orders":
+    case "work":
+    case "records": return "work-orders";
+    case "analysis":
+    case "results":
+    case "external-results":
+    case "reports":
+    case "review-items": return "analysis";
+    default: return "space";
+  }
 }

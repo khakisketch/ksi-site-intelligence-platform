@@ -85,20 +85,20 @@ export function WorkbenchMediaState({
       )}
       <p className={
         absence
-          ? "relative max-w-prose text-[16px] font-bold break-words text-ink-1"
+          ? "relative max-w-prose text-title font-bold break-words text-ink-1"
           : compact
-            ? "min-w-0 flex-1 break-words text-[12.5px] font-bold text-sidebar-text"
-            : "max-w-prose break-words text-[13px] font-bold text-sidebar-text"
+            ? "min-w-0 flex-1 break-words text-body font-bold text-sidebar-text"
+            : "max-w-prose break-words text-body font-bold text-sidebar-text"
       }>
         {headline}
       </p>
       {detail && (
         <p className={
           absence
-            ? "relative mt-1 max-w-prose text-[13px] leading-6 break-words text-ink-2"
+            ? "relative mt-1 max-w-prose text-body leading-6 break-words text-ink-2"
             : compact
-              ? "min-w-0 basis-full break-words text-[12px] leading-5 text-sidebar-muted"
-              : "max-w-prose break-words text-[12px] leading-5 text-sidebar-muted"
+              ? "min-w-0 basis-full break-words text-caption leading-5 text-sidebar-muted"
+              : "max-w-prose break-words text-caption leading-5 text-sidebar-muted"
         }>
           {detail}
         </p>
@@ -107,10 +107,10 @@ export function WorkbenchMediaState({
       {hint && (
         <p className={
           absence
-            ? "relative mt-1 max-w-prose text-[12px] leading-5 break-words text-ink-muted"
+            ? "relative mt-1 max-w-prose text-caption leading-5 break-words text-ink-muted"
             : compact
-              ? "min-w-0 basis-full break-words text-[11.5px] leading-5 text-sidebar-muted"
-              : "max-w-prose break-words text-[11.5px] leading-5 text-sidebar-muted"
+              ? "min-w-0 basis-full break-words text-caption leading-5 text-sidebar-muted"
+              : "max-w-prose break-words text-caption leading-5 text-sidebar-muted"
         }>
           {hint}
         </p>

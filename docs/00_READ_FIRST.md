@@ -6,6 +6,6 @@
 
 - [런타임과 소스 소유권](../REPOSITORY_STRUCTURE.md), [도메인 불변식](product/DOMAIN_INVARIANTS.md)
 - [현재 작업과 출시 제한](ledger/CURRENT.md), [제품 검증 범위](superpowers/product-state.md)
-- [콘솔 계약](design/CONSOLE_CURRENT_SPEC.md), [배포 절차](../deploy/README.md)
+- [현장 메뉴 결정](architecture/ADR-KSI-042-site-navigation-space-analysis.md), [콘솔 계약](design/CONSOLE_CURRENT_SPEC.md), [배포 절차](../deploy/README.md)
 
 검증은 작업 경계에 맞춰 계약·리플레이·실제 렌더를 실행한다. 콘솔 변경은 390/768/1440px에서 사용 흐름과 오류·빈 상태·권한 거부를 확인한다. 장비·호스트·고객 수락은 각각 해당 환경에서 확인한다.

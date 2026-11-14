@@ -31,7 +31,7 @@ function renderSwitcher() {
         { siteId: "site-b", name: "Product Sample Field", status: "UNMAPPED" },
       ]}
     >
-      <MobileSiteSwitcher siteId="site-a" section="materials" />
+      <MobileSiteSwitcher siteId="site-a" section="analysis" />
     </SiteListProvider>,
   );
 }
@@ -74,7 +74,7 @@ describe("MobileSiteSwitcher", () => {
     expect(dialog.tagName.toLowerCase()).toBe("dialog");
     expect(dialog.hasAttribute("open")).toBe(true);
     const link = screen.getByRole("link", { name: /Product Sample Field/ });
-    expect(link.getAttribute("href")).toBe("/sites/site-b/spatial-assets");
+    expect(link.getAttribute("href")).toBe("/sites/site-b/analysis");
     expect(screen.getAllByText("현재 현장").length).toBeGreaterThan(0);
   });
 
@@ -141,7 +141,7 @@ describe("MobileSiteSwitcher", () => {
           { siteId: "site-b", name: "Product Sample Field", status: "UNMAPPED" },
         ]}
       >
-        <MobileSiteSwitcher siteId="site-a" section="materials" />
+        <MobileSiteSwitcher siteId="site-a" section="analysis" />
       </SiteListProvider>,
     );
     fireEvent.click(screen.getByRole("button", { name: /현장 변경/ }));
@@ -153,7 +153,7 @@ describe("MobileSiteSwitcher", () => {
           { siteId: "site-b", name: "Product Sample Field", status: "UNMAPPED" },
         ]}
       >
-        <MobileSiteSwitcher siteId="site-b" section="materials" />
+        <MobileSiteSwitcher siteId="site-b" section="analysis" />
       </SiteListProvider>,
     );
     expect(screen.queryByRole("dialog", { name: "현장 변경" })).toBeNull();
@@ -172,7 +172,7 @@ describe("MobileSiteSwitcher", () => {
     ] as const;
     const rendered = render(
       <SiteListProvider sites={[...two]}>
-        <MobileSiteSwitcher siteId="site-a" section="materials" />
+        <MobileSiteSwitcher siteId="site-a" section="analysis" />
       </SiteListProvider>,
     );
     fireEvent.click(screen.getByRole("button", { name: /현장 변경/ }));
@@ -180,7 +180,7 @@ describe("MobileSiteSwitcher", () => {
 
     rendered.rerender(
       <SiteListProvider sites={[...withoutCurrent]}>
-        <MobileSiteSwitcher siteId="site-a" section="materials" />
+        <MobileSiteSwitcher siteId="site-a" section="analysis" />
       </SiteListProvider>,
     );
     expect(screen.queryByRole("dialog", { name: "현장 변경" })).toBeNull();
@@ -189,7 +189,7 @@ describe("MobileSiteSwitcher", () => {
     // 목록 복원 시 요청 없이 다시 열리면 안 된다.
     rendered.rerender(
       <SiteListProvider sites={[...two]}>
-        <MobileSiteSwitcher siteId="site-a" section="materials" />
+        <MobileSiteSwitcher siteId="site-a" section="analysis" />
       </SiteListProvider>,
     );
     expect(screen.queryByRole("dialog", { name: "현장 변경" })).toBeNull();
@@ -218,7 +218,7 @@ describe("MobileSiteSwitcher", () => {
     ] as const;
     const rendered = render(
       <SiteListProvider sites={[...two]}>
-        <MobileSiteSwitcher siteId="site-a" section="materials" />
+        <MobileSiteSwitcher siteId="site-a" section="analysis" />
       </SiteListProvider>,
     );
     fireEvent.click(screen.getByRole("button", { name: /현장 변경/ }));
@@ -226,7 +226,7 @@ describe("MobileSiteSwitcher", () => {
 
     rendered.rerender(
       <SiteListProvider sites={[two[0]]}>
-        <MobileSiteSwitcher siteId="site-a" section="materials" />
+        <MobileSiteSwitcher siteId="site-a" section="analysis" />
       </SiteListProvider>,
     );
     expect(screen.queryByRole("dialog", { name: "현장 변경" })).toBeNull();
@@ -234,7 +234,7 @@ describe("MobileSiteSwitcher", () => {
 
     rendered.rerender(
       <SiteListProvider sites={[...two]}>
-        <MobileSiteSwitcher siteId="site-a" section="materials" />
+        <MobileSiteSwitcher siteId="site-a" section="analysis" />
       </SiteListProvider>,
     );
     expect(screen.queryByRole("dialog", { name: "현장 변경" })).toBeNull();
@@ -257,14 +257,14 @@ describe("MobileSiteSwitcher", () => {
     ] as const;
     const rendered = render(
       <SiteListProvider sites={[...single]}>
-        <MobileSiteSwitcher siteId="site-a" section="materials" />
+        <MobileSiteSwitcher siteId="site-a" section="analysis" />
       </SiteListProvider>,
     );
     expect(screen.queryByRole("button", { name: /현장 변경/ })).toBeNull();
 
     rendered.rerender(
       <SiteListProvider sites={[...two]}>
-        <MobileSiteSwitcher siteId="site-a" section="materials" />
+        <MobileSiteSwitcher siteId="site-a" section="analysis" />
       </SiteListProvider>,
     );
     const trigger = screen.getByRole("button", { name: /현장 변경/ });

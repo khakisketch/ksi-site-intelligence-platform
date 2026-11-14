@@ -7,7 +7,7 @@ import { coreFetchWithToken } from "./client";
 import type { WhoAmIResponse } from "./types";
 
 /**
- * 관측 작업 생성 재시도의 계정 연속성 검사 — usability/duplicate guard.
+ * 작업 생성 재시도의 계정 연속성 검사 — usability/duplicate guard.
  *
  * Core 멱등성은 (organization_id, actor, key_hash)로 범위가 정해진다. 모호한
  * 첫 시도(A)가 실제로 접수됐는데 응답만 잃은 뒤, 같은 브라우저가 다른

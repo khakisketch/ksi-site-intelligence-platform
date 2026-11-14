@@ -1,5 +1,6 @@
 "use client";
 
+import { Disclosure } from "@/components/ui/Disclosure";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import type { SpatialDataReceipt } from "@/lib/core-api/spatial-data-types";
@@ -202,8 +203,8 @@ export function SpatialDataReceiptPreview({
   return <section aria-label="준비된 출력 미리보기" className={compact || canvasMode ? "" : "border-t border-line pt-4"}>
     {!compact && !canvasMode && <div className="flex flex-wrap items-start justify-between gap-2">
       <div>
-        <h3 className="text-[15px] font-bold">준비된 출력 미리보기</h3>
-        <p className="mt-1 text-[11.5px] leading-5 text-ink-muted">
+        <h3 className="text-lead font-bold">준비된 출력 미리보기</h3>
+        <p className="mt-1 text-caption leading-5 text-ink-muted">
           Core 준비 기록과 바이트 전체가 일치할 때만 화면에 표시합니다. 미리보기도 다운로드와 같은 권한·보관 확인을 거칩니다.
         </p>
       </div>
@@ -225,7 +226,7 @@ export function SpatialDataReceiptPreview({
         />
       ) : (
       <div className="mt-3 flex flex-wrap items-center gap-2">
-        <p className="text-[12px] text-ink-2" role="status">자료 읽는 중…</p>
+        <p className="text-caption text-ink-2" role="status">자료 읽는 중…</p>
         <button type="button" className="btn min-h-11" onClick={cancel}>
           불러오기 취소
         </button>
@@ -246,7 +247,7 @@ export function SpatialDataReceiptPreview({
         />
       ) : (
       <div className="mt-3 flex flex-col gap-2">
-        <p className="rounded-md border border-line bg-sunk px-3 py-2 text-[12px] leading-5 text-ink-2" role="alert">
+        <p className="rounded-md border border-line bg-sunk px-3 py-2 text-caption leading-5 text-ink-2" role="alert">
           {phase.message}
         </p>
         <div>
@@ -278,33 +279,32 @@ export function SpatialDataReceiptPreview({
               <ViewportResetButton onReset={viewport.reset} />
             </div>
             {viewport.note && (
-              <p className="text-[11.5px] leading-5 text-ink-2" role="status">{viewport.note}</p>
+              <p className="text-caption leading-5 text-ink-2" role="status">{viewport.note}</p>
             )}
             {canvasMode ? (
               <>
                 {isDisplayViewMoved(view) && (
-                  <p className="text-[11.5px] leading-5 text-ink-2" role="status">
+                  <p className="text-caption leading-5 text-ink-2" role="status">
                     표시 확대 {displayZoomPercent(view)}%
                     {view.cx !== 0.5 || view.cy !== 0.5 ? " · 이동한 화면" : ""} · 원본 버퍼는 그대로 둡니다.
                   </p>
                 )}
                 {receipt.attribution.trim() && (
-                  <p className="break-words text-[11.5px] leading-5 text-ink-2">출처 · {receipt.attribution}</p>
+                  <p className="break-words text-caption leading-5 text-ink-2">출처 · {receipt.attribution}</p>
                 )}
-                <details className="text-[11.5px] text-ink-2">
-                  <summary className="tap-target cursor-pointer font-semibold">표시 안내·출처</summary>
+                <Disclosure label="표시·출처 상세" className="text-caption text-ink-2">
                   <div className="mt-1 flex min-w-0 flex-col gap-1">
                     <ViewportGestureHint />
                     {receiptNotice}
                     <p className="leading-5 text-ink-muted">정확도 평가·측량·정산 근거가 아닙니다. 체적·면적 등 정량 계산을 하지 않습니다.</p>
                   </div>
-                </details>
+                </Disclosure>
               </>
             ) : (
               <>
                 <ViewportGestureHint />
                 {isDisplayViewMoved(view) && (
-                  <p className="text-[12px] leading-5 text-ink-2" role="status">
+                  <p className="text-caption leading-5 text-ink-2" role="status">
                     표시 확대 {displayZoomPercent(view)}%
                     {view.cx !== 0.5 || view.cy !== 0.5 ? " · 이동한 화면" : ""} · 원본 버퍼는 그대로 둡니다.
                   </p>
@@ -315,14 +315,14 @@ export function SpatialDataReceiptPreview({
         ) : (
           <canvas ref={canvasRef} className="max-w-full rounded border border-line" style={{ imageRendering: "pixelated" }} />
         )}
-        <p className={canvasMode ? "text-[11.5px] leading-5 text-ink-2" : "text-[12px] leading-5 text-ink-2"}>
+        <p className={canvasMode ? "text-caption leading-5 text-ink-2" : "text-caption leading-5 text-ink-2"}>
           출력 {phase.width} × {phase.height} 픽셀 ·{" "}
           {phase.color
             ? "실제 픽셀 색상을 그대로 표시합니다. WGS84 변환·지도 타일·보정을 적용하지 않았습니다."
             : "단일 밴드를 명암으로 표시합니다(화면용 상대 음영). 이 미리보기는 수직 기준 적합성·높이 정확도를 판정하지 않습니다."}
         </p>
         {!phase.color && !canvasMode && (
-          <div className="flex items-center gap-2 text-[11.5px] text-ink-muted" aria-label="상대 음영 범례">
+          <div className="flex items-center gap-2 text-caption text-ink-muted" aria-label="상대 음영 범례">
             <span>어두움</span>
             <span
               aria-hidden="true"
@@ -333,7 +333,7 @@ export function SpatialDataReceiptPreview({
           </div>
         )}
         {!canvasMode && (
-          <p className="text-[11.5px] leading-5 text-ink-muted">
+          <p className="text-caption leading-5 text-ink-muted">
             정확도 평가·측량·정산 근거가 아닙니다. 체적·면적 등 정량 계산을 하지 않습니다.
           </p>
         )}

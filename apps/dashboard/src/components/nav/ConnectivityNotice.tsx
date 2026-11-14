@@ -15,7 +15,7 @@ export function ConnectivityNotice() {
   const online = useOnlineStatus();
   if (online) return null;
   return (
-    <div role="alert" data-connectivity-notice="offline" className="m-3 rounded-lg border border-line-strong bg-surface px-4 py-3 text-[13px] leading-5 text-ink-1">
+    <div role="alert" data-connectivity-notice="offline" className="m-3 rounded-lg border border-line-strong bg-surface px-4 py-3 text-body leading-5 text-ink-1">
       <p className="font-bold">연결이 끊겼습니다. 전송·저장 확인은 연결 후에 다시 시도하세요.</p>
       <p className="mt-1 text-ink-2">입력한 내용과 준비된 요청은 이 탭에 그대로 있습니다. 새로고침하면 사라질 수 있으니 연결이 돌아온 뒤 같은 화면에서 다시 시도하세요.</p>
     </div>

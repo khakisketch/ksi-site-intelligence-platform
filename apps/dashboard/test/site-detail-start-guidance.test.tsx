@@ -77,183 +77,61 @@ describe("Site detail start guidance", () => {
     expect(screen.getByText(/현재 계정으로는 현장 상태를 변경할 수 없습니다/)).toBeTruthy();
     expect(screen.queryByRole("button", { name: "상태 전이" })).toBeNull();
   });
-  it("appears on the default Site view with scoped records and bounded history", async () => {
-    mocked.history.mockResolvedValue({
-      items: Array.from({ length: 50 }, (_, index) => ({ reportRef: `report-${index + 1}`, result: null })),
-      nextCursor: "older-results",
-    });
-
-    render(await SiteDetailPage({
-      params: Promise.resolve({ siteId: "site-1" }),
-      searchParams: Promise.resolve({}),
-    }));
-    fireEvent.click(screen.getByRole("button", { name: "정보" }));
-
-    const guide = within(screen.getByRole("region", { name: "현장 시작 안내" }));
-    expect(guide.getAllByText("1개 목록됨")).toHaveLength(2);
-    expect(guide.getByText("최근 페이지 50개 · 더 있음")).toBeTruthy();
-    // 작업공간 선택이 있으면 건수 요약만 둔다 — 다음 행동은 작업공간이 안내한다.
-    expect(guide.queryByRole("link")).toBeNull();
-    expect(guide.queryByText(/다음 확인/)).toBeNull();
-    expect(screen.queryByRole("link", { name: "비교할 자료 선택" })).toBeNull();
-    expect(screen.queryByRole("link", { name: "새 관측 시작" })).toBeNull();
-    expect(mocked.history).toHaveBeenCalledWith("site-1", { limit: 50 });
+  const openSite = (query: Record<string, string>) => SiteDetailPage({
+    params: Promise.resolve({ siteId: "site-1" }),
+    searchParams: Promise.resolve(query),
   });
 
-  it("points the primary action to the next location described by current Site records", async () => {
-    mocked.areas.mockResolvedValueOnce({ workAreas: [] });
-    mocked.orders.mockResolvedValueOnce([]);
-    render(await SiteDetailPage({
-      params: Promise.resolve({ siteId: "site-1" }),
-      searchParams: Promise.resolve({}),
-    }));
-    fireEvent.click(screen.getByRole("button", { name: "정보" }));
-    const guide = within(screen.getByRole("region", { name: "현장 시작 안내" }));
-    expect(guide.getByRole("link", { name: "작업구역 확인" }).getAttribute("href")).toBe("/sites/site-1/work-areas");
-    expect(screen.queryByRole("link", { name: "비교할 자료 선택" })).toBeNull();
-
-    cleanup();
-    mocked.areas.mockResolvedValueOnce({ workAreas: [{ workAreaId: "area-1", name: "구역 1", status: "ACTIVE" }] });
-    mocked.orders.mockResolvedValueOnce([]);
-    render(await SiteDetailPage({
-      params: Promise.resolve({ siteId: "site-1" }),
-      searchParams: Promise.resolve({}),
-    }));
-    // 작업공간 선택이 있으면 관측 작업이 없어도 건수 요약만 둔다.
-    fireEvent.click(screen.getByRole("button", { name: "정보" }));
-    const summaryOnly = within(screen.getByRole("region", { name: "현장 시작 안내" }));
-    expect(summaryOnly.getAllByText("1개 목록됨")).toHaveLength(2);
-    expect(summaryOnly.getByText("0개 목록됨")).toBeTruthy();
-    expect(summaryOnly.queryByRole("link")).toBeNull();
-    expect(screen.queryByRole("link", { name: "관측 작업 현황 확인" })).toBeNull();
-    expect(screen.queryByRole("link", { name: "비교할 자료 선택" })).toBeNull();
+  it("carries the legacy materials scope into the space panel", async () => {
+    const assetRef = `ksa-v1-${"a".repeat(64)}`;
+    await expect(openSite({ section: "materials", workAreaId: "area-1", assetRef }))
+      .rejects.toThrow(`/sites/site-1?panel=materials&workAreaId=area-1&assetRef=${assetRef}`);
   });
 
-  it("keeps failed child reads unknown instead of rendering false empty guidance", async () => {
-    mocked.areas.mockRejectedValue(new CoreApiError(503, { detail: "unavailable" }));
-    mocked.orders.mockRejectedValue(new CoreApiError(403, { detail: "denied" }));
-    mocked.history.mockRejectedValue(new CoreApiError(503, { detail: "unavailable" }));
+  it("routes the old work ledger to registration progress in the space panel", async () => {
+    await expect(openSite({ section: "work-orders", workAreaId: "area-1" }))
+      .rejects.toThrow("/sites/site-1?panel=intake&workAreaId=area-1");
+  });
 
-    render(await SiteDetailPage({
-      params: Promise.resolve({ siteId: "site-1" }),
-      searchParams: Promise.resolve({}),
-    }));
+  it("routes old analysis and external-comparison links to their respective tabs", async () => {
+    await expect(openSite({ section: "analysis" })).rejects.toThrow("/sites/site-1/analysis");
+    await expect(openSite({ section: "external-results", workAreaId: "area-1" }))
+      .rejects.toThrow("/sites/site-1/observations;307");
+  });
 
-    fireEvent.click(screen.getByRole("button", { name: "정보" }));
-    expect(screen.getByRole("region", { name: "현장 시작 안내" })).toBeTruthy();
-    expect(screen.getAllByText("확인 불가")).toHaveLength(3);
+  it("shows this site's active registration stages with a link to the work queue", async () => {
+    mocked.orders.mockResolvedValue([
+      { workOrderId: "work-1", siteId: "site-1", name: "주간 관측", status: "APPROVED", executionMode: "EXTERNAL_RECONSTRUCTION" },
+      { workOrderId: "work-2", siteId: "site-1", name: "완료된 관측", status: "COMPLETED", executionMode: "EXTERNAL_RECONSTRUCTION" },
+      { workOrderId: "work-3", siteId: "other", name: "다른 현장 작업", status: "APPROVED", executionMode: "EXTERNAL_RECONSTRUCTION" },
+    ]);
+    render(await openSite({ panel: "intake" }));
+    const progress = within(screen.getByRole("region", { name: "등록 진행 중인 작업" }));
+    expect(progress.getByRole("link", { name: "주간 관측" }).getAttribute("href")).toBe("/field/work-orders/work-1");
+    expect(progress.getByText("파일 제출·검사").closest("li")?.getAttribute("aria-current")).toBe("step");
+    expect(progress.queryByText("완료된 관측")).toBeNull();
+    expect(progress.queryByText("다른 현장 작업")).toBeNull();
+    expect(progress.getByRole("link", { name: "전체 작업에서 보기" }).getAttribute("href")).toBe("/field?site=site-1");
+    fireEvent.click(screen.getByRole("button", { name: "자료", pressed: false }));
+    expect(screen.getByRole("region", { name: "자료 목록" })).toBeTruthy();
+  });
+
+  it("keeps failed work and area reads distinct from verified empty states", async () => {
+    mocked.orders.mockRejectedValue(new CoreApiError(403, {}));
+    mocked.areas.mockRejectedValue(new CoreApiError(503, {}));
+    render(await openSite({ panel: "intake" }));
+    expect(screen.getByText(/등록 진행 상태를 확인하지 못했습니다/)).toBeTruthy();
+    expect(screen.getByText(/작업구역 목록을 불러오지 못했습니다/)).toBeTruthy();
+    expect(screen.queryByText("진행 중인 작업이 없습니다.")).toBeNull();
     expect(screen.queryByText("등록된 작업구역이 없습니다")).toBeNull();
-    expect(screen.queryByText("등록된 관측 작업이 없습니다")).toBeNull();
-    expect(screen.queryByText("외부 관측 결과가 없습니다")).toBeNull();
-    expect(screen.queryByRole("link", { name: "새 관측 시작" })).toBeNull();
   });
 
-  it("does not duplicate entry guidance on other Site tabs", async () => {
-    // 옛 ?section=analysis 진입은 실제 분석 화면으로 보낸다 — 중간 안내 화면 없음.
-    await expect(SiteDetailPage({
-      params: Promise.resolve({ siteId: "site-1" }),
-      searchParams: Promise.resolve({ section: "analysis" }),
-    })).rejects.toThrow(/NEXT_REDIRECT.*\/sites\/site-1\/analysis/);
-
-    expect(screen.queryByRole("region", { name: "현장 시작 안내" })).toBeNull();
-  });
-
-  it("sends the legacy materials section to the real catalog with its scope", async () => {
-    await expect(SiteDetailPage({
-      params: Promise.resolve({ siteId: "site-1" }),
-      searchParams: Promise.resolve({ section: "materials", workAreaId: "area-1", assetRef: "asset-9" }),
-    })).rejects.toThrow(/NEXT_REDIRECT.*\/sites\/site-1\/spatial-assets\?workAreaId=area-1&assetRef=asset-9/);
-  });
-
-  it("sends the legacy external-results section to the external history route, not the analysis workspace", async () => {
-    // 외부 비교 기록은 KSI 계산 기록과 다른 출처의 별도 목록이다 — 섞지 않는다.
-    await expect(SiteDetailPage({
-      params: Promise.resolve({ siteId: "site-1" }),
-      searchParams: Promise.resolve({ section: "external-results" }),
-    })).rejects.toThrow(/NEXT_REDIRECT.*\/sites\/site-1\/observations/);
-  });
-
-  it("does not forward unused scope into the external history route", async () => {
-    // observations 화면은 구역 필터를 받지 않으므로, 못 쓰는 범위를 싣지 않는다.
-    await expect(SiteDetailPage({
-      params: Promise.resolve({ siteId: "site-1" }),
-      searchParams: Promise.resolve({ section: "external-results", workAreaId: "area-1" }),
-    })).rejects.toThrow(/NEXT_REDIRECT.*\/sites\/site-1\/observations;307/);
-  });
-
-  it("uses archived area names for retained tasks without counting them as active areas", async () => {
-    mocked.areas.mockResolvedValue({ workAreas: [
-      { workAreaId: "old-area", name: "남측 절토 구역", status: "ARCHIVED" },
-      { workAreaId: "area-1", name: "현재 구역", status: "ACTIVE" },
-    ] });
-    mocked.orders.mockResolvedValue([{ workOrderId: "work-1", name: "주간 관측", workAreaIds: ["old-area"], cycleNumber: 3, updatedAt: "2026-10-15T10:00:00Z", status: "APPROVED", executionMode: "EXTERNAL_RECONSTRUCTION" }]);
-    render(await SiteDetailPage({ params: Promise.resolve({ siteId: "site-1" }), searchParams: Promise.resolve({ section: "work-orders" }) }));
-    expect(mocked.areas).toHaveBeenCalledWith("site-1", { includeArchived: true });
-    expect(screen.getByText("남측 절토 구역 · 3회차")).toBeTruthy();
-    expect(screen.getByText("work-1").closest("details")).toBeTruthy();
-  });
-
-  it("explains the site work ledger and links a permitted first registration on the actual work-orders route", async () => {
-    mocked.permissions.mockImplementation(async (permission: string) => permission === "WORK_ORDERS_WRITE");
-    mocked.orders.mockResolvedValue([]);
-    render(await SiteDetailPage({ params: Promise.resolve({ siteId: "site-1" }), searchParams: Promise.resolve({ section: "work-orders" }) }));
-    expect(screen.getByText(/이 현장의 관측 작업과 진행 상태/)).toBeTruthy();
-    expect(screen.getByRole("link", { name: "등록 자료 보기" }).getAttribute("href")).toBe("/sites/site-1/spatial-assets");
-    const registration = screen.getByText("관측 자료 등록").closest("a")!;
-    expect(registration.getAttribute("href")).toBe("/sites/site-1/observations/new");
-    expect(registration.parentElement?.className).toContain("hidden lg:contents");
-    expect(screen.getByText("관측 자료 등록은 노트북 이상의 화면에서 진행하세요.")).toBeTruthy();
-    expect(screen.getByText("등록된 관측 작업이 없습니다")).toBeTruthy();
-  });
-
-  it("offers work-area review rather than registration when no active area exists", async () => {
-    mocked.permissions.mockImplementation(async (permission: string) => permission === "WORK_ORDERS_WRITE");
-    mocked.areas.mockResolvedValue({ workAreas: [] });
-    mocked.orders.mockResolvedValue([]);
-    render(await SiteDetailPage({ params: Promise.resolve({ siteId: "site-1" }), searchParams: Promise.resolve({ section: "work-orders" }) }));
-    expect(screen.getByRole("link", { name: "작업구역 확인" }).getAttribute("href")).toBe("/sites/site-1/work-areas");
-    expect(screen.queryByText("관측 자료 등록")).toBeNull();
-  });
-
-  it("carries only a validated active area into the work-record registration action", async () => {
-    mocked.permissions.mockImplementation(async (permission: string) => permission === "WORK_ORDERS_WRITE");
-    mocked.orders.mockResolvedValue([]);
-    render(await SiteDetailPage({ params: Promise.resolve({ siteId: "site-1" }), searchParams: Promise.resolve({ section: "work-orders", workAreaId: "area-1" }) }));
-    expect(screen.getByText("관측 자료 등록").closest("a")?.getAttribute("href")).toBe("/sites/site-1/observations/new?workAreaId=area-1");
-    expect(mocked.header.mock.calls[0][0].workOrderRecordOwnsAction).toBe(true);
-    cleanup();
-    render(await SiteDetailPage({ params: Promise.resolve({ siteId: "site-1" }), searchParams: Promise.resolve({ section: "work-orders", workAreaId: "unknown" }) }));
-    expect(screen.getByText("관측 자료 등록").closest("a")?.getAttribute("href")).toBe("/sites/site-1/observations/new");
-  });
-
-  it("keeps work and area failures and unverified permission distinct from empty records", async () => {
-    mocked.permissions.mockRejectedValue(new Error("identity unavailable"));
-    mocked.areas.mockRejectedValue(new Error("areas unavailable"));
-    mocked.orders.mockRejectedValue(new Error("orders unavailable"));
-    render(await SiteDetailPage({ params: Promise.resolve({ siteId: "site-1" }), searchParams: Promise.resolve({ section: "work-orders" }) }));
-    expect(screen.getByText("관측 작업을 불러오지 못했습니다.")).toBeTruthy();
-    expect(screen.getByText(/작업구역을 확인하지 못했습니다/)).toBeTruthy();
-    expect(screen.getByText(/등록 권한이 없거나 확인되지 않았습니다/)).toBeTruthy();
-    expect(screen.queryByText("등록된 관측 작업이 없습니다")).toBeNull();
-    expect(screen.queryByText("관측 자료 등록")).toBeNull();
-  });
-
-  it("keeps the ledger readable without exposing registration when permission is not established", async () => {
-    mocked.orders.mockResolvedValue([]);
-    render(await SiteDetailPage({ params: Promise.resolve({ siteId: "site-1" }), searchParams: Promise.resolve({ section: "work-orders" }) }));
-    expect(screen.getByText("등록된 관측 작업이 없습니다")).toBeTruthy();
-    expect(screen.getByRole("link", { name: "등록 자료 보기" })).toBeTruthy();
-    expect(screen.queryByText("관측 자료 등록")).toBeNull();
-    expect(screen.getByText(/등록 권한이 없거나 확인되지 않았습니다/)).toBeTruthy();
-  });
-
-  it("passes the latest result report time rather than assuming history order or capture time", async () => {
-    mocked.history.mockResolvedValue({ items: [
-      { result: { reportedAt: "2026-10-01T10:00:00Z" } },
-      { result: { reportedAt: "2026-10-15T10:00:00Z" } },
-      { result: null },
-    ], nextCursor: null });
-    render(await SiteDetailPage({ params: Promise.resolve({ siteId: "site-1" }), searchParams: Promise.resolve({}) }));
-    expect(mocked.header.mock.calls[0][0].latestExternalReportAt).toBe("2026-10-15T10:00:00Z");
+  it("keeps the settings page to extent, state and a WorkArea management entry", async () => {
+    render(await openSite({ section: "manage" }));
+    expect(screen.getByRole("heading", { name: "현장 설정" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "현장 범위" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: /^현장 상태/ })).toBeTruthy();
+    expect(screen.getByRole("link", { name: "작업구역 관리" }).getAttribute("href")).toBe("/sites/site-1/work-areas");
+    expect(screen.queryByText("자료 보기")).toBeNull();
   });
 });

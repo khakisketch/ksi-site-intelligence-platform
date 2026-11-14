@@ -88,8 +88,8 @@ export function SiteTransitionActions({
     // 되는지 한 줄로 보여준다").
     return (
       <div className="flex flex-col gap-2 rounded-lg border border-line bg-surface p-4">
-        <h2 className="text-[13.5px] font-bold break-keep">상태 전이</h2>
-        <p className="text-[12.5px] break-keep text-ink-muted">
+        <h2 className="text-lead font-bold break-keep">상태 전이</h2>
+        <p className="text-body break-keep text-ink-muted">
           {hiddenByAutonomyGate > 0
             ? "현재 상태에서 가능한 전이는 자율운영 승인 권한(관리자 전용)이 있어야 할 수 있습니다."
             : `현재 상태(${SITE_STATUS_LABEL[status].label})에서 전이할 수 있는 상태가 없습니다.`}
@@ -107,8 +107,8 @@ export function SiteTransitionActions({
       reason="Site 상태 전이는 영향 범위와 근거를 함께 확인할 수 있는 노트북에서 수행합니다."
     >
     <div className="flex flex-col gap-3 rounded-lg border border-line bg-surface p-4">
-      <h2 className="text-[13.5px] font-bold break-keep">상태 전이</h2>
-      <label className="flex flex-col gap-1 text-[12.5px]">
+      <h2 className="text-lead font-bold break-keep">상태 전이</h2>
+      <label className="flex flex-col gap-1 text-body">
         <span className="break-keep text-ink-2">다음 상태</span>
         <select
           className="input"
@@ -124,12 +124,12 @@ export function SiteTransitionActions({
         </select>
       </label>
       {hiddenByAutonomyGate > 0 && (
-        <p className="break-keep text-[11.5px] text-ink-muted">
+        <p className="break-keep text-caption text-ink-muted">
           자율운영 승인은 관리자만 할 수 있습니다 — 관리자 전용 전이 대상은 목록에서
           뺐습니다.
         </p>
       )}
-      <label className="flex flex-col gap-1 text-[12.5px]">
+      <label className="flex flex-col gap-1 text-body">
         <span className="break-keep text-ink-2">근거 (필수)</span>
         <textarea
           className="input"
@@ -139,7 +139,7 @@ export function SiteTransitionActions({
           placeholder="전이 근거 — 비워두면 제출할 수 없습니다."
         />
       </label>
-      <label className="flex flex-col gap-1 text-[12.5px]">
+      <label className="flex flex-col gap-1 text-body">
         <span className="break-keep text-ink-2">사유 (필수)</span>
         <textarea
           className="input"
@@ -158,7 +158,7 @@ export function SiteTransitionActions({
         {pending ? "처리 중…" : "상태 전이"}
       </button>
       {errorMessage && (
-        <p role="alert" className="break-keep text-[12.5px] text-crit-ink">
+        <p role="alert" className="break-keep text-body text-crit-ink">
           {errorMessage}
         </p>
       )}

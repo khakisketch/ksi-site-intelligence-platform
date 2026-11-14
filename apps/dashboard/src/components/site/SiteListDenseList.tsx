@@ -47,11 +47,11 @@ export function SiteListDenseList({
         return (
           <TableRow key={site.siteId} columns={DENSE_COLUMNS} minWidth={DENSE_MIN_WIDTH}>
             <div className="flex min-w-0 items-start gap-2">
-              <SitePreviewThumb siteId={site.siteId} size="row" />
+              <SitePreviewThumb siteId={site.siteId} siteName={site.name} size="row" footprint={site.aoi?.vertices ?? null} />
               <div className="min-w-0 flex-1">
               <Link
                 href={`/sites/${encodeURIComponent(site.siteId)}`}
-                className="block break-words text-[13.5px] font-semibold hover:underline"
+                className="block break-words text-lead font-semibold hover:underline"
               >
                 {site.name}
               </Link>
@@ -65,12 +65,12 @@ export function SiteListDenseList({
 
             <SiteProgressBar status={site.status} />
 
-            <span className="num text-[11.5px] whitespace-nowrap text-ink-2">
+            <span className="num text-caption whitespace-nowrap text-ink-2">
               {formatKoreanDate(site.updatedAt)}
             </span>
 
             <span
-              className={`text-[11.5px] break-keep ${
+              className={`text-caption break-keep ${
                 next.actionable ? "font-semibold" : "text-ink-muted"
               }`}
             >

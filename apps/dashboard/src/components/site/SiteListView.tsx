@@ -109,7 +109,7 @@ export function SiteListView({
   }
 
   const active = (mode: SiteListViewMode) =>
-    `btn tap-target px-3 text-[12.5px] ${
+    `btn tap-target px-3 text-body ${
       view === mode
         ? "border-line-strong bg-sunk font-bold"
         : "border-line bg-surface hover:border-line-strong"

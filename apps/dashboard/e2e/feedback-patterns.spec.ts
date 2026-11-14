@@ -3,7 +3,6 @@ import { expect, test, type Page } from "@playwright/test";
 async function login(page: Page, viewer = false) {
   await page.goto("/login");
   if (viewer) {
-    await page.getByText("권한별 화면 테스트", { exact: true }).click();
     await page.getByRole("button", { name: "다른 개발 계정 선택" }).click();
     await page.getByText("권한별 화면 테스트(선택)", { exact: true }).click();
     await page.getByRole("button", { name: /KSI 개발 열람자/ }).click();
@@ -24,8 +23,9 @@ test("읽기 전용 작업 등록 사유는 클릭·키보드로 열고 닫으�
     } else await route.continue();
   });
 
-  const action = page.getByRole("button", { name: /관측 자료 등록/ });
-  const reason = page.getByText("현재 계정으로는 관측 자료를 등록할 수 없습니다. 작업 등록 권한이 있는 담당자에게 문의하세요.", { exact: true });
+  const main = page.getByRole("main");
+  const action = main.getByRole("button", { name: /관측 자료 등록/ });
+  const reason = main.getByText("현재 계정으로는 관측 자료를 등록할 수 없습니다. 작업 등록 권한이 있는 담당자에게 문의하세요.", { exact: true });
   await expect(reason).toBeHidden();
   await action.focus();
   await page.keyboard.press("Enter");
@@ -39,11 +39,12 @@ test("읽기 전용 작업 등록 사유는 클릭·키보드로 열고 닫으�
   await expect(action).toBeFocused();
   await action.click();
   await expect(reason).toBeVisible();
-  await page.getByRole("main").click({ position: { x: 8, y: 8 } });
+  await main.click({ position: { x: 8, y: 8 } });
   await expect(reason).toBeHidden();
   await action.click();
   await expect(reason).toBeVisible();
-  await page.getByRole("main").getByRole("link", { name: "받은 업무함", exact: true }).click();
+  await main.getByRole("navigation", { name: "작업 보기 방식" }).getByRole("link", { name: "받은 작업", exact: true }).click();
+  await expect(page).toHaveURL(/\/field\/inbox$/);
   await expect(reason).toBeHidden();
   expect(mutations).toBe(0);
 });

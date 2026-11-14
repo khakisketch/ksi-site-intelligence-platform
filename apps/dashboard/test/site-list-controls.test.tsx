@@ -53,6 +53,24 @@ function searchForm() {
   return screen.getByRole("search", { name: "현장 검색과 정렬" });
 }
 
+function phoneToggle() {
+  return screen.getByRole("button", { name: "필터·정렬" });
+}
+
+function phonePopover() {
+  return document.getElementById(phoneToggle().getAttribute("popovertarget")!)!;
+}
+
+function setPhonePopover(open: boolean) {
+  const panel = phonePopover();
+  panel.toggleAttribute("data-test-open", open);
+  // jsdom lacks the native Popover API. Simulate its toggle event at the panel.
+  fireEvent(panel, Object.assign(new Event("toggle"), { newState: open ? "open" : "closed" }));
+  if (open) panel.hidePopover = () => {
+    if (panel.hasAttribute("data-test-open")) setPhonePopover(false);
+  };
+}
+
 function phoneForm() {
   return screen.getByRole("form", { name: "현장 필터" });
 }
@@ -576,7 +594,8 @@ describe("SiteListControls phone panel", () => {
     const outerSort = sortSelect().closest("div")!;
     expect(outerSort.className).toContain("hidden");
     expect(outerSort.className).toContain("sm:block");
-    expect(container.querySelector("details")?.className).toContain("sm:hidden");
+    expect(container.querySelector("[popover]")).not.toBeNull();
+    expect(phoneToggle().parentElement?.parentElement?.className).toContain("sm:hidden");
   });
 
   it("적용은 선택한 묶음·정렬과 최신 초안을 함께 확정한다", () => {
@@ -598,7 +617,7 @@ describe("SiteListControls phone panel", () => {
     // 적용이 타이머를 대신했으므로 뒤늦은 replace 가 없다.
     expect(mocked.replace).not.toHaveBeenCalled();
     expect(mocked.push).toHaveBeenCalledTimes(1);
-    expect(document.querySelector("details")?.hasAttribute("open")).toBe(false);
+    expect(phonePopover().hasAttribute("data-test-open")).toBe(false);
     expect(document.activeElement?.textContent).toContain("필터·정렬");
   });
 
@@ -636,13 +655,13 @@ describe("SiteListControls phone panel", () => {
     fireEvent.change(phoneSortSelect(), { target: { value: "name" } });
     fireEvent.submit(phoneForm());
     expect(mocked.push).toHaveBeenCalledTimes(1);
-    const summary = screen.getByText("필터·정렬").closest("summary")!;
-    expect(document.activeElement).toBe(summary);
+    const trigger = phoneToggle();
+    expect(document.activeElement).toBe(trigger);
     // 서버 응답 상당: 묶음·정렬 prop 갱신 — 리마운트 없이 같은 요약에 포커스 유지.
     rerender(
       <SiteListControls query="서쪽" sort="name" group="patrol" hasFilter visibleCount={1} totalCount={5} />,
     );
-    expect(document.activeElement).toBe(summary);
+    expect(document.activeElement).toBe(trigger);
     expect(phoneGroupSelect().value).toBe("patrol");
     expect(phoneSortSelect().value).toBe("name");
     expect(searchbox().value).toBe("서쪽");
@@ -662,7 +681,7 @@ describe("SiteListControls phone panel", () => {
     fireEvent.submit(phoneForm());
     expect(mocked.push).not.toHaveBeenCalled();
     expect(mocked.replace).not.toHaveBeenCalled();
-    expect(document.querySelector("details")?.hasAttribute("open")).toBe(false);
+    expect(phonePopover().hasAttribute("data-test-open")).toBe(false);
     fireEvent.compositionEnd(searchbox());
     act(() => {
       vi.advanceTimersByTime(300);
@@ -675,17 +694,10 @@ describe("SiteListControls phone panel", () => {
 
   it("적용 없이 닫으면 미확정 선택을 버린다", () => {
     renderControls({ group: "attention", sort: "attention" });
-    const details = document.querySelector("details") as HTMLDetailsElement;
-    fireEvent.click(screen.getByText("필터·정렬"));
-    expect(details.open).toBe(true);
+    setPhonePopover(true);
     fireEvent.change(phoneGroupSelect(), { target: { value: "patrol" } });
     fireEvent.change(phoneSortSelect(), { target: { value: "name" } });
-    fireEvent.click(screen.getByText("필터·정렬"));
-    expect(details.open).toBe(false);
-    // jsdom 의 toggle 은 비동기로 올 수 있어 직접 한 번 더 알린다 — 멱등하다.
-    act(() => {
-      details.dispatchEvent(new Event("toggle", { bubbles: true }));
-    });
+    setPhonePopover(false);
     expect(phoneGroupSelect().value).toBe("attention");
     expect(phoneSortSelect().value).toBe("attention");
   });
@@ -709,11 +721,10 @@ describe("SiteListControls phone panel", () => {
     setLocation("/sites?group=patrol&q=%EC%84%9C%EC%AA%BD&sort=name");
     renderControls({ query: "서쪽", group: "patrol", sort: "name", hasFilter: true, visibleCount: 0, totalCount: 4 });
     fireEvent.change(searchbox(), { target: { value: "서쪽x" } });
-    const details = document.querySelector("details") as HTMLDetailsElement;
-    details.open = true;
+    setPhonePopover(true);
     fireEvent.change(phoneGroupSelect(), { target: { value: "attention" } });
     fireEvent.click(within(phoneForm()).getByRole("link", { name: "초기화" }));
-    expect(details.hasAttribute("open")).toBe(false);
+    expect(phonePopover().hasAttribute("data-test-open")).toBe(false);
     expect(phoneGroupSelect().value).toBe("all");
     expect(phoneSortSelect().value).toBe("attention");
     act(() => {
@@ -754,8 +765,8 @@ describe("sites page wiring", () => {
   it("폰 구조는 검색→건수·필터 행→장식 없는 카드다", () => {
     expect(PAGE).toContain('visibleCount={visibleSites.length}');
     expect(PAGE).toContain('totalCount={sites.length}');
-    expect(PAGE).toMatch(/<details className="[^"]*sm:block lg:hidden"/);
-    expect(CONTROLS).toContain('className="mt-2 sm:hidden"');
+    expect(PAGE).toMatch(/className="hidden w-full sm:block lg:hidden"/);
+    expect(CONTROLS).toContain('<ActionMenu label="필터·정렬"');
     expect(PAGE).toContain('className="hidden items-baseline gap-2 px-1 sm:flex"');
     expect(PAGE).not.toContain("SiteListVisual");
   });
@@ -772,11 +783,11 @@ describe("sites page wiring", () => {
     expect(card).not.toContain("<img");
     // 폰·태블릿 목록은 공유 카드(SiteDirectoryCard) 하나로 그린다.
     expect(card).toContain("SiteDirectoryCard");
-    expect(DIRECTORY_CARD).toContain('<SitePreviewThumb siteId={site.siteId} siteName={site.name} size="card" />');
+    expect(DIRECTORY_CARD).toContain('<SitePreviewThumb siteId={site.siteId} siteName={site.name} size="card" footprint={site.aoi?.vertices ?? null} />');
     expect(DIRECTORY_CARD).toContain("현장 열기");
     expect(DIRECTORY_CARD.match(/현장 열기/g)).toHaveLength(1);
-    // 이웃은 조용한 텍스트 바로가기(자료·결과)다.
-    expect(DIRECTORY_CARD).toContain("spatial-assets");
+    // 이웃은 조용한 텍스트 바로가기(자료·분석)다.
+    expect(DIRECTORY_CARD).toContain("panel=materials");
     expect(DIRECTORY_CARD).toContain("/analysis");
     expect(DIRECTORY_CARD).not.toContain("btn btn-primary");
     expect(DIRECTORY_CARD).not.toContain("<img");

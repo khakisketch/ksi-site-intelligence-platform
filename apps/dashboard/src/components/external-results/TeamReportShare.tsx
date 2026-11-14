@@ -108,12 +108,12 @@ export function TeamReportShare({ reportRef, siteId, organizationId, principalId
       if (!isVerifiedShareReceipt(receipt, { reportRef, recipientPrincipalId: attempt.recipientPrincipalId, siteId, organizationId, principalId })) {
         pendingRef.current = attempt;
         setUnresolved(attempt);
-        setFeedback("결과 공유 응답을 확인하지 못했습니다. 받은 업무 전달로 표시하지 않습니다.");
+        setFeedback("결과 공유 응답을 확인하지 못했습니다. 받은 작업 전달로 표시하지 않습니다.");
         return;
       }
       pendingRef.current = null;
       setUnresolved(null);
-      notify("받은 업무에 전달했습니다.");
+      notify("받은 작업에 전달했습니다.");
     } catch {
       pendingRef.current = attempt;
       setUnresolved(attempt);
@@ -127,11 +127,11 @@ export function TeamReportShare({ reportRef, siteId, organizationId, principalId
   return (
     <ResponsiveActionBoundary action="WORK_ORDERS_WRITE" reason="결과 공유는 노트북 이상의 화면에서 확인하고 전달합니다.">
       <section className="rounded-xl border border-line bg-surface px-4 py-3" aria-labelledby="team-report-share-heading">
-        <h2 id="team-report-share-heading" className="text-[15px] font-bold">팀원에게 결과 공유</h2>
-        <p className="mt-1 text-[12.5px] leading-5 text-ink-2">로그인 및 현장 접근 권한이 있는 팀원만 결과를 볼 수 있습니다.</p>
+        <h2 id="team-report-share-heading" className="text-lead font-bold">팀원에게 결과 공유</h2>
+        <p className="mt-1 text-body leading-5 text-ink-2">로그인 및 현장 접근 권한이 있는 팀원만 결과를 볼 수 있습니다.</p>
         {!canWrite ? <ActionUnavailable label="팀원에게 결과 공유" description="이 계정에는 결과 공유 권한이 없습니다." /> : (
           <div className="mt-3 flex flex-wrap items-end gap-2">
-            <label className="flex min-w-56 flex-1 flex-col gap-1 text-[13px] font-semibold">공유할 팀원
+            <label className="flex min-w-56 flex-1 flex-col gap-1 text-body font-semibold">공유할 팀원
               <select aria-label="공유할 팀원" className="input" value={recipientPrincipalId} disabled={members === null || pending !== null || unresolved !== null} onChange={(event) => setRecipientPrincipalId(event.target.value)}>
                 <option value="">팀원을 선택하세요</option>
                 {(members ?? []).map((member) => <option key={member.principalId} value={member.principalId}>{member.displayName} · {member.principalId} · {roleLabel(member.roleHint)}</option>)}
@@ -141,8 +141,8 @@ export function TeamReportShare({ reportRef, siteId, organizationId, principalId
           </div>
         )}
         {rosterError && canWrite && <button className="btn mt-2" disabled={rosterLoading} onClick={() => void loadMembers()}>팀원 목록 다시 불러오기</button>}
-        {members?.length === 0 && !rosterError && canWrite && <p className="mt-2 text-[13px] text-ink-2">공유할 활성 팀원이 없습니다. 팀 관리에서 먼저 확인하세요.</p>}
-        {feedback && <p role="status" className="mt-2 text-[13px] leading-5 text-ink-2">{feedback}</p>}
+        {members?.length === 0 && !rosterError && canWrite && <p className="mt-2 text-body text-ink-2">공유할 활성 팀원이 없습니다. 팀 관리에서 먼저 확인하세요.</p>}
+        {feedback && <p role="status" className="mt-2 text-body leading-5 text-ink-2">{feedback}</p>}
       </section>
     </ResponsiveActionBoundary>
   );

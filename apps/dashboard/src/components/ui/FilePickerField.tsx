@@ -39,7 +39,7 @@ export function FilePickerField({
         >
           {triggerLabel}
         </label>
-        <span className="text-[12.5px] leading-5 text-ink-2">
+        <span className="text-body leading-5 text-ink-2">
           {selectedFileName ?? "선택된 파일 없음"}
           {selectedFileName !== null && selectedHint ? ` · ${selectedHint}` : ""}
         </span>

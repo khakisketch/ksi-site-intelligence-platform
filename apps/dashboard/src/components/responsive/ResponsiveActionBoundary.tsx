@@ -19,11 +19,11 @@ export function ResponsiveNotice({
   return (
     <aside
       data-responsive-action-notice={action}
-      className={`rounded-lg border border-line-strong bg-sunk px-3 py-2.5 text-[13px] lg:hidden ${className}`.trim()}
+      className={`rounded-lg border border-line-strong bg-sunk px-3 py-2.5 text-body lg:hidden ${className}`.trim()}
     >
       <div className="flex items-center justify-between gap-2">
         <p className="font-semibold break-keep text-ink-1">{title}</p>
-        <span className="shrink-0 rounded border border-line-strong bg-surface px-1.5 py-0.5 text-[10.5px] font-semibold text-ink-muted">
+        <span className="shrink-0 rounded border border-line-strong bg-surface px-1.5 py-0.5 text-micro font-semibold text-ink-muted">
           노트북 필요
         </span>
       </div>

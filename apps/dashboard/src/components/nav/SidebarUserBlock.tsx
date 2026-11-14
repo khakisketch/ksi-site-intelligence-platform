@@ -34,23 +34,23 @@ export async function SidebarUserBlock({ snapshot }: { snapshot?: WhoAmIResponse
     <div className="mt-auto flex items-center gap-[9px] border-t border-white/[0.08] px-3 pt-2.5">
       <span
         aria-hidden="true"
-        className="grid size-[27px] flex-none place-items-center rounded-full bg-sidebar-active text-[11.5px] font-bold text-sidebar-active-ink"
+        className="grid size-[27px] flex-none place-items-center rounded-full bg-sidebar-active text-caption font-bold text-sidebar-active-ink"
       >
         {initial}
       </span>
       <span className="min-w-0 flex-1">
         <Link
           href="/more"
-          className="tap-target block truncate text-[12.5px] font-semibold hover:underline"
+          className="tap-target block truncate text-body font-semibold hover:underline"
         >
           {principal.principalId}
         </Link>
-        <span className="block truncate text-[11px] text-sidebar-muted">{roleLabel}</span>
+        <span className="block truncate text-micro text-sidebar-muted">{roleLabel}</span>
       </span>
       <form action={logout} className="flex-none">
         <button
           type="submit"
-          className="tap-target flex items-center rounded-md px-2 text-[11.5px] text-sidebar-muted hover:bg-sidebar-hover hover:text-sidebar-text"
+          className="tap-target flex items-center rounded-md px-2 text-caption text-sidebar-muted hover:bg-sidebar-hover hover:text-sidebar-text"
         >
           로그아웃
         </button>

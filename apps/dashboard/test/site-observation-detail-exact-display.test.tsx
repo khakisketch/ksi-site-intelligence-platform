@@ -73,7 +73,7 @@ function fullReport(reportDigest = digest("d")) {
 beforeEach(() => {
   vi.resetAllMocks();
   mocked.session.mockResolvedValue({ kind: "ready", principal: { organizationId: "org-1", principalId: "operator-1", permissions: ["WORK_ORDERS_WRITE"] } });
-  mocked.site.mockResolvedValue({ siteId: "site-1", name: "현장 1" });
+  mocked.site.mockResolvedValue({ siteId: "site-1", name: "현장 1", status: "BASELINE_MAPPING" });
   mocked.areas.mockResolvedValue({ workAreas: [] });
   mocked.projection.mockResolvedValue({
     state: "AVAILABLE",
@@ -105,7 +105,7 @@ describe("exact site report detail", () => {
 
     expect(screen.getByText("현장 1")).toBeTruthy();
     expect(screen.getByText("이 관측 결과를 확인할 권한이 없습니다.")).toBeTruthy();
-    expect(screen.getByRole("link", { name: "관측 이력" }).getAttribute("href")).toBe("/sites/site-1/observations");
+    expect(screen.getByRole("link", { name: "외부 비교 이력" }).getAttribute("href")).toBe("/sites/site-1/observations");
     expect(screen.queryByRole("button", { name: "다시 시도" })).toBeNull();
     expect(mocked.share).not.toHaveBeenCalled();
     expect(mocked.pair).not.toHaveBeenCalled();
@@ -132,7 +132,7 @@ describe("exact site report detail", () => {
 
     expect(screen.getByText("현장 1")).toBeTruthy();
     expect(screen.getByText("관측 결과를 확인할 수 없습니다.")).toBeTruthy();
-    expect(screen.getByRole("link", { name: "관측 이력" })).toBeTruthy();
+    expect(screen.getByRole("link", { name: "외부 비교 이력" })).toBeTruthy();
   });
 
   it("preserves Site context on exact-detail 403 without rendering unverified derived or successor views", async () => {
@@ -142,7 +142,7 @@ describe("exact site report detail", () => {
 
     expect(screen.getByText("현장 1")).toBeTruthy();
     expect(screen.getByText("상세 근거를 확인할 권한이 없습니다.")).toBeTruthy();
-    expect(screen.getByRole("link", { name: "관측 이력" })).toBeTruthy();
+    expect(screen.getByRole("link", { name: "외부 비교 이력" })).toBeTruthy();
     expect(screen.queryByRole("button", { name: "다시 시도" })).toBeNull();
     expect(screen.queryByTestId("display-pair")).toBeNull();
     expect(screen.queryByTestId("successor-state")).toBeNull();

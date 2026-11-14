@@ -73,7 +73,7 @@ describe("AnalysisRequestPanel current preference", () => {
     });
     expect((screen.getByLabelText("현재 관측") as HTMLSelectElement).value).toBe("");
     expect(screen.getByText(/분석 후보에 없습니다/).textContent).toMatch(/현재 관측을 직접 선택하세요/);
-    expect(screen.getByRole("link", { name: "등록 자료와 검사 상태 확인" }).getAttribute("href")).toBe("/sites/site-1/spatial-assets?workAreaId=area-1");
+    expect(screen.getByRole("link", { name: "등록 자료와 검사 상태 확인" }).getAttribute("href")).toBe("/sites/site-1?panel=materials&workAreaId=area-1");
     expect(screen.queryByRole("link", { name: "외부 비교 기록에서 확인" })).toBeNull();
   });
 

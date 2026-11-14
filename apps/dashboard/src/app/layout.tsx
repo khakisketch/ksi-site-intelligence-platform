@@ -56,7 +56,7 @@ export default async function RootLayout({
   const chromeless = isChromelessPath(headerStore.get(PATHNAME_HEADER));
   const currentPathname = headerStore.get(PATHNAME_HEADER);
   const viewerShell = !chromeless && isViewerPath(currentPathname, headerStore.get(SEARCH_HEADER));
-  const currentPageTitle = resolvePageTitle(currentPathname) || "KSI Site Intelligence";
+  const currentPageTitle = resolvePageTitle(currentPathname, new URLSearchParams(headerStore.get(SEARCH_HEADER) ?? "")) || "KSI Site Intelligence";
   // 셸을 벗는 로그인 화면에는 세션이 없어 현장 목록을 부르면 401 왕복만 는다.
   // Bind shell identity, site menu, counts and palette to one resolved token.
   // Separate page RSCs still have their own snapshot and authorization checks.

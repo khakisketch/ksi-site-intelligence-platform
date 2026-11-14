@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { resolveSiteAreaNextAction, SiteAreaNextActionNav } from "@/app/sites/[siteId]/SiteAreaNextAction";
-import { renderToStaticMarkup } from "react-dom/server";
+import { resolveSiteAreaNextAction } from "@/app/sites/[siteId]/SiteAreaNextAction";
 import { parseVisualBrowsingContext } from "@/lib/operator-journey";
 
 const a = `ksa-v1-${"a".repeat(64)}`, b = `ksa-v1-${"b".repeat(64)}`;
@@ -46,29 +45,4 @@ describe("area actions with an independent pair", () => {
       expect(action.primary.href).toContain("analysisId=record-1");
     },
   );
-});
-
-
-describe("responsive site-area actions", () => {
-  it("gives compact primary registration the laptop handoff too", () => {
-    const registration = resolveSiteAreaNextAction({ ...input, canCreateWorkOrder: true, canCreateAnalysis: false, latestAnalysis: null });
-    const html = renderToStaticMarkup(<SiteAreaNextActionNav sitePath="/sites/site-1" workAreaId="area-1" action={registration} archived={false} canRegisterOrCompare label="테스트 다음 행동" compact />);
-    expect(html).toContain("자료 등록은 노트북 이상의 화면에서 진행하세요.");
-    expect(html).toContain('href="/sites/site-1/observations/new?workAreaId=area-1"');
-  });
-
-  it("hands registration links off below laptop width but leaves analysis and read links direct", () => {
-    const registration = resolveSiteAreaNextAction({ ...input, canCreateWorkOrder: true, canCreateAnalysis: false, latestAnalysis: null });
-    const registrationHtml = renderToStaticMarkup(<SiteAreaNextActionNav sitePath="/sites/site-1" workAreaId="area-1" action={registration} archived={false} canRegisterOrCompare label="테스트 다음 행동" />);
-    expect(registrationHtml).toContain("자료 등록은 노트북 이상의 화면에서 진행하세요.");
-    expect(registrationHtml).toContain("lg:contents");
-    expect(registrationHtml).toContain('href="/sites/site-1/observations/new?workAreaId=area-1"');
-
-    const analysis = resolveSiteAreaNextAction({ ...input, canCreateAnalysis: true, latestAnalysis: null });
-    const analysisHtml = renderToStaticMarkup(<SiteAreaNextActionNav sitePath="/sites/site-1" workAreaId="area-1" action={analysis} archived={false} canRegisterOrCompare label="테스트 다음 행동" />);
-    expect(analysisHtml).not.toContain("자료 등록은 노트북 이상의 화면에서 진행하세요.");
-    expect(analysisHtml).not.toContain("lg:contents");
-    expect(analysisHtml).toContain('href="/sites/site-1/analysis?workAreaId=area-1"');
-    expect(analysisHtml).toContain('href="/sites/site-1/spatial-assets?workAreaId=area-1"');
-  });
 });

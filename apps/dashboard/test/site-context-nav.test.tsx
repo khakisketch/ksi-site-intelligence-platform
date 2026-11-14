@@ -32,30 +32,14 @@ afterEach(() => {
 });
 
 describe("site context in the desktop rail", () => {
-  it("shows the current site and the four site sections with the active one marked", () => {
+  it("shows two menu entries with space active and a separate settings link", () => {
     render(<SiteContextNav sites={sites} />);
     expect(screen.getByText("Floreat public sample")).toBeTruthy();
     const nav = screen.getByRole("navigation", { name: "현재 현장 메뉴" });
-    expect(within(nav).getByRole("link", { name: "자료" }).getAttribute("aria-current")).toBe("page");
-    expect(within(nav).getByRole("link", { name: "작업공간" }).getAttribute("aria-current")).toBeNull();
-    expect(within(nav).getByRole("link", { name: "관측 작업" }).getAttribute("href")).toBe("/sites/site-1?section=work-orders");
-    expect(within(nav).getByRole("link", { name: "결과" }).getAttribute("href")).toBe("/sites/site-1/analysis");
-  });
-
-  it("explains each destination in the menu without changing its accessible name or route", () => {
-    navigation.pathname = "/sites/site-1";
-    render(<SiteContextNav sites={sites} />);
-    const nav = screen.getByRole("navigation", { name: "현재 현장 메뉴" });
-    for (const [name, hint] of [
-      ["작업공간", "구역과 관측 시점 보기"],
-      ["자료", "등록 자료와 검사 상태"],
-      ["관측 작업", "이 현장의 작업 기록"],
-      ["결과", "분석 기록과 결과 확인"],
-    ]) {
-      const link = within(nav).getByRole("link", { name, description: hint });
-      expect(link.textContent).toContain(hint);
-    }
-    expect(within(nav).getByRole("link", { name: "관측 작업" }).getAttribute("href")).toBe("/sites/site-1?section=work-orders");
+    expect(within(nav).getAllByRole("link")).toHaveLength(2);
+    expect(within(nav).getByRole("link", { name: "공간", description: "관측 자료와 작업구역 보기" }).getAttribute("aria-current")).toBe("page");
+    expect(within(nav).getByRole("link", { name: "분석", description: "변화 분석과 외부 비교" }).getAttribute("href")).toBe("/sites/site-1/analysis");
+    expect(screen.getByRole("link", { name: "현장 설정" }).getAttribute("href")).toBe("/sites/site-1?section=manage");
   });
 
   it("keeps the section when switching to another site", () => {
@@ -64,17 +48,17 @@ describe("site context in the desktop rail", () => {
     const dialog = screen.getByRole("dialog", { name: "현장 변경" });
     expect(within(dialog).getByRole("button", { name: /Floreat public sample/ }).getAttribute("aria-current")).toBe("true");
     expect(within(dialog).getByRole("link", { name: /Product Sample Field/ }).getAttribute("href")).toBe(
-      "/sites/site-2/spatial-assets",
+      "/sites/site-2",
     );
     expect(within(dialog).getByRole("link", { name: /전체 현장/ }).getAttribute("href")).toBe("/sites");
   });
 
-  it("marks the work ledger section from the site query", () => {
+  it("marks space for the legacy work ledger query", () => {
     navigation.pathname = "/sites/site-1";
     navigation.search = new URLSearchParams("section=work-orders");
     render(<SiteContextNav sites={sites} />);
     const nav = screen.getByRole("navigation", { name: "현재 현장 메뉴" });
-    expect(within(nav).getByRole("link", { name: "관측 작업" }).getAttribute("aria-current")).toBe("page");
+    expect(within(nav).getByRole("link", { name: "공간" }).getAttribute("aria-current")).toBe("page");
   });
 
   it("closes the switcher with Escape and returns focus to its trigger", () => {

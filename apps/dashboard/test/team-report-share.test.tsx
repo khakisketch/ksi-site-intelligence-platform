@@ -49,8 +49,8 @@ describe("TeamReportShare", () => {
     await screen.findByRole("option", { name: /현장 담당/ });
     fireEvent.change(screen.getByLabelText("공유할 팀원"), { target: { value: "operator-a" } });
     fireEvent.click(screen.getByRole("button", { name: "팀원에게 결과 공유" }));
-    await waitFor(() => expect(notifyMock).toHaveBeenCalledWith("받은 업무에 전달했습니다."));
-    expect(screen.queryByText("받은 업무에 전달했습니다.")).toBeNull();
+    await waitFor(() => expect(notifyMock).toHaveBeenCalledWith("받은 작업에 전달했습니다."));
+    expect(screen.queryByText("받은 작업에 전달했습니다.")).toBeNull();
     expect(fetchMock.mock.calls[1]?.[0]).toBe(`/api/external-single-volume-reports/${singleRef}/shares`);
     expect(JSON.parse(fetchMock.mock.calls[1]?.[1]?.body)).toEqual({ recipientPrincipalId: "operator-a" });
   });
@@ -74,7 +74,7 @@ describe("TeamReportShare", () => {
     fireEvent.change(screen.getByLabelText("공유할 팀원"), { target: { value: "operator-a" } });
     fireEvent.click(screen.getByRole("button", { name: "팀원에게 결과 공유" }));
     await screen.findByRole("status");
-    expect(screen.getByRole("status").textContent).not.toContain("받은 업무에 전달했습니다");
+    expect(screen.getByRole("status").textContent).not.toContain("받은 작업에 전달했습니다");
     await waitFor(() => expect((screen.getByRole("button", { name: /같은 요청 다시 시도/ }) as HTMLButtonElement).disabled).toBe(false));
     fireEvent.change(screen.getByLabelText("공유할 팀원"), { target: { value: "operator-b" } });
     expect(fetchMock).toHaveBeenCalledTimes(2);

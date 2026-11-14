@@ -110,8 +110,10 @@ describe("visual pair routed integration (rendered)", () => {
     expect(html).toContain("관측 A");
     expect(html).toContain("관측 B");
     // The legacy strict form is a labelled disclosure, not a second primary form.
-    expect(html).toContain("기존 시간 순서 보기");
-    const [beforeDisclosure, afterDisclosure] = html.split("기존 시간 순서 보기");
+    expect(html).toContain("시간 순서 비교");
+    const menuIndex = html.indexOf("시간 순서 비교");
+    const beforeDisclosure = html.slice(0, menuIndex);
+    const afterDisclosure = html.slice(menuIndex);
     expect(beforeDisclosure).not.toContain("나란히 보기</button>");
     expect(afterDisclosure).toContain("나란히 보기</button>");
   });
@@ -183,9 +185,7 @@ describe("visual pair routed integration (rendered)", () => {
       <SiteHeader
         site={site}
         selectedEpochId={null}
-        tab="workspace"
-        canCreateWorkOrder={false}
-        canEditAoi={false}
+        tab="space"
         scopedWorkAreaId="area-1"
         scopedAssetRef={null}
         visualContext={{
@@ -199,7 +199,7 @@ describe("visual pair routed integration (rendered)", () => {
     expect(withPair).not.toContain("#new-analysis-request");
     expect(withPair).toContain(`visualAAssetRef=${ref("1")}`);
     const withoutPair = renderToStaticMarkup(
-      <SiteHeader site={site} selectedEpochId={null} tab="workspace" canCreateWorkOrder={false} canEditAoi={false} />,
+      <SiteHeader site={site} selectedEpochId={null} tab="space" />,
     );
     expect(withoutPair).not.toContain("visualAAssetRef");
     expect(withoutPair).not.toContain("hintBaseline");
@@ -305,7 +305,8 @@ describe("analysis handoff panel (rendered draft, frozen inputs, no auto POST)",
       visualContext={{ workAreaId: "area-1", visualAAssetRef: ref("1"), visualBAssetRef: ref("2") }}
       visualReturnHref={`/sites/site-1?mode=compare&workAreaId=area-1&visualAAssetRef=${ref("1")}&visualBAssetRef=${ref("2")}`}
     />);
-    expect(screen.getByText(/요청한 관측을 분석 후보에서 확인하지 못했습니다/)).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "변화 분석 이력" })).toBeTruthy();
+    expect(screen.queryByLabelText("기준 관측")).toBeNull();
     const returnLinks = screen.getAllByRole("link", { name: "독립 보기로 돌아가기" });
     expect(returnLinks.length).toBeGreaterThanOrEqual(1);
     for (const link of returnLinks) {

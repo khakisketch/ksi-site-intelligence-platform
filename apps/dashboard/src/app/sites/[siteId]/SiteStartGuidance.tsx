@@ -40,23 +40,23 @@ export function SiteStartGuidance({
     : workAreaCount === 0
       ? "현재 조회된 작업구역이 없습니다. 분석 전에 권한 있는 현장 담당자와 구역 설정 여부를 확인하세요."
       : observationWorkOrderCount === null
-        ? "관측 작업 상태를 확인할 수 없습니다. 작업 현황을 확인한 뒤 분석 후보를 살펴보세요."
+        ? "작업 상태를 확인할 수 없습니다. 작업 현황을 확인한 뒤 분석 후보를 살펴보세요."
         : observationWorkOrderCount === 0
-          ? "현재 조회된 관측 작업이 없습니다. 필요한 외부 관측은 자료 담당자와 확인하세요."
+          ? "현재 조회된 작업이 없습니다. 필요한 외부 관측은 자료 담당자와 확인하세요."
           : "관측 시점을 골라 기준 자료와 비교할 자료를 확인하세요. 비교 가능 여부는 요청할 때 확인합니다.";
   const nextStepAction = workAreaCount === null || workAreaCount === 0
     ? { href: `${sitePath}/work-areas`, label: "작업구역 확인" }
     : observationWorkOrderCount === null || observationWorkOrderCount === 0
-      ? { href: `${sitePath}?section=work-orders`, label: "관측 작업 현황 확인" }
+      ? { href: `${sitePath}?panel=intake`, label: "작업 현황 확인" }
       : { href: `${sitePath}/analysis`, label: "비교할 자료 선택" };
 
   return <section className="rounded-lg border border-line bg-surface px-4 py-2.5" aria-label="현장 시작 안내">
-    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[12px]">
+    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-caption">
       <p><span className="text-ink-muted">작업구역 </span><span className="font-semibold">{areaStatus}</span></p>
-      <p><span className="text-ink-muted">관측 작업 </span><span className="font-semibold">{workOrderStatus}</span></p>
+      <p><span className="text-ink-muted">작업 </span><span className="font-semibold">{workOrderStatus}</span></p>
       {externalResultCount !== 0 && <p><span className="text-ink-muted">외부 비교 기록 </span><span className="font-semibold">{resultStatus}</span></p>}
       {!hasWorkspaceActions && <Link href={nextStepAction.href} className="btn ml-auto">{nextStepAction.label}</Link>}
     </div>
-    {!hasWorkspaceActions && <p className="mt-1.5 text-[12px] leading-5 text-ink-2"><span className="font-semibold">다음 확인 · </span>{nextStep}</p>}
+    {!hasWorkspaceActions && <p className="mt-1.5 text-caption leading-5 text-ink-2"><span className="font-semibold">다음 확인 · </span>{nextStep}</p>}
   </section>;
 }

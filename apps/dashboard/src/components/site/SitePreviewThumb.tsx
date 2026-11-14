@@ -1,5 +1,6 @@
 "use client";
 
+import { Disclosure } from "@/components/ui/Disclosure";
 import Link from "next/link";
 import { useEffect, useId, useRef, useState } from "react";
 
@@ -10,7 +11,8 @@ import {
   fetchVerifiedReceiptBytes,
   type DecodedReceiptPreview,
 } from "@/lib/spatial-data-preview";
-import { SiteVisualPlaceholder } from "./SiteVisualPlaceholder";
+import { SiteFootprint } from "./SiteFootprint";
+import type { AoiVertex } from "@/lib/core-api/types";
 
 /**
  * 현장 목록 미리보기 — 실제 준비된 출력의 작은 인식용 표시.
@@ -87,7 +89,18 @@ function precisionLine(link: SitePreviewDescriptor): string | null {
   return parts.length > 0 ? parts.join(" · ") : null;
 }
 
-export function SitePreviewThumb({ siteId, siteName = "현장", size }: { siteId: string; siteName?: string; size: "card" | "row" }) {
+export function SitePreviewThumb({
+  siteId,
+  siteName = "현장",
+  size,
+  footprint = null,
+}: {
+  siteId: string;
+  siteName?: string;
+  size: "card" | "row";
+  /** 등록된 현장 경계 — 영상이 없을 때 표지로 그린다. 없으면 "경계 미등록" 표지다. */
+  footprint?: readonly AoiVertex[] | null;
+}) {
   const [phase, setPhase] = useState<Phase>({ name: "pending" });
   const [preview, setPreview] = useState<{ image: DecodedReceiptPreview; link: SitePreviewDescriptor } | null>(null);
   const boxRef = useRef<HTMLDivElement>(null);
@@ -202,14 +215,8 @@ export function SitePreviewThumb({ siteId, siteName = "현장", size }: { siteId
           : phase.name === "unknown"
             ? "미리보기 확인 불가"
             : "미리보기 없음";
-    const rowToneClass =
-      phase.name === "refused"
-        ? "text-crit-ink"
-        : phase.name === "unknown"
-          ? "text-high-ink"
-          : "text-ink-2";
     return (
-      <div ref={boxRef} data-site-preview="row" className="h-11 w-14 shrink-0 overflow-hidden rounded border border-line bg-sunk">
+      <div ref={boxRef} data-site-preview="row" className={`relative h-11 w-14 shrink-0 overflow-hidden rounded border bg-sunk ${phase.name === "refused" ? "border-crit" : phase.name === "unknown" ? "border-high" : "border-line"}`}>
         {phase.name === "ready" && preview !== null ? (
           <>
             <Link
@@ -224,16 +231,13 @@ export function SitePreviewThumb({ siteId, siteName = "현장", size }: { siteId
               {rowFactsText}
             </span>
           </>
-        ) : phase.name === "loading" || phase.name === "pending" ? (
-          <span role="img" aria-label={rowLabel} className="block size-full animate-pulse bg-line/40" />
         ) : (
-          <span
-            role="img"
-            aria-label={rowLabel}
-            className={`flex size-full items-center justify-center px-1 text-center text-[10px] font-semibold break-keep ${rowToneClass}`}
-          >
-            {rowLabel}
-          </span>
+          <>
+            {/* 영상이 없으면 등록 경계 도형이 자리를 채운다. 상태는 아래 img 이름과
+                테두리 색이 전하고, 도형은 보조기술에서 숨긴다. */}
+            <SiteFootprint vertices={footprint} siteName={siteName} size="row" decorative className={`size-full ${phase.name === "loading" || phase.name === "pending" ? "animate-pulse" : ""}`} />
+            <span role="img" aria-label={rowLabel} className="absolute inset-0" />
+          </>
         )}
       </div>
     );
@@ -251,44 +255,40 @@ export function SitePreviewThumb({ siteId, siteName = "현장", size }: { siteId
             <figure className="relative size-full">
               <canvas ref={canvasRef} className="absolute inset-0 size-full object-cover" />
               <figcaption className="absolute right-0 bottom-0 left-0 flex flex-wrap items-end justify-between gap-x-3 gap-y-0.5 bg-accent px-4 py-2 text-accent-on">
-                <span className="min-w-0 text-[12px] font-semibold break-keep">
+                <span className="min-w-0 text-caption font-semibold break-keep">
                   {captureLine(preview.link)} · {kindLabel}
-                  <span className="ml-1 rounded bg-white/20 px-1 py-px text-[10.5px]">부분 범위</span>
-                  {preview.link.artifactKind === "dsm" && <span className="ml-1 rounded bg-white/20 px-1 py-px text-[10.5px]">상대 음영</span>}
+                  <span className="ml-1 rounded bg-white/20 px-1 py-px text-micro">부분 범위</span>
+                  {preview.link.artifactKind === "dsm" && <span className="ml-1 rounded bg-white/20 px-1 py-px text-micro">상대 음영</span>}
                 </span>
               </figcaption>
             </figure>
           </Link>
         </div>
-        <details className="border-t border-line px-4 py-1">
-          <summary className="tap-target inline-flex cursor-pointer items-center text-[11.5px] font-semibold text-ink-muted">
-            자료 정보
-          </summary>
-          <div className="pb-2 text-[11.5px] leading-5 break-keep text-ink-2">
+        <Disclosure label="미리보기 출처 상세" className="border-b border-line px-4">
+          <div className="pb-2 text-caption leading-5 break-keep text-ink-2">
             <p>표시 구역: {preview.link.workAreaName}</p>
             {precisionFacts ? <p>{precisionFacts}</p> : null}
             {attributionText ? (
               /* 출처 문장은 제출자가 적은 원문이라 길다. 사람이 읽는
                  앞부분만 먼저 보이고 원문은 한 번 더 펼쳐야 보인다 —
                  펼침을 열 때마다 긴 문장이 화면을 밀어내지 않게 한다. */
-              <details>
-                <summary className="tap-target cursor-pointer font-semibold">출처 · 변경 안내 전체 보기</summary>
+              <Disclosure label="출처·변경 상세">
                 <p className="mt-1">{attributionText}</p>
-              </details>
+              </Disclosure>
             ) : null}
           </div>
-        </details>
+        </Disclosure>
       </div>
     );
   }
 
-  // 픽셀이 없을 때도 로딩·미확인·거부·부재를 구분하되, 카드 크기는 실제
-  // 미리보기와 같은 16:9로 유지한다 — '미리보기 없음'이 카드를 좁은 텍스트
-  // 띠로 접지 않는다. 표지는 사진이 아님을 명시한 중립 면이다.
+  // 픽셀이 없을 때도 로딩·미확인·거부·부재를 구분한다. 표지는 상태를 말하는
+  // 한 줄 띠로 접는다 — 실제 미리보기가 있을 때만 16:9 면을 쓴다. 빈 16:9 면은
+  // 목록의 절반을 비워 두고 고장난 영상처럼 읽힌다(2026-11-14 디자인 정리).
   if (phase.name === "loading" || phase.name === "pending") {
     return (
       <div ref={boxRef} data-site-preview="card-loading">
-        <SiteVisualPlaceholder siteName={siteName} label="미리보기 불러오는 중" tone="loading" />
+        <SiteFootprint vertices={footprint} siteName={siteName} stateLabel="미리보기 불러오는 중" tone="loading" />
       </div>
     );
   }
@@ -302,15 +302,12 @@ export function SitePreviewThumb({ siteId, siteName = "현장", size }: { siteId
         : "등록 자료 현황을 뜻하지 않습니다. 영역·자료는 현장 열기에서 확인하세요.";
   const emptyTone = phase.name === "refused" ? "refused" : phase.name === "unknown" ? "unknown" : "empty";
   return (
-        <div ref={boxRef} data-site-preview="card-empty">
-          <SiteVisualPlaceholder siteName={siteName} label={emptyLabel} note={emptyNote} tone={emptyTone} />
+        <div ref={boxRef} data-site-preview="card-empty" className="border-b border-line">
+          <SiteFootprint vertices={footprint} siteName={siteName} stateLabel={emptyLabel} note={emptyNote} tone={emptyTone} />
           {emptyTone !== "empty" && (
-            <details className="border-t border-line px-4 py-1">
-              <summary className="tap-target inline-flex cursor-pointer items-center text-[11.5px] font-semibold text-ink-muted">
-                상태 안내
-              </summary>
-              <p className="max-w-[52ch] pb-2 text-[11.5px] leading-5 break-keep text-ink-2">{emptyNote}</p>
-            </details>
+            <Disclosure label="미리보기 출처 상세" className="px-4">
+              <p className="max-w-[52ch] pb-2 text-caption leading-5 break-keep text-ink-2">{emptyNote}</p>
+            </Disclosure>
           )}
         </div>
   );

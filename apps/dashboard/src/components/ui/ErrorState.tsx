@@ -54,12 +54,17 @@ export function ErrorState({
   return (
     <div
       role="alert"
-      className={`flex flex-col items-start gap-2 rounded-lg border px-4 py-3 text-[13px] ${TONE_CLASS[tone]}`}
+      className={`flex flex-col items-start gap-x-4 gap-y-2 rounded-lg border px-4 py-3 text-body sm:flex-row sm:items-center sm:justify-between ${TONE_CLASS[tone]}`}
     >
-      <p className="font-semibold break-keep">{message}</p>
-      {detail && <p className="break-keep">{detail}</p>}
+      {/* 넓은 화면에서는 사실(왼쪽)과 복구 행동(오른쪽)을 한 행에 둔다 — 오류 안내가
+          세 줄 높이의 상자가 되어 화면의 주 내용을 밀어내지 않게 한다. */}
+      <div className="min-w-0">
+        <p className="font-semibold break-keep">{message}</p>
+        {detail && <p className="mt-0.5 break-keep">{detail}</p>}
+      </div>
+      {(action || retryable) && <div className="flex shrink-0 flex-wrap items-center gap-2">
       {action && (
-        <Link href={action.href} className="btn mt-1 bg-surface">
+        <Link href={action.href} className="btn bg-surface">
           {action.label}
         </Link>
       )}
@@ -68,7 +73,7 @@ export function ErrorState({
           type="button"
           disabled={waitLeft > 0 || isPending}
           onClick={() => startTransition(() => router.refresh())}
-          className="btn btn-danger mt-1 bg-surface"
+          className="btn btn-danger bg-surface"
         >
           {isPending
             ? "다시 시도하는 중…"
@@ -77,6 +82,7 @@ export function ErrorState({
               : "다시 시도"}
         </button>
       )}
+      </div>}
     </div>
   );
 }

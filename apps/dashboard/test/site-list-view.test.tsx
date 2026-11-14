@@ -530,12 +530,12 @@ describe("sites desktop view wiring", () => {
     expect(VIEW).toContain("data-site-list-view={view}");
   });
 
-  it("현장 열기가 중심 동작이고 자료·결과는 조용한 텍스트다", () => {
-    // 공유 카드: 현장 열기 하나만 두고 이웃(자료·결과)은 조용한 텍스트다.
+  it("현장 열기가 중심 동작이고 자료·분석은 조용한 텍스트다", () => {
+    // 공유 카드: 현장 열기 하나만 두고 이웃(자료·분석)은 조용한 텍스트다.
     expect((DIRECTORY_CARD.match(/현장 열기/g) ?? []).length).toBe(1);
     expect(DIRECTORY_CARD).toContain("조치 필요");
     expect(DIRECTORY_CARD).not.toContain("btn btn-primary");
-    expect(DIRECTORY_CARD).toContain("spatial-assets");
+    expect(DIRECTORY_CARD).toContain("panel=materials");
     expect(DIRECTORY_CARD).toContain("/analysis");
     expect((DENSE.match(/label="현장 열기"/g) ?? []).length).toBe(1);
     expect(DENSE).toMatch(/<TableAction[\s\S]*?primary[\s\S]*?\/>/);
@@ -548,8 +548,8 @@ describe("sites desktop view wiring", () => {
   it("간결 카드는 실제 미리보기 영역을 두고 장식 표지는 두지 않는다", () => {
     // 격자는 배치만 맡고 카드 본문은 공유 카드가 그린다.
     expect(CARDS).toContain("SiteDirectoryCard");
-    expect(CARDS).toContain("lg:grid-cols-2");
-    expect(CARDS).toContain("2xl:grid-cols-3");
+    expect(CARDS).toContain("lg:grid-cols-3");
+    expect(CARDS).toContain("2xl:grid-cols-4");
     expect(CARDS).toContain("trailing");
     expect(CARDS).toContain("<h2");
     expect(CARDS).toContain("meta: string");
@@ -563,7 +563,7 @@ describe("sites desktop view wiring", () => {
     expect(DIRECTORY_CARD).not.toContain("DefaultSiteVisual");
     expect(DIRECTORY_CARD).not.toContain("line-clamp-3");
     expect(DIRECTORY_CARD).not.toContain("text-[22px]");
-    expect(DIRECTORY_CARD).toContain("text-[17px]");
+    expect(DIRECTORY_CARD).toContain("text-title");
     expect(DIRECTORY_CARD).toContain("mt-auto");
     expect(DIRECTORY_CARD).toContain("<h3");
     expect(DIRECTORY_CARD.match(/<h3/g) ?? []).toHaveLength(1);

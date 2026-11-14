@@ -1,3 +1,4 @@
+import { Disclosure } from "@/components/ui/Disclosure";
 import { computePlaneBounds, formatPlaneValue, type PlaneUnit } from "./site-spatial";
 
 /**
@@ -72,7 +73,7 @@ export function SiteMosaicAbsentDiagram({
 
   return (
     <figure className="overflow-hidden rounded-lg border border-line bg-sunk/40">
-      <p className="border-b border-line px-3 py-1.5 text-[12px] font-bold text-ink-1">
+      <p className="border-b border-line px-3 py-1.5 text-caption font-bold text-ink-1">
         범위 도식 · 사진 아님
       </p>
       <svg
@@ -96,7 +97,7 @@ export function SiteMosaicAbsentDiagram({
           strokeLinejoin="round"
         />
       </svg>
-      <figcaption className="border-t border-line px-3 py-2 text-[11.5px] leading-5 text-ink-2">
+      <figcaption className="border-t border-line px-3 py-2 text-caption leading-5 text-ink-2">
         <p>
           {showRing
             ? "실선은 작업구역 경계이며, 점선은 파일 전체 범위입니다."
@@ -104,8 +105,7 @@ export function SiteMosaicAbsentDiagram({
           {" "}사각형은 파일의 끝을 잰 값이며 빈틈 없는 유효 픽셀로 읽지 마세요. 사진이 아니며 정확도를 보증하지 않습니다.
         </p>
         {overlayNote && !showRing && <p className="mt-1">{overlayNote}</p>}
-        <details className="mt-1">
-          <summary className="tap-target cursor-pointer font-semibold">좌표·검사 격자 정보</summary>
+        <Disclosure label="좌표·검사 격자 상세" className="mt-1">
           <dl className="mt-1 grid gap-1">
           <div><dt className="font-semibold text-ink-muted">위치 기준</dt><dd className="break-all font-mono">{crsLabel} · {unitNote}</dd></div>
           <div><dt className="font-semibold text-ink-muted">파일 전체 가로 범위</dt><dd className="break-all font-mono">{formatPlaneValue(fileBounds.minX, planeUnit)} – {formatPlaneValue(fileBounds.maxX, planeUnit)}</dd></div>
@@ -113,7 +113,7 @@ export function SiteMosaicAbsentDiagram({
           {filePixelSize && <div><dt className="font-semibold text-ink-muted">검사 격자</dt><dd>{filePixelSize.width} × {filePixelSize.height} 네이티브 픽셀</dd></div>}
           {fileExtentLabel && <div><dt className="font-semibold text-ink-muted">함께 표시한 자료</dt><dd className="break-words">{fileExtentLabel}</dd></div>}
           </dl>
-        </details>
+        </Disclosure>
       </figcaption>
     </figure>
   );

@@ -119,7 +119,7 @@ it('uses the refreshed site for header scope when opening the palette after firs
  expect(screen.getByRole('dialog',{name:'검색 및 이동'}).textContent).toContain('신규 현장');
  const option = screen.getAllByRole('option').find(item => item.textContent?.startsWith('자료'));
  expect(option).toBeTruthy(); fireEvent.click(option!);
- expect(env.push).toHaveBeenCalledWith(`/sites/new-id/spatial-assets?workAreaId=wa-a&assetRef=${ref}`);
+ expect(env.push).toHaveBeenCalledWith(`/sites/new-id?panel=materials&workAreaId=wa-a&assetRef=${ref}`);
 });
 
 it('refreshed list does not authorize an old site or import a cross-site bridge', async () => {
@@ -138,7 +138,7 @@ it('refreshed list does not authorize an old site or import a cross-site bridge'
  fireEvent.keyDown(window,{key:'k',ctrlKey:true});
  expect(screen.queryByText('이전 현장')).toBeNull();
  fireEvent.click(screen.getAllByRole('option').find(item=>item.textContent?.startsWith('자료'))!);
- expect(env.push).toHaveBeenCalledWith('/sites/new-id/spatial-assets');
+ expect(env.push).toHaveBeenCalledWith('/sites/new-id?panel=materials');
 });
 it('refreshed site preserves an explicit URL scope rather than replacing it with the header', async () => {
  HTMLElement.prototype.scrollIntoView = vi.fn(); const ref = `ksa-v1-${'e'.repeat(64)}`;
@@ -149,7 +149,7 @@ it('refreshed site preserves an explicit URL scope rather than replacing it with
  render(<SiteListProvider sites={[]} fingerprint={fingerprint}><Parts/></SiteListProvider>);
  fireEvent.click(screen.getByRole('button',{name:'목록 확인'})); await waitFor(()=>expect(screen.getByTestId('confirmed').textContent).toBe('1'));
  fireEvent.keyDown(window,{key:'k',ctrlKey:true}); fireEvent.click(screen.getAllByRole('option').find(item=>item.textContent?.startsWith('자료'))!);
- expect(env.push).toHaveBeenCalledWith('/sites/new-id/spatial-assets?workAreaId=wa-explicit');
+ expect(env.push).toHaveBeenCalledWith('/sites/new-id?panel=materials&workAreaId=wa-explicit');
 });
 it('failed refresh retains the original confirmed site bridge without authorizing the new site', async () => {
  HTMLElement.prototype.scrollIntoView = vi.fn(); const ref = `ksa-v1-${'f'.repeat(64)}`;
@@ -163,5 +163,5 @@ it('failed refresh retains the original confirmed site bridge without authorizin
  fireEvent.click(screen.getByRole('button',{name:'목록 확인'})); await screen.findByText(/현장 메뉴를 확인하지 못했습니다/);
  fireEvent.keyDown(window,{key:'k',ctrlKey:true});
  fireEvent.click(screen.getAllByRole('option').find(item=>item.textContent?.startsWith('자료'))!);
- expect(env.push).toHaveBeenCalledWith(`/sites/old-id/spatial-assets?workAreaId=wa-old&assetRef=${ref}`);
+ expect(env.push).toHaveBeenCalledWith(`/sites/old-id?panel=materials&workAreaId=wa-old&assetRef=${ref}`);
 });

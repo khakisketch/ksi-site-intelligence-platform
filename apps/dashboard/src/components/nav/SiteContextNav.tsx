@@ -15,16 +15,15 @@ import {
   resolveSiteSection,
   siteMark,
   siteSectionHref,
+  siteSettingsHref,
   siteShortName,
   siteSwitchHref,
   type SidebarSite,
 } from "./site-context";
 
 const SECTION_HINTS = {
-  workspace: "구역과 관측 시점 보기",
-  materials: "등록 자료와 검사 상태",
-  "work-orders": "이 현장의 작업 기록",
-  results: "분석 기록과 결과 확인",
+  space: "관측 자료와 작업구역 보기",
+  analysis: "변화 분석과 외부 비교",
 } as const;
 
 /**
@@ -106,73 +105,49 @@ export function SiteContextNav({ sites }: { sites: readonly SidebarSite[] }) {
   return (
     <div
       ref={rootRef}
-      className="relative mx-0.5 mt-1 mb-1 rounded-lg border border-white/10 bg-white/[0.045] p-1.5"
+      className="relative mt-0.5 mb-1.5"
       data-site-context="true"
     >
-      {canSwitch ? (
-        <button
-          ref={triggerRef}
-          type="button"
-          aria-expanded={open}
-          aria-controls="site-context-switcher"
-          aria-haspopup="dialog"
-          aria-label={`현장 변경: ${current.name}`}
-          onClick={openSwitcher}
-          className="tap-target flex w-full items-start gap-2 rounded-md px-1.5 py-1.5 text-left hover:bg-sidebar-hover"
+      <div className="flex items-center px-1">
+        {canSwitch ? (
+          <button
+            ref={triggerRef}
+            type="button"
+            aria-expanded={open}
+            aria-controls="site-context-switcher"
+            aria-haspopup="dialog"
+            aria-label={`현장 변경: ${current.name}`}
+            onClick={openSwitcher}
+            className="tap-target flex min-w-0 flex-1 items-center gap-1 rounded-md px-1.5 py-1 text-left hover:bg-sidebar-hover"
+          >
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-body font-semibold text-sidebar-active-ink" title={current.name}>{currentName}</span>
+              <span className="block truncate text-micro text-sidebar-muted">{SITE_STATUS_LABEL[current.status].label}</span>
+            </span>
+            <svg aria-hidden="true" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" className={`size-3 shrink-0 text-sidebar-muted ${open ? "rotate-180" : ""}`}>
+              <path d="m4 6 4 4 4-4" />
+            </svg>
+          </button>
+        ) : (
+          <div className="min-w-0 flex-1 px-1.5 py-1">
+            <span className="block truncate text-body font-semibold text-sidebar-active-ink" title={current.name}>{currentName}</span>
+            <span className="block truncate text-micro text-sidebar-muted">{SITE_STATUS_LABEL[current.status].label}</span>
+          </div>
+        )}
+        <Link
+          href={siteSettingsHref(current.siteId)}
+          aria-label="현장 설정"
+          title="현장 설정"
+          aria-current={searchParams?.get("section") === "manage" ? "page" : undefined}
+          className="tap-target grid w-8 shrink-0 place-items-center rounded-md text-sidebar-text hover:bg-sidebar-hover"
         >
-          <span
-            aria-hidden="true"
-            className="mt-0.5 grid size-[22px] flex-none place-items-center rounded bg-sidebar-active text-[10px] font-bold text-sidebar-active-ink ring-1 ring-white/10"
-          >
-            {siteMark(current.name)}
-          </span>
-          <span className="min-w-0 flex-1">
-            <span
-              className="line-clamp-2 block text-[12px] leading-snug font-semibold tracking-tight break-keep text-sidebar-text"
-              title={current.name}
-            >
-              {currentName}
-            </span>
-            <span className="mt-0.5 block text-[10px] text-[#b6c0bb]">
-              {SITE_STATUS_LABEL[current.status].label}
-            </span>
-          </span>
-          <svg
-            aria-hidden="true"
-            viewBox="0 0 16 16"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.8"
-            className={`mt-1 size-3 flex-none text-sidebar-muted transition-transform ${open ? "rotate-180" : ""}`}
-          >
-            <path d="m4 6 4 4 4-4" />
-          </svg>
-        </button>
-      ) : (
-        <div className="flex items-start gap-2 px-1.5 py-1.5">
-          <span
-            aria-hidden="true"
-            className="mt-0.5 grid size-[22px] flex-none place-items-center rounded bg-sidebar-active text-[10px] font-bold text-sidebar-active-ink ring-1 ring-white/10"
-          >
-            {siteMark(current.name)}
-          </span>
-          <span className="min-w-0">
-            <span
-              className="line-clamp-2 block text-[12px] leading-snug font-semibold tracking-tight break-keep text-sidebar-text"
-              title={current.name}
-            >
-              {currentName}
-            </span>
-            <span className="mt-0.5 block text-[10px] text-[#b6c0bb]">
-              {SITE_STATUS_LABEL[current.status].label}
-            </span>
-          </span>
-        </div>
-      )}
+          <NavIcon name="settings" className="size-4" />
+        </Link>
+      </div>
 
       <nav
         aria-label="현재 현장 메뉴"
-        className="mt-1 flex flex-col gap-0.5 border-t border-white/10 pt-1"
+        className="mt-0.5 ml-[21px] flex flex-col gap-0.5 border-l border-white/10 pl-2"
       >
         {SITE_CONTEXT_SECTIONS.map((section) => {
           const active = section.key === activeSection;
@@ -183,14 +158,17 @@ export function SiteContextNav({ sites }: { sites: readonly SidebarSite[] }) {
               aria-current={active ? "page" : undefined}
               aria-labelledby={`site-nav-${section.key}-label`}
               aria-describedby={`site-nav-${section.key}-hint`}
-              className={`tap-target flex min-h-8 items-start gap-2 rounded-md px-2 py-1.5 text-[12px] transition-colors ${
+              title={SECTION_HINTS[section.key]}
+              className={`tap-target flex items-center gap-2 rounded-md px-2 text-body transition-colors ${
                 active
                   ? "bg-sidebar-active font-semibold text-sidebar-active-ink"
                   : "text-sidebar-text hover:bg-sidebar-hover"
               }`}
             >
-              <NavIcon name={section.icon} className="mt-0.5 size-[15px] flex-none opacity-80" />
-              <span className="min-w-0"><span id={`site-nav-${section.key}-label`} className="block">{section.label}</span><span id={`site-nav-${section.key}-hint`} className="block text-[11px] leading-4 font-normal">{SECTION_HINTS[section.key]}</span></span>
+              <NavIcon name={section.icon} className="size-[15px] flex-none opacity-80" />
+              {/* 설명은 보조기술과 title로만 전한다 — 네 줄이 열두 줄이 되면
+                  레일 아래의 전역 메뉴가 화면 밖으로 밀린다. */}
+              <span className="min-w-0 truncate"><span id={`site-nav-${section.key}-label`}>{section.label}</span><span id={`site-nav-${section.key}-hint`} className="sr-only">{SECTION_HINTS[section.key]}</span></span>
             </Link>
           );
         })}
@@ -205,7 +183,7 @@ export function SiteContextNav({ sites }: { sites: readonly SidebarSite[] }) {
           style={{ position: "fixed", top: position.top, left: position.left }}
           className="z-[80] w-[280px] rounded-lg border border-line bg-surface p-1.5 text-ink-1 shadow-xl"
         >
-          <div className="flex items-center justify-between px-2 py-1.5 font-mono text-[10px] tracking-[0.06em] text-ink-muted uppercase">
+          <div className="flex items-center justify-between px-2 py-1.5 font-mono text-micro tracking-[0.06em] text-ink-muted uppercase">
             <span>현장 변경</span>
             <span>{sites.length}</span>
           </div>
@@ -215,13 +193,13 @@ export function SiteContextNav({ sites }: { sites: readonly SidebarSite[] }) {
                 <>
                   <span
                     aria-hidden="true"
-                    className="grid size-[24px] flex-none place-items-center rounded bg-sunk text-[10px] font-bold text-ink-2"
+                    className="grid size-[24px] flex-none place-items-center rounded bg-sunk text-micro font-bold text-ink-2"
                   >
                     {siteMark(site.name)}
                   </span>
                   <span className="min-w-0 flex-1">
-                    <span className="block truncate text-[11.5px] font-semibold" title={site.name}>{siteShortName(site.name)}</span>
-                    <span className="mt-0.5 block text-[10px] text-ink-muted">
+                    <span className="block truncate text-caption font-semibold" title={site.name}>{siteShortName(site.name)}</span>
+                    <span className="mt-0.5 block text-micro text-ink-muted">
                       {SITE_STATUS_LABEL[site.status].label}
                     </span>
                   </span>
@@ -237,7 +215,7 @@ export function SiteContextNav({ sites }: { sites: readonly SidebarSite[] }) {
                       className="flex w-full items-start gap-2 rounded-md bg-sunk px-2 py-2 text-left"
                     >
                       {content}
-                      <span aria-hidden="true" className="mt-1 text-[11px] text-mid-ink">✓</span>
+                      <span aria-hidden="true" className="mt-1 text-micro text-mid-ink">✓</span>
                       <span className="sr-only">현재 현장</span>
                     </button>
                   ) : (
@@ -256,7 +234,7 @@ export function SiteContextNav({ sites }: { sites: readonly SidebarSite[] }) {
           <Link
             href="/sites"
             onClick={closeSwitcher}
-            className="mt-1 flex items-center justify-between border-t border-line px-2 py-2 text-[11.5px] text-ink-2 hover:text-ink-1"
+            className="mt-1 flex items-center justify-between border-t border-line px-2 py-2 text-caption text-ink-2 hover:text-ink-1"
           >
             <span>전체 현장</span>
             <span aria-hidden="true">→</span>

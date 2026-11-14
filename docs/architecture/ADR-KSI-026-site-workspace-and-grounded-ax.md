@@ -1,6 +1,6 @@
 # ADR-KSI-026 — 현장 작업공간과 근거형 AX 계약
 
-- Status: Accepted
+- Status: Accepted. Navigation decisions D1–D2 superseded by [ADR-KSI-042](ADR-KSI-042-site-navigation-space-analysis.md).
 - Date: 2026-08-23
 - Requirements: REQ-UX-101, REQ-WRK-101, REQ-COP-101/102, REQ-SEC-101
 - Invariants: INV-002, INV-040/041, INV-050/051, INV-060/061

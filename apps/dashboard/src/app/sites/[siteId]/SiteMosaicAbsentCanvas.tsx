@@ -117,13 +117,13 @@ export function SiteMosaicAbsentCanvas({
       <title>등록 범위 도식 — 실제 픽셀 아님</title>
       <defs>
         <pattern id="absentCanvasGrid" width="36" height="36" patternUnits="userSpaceOnUse">
-          <path d="M36 0H0V36" fill="none" stroke="#1d2829" strokeWidth=".7" />
+          <path d="M36 0H0V36" fill="none" style={{ stroke: "var(--stage-grid)" }} strokeWidth=".7" />
         </pattern>
         <clipPath id="absentExtentClip">
           <polygon points={points(fileRing)} />
         </clipPath>
       </defs>
-      <rect width={W} height={H} fill="#121718" />
+      <rect width={W} height={H} style={{ fill: "var(--stage)" }} />
       <rect width={W} height={H} fill="url(#absentCanvasGrid)" />
       <g clipPath="url(#absentExtentClip)">
         {gridLines.map((line, index) => (

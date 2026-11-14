@@ -1,5 +1,6 @@
 "use client";
 
+import { Disclosure } from "@/components/ui/Disclosure";
 import L from "leaflet";
 import "leaflet-draw";
 import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
@@ -1168,28 +1169,27 @@ export function AoiKeyboardEditor({
       disabled={disabled}
       className="flex flex-col gap-2 rounded-lg border border-line bg-sunk p-3"
     >
-      <legend className="px-1 text-[12.5px] font-semibold break-keep text-ink-1">
+      <legend className="px-1 text-body font-semibold break-keep text-ink-1">
         키보드로 경계 입력(지도 그리기 대안)
       </legend>
       {disabled && (
-        <p className="rounded-md border border-line bg-surface px-2 py-1 text-[12px] break-keep text-ink-2">
+        <p className="rounded-md border border-line bg-surface px-2 py-1 text-caption break-keep text-ink-2">
           지도에서 그리거나 편집하는 중에는 키보드 입력을 바꿀 수 없습니다. 지도 작업을
           완료·취소한 뒤 이어가세요.
         </p>
       )}
-      <p id={descId} className="text-[12px] break-keep text-ink-2">
+      <p id={descId} className="text-caption break-keep text-ink-2">
         지도와 같은 위경도({KEYBOARD_CRS_LABEL}) 값을 숫자로 입력합니다. 반영한 값이
         그대로 제출 범위가 되며, 지도 폴리곤도 같은 값으로 다시 그려집니다. 숫자를
         미리 채우지 않으며, 통과했다고 등록이 확정된 것은 아닙니다(최종 판정은 서버).
       </p>
-      <p id={statusId} aria-live="polite" className="text-[12px] break-keep text-ink-2">
+      <p id={statusId} aria-live="polite" className="text-caption break-keep text-ink-2">
         {value.length >= 3
           ? `지금 지도에 반영된 값: 꼭짓점 ${value.length}개.`
           : "아직 반영된 꼭짓점이 없습니다 — 3개 이상 입력해 반영하세요."}
       </p>
       {value.length >= 3 && (
-        <details className="text-[12px] text-ink-2">
-          <summary className="tap-target cursor-pointer">반영된 좌표 {value.length}개 보기</summary>
+        <Disclosure label="좌표 상세" className="text-caption text-ink-2">
           <ol className="mt-1 flex flex-col gap-1">
             {value.map((vertex, index) => (
               <li key={index} className="num break-token">
@@ -1197,10 +1197,10 @@ export function AoiKeyboardEditor({
               </li>
             ))}
           </ol>
-        </details>
+        </Disclosure>
       )}
       {externalNote !== null && (
-        <p className="rounded-md border border-line bg-surface px-2 py-1 text-[12px] break-keep text-ink-2">
+        <p className="rounded-md border border-line bg-surface px-2 py-1 text-caption break-keep text-ink-2">
           {externalNote}
         </p>
       )}
@@ -1215,7 +1215,7 @@ export function AoiKeyboardEditor({
               key={index}
               className="grid grid-cols-1 gap-2 rounded-md border border-line bg-surface p-2 sm:grid-cols-[1fr_1fr_auto] sm:items-end"
             >
-              <label className="flex flex-col gap-1 text-[12px] break-keep text-ink-2">
+              <label className="flex flex-col gap-1 text-caption break-keep text-ink-2">
                 <span>
                   꼭짓점 {index + 1} 위도(°) <span className="text-ink-muted">-90 ~ 90</span>
                 </span>
@@ -1241,7 +1241,7 @@ export function AoiKeyboardEditor({
                   className="input"
                 />
               </label>
-              <label className="flex flex-col gap-1 text-[12px] break-keep text-ink-2">
+              <label className="flex flex-col gap-1 text-caption break-keep text-ink-2">
                 <span>
                   꼭짓점 {index + 1} 경도(°) <span className="text-ink-muted">-180 ~ 180</span>
                 </span>
@@ -1277,7 +1277,7 @@ export function AoiKeyboardEditor({
                 삭제
               </button>
               {rowErrors[index] && (
-                <p id={errId} role="alert" className="text-[12px] font-semibold break-keep text-crit-ink sm:col-span-3">
+                <p id={errId} role="alert" className="text-caption font-semibold break-keep text-crit-ink sm:col-span-3">
                   {rowErrors[index]}
                 </p>
               )}
@@ -1286,12 +1286,12 @@ export function AoiKeyboardEditor({
         })}
       </ol>
       {rows.length === 0 && (
-        <p className="text-[12px] break-keep text-ink-2">
+        <p className="text-caption break-keep text-ink-2">
           입력 행이 없습니다. 아래에서 꼭짓점을 추가하세요.
         </p>
       )}
       {formError !== null && (
-        <p id={errorId} role="alert" className="rounded-md bg-crit-bg px-2 py-1 text-[12px] font-semibold break-keep text-crit-ink">
+        <p id={errorId} role="alert" className="rounded-md bg-crit-bg px-2 py-1 text-caption font-semibold break-keep text-crit-ink">
           {formError}
         </p>
       )}
@@ -1299,13 +1299,13 @@ export function AoiKeyboardEditor({
         <p
           data-testid="keyboard-uncertain"
           role="alert"
-          className="rounded-md bg-crit-bg px-2 py-1 text-[12px] font-semibold break-keep text-crit-ink"
+          className="rounded-md bg-crit-bg px-2 py-1 text-caption font-semibold break-keep text-crit-ink"
         >
           {uncertainError}
         </p>
       )}
       {status !== null && (
-        <p className="rounded-md border border-line bg-surface px-2 py-1 text-[12px] break-keep text-ink-2">
+        <p className="rounded-md border border-line bg-surface px-2 py-1 text-caption break-keep text-ink-2">
           {status}
         </p>
       )}
@@ -1337,7 +1337,7 @@ export function AoiKeyboardEditor({
           모두 지우기
         </button>
       </div>
-      <p className="text-[11.5px] break-keep text-ink-muted">
+      <p className="text-caption break-keep text-ink-muted">
         형식·점 수·범위·확실한 교차·정확한 퇴화(면적 0)는 여기서도 막지만, 그 밖의
         판정(극지·범위·볼록 등)은 서버와 각 화면(현장 등록·작업구역)이 그대로 맡습니다.
         통과가 서버 판정을 대신하지 않습니다. 입력이 반영된 값과 다르면 등록이
@@ -1470,16 +1470,13 @@ export function AoiPolygonMapInner({
           data-testid="map-rejected-draw"
           className="flex flex-col gap-2 rounded-lg border border-line-strong bg-sunk p-3"
         >
-          <p className="text-[12.5px] font-bold break-keep text-ink-1">
+          <p className="text-body font-bold break-keep text-ink-1">
             지도에 반영하지 않은 그리기가 {rejectedDraws.length}건 있습니다
           </p>
           {rejectedDraws.map((rejected, recordIndex) => (
             <div key={recordIndex} className="flex flex-col gap-1">
-              <p className="text-[12px] break-keep text-ink-2">{rejected.reason}</p>
-              <details className="text-[12px] text-ink-2">
-                <summary className="tap-target cursor-pointer">
-                  그리기 {recordIndex + 1} 원본 좌표 {rejected.vertices.length}개 보기
-                </summary>
+              <p className="text-caption break-keep text-ink-2">{rejected.reason}</p>
+              <Disclosure label="좌표 상세" className="text-caption text-ink-2">
                 <ol className="mt-1 flex flex-col gap-1">
                   {rejected.vertices.map((vertex, index) => (
                     <li key={index} className="num break-token">
@@ -1487,7 +1484,7 @@ export function AoiPolygonMapInner({
                     </li>
                   ))}
                 </ol>
-              </details>
+              </Disclosure>
             </div>
           ))}
           <div className="flex flex-wrap items-center gap-2">
@@ -1500,7 +1497,7 @@ export function AoiPolygonMapInner({
               {rejectedDraws.length > 1 ? "미반영 그리기 모두 버리기" : "버리기"}
             </button>
           </div>
-          <p className="text-[11.5px] break-keep text-ink-muted">
+          <p className="text-caption break-keep text-ink-muted">
             버리기 전에는 등록할 수 없습니다. 유효한 다시 그리기·편집 저장·
             키보드 반영이 들어오면 이 기록은 모두 해소됩니다.
           </p>
