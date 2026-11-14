@@ -83,6 +83,8 @@ VM overlay는 `KSI_VM_OIDC_SUBJECT_REGISTRY_FILE`의 기존 host 파일을
 디렉터리를 자동 생성하지 않고 거부한다. Core UID/GID `10001:10001` 소유의 `0600`
 regular/non-symlink/single-link 파일과 안전한 상위 경로를 운영자가 공급해야 한다.
 실제 issuer/subject·조직·현장/구역 매핑은 승인된 값만 사용하고 Git에 넣지 않는다.
+기본 `deploy/secrets/oidc-subject-registry.json`은 Git 무시 대상이다. 다른 경로를
+지정하면 자동으로 보호되지 않으므로 저장소 밖의 보호된 위치를 사용한다.
 기본 `compose.yaml`만 쓰는 DUAL/OIDC 운영은 별도 보호 파일 마운트가 필요하다.
 VM 예제의 container 경로만 설정하고 마운트를 생략하면 Core는 닫힌 상태로 기동을 거부한다.
 이 연결은 subject 매핑·자격·워커를 생성하거나 운영 배포를 승인하지 않는다.

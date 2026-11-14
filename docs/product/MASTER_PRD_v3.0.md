@@ -22,7 +22,7 @@ KSI Site Intelligence Platform은 **물리적 현장의 관측을 사람·외부
 
 ## 현재 검증 가능한 요구사항 범위
 
-제품 요구 ID와 구현·시험의 추적성은 [현재 승인된 REQ traceability](../acceptance/REQUIREMENTS_TRACEABILITY_v3.0.csv)와 각 승인된 acceptance manifest가 소유한다. Current slice의 EXT-VAL-01..08은 [제품 상태](../superpowers/product-state.md), 외부 데이터·동일 Core 계약의 수락은 [플랫폼 P-AC-01..06](../superpowers/plans/2026-09-30-spatial-data-platform-roadmap.md)에서 확인한다. 이 단락에 PRD SDP-REQ 목록을 또 작성하지 않는다.
+제품 요구 ID와 구현·시험의 추적성은 [현재 승인된 REQ traceability](../acceptance/REQUIREMENTS_TRACEABILITY_v3.0.csv)와 각 승인된 acceptance manifest가 소유한다. Current slice의 EXT-VAL-01..08은 [제품 상태](../superpowers/product-state.md), 외부 데이터·동일 Core 계약의 수락은 [플랫폼 P-AC-01..06](../acceptance/SPATIAL_PLATFORM_CUSTOMER_SAMPLE.md#첫-플랫폼-수용-기준-목표-미검증)에서 확인한다. 이 단락에 PRD SDP-REQ 목록을 또 작성하지 않는다.
 
 ## 현재 분석·수락 목표
 

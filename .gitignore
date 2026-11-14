@@ -55,6 +55,8 @@ deploy/device-attestation-keys.json
 # 바인드한다(DEPLOYMENT.md §2) — 커밋되면 발급 계약 전체의 신뢰가 무너진다.
 deploy/signing-keys/
 deploy/secrets/*.secret
+# OIDC subject registry contains protected identity and authorization mappings.
+deploy/secrets/oidc-subject-registry.json
 
 # Manifold 3 / PSDK 개발 — ADR-KSI-009. 비밀·산출물·서드파티 실물은 커밋하지 않는다.
 # P3 Task 6: 계보 SSOT는 archive/acquisition-2026/edge/third_party/PSDK_LOCK.yaml
