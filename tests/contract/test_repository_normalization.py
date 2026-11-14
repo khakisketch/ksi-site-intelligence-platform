@@ -1,5 +1,6 @@
 """Contract regression for the R0-R2 repository structure and cleanup decisions."""
 
+import hashlib
 import json
 import os
 import shlex
@@ -26,6 +27,68 @@ _existing_or_migrated_path = import_module(
 _check_source_patterns = import_module(
     "tools.validate_repository_normalization"
 )._check_source_patterns
+_check_schema = import_module("tools.validate_repository_normalization")._check_schema
+
+_RETIRED_MASKING = (
+    "archive/acquisition-2026/services/processing-controller/src/"
+    "ksi_processing_controller/odm_masking.py"
+)
+
+
+def _reachability_failures(root: Path, audit_id: str, field: str, path: str) -> list[str]:
+    manifest: dict[str, Any] = {
+        "actions": [],
+        "reachabilityAudit": [{"id": audit_id, field: [path], "after": "UNCHANGED_R0_R2"}],
+    }
+    failures: list[str] = []
+    _check_manifest_paths(root, manifest, failures, check_local_cleanup=False)
+    return [failure for failure in failures if "reachability path missing" in failure]
+
+
+def test_r0_r2_history_remains_byte_identical() -> None:
+    manifest = ROOT / "docs/audit/REPOSITORY_CLEANUP_MANIFEST_R0_R2.json"
+    assert hashlib.sha256(manifest.read_bytes()).hexdigest() == (
+        "215e295a9d101b66ec2784a2084d58fd71a3ca1f4f9c9dd7bd48be4423b4d388"
+    )
+
+
+def test_validator_rejects_historical_manifest_byte_tampering(tmp_path: Path) -> None:
+    schema = tmp_path / "contracts/schemas/repository-cleanup-manifest.v1.json"
+    schema.parent.mkdir(parents=True)
+    schema.write_bytes((ROOT / schema.relative_to(tmp_path)).read_bytes())
+    manifest = tmp_path / "docs/audit/REPOSITORY_CLEANUP_MANIFEST_R0_R2.json"
+    manifest.parent.mkdir(parents=True)
+    original = ROOT / manifest.relative_to(tmp_path)
+    manifest.write_bytes(original.read_bytes() + b"\n")
+    failures: list[str] = []
+
+    _check_schema(tmp_path, failures)
+
+    assert any("historical manifest hash mismatch" in failure for failure in failures)
+
+
+def test_only_documented_retired_reachability_is_accepted(tmp_path: Path) -> None:
+    (tmp_path / "AGENTS.md").write_text(
+        (ROOT / "AGENTS.md").read_text(encoding="utf-8"), encoding="utf-8"
+    )
+
+    assert _reachability_failures(
+        tmp_path, "processing-leaf-boundaries", "dependencyEvidence", _RETIRED_MASKING
+    ) == []
+    assert _reachability_failures(
+        tmp_path, "unrelated-audit", "dependencyEvidence", _RETIRED_MASKING
+    )
+    assert _reachability_failures(
+        tmp_path, "processing-leaf-boundaries", "buildEvidence", _RETIRED_MASKING
+    )
+    assert _reachability_failures(
+        tmp_path, "processing-leaf-boundaries", "dependencyEvidence", "missing-other.py"
+    )
+    (tmp_path / "AGENTS.md").write_text("retirement evidence removed\n", encoding="utf-8")
+    assert _reachability_failures(
+        tmp_path, "processing-leaf-boundaries", "dependencyEvidence", _RETIRED_MASKING
+    )
+
 
 R3_IMPORT_ONLY_PACKAGE_MOVES = {
     "services/change-detection": "packages/change-detection",

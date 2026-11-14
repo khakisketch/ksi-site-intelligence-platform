@@ -18,6 +18,17 @@ SCHEMA_PATH = ROOT / "contracts/schemas/repository-cleanup-manifest.v1.json"
 R3_MANIFEST_PATH = ROOT / "docs/audit/REPOSITORY_MIGRATION_MANIFEST_R3.json"
 R3_SCHEMA_PATH = ROOT / "contracts/schemas/repository-migration-manifest.v1.json"
 
+# The R0-R2 audit predates the removal of the managed reconstruction chain.
+# b1da6ecaa9cbea6ef7105a38b7ed4e86bd39c102 retired this one dependency;
+# AGENTS.md remains the current authority for that retirement.
+R0_R2_ORIGINAL_SHA256 = "215e295a9d101b66ec2784a2084d58fd71a3ca1f4f9c9dd7bd48be4423b4d388"
+RETIRED_R0_R2_REACHABILITY = (
+    "processing-leaf-boundaries",
+    "dependencyEvidence",
+    "archive/acquisition-2026/services/processing-controller/src/"
+    "ksi_processing_controller/odm_masking.py",
+)
+
 R3_EXPECTED_MOVES = {
     "services/change-detection": "packages/change-detection",
     "services/bim-integration": "packages/bim-integration",
@@ -230,7 +241,10 @@ def _check_source_patterns(
 def _check_schema(root: Path, failures: list[str]) -> dict[str, Any]:
     try:
         schema = _load_json(root / SCHEMA_PATH.relative_to(ROOT))
-        manifest = _load_json(root / MANIFEST_PATH.relative_to(ROOT))
+        manifest_path = root / MANIFEST_PATH.relative_to(ROOT)
+        manifest = _load_json(manifest_path)
+        if _sha256(manifest_path) != R0_R2_ORIGINAL_SHA256:
+            failures.append("historical manifest hash mismatch: R0-R2")
         Draft202012Validator.check_schema(schema)
         validator = Draft202012Validator(schema, format_checker=FormatChecker())
         for error in sorted(validator.iter_errors(manifest), key=lambda item: list(item.path)):
@@ -397,6 +411,19 @@ def _check_r3_migration_paths(
     return migrated_paths
 
 
+def _documented_retired_reachability(root: Path, audit_id: object, field: str, path: str) -> bool:
+    if (audit_id, field, path) != RETIRED_R0_R2_REACHABILITY:
+        return False
+    try:
+        authority = (root / "AGENTS.md").read_text(encoding="utf-8")
+    except (OSError, UnicodeError):
+        return False
+    return (
+        "KSI-managed 재구성 발급·실행은 은퇴했다." in authority
+        and "NodeODM 워커 체인도 없다." in authority
+    )
+
+
 def _check_manifest_paths(
     root: Path,
     manifest: dict[str, Any],
@@ -536,7 +563,9 @@ def _check_manifest_paths(
                             f"invalid reachability path: {audit_id}.{field}: {exc}"
                         )
                         continue
-                    if evidence_path is None:
+                    if evidence_path is None and not _documented_retired_reachability(
+                        root, audit_id, field, value
+                    ):
                         failures.append(f"reachability path missing: {audit_id}.{field}: {value}")
             after = entry.get("after")
             if not isinstance(after, str) or not after.startswith("UNCHANGED_R0_R2"):

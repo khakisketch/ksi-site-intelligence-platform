@@ -73,6 +73,36 @@ def test_vm_compose_resolves_with_only_caddy_80_443_published() -> None:
     assert registry_mount["bind"].get("create_host_path", False) is False
 
 
+def test_vm_example_supplies_registry_host_path() -> None:
+    values = dict(
+        line.split("=", 1)
+        for line in _ENV.splitlines()
+        if line and not line.startswith("#") and "=" in line
+    )
+    assert values["KSI_VM_OIDC_SUBJECT_REGISTRY_FILE"] == "./secrets/oidc-subject-registry.json"
+    assert values["KSI_CORE_OIDC_SUBJECT_REGISTRY_FILE"] == (
+        "/run/ksi-identity/oidc-subject-registry.json"
+    )
+
+
+def test_default_oidc_subject_registry_is_git_ignored() -> None:
+    result = subprocess.run(
+        [
+            "git", "check-ignore", "--no-index", "--quiet",
+            "deploy/secrets/oidc-subject-registry.json",
+        ],
+        cwd=_ROOT,
+        check=False,
+    )
+    assert result.returncode == 0, "default protected registry must not be added to Git"
+    readme = subprocess.run(
+        ["git", "check-ignore", "--no-index", "--quiet", "deploy/secrets/README.md"],
+        cwd=_ROOT,
+        check=False,
+    )
+    assert readme.returncode == 1, "the public secrets setup README must remain trackable"
+
+
 def test_vm_profile_separates_oidc_humans_secrets_and_public_object_origin() -> None:
     assert "KSI_CORE_HUMAN_AUTH_MODE: OIDC" in _VM_COMPOSE
     assert "KSI_DASHBOARD_HUMAN_AUTH_MODE: OIDC" in _VM_COMPOSE

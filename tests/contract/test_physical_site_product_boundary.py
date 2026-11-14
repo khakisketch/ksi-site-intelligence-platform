@@ -5,12 +5,15 @@ tactical perception/control, and customer production reconstruction are
 outside long-term Site Intelligence responsibility. Their sources remain
 retained transitional implementation until a verified successor move.
 
-Preservation is pinned by literal SHA256 digests of the two untouched
-sections (historical Milestones and current product-state Current slice) taken at baseline
-738b4a950e6b202a3a65982cea570e3a2ba4c8b7, plus the exact registry
-status/state mapping by path — no Git-history access at test runtime, so
-shallow-CI checkouts are safe. No invented status enum is accepted: the
-mapping must equal the pinned snapshot exactly.
+Preservation is pinned by the exact registry status/state mapping by path
+taken at baseline 738b4a950e6b202a3a65982cea570e3a2ba4c8b7 — no Git-history
+access at test runtime, so shallow-CI checkouts are safe. No invented status
+enum is accepted: the mapping must equal the pinned snapshot exactly.
+
+The simplified canon product-state owns a single "## Next slice" section:
+obsolete PRD acquisition phases create no executable or active product scope
+(ADR-KSI-039). The retired per-ID "## Next slices" out-of-product markers left
+with that deleted section and are not re-pinned here.
 """
 
 from pathlib import Path
@@ -97,35 +100,14 @@ EFFECTIVE_INVARIANTS = [
     "INV-061",
 ]
 
-# Acquisition-only future slices: out-of-product on their own Next-slice line,
-# never relabelled done. Historical Milestones rows are preserved separately.
-EXCLUDED_FUTURE_IDS = [
-    "autonomous-acquisition-closed-loop",
-    "aol-1-capture-auto-ingest",
-    "aol-1-mission-to-aircraft-delivery",
-    "aol-3-terrain-aware-planning",
-    "field-0-ground-integration",
-    "field-0a-kmz-acceptance",
-    "field-1-first-mapping-flight",
-    "field-2-reobservation-loop-field",
-    "field-3-terrain-aware-flight",
-    "decision-psdk-flight-execution-authorization",
-    "decision-flight-ceiling-reference-split",
-    "flight-execution-c2-s1-upload-only",
-    "flight-execution-c2-s2-propellerless-start",
-    "flight-execution-c2-s3-supervised-flight",
-    "flight-execution-c2-s4-routine-operation",
-    "field-1-ground-control",
-    "terrain-aware-planning-software",
-    "terrain-aware-planning-field-acceptance",
-    "track-a",
-    "track-b",
-]
-
-MARKER = "out-of-product"
-MARKER_SUFFIX = (
-    " — **out-of-product** per ADR-KSI-039 "
-    "(planning reference only; never a completion candidate)"
+# Simplified canon (2026-11-11 rewrite): product-state owns a single
+# "## Next slice" section. This sentence replaces the retired per-ID
+# "## Next slices" out-of-product markers, which left with that deleted
+# section: obsolete acquisition phase IDs create no executable scope.
+# (product-state.md: "Obsolete PRD acquisition phases do not create
+# executable or active product scope (ADR-KSI-039)".)
+OBSOLETE_PHASES_SENTENCE = (
+    "Obsolete PRD acquisition phases do not create executable or active product scope"
 )
 
 
@@ -136,10 +118,13 @@ def _read(rel: str) -> str:
 def _section(text: str, start: str, end: str) -> str:
     lines = text.splitlines()
     begin = next(i for i, line in enumerate(lines) if line.startswith(start))
-    stop = next(
-        (i for i, line in enumerate(lines) if i > begin and line.startswith(end)),
-        len(lines),
-    )
+    if not end:
+        stop = len(lines)
+    else:
+        stop = next(
+            (i for i, line in enumerate(lines) if i > begin and line.startswith(end)),
+            len(lines),
+        )
     return "\n".join(lines[begin:stop]) + "\n"
 
 
@@ -159,13 +144,22 @@ def _status_snapshot(node: object, path: str = "") -> dict:
     return snapshot
 
 
-def _assert_next_slice_markers(state_text: str) -> None:
-    section = _section(state_text, "## Next slices", "## Backlog")
-    lines = section.splitlines()
-    for item in EXCLUDED_FUTURE_IDS:
-        matches = [line for line in lines if line.startswith(f"- {item}:")]
-        assert matches, item
-        assert any(MARKER in line for line in matches), item
+def _assert_next_slice_boundary(state_text: str) -> None:
+    section = _section(state_text, "## Next slice", "## Backlog")
+    assert OBSOLETE_PHASES_SENTENCE in section
+    assert "ADR-KSI-039" in section
+
+
+def _assert_pilot_gate_open(state_text: str) -> None:
+    # Retained customer gate stays open with KSI-side scope, not a marker.
+    pilot = next(
+        line
+        for line in state_text.splitlines()
+        if "pilot first-release gate" in line
+    )
+    assert "remains open" in pilot
+    assert "registration" in pilot and "inspection" in pilot
+    assert "excluded" in pilot
 
 
 def test_current_authority_excludes_long_term_acquisition() -> None:
@@ -181,7 +175,14 @@ def test_current_authority_excludes_long_term_acquisition() -> None:
     assert "ADR-KSI-039" in _read(CONSTITUTION)
     assert "ADR-KSI-039" in _read(LEDGER)
     assert "ADR-KSI-039" in _read(PRD)
-    assert "책임 밖" in _read(CONSTITUTION)
+    # Simplified canon: the rewritten constitution routes the acquisition
+    # boundary ("장기 취득 장비의 제품 책임 경계는 [ADR-KSI-039]를 따른다",
+    # wrapped across two lines on disk) instead of repeating the exclusion
+    # phrase; the live exclusion wording is PRD §1
+    # ("현 플랫폼 책임 밖이다(ADR-KSI-039)").
+    constitution_text = _read(CONSTITUTION)
+    assert "장기 취득 장비의 제품 책임" in constitution_text
+    assert "경계는 [ADR-KSI-039]" in constitution_text
 
     # ADR039's cited authority targets resolve; links are not dangling.
     for target in (CONSTITUTION, LEDGER, PRD, ADR036, ADR037, ADR038):
@@ -209,19 +210,34 @@ def test_physical_site_definition_agrees() -> None:
 
 def test_prd_goals_and_completion_are_scoped() -> None:
     prd = _read(PRD)
-    goals = _section(prd, "## 3.1 제품 목표", "## ")
-    assert "ADR-KSI-039" in goals
-    assert "out-of-product" in goals
-    assert "transitional" in goals or "역사적" in goals
+    # Simplified canon: the "## 3.1 제품 목표" section is gone; product scope now
+    # lives in "## 1. 제품 정체성 및 범위", which carries the live exclusion
+    # ("현 플랫폼 책임 밖이다(ADR-KSI-039)") and the tech-adoption boundary
+    # ("원본 사진 처리·매핑·재구성 엔진 개발 및 실행은 제외한다 ... 범위 밖이다",
+    # with historical managed/test profiles kept as history, not requirements).
+    scope = _section(prd, "## 1. 제품 정체성 및 범위", "## ")
+    assert "현 플랫폼 책임 밖이다" in scope
+    assert "ADR-KSI-039" in scope
+    assert "범위 밖이다" in scope
+    assert "역사적" in scope
 
     vertical = _section(prd, "## 23.1 첫 번째 Vertical", "## ")
-    assert "첫 실증 시장" in vertical
+    # Simplified canon rewords the first-vertical line ("첫 검증 시장"; the old
+    # "첫 실증 시장" phrasing is gone with the rewrite).
+    assert "첫 검증 시장" in vertical
     assert "별도 수락" in vertical
 
-    completion = _section(prd, "# 26. 제품 완료 기준", "")
+    # Simplified canon: platform acceptance (§25) owns the ADR-KSI-039 completion
+    # exclusion and names both acceptance series; the old "P-AC not in
+    # completion" pin is inverted by the rewrite (completion now judges by
+    # "현재 slice와 P-AC").
+    acceptance_scope = _section(prd, "# 25. 제품·플랫폼 수락", "# ")
+    assert "ADR-KSI-039" in acceptance_scope
+    assert "완료조건이 아니다" in acceptance_scope
+    assert "P-AC" in acceptance_scope and "EXT-VAL" in acceptance_scope
+
+    completion = _section(prd, "# 26. 제품 완료와 미수락 조건", "")
     assert "현재 slice" in completion and "host/customer acceptance" in completion
-    assert "ADR-KSI-039" in completion and "완료조건이 아니다" in completion
-    assert "P-AC" not in completion and "EXT-VAL" in completion
     assert "실제 근거" in completion
     # Existing contracts, not a separate PRD checklist, own acceptance details.
     acceptance = _read("docs/acceptance/CIVIL_PROCESSING_V1_ACCEPTANCE.md")
@@ -231,8 +247,15 @@ def test_prd_goals_and_completion_are_scoped() -> None:
 
 
 def test_constitution_and_ledger_passages_carry_scope() -> None:
+    # Simplified canon: the rewritten constitution no longer repeats
+    # per-passage "적용 범위(ADR-KSI-039)" labels; it routes the boundary once
+    # ("장기 취득 장비의 제품 책임 경계는 [ADR-KSI-039]를 따른다", wrapped
+    # across two lines on disk) and names ADR-KSI-039 as the current
+    # acquisition responsibility boundary in its approval section.
     constitution = _read(CONSTITUTION)
-    assert constitution.count("적용 범위(ADR-KSI-039)") >= 3
+    assert "장기 취득 장비의 제품 책임" in constitution
+    assert "경계는 [ADR-KSI-039]" in constitution
+    assert constitution.count("ADR-KSI-039") >= 2
     ledger = _read(LEDGER)
     assert ledger.count("적용 범위(ADR-KSI-039)") >= 2
 
@@ -267,7 +290,7 @@ def test_historical_decisions_have_explicit_supersession() -> None:
     # accepted phase registry; retired milestone narratives are not authority.
     state = _read(PRODUCT_STATE)
     assert "EXT-VAL-01" in state and "EXT-VAL-08" in state
-    _assert_next_slice_markers(state)
+    _assert_next_slice_boundary(state)
     assert _status_snapshot(yaml.safe_load(_read(PHASE_REGISTRY))) == EXPECTED_REGISTRY_STATUSES
 
 
@@ -275,16 +298,11 @@ def test_open_acceptance_is_not_relabelled_done() -> None:
     state = _read(PRODUCT_STATE)
     assert "ADR-KSI-039" in state
     assert "out-of-product" in state
-    _assert_next_slice_markers(state)
+    _assert_next_slice_boundary(state)
 
-    # Retained customer gate stays open with KSI-side scope, not a marker.
-    pilot = next(
-        line
-        for line in state.splitlines()
-        if line.startswith("- pilot-default-external-reconstruction-release:")
-    )
-    assert "registration" in pilot and "inspection" in pilot
-    assert "excluded" in pilot
+    # Simplified canon: the pilot first-release gate line owns the open gate;
+    # the retired per-ID "- <id>:" marker lines left with "## Next slices".
+    _assert_pilot_gate_open(state)
 
     # Platform and any remaining shared phases keep acquisition excluded and
     # spatial/inspection work in scope under the accepted responsibility split.
@@ -306,18 +324,28 @@ def test_open_acceptance_is_not_relabelled_done() -> None:
         assert invariant in _read(INVARIANTS)
 
 
-@pytest.mark.parametrize("item", EXCLUDED_FUTURE_IDS)
-def test_excluded_next_slice_line_marked(item: str) -> None:
-    section = _section(_read(PRODUCT_STATE), "## Next slices", "## Backlog")
-    matches = [line for line in section.splitlines() if line.startswith(f"- {item}:")]
-    assert matches, item
-    assert any(MARKER in line for line in matches), item
+def test_obsolete_phases_create_no_executable_scope() -> None:
+    section = _section(_read(PRODUCT_STATE), "## Next slice", "## Backlog")
+    assert OBSOLETE_PHASES_SENTENCE in section
+    assert "ADR-KSI-039" in section
+    # The retired per-ID "## Next slices" section is gone; no per-ID marker
+    # lines are required or re-pinned here.
+    assert "## Next slices" not in _read(PRODUCT_STATE)
 
 
-def test_dropping_a_marker_is_detected() -> None:
-    """Test-only mutation proof: removing one marker fails the check."""
+def test_removing_active_exclusion_is_detected() -> None:
+    """Test-only mutation proof: dropping the exclusion sentence fails the check."""
     text = _read(PRODUCT_STATE)
-    mutated = text.replace(MARKER_SUFFIX, "", 1)
+    mutated = text.replace(OBSOLETE_PHASES_SENTENCE, "", 1)
     assert mutated != text
     with pytest.raises(AssertionError):
-        _assert_next_slice_markers(mutated)
+        _assert_next_slice_boundary(mutated)
+
+
+def test_closing_open_acceptance_is_detected() -> None:
+    """Test-only mutation proof: the pilot gate must read as open, not done."""
+    text = _read(PRODUCT_STATE)
+    mutated = text.replace("remains open", "is done", 1)
+    assert mutated != text
+    with pytest.raises(AssertionError):
+        _assert_pilot_gate_open(mutated)

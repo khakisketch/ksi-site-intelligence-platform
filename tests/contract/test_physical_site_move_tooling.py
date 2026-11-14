@@ -246,6 +246,14 @@ def test_real_csv_consumers_are_real_references() -> None:
             "packages/mission-planning",
         },
         "services/processing-controller/pyproject.toml": {"packages/perception"},
+        # fedbeecf condensed the guide to the current ownership index; the
+        # index itself still routes Edge to its historical archive.
+        "docs/WORKSPACE_LAYOUT_AND_QUERY_GUIDE.md": {"edge/root"},
+        # b1da6eca removed the managed reconstruction dependency from this
+        # archived runner, while preserving the runner as historical evidence.
+        "services/processing-controller/src/ksi_processing_controller/runner.py": {
+            "packages/perception"
+        },
     }
     decisions = _committed_decisions()
     head = _git_head_map()
@@ -264,12 +272,29 @@ def test_real_csv_consumers_are_real_references() -> None:
         "edge/msdk-field-bridge": ("msdk-field-bridge", "msdk_field_bridge"),
         "edge/root": ("edge/", "PSDK_LOCK", "psdk_platform", "manifold3-build"),
     }
+    retired_masking = "services/processing-controller/src/ksi_processing_controller/odm_masking.py"
     seen_consumers = 0
     seen_closed = 0
     for decision in decisions:
         tokens = group_tokens[decision["group"]]
         consumers = [c for c in decision["consumers"].split(";") if c]
         for consumer in consumers:
+            # b1da6eca retired this particular managed-only consumer without a
+            # successor. Other missing consumers still fail in _resolve_consumer.
+            if (
+                consumer == retired_masking
+                and decision["group"] == "packages/perception"
+                and consumer not in head
+                and ARCHIVE_PREFIX + consumer not in head
+            ):
+                authority = subprocess.run(
+                    ["git", "show", "HEAD:AGENTS.md"], cwd=ROOT, check=True,
+                    capture_output=True, text=True,
+                ).stdout
+                assert "KSI-managed 재구성 발급·실행은 은퇴했다." in authority
+                assert "NodeODM 워커 체인도 없다." in authority
+                seen_closed += 1
+                continue
             resolved = _resolve_consumer(consumer, head)
             raw = subprocess.run(
                 ["git", "cat-file", "blob", head[resolved][2]],
@@ -280,6 +305,15 @@ def test_real_csv_consumers_are_real_references() -> None:
             if any(token in raw for token in tokens):
                 seen_consumers += 1
                 continue
+            if consumer == "docs/WORKSPACE_LAYOUT_AND_QUERY_GUIDE.md":
+                assert "REPOSITORY_STRUCTURE.md" in raw
+                routing = subprocess.run(
+                    ["git", "show", "HEAD:REPOSITORY_STRUCTURE.md"], cwd=ROOT,
+                    check=True, capture_output=True, text=True,
+                ).stdout
+                assert "archive/acquisition-2026/edge/" in routing
+            if consumer == "services/processing-controller/src/ksi_processing_controller/runner.py":
+                assert "관리형 재구성 큐·NodeODM 분기·관련 환경변수를 제거했다" in raw
             assert decision["group"] in task6_closed.get(
                 consumer, set()
             ) | prior_closed.get(consumer, set()), (
@@ -289,6 +323,11 @@ def test_real_csv_consumers_are_real_references() -> None:
             seen_closed += 1
     assert seen_consumers > 0, "expected recorded consumer evidence"
     assert seen_closed > 0, "expected the recorded Task 6 closures"
+
+
+def test_missing_unrelated_consumer_still_fails_closed() -> None:
+    with pytest.raises(AssertionError, match="stale consumer reference"):
+        _resolve_consumer("services/other/missing.py", {})
 
 
 def test_decision_row_invariants_unit() -> None:
