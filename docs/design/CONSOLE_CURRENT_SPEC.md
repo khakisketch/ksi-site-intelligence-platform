@@ -4,11 +4,26 @@ This contract is subordinate to the product constitution, [accepted ADRs](../arc
 
 ## Navigation and work surfaces
 
-- One responsive Console is used by site staff and analysts. The global navigation provides **Home, Sites, Work, Account and Help**. A site has a bounded workspace for **Workspace, Materials, Site Work, and Results**.
-- **Spatial workspace and Materials are viewer-first on desktop.** The real scoped site/WorkArea state leads, and the spatial stage remains the main surface. Global navigation remains user-controlled and discoverable; the site selector preserves the current authorized section.
-- The desktop catalog and selected-material inspector start closed. Opening a docked panel reserves a bounded column; it never covers the spatial stage. Panel width is bounded, and the selected inspector appears only for an identified record.
-- **Work, results, review and site management remain task-first.** Use the same global/site context and familiar table/form controls. Do not mirror site authority or make `/field` imply a personal assignment; that path is the organization work record.
-- Home and Site list use a neutral 16:9 cover only when no supported prepared image is available. Label it as a generic cover. It is not imagery, measured geography or accuracy evidence.
+- The responsive Console provides **홈·현장·작업·계정·도움말**. Desktop and mobile site navigation show **공간·분석**. **현장 설정** opens beside the site name. Mobile bottom navigation keeps 홈·현장·작업·계정. [ADR-KSI-042](../architecture/ADR-KSI-042-site-navigation-space-analysis.md) owns the route and legacy-link decisions.
+- **공간** uses a single viewer with a **자료 / 등록 진행** panel and a separate selected-material inspector. The toolbar provides area selection, single/two-observation viewing, permitted desktop registration and information. Work area management and area data preparation belong here. Panels start closed unless a deep link opens one. The desktop panel reserves a bounded column.
+- **분석** uses a task-first shell with **변화 분석 / 외부 비교** tabs. History is the default. Each tab leads to its own registration or request. **분석 결과** starts with the input observations, then state and readiness, values, and evidence and limitations.
+- **현장 설정** contains site extent and status plus work area management. **작업** keeps the organization-wide inbox, all work with a site filter, and team management. Work detail links back to the site's registration progress.
+- Home and Site list show a prepared image when one is supported. When none is available (loading, none, unknown, denied), the cover is the site's registered boundary drawn as a vector outline on the dark measurement surface, labelled `등록 경계` and `영상 아님`; a site without a boundary shows `경계 미등록`. The outline is neither imagery, measured geography nor accuracy evidence: it prints no coordinates, area or scale and uses no map tiles. Preview state is a text chip on the cover, never colour alone.
+- Home reads in one column: summary counts, agenda list, initial setup, other sites as outline cards, recent updates as rows.
+- An empty spatial stage keeps the same dark measurement canvas as a populated one. Guidance and the permitted next action sit in one light panel on that canvas; the grid is canvas chrome, not a map, footprint or site image.
+
+## Screen consistency
+
+1. A single centered empty-stage card shows a one-line title, one-sentence reason, `RegistrationPath` and at most one permitted primary action. Navigation stays in the panel and rail.
+2. `Disclosure` wraps reference facts only, with the shared arrow, spacing and type. Label it `{대상} 상세`.
+3. `ActionMenu` holds overflow actions.
+4. State each fact once. Omit headings' kickers.
+5. Use one primary button per screen, secondary buttons and inline links. Keep menus in navigation or overflow controls.
+6. Use one alignment within each card.
+7. Use the viewer frame for 공간 and `PageHeader` plus content for task screens. Card titles identify their own content.
+8. Use one `InlineNotice` per issue.
+9. Put raw identifiers behind an identification disclosure.
+10. Use `text-micro`, `text-caption`, `text-body`, `text-lead`, `text-title` and `text-display`. Check line height when replacing arbitrary sizes and round half-pixel values when touching the screen.
 
 ## Required state presentation
 
@@ -25,6 +40,8 @@ This contract is subordinate to the product constitution, [accepted ADRs](../arc
 - Desktop `1440px` and laptop `1280px` use the viewer/tables with reserved columns and no overlapping navigation. At `1024px` and below, preserve one-column reading order and the explicit desktop-only mutation boundary.
 - Mobile targets are at least 44px; fine-pointer targets at least 36px. No page-level horizontal overflow; fixed navigation cannot obscure the final content.
 - Native controls, links, keyboard order, visible focus, Escape/cancel behavior, reduced-motion preference, and live status announcements remain functional. Every loading, error and unavailable state has a location-appropriate recovery path.
+- At 1024px and wider with a fine pointer, controls are 38px; the 44px/36px touch rule above still applies below 1024px and to coarse pointers. A recovery notice puts the fact on the left and its action on the right in one row; it does not grow into a stacked box. Forms keep a readable measure (about 48rem), optional groups collapse, and the same fact is not repeated as a title, kicker and caption.
+- A work detail shows its progress as an ordered step indicator and one next action; it does not repeat the global work tabs. Steps come from retained records only, and a failed or unknown read shows the order without marking a current step.
 - Interface copy uses business terms and shows the next allowed action before raw identifiers. Status meaning is conveyed by text and existing semantic state tokens, not colour alone.
 
 Current route implementation and tests are the executable source. Real browser rendering at mobile/laptop/desktop widths and API-backed states must be verified separately; this contract is not evidence of deployment, customer acceptance, accessible real-device use or measured analysis.

@@ -181,7 +181,7 @@ export function SpatialDataRequestAction({
 
   if (!canRequest) {
     return <section className="rounded-lg border border-line bg-surface px-4 py-3">
-      <h3 className="text-[13px] font-semibold">이 자료 받기 요청</h3>
+      <h3 className="text-body font-semibold">이 자료 받기 요청</h3>
       <div className="mt-2">
         <ActionUnavailable label="자료 받기 요청" description="자료 받기 요청은 권한 있는 담당자가 만들 수 있습니다. 필요한 파일과 용도를 담당자에게 알려 주세요." />
       </div>
@@ -189,25 +189,25 @@ export function SpatialDataRequestAction({
   }
 
   return <section className="rounded-lg border border-line bg-surface px-4 py-3">
-    <h3 className="text-[13px] font-semibold">이 자료 받기 요청</h3>
-    <p className="mt-1 text-[12px] leading-5 text-ink-2">
+    <h3 className="text-body font-semibold">이 자료 받기 요청</h3>
+    <p className="mt-1 text-caption leading-5 text-ink-2">
       검사된 격자에서 고른 유한 픽셀 창 그대로 준비를 요청합니다. Core가 현재 명시된 사용 권리와 범위를 확인한 뒤에만 작업을 만듭니다.
     </p>
-    <p className="mt-1 text-[11.5px] leading-5 text-ink-muted">
+    <p className="mt-1 text-caption leading-5 text-ink-muted">
       준비 완료는 정확도나 분석 사용 가능 여부를 보증하지 않습니다. AI 반출 용도는 별도 동의 절차가 필요합니다.
     </p>
     {inspectedRaster
-      ? <p className="mt-2 text-[12px] leading-5 text-ink-2">
+      ? <p className="mt-2 text-caption leading-5 text-ink-2">
         검사 격자 · {inspectedRaster.width} × {inspectedRaster.height} 네이티브 픽셀
         {observedCrsIdentifier ? <> · 기준 {observedCrsIdentifier}</> : null}
       </p>
-      : <p className="mt-2 rounded-md border border-line bg-sunk px-3 py-2 text-[12px] leading-5 text-ink-2" role="status">
+      : <p className="mt-2 rounded-md border border-line bg-sunk px-3 py-2 text-caption leading-5 text-ink-2" role="status">
         {PIXEL_WINDOW_BLOCKER_COPY.NO_INSPECTION}
       </p>}
     <fieldset className="mt-3 rounded-md border border-line bg-sunk/50 px-3 py-2">
-      <legend className="px-1 text-[12px] font-semibold">픽셀 창 설정</legend>
+      <legend className="px-1 text-caption font-semibold">픽셀 창 설정</legend>
       <div className="flex flex-wrap items-end gap-3">
-        <label className="flex min-w-28 flex-col gap-1 text-[12px] font-semibold" htmlFor="spatial-pixel-window-width">
+        <label className="flex min-w-28 flex-col gap-1 text-caption font-semibold" htmlFor="spatial-pixel-window-width">
           너비 (1–{inspectedRaster ? Math.min(inspectedRaster.width, MAX_SPATIAL_DATA_PIXEL_WINDOW_DIM) : MAX_SPATIAL_DATA_PIXEL_WINDOW_DIM})
           <input
             id="spatial-pixel-window-width"
@@ -220,7 +220,7 @@ export function SpatialDataRequestAction({
             disabled={busy || accepted !== null || inspectedRaster === null}
           />
         </label>
-        <label className="flex min-w-28 flex-col gap-1 text-[12px] font-semibold" htmlFor="spatial-pixel-window-height">
+        <label className="flex min-w-28 flex-col gap-1 text-caption font-semibold" htmlFor="spatial-pixel-window-height">
           높이 (1–{inspectedRaster ? Math.min(inspectedRaster.height, MAX_SPATIAL_DATA_PIXEL_WINDOW_DIM) : MAX_SPATIAL_DATA_PIXEL_WINDOW_DIM})
           <input
             id="spatial-pixel-window-height"
@@ -233,7 +233,7 @@ export function SpatialDataRequestAction({
             disabled={busy || accepted !== null || inspectedRaster === null}
           />
         </label>
-        <label className="flex min-w-28 flex-col gap-1 text-[12px] font-semibold" htmlFor="spatial-pixel-window-col">
+        <label className="flex min-w-28 flex-col gap-1 text-caption font-semibold" htmlFor="spatial-pixel-window-col">
           원점 열 (0부터)
           <input
             id="spatial-pixel-window-col"
@@ -244,7 +244,7 @@ export function SpatialDataRequestAction({
             disabled={busy || accepted !== null || inspectedRaster === null}
           />
         </label>
-        <label className="flex min-w-28 flex-col gap-1 text-[12px] font-semibold" htmlFor="spatial-pixel-window-row">
+        <label className="flex min-w-28 flex-col gap-1 text-caption font-semibold" htmlFor="spatial-pixel-window-row">
           원점 행 (0부터)
           <input
             id="spatial-pixel-window-row"
@@ -271,16 +271,16 @@ export function SpatialDataRequestAction({
         </button>
       </div>
       {inspectedRaster && (resolution.ok
-        ? <div className="mt-2 text-[12px] leading-5 text-ink-2">
+        ? <div className="mt-2 text-caption leading-5 text-ink-2">
           <p>픽셀 창 · 열 {resolution.value.window[0]}–{resolution.value.window[0] + resolution.value.width - 1},
             행 {resolution.value.window[1]}–{resolution.value.window[1] + resolution.value.height - 1}
             (원점 {resolution.value.window[0]}, {resolution.value.window[1]} · 너비 {resolution.value.width} × 높이 {resolution.value.height} 네이티브 픽셀)</p>
           <p className="mt-0.5 break-all">요청 범위(네이티브 좌표) · {formatBounds(resolution.value.requestedBounds)}</p>
-          <p className="mt-0.5 text-[11.5px] text-ink-muted">
+          <p className="mt-0.5 text-caption text-ink-muted">
             실제 출력 범위는 준비가 끝난 뒤 구역 자료 준비의 출력 정보(실제 범위)에서 확인하세요.
           </p>
         </div>
-        : <p className="mt-2 text-[12px] leading-5 text-high-ink" role="status">{PIXEL_WINDOW_BLOCKER_COPY[resolution.reason]}</p>)}
+        : <p className="mt-2 text-caption leading-5 text-high-ink" role="status">{PIXEL_WINDOW_BLOCKER_COPY[resolution.reason]}</p>)}
     </fieldset>
     <ResponsiveActionBoundary action="SPATIAL_DATA_REQUEST" reason="자료 받기 요청은 노트북 이상의 화면에서 진행하세요. 준비 상태는 모바일에서도 확인할 수 있습니다.">
       <div className="mt-3 flex flex-wrap items-center gap-2">
@@ -290,6 +290,6 @@ export function SpatialDataRequestAction({
         <Link href={requestsHref} className="btn min-h-11">구역 자료 준비에서 확인</Link>
       </div>
     </ResponsiveActionBoundary>
-    {message && <p role="status" aria-live="polite" className="mt-3 rounded-md border border-line bg-sunk px-3 py-2 text-[12px] leading-5 text-ink-2">{message}</p>}
+    {message && <p role="status" aria-live="polite" className="mt-3 rounded-md border border-line bg-sunk px-3 py-2 text-caption leading-5 text-ink-2">{message}</p>}
   </section>;
 }

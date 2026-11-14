@@ -31,6 +31,32 @@ visual component system.
   centered landing page or add a hero, newsletter, trial CTA, social proof, or marketing conversion
   pattern.
 
+## Scale and shared primitives (2026-11-14)
+
+- Type uses six named steps from `globals.css`: `text-micro` 11, `text-caption` 12, `text-body` 13,
+  `text-lead` 14, `text-title` 17, `text-display` 22. Use these names in place of equal sizes after checking line height.
+  Round half-pixel sizes when reviewing the screen.
+- Radius: 6px controls (`rounded-md`), 8px panels and stages (`rounded-lg`), 10px cards. Elevation has two
+  steps only: `shadow-elev-1` (raised panel) and `shadow-elev-2` (popover, sheet).
+- Buttons are `.btn` with `btn-primary`, `btn-danger`, `btn-quiet` (toolbar/row secondary) and `btn-sm`.
+  Do not hand-write a bordered rounded link that imitates a button.
+- Shared parts in `src/components/ui`: `PageHeader`, `Panel`, `DataRow`, `StepIndicator`, `Stat`,
+  `InlineNotice`, with `EmptyState`, `ErrorState`, `StatusBadge`/`StateBadge`. A list row omits a fact that
+  has no value; it does not print "미정" or "미배정" to fill the line.
+- The spatial stage is a fixed dark measurement surface (`--stage`, `--stage-grid`) whether populated or
+  empty. This is a canvas, not a dark theme; chrome around it stays light.
+
+## Vocabulary (2026-11-14)
+
+- One work-record word: **작업**. The global menu item, its list ("전체 작업"), the inbox ("받은 작업"),
+  closing/reopening ("작업 종료·다시 열기") and the detail title ("작업 상세")
+  all use it. Do not reintroduce 업무, 관측 작업, 현장 작업 or 작업 큐 for the same record.
+- Keep 공간 (spatial viewer), 분석 (analysis), 작업구역 (work area) and 관측 자료 등록 (registering observed data):
+  they name different things. "업무 구분" in the team roster and "업무 화면" in login copy are generic
+  business wording, not the work record.
+- Home lists agenda items as a vertical list, never a swipe carousel (ADR-KSI-025 D8).
+- A site cover without a prepared image is the registered boundary outline (`SiteFootprint`): a vector shape on `--stage`, labelled as registered boundary and not imagery. No map tiles, coordinates, area or scale are drawn (ADR-KSI-025 D9).
+
 ## Information hierarchy
 
 1. Site name and the user question.
@@ -68,6 +94,18 @@ support assertions ahead of the user-facing decision.
 - Prefer `Link` for URL-state navigation so deep links, browser back, and server rendering remain
   correct.
 
+### Screen consistency
+
+1. A single centered empty-stage card shows a one-line title, one-sentence reason, `RegistrationPath` and at most one permitted primary action. Navigation stays in the panel and rail.
+2. `Disclosure` wraps reference facts only, with the shared arrow, spacing and type. Label it `{대상} 상세`.
+3. `ActionMenu` holds overflow actions.
+4. State each fact once. Omit headings' kickers.
+5. Use one primary button per screen, secondary buttons and inline links. Keep menus in navigation or overflow controls.
+6. Use one alignment within each card.
+7. Use the viewer frame for 공간 and `PageHeader` plus content for task screens. Card titles identify their own content.
+8. Use one `InlineNotice` per issue.
+9. Put raw identifiers behind an identification disclosure.
+10. Use `text-micro`, `text-caption`, `text-body`, `text-lead`, `text-title` and `text-display`. Check line height when replacing arbitrary sizes and round half-pixel values when touching the screen.
 ### Site list controls and default visual (Human follow-up, 2026-10-19)
 
 Search and sort are one compact toolbar, not two differently labelled forms: a magnifier inside
@@ -87,7 +125,7 @@ or the ban on fabricated site photography or geographic evidence.
 
 At widths below 640px, optimize for **find → choose a Site**, not a scaled desktop toolbar:
 
-- Keep search full-width and always visible. Use one quiet count/`필터·정렬` disclosure row below it;
+- Keep search full-width and always visible. Use one quiet count row with the `필터·정렬` popover below it.
   expose status and sorting together on demand with an explicit Apply and whole reset.
 - Applying phone criteria uses the latest search draft and cancels any scheduled search. Selecting
   controls alone must not apply them; closing discards unapplied choices. Search-only acknowledgements
@@ -97,7 +135,7 @@ At widths below 640px, optimize for **find → choose a Site**, not a scaled des
 - At 640px and above, retain the existing tablet/desktop toolbar and default visuals. The Home hero's
   approved D6 hierarchy and geometry are outside this refinement and remain unchanged.
 
-Use the existing native disclosure rather than adding a modal/sheet for these low-risk list choices.
+Use the shared native popover for these list controls.
 The 640px threshold is a content-fit boundary, not an authorization boundary; existing 1024px operation
 gates remain independent.
 

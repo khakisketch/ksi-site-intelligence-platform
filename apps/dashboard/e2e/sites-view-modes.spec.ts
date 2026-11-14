@@ -72,8 +72,8 @@ test("데스크톱은 실제 미리보기 카드가 기본, 밀도표는 명시�
   await page.keyboard.press("Enter");
   await expect(views.list).toHaveAttribute("aria-pressed", "true");
   await expect(views.list).toBeFocused();
-  await expect(page.getByText("관리 단계", { exact: true })).toBeVisible();
-  const totalRows = Number(await page.locator('[data-site-list-view="list"]').getAttribute("data-site-total"));
+  await expect(page.getByRole("main").getByText("관리 단계", { exact: true })).toBeVisible();
+  const totalRows = Number(await page.getByRole("main").locator('[data-site-list-view="list"]').getAttribute("data-site-total"));
   await expect(page.getByRole("link", { name: "현장 열기", exact: true })).toHaveCount(Math.min(totalRows, 10));
   await capture(page, `multiple-list-${testInfo.project.name}`);
   expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1)).toBe(false);
@@ -84,7 +84,7 @@ test("보기 전환은 입력 중 검색과 정렬을 유지하고 한 현장 �
   await login(page);
   const views = viewButtons(page);
   await expect(views.cards).toHaveAttribute("aria-pressed", "true");
-  const total = Number(await page.locator('[data-site-list-view="cards"]').getAttribute("data-site-total"));
+  const total = Number(await page.getByRole("main").locator('[data-site-list-view="cards"]').getAttribute("data-site-total"));
   // Fixture/external ledgers differ on which group is nonempty (attention is 0 in
   // the isolated fixture): derive the precondition from a group that actually has
   // members instead of hardcoding one.
@@ -116,14 +116,14 @@ test("보기 전환은 입력 중 검색과 정렬을 유지하고 한 현장 �
   expect(cardBox!.width).toBeLessThan(mainBox!.width * 0.65);
   await expect(search).toHaveValue(id);
   expect(total).toBeGreaterThanOrEqual(1);
-  await expect(page.locator('[data-site-list-view="cards"]')).toHaveAttribute("data-site-total", "1");
-  await expect(page.locator('[data-site-list-view="cards"]')).toHaveAttribute("data-site-page", "1");
+  await expect(page.getByRole("main").locator('[data-site-list-view="cards"]')).toHaveAttribute("data-site-total", "1");
+  await expect(page.getByRole("main").locator('[data-site-list-view="cards"]')).toHaveAttribute("data-site-page", "1");
   await capture(page, `filtered-card-${testInfo.project.name}`);
   await views.list.click();
   await search.fill("목록 보기에서 없는 현장");
   await search.press("Enter");
-  await expect(page.getByText("조건에 맞는 현장이 없습니다", { exact: true })).toHaveCount(1);
-  await expect(page.getByText("현장 상태", { exact: true })).toBeHidden();
+  await expect(page.getByRole("main").getByText("조건에 맞는 현장이 없습니다", { exact: true })).toHaveCount(1);
+  await expect(page.getByRole("main").getByText("현장 상태", { exact: true })).toBeHidden();
   await expect(views.list).toHaveAttribute("aria-pressed", "true");
 });
 
@@ -164,7 +164,7 @@ test("설정 저장이 제한돼도 현재 탭 전환은 동작하고 phone 배�
   await login(page);
   const views = viewButtons(page);
   await expect(views.cards).toHaveAttribute("aria-pressed", "true");
-  const total = Number(await page.locator('[data-site-list-view="cards"]').getAttribute("data-site-total"));
+  const total = Number(await page.getByRole("main").locator('[data-site-list-view="cards"]').getAttribute("data-site-total"));
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await page.evaluate(() => Object.defineProperty(document, "cookie", {
@@ -175,14 +175,14 @@ test("설정 저장이 제한돼도 현재 탭 전환은 동작하고 phone 배�
   await views.list.click();
   await expect(views.list).toHaveAttribute("aria-pressed", "true");
   await expect(page.locator("[data-site-card]:visible")).toHaveCount(0);
-  await expect(page.getByText("관리 단계", { exact: true })).toBeVisible();
+  await expect(page.getByRole("main").getByText("관리 단계", { exact: true })).toBeVisible();
   await expect(page.getByRole("link", { name: "현장 열기", exact: true })).toHaveCount(Math.min(total, 10));
   expect(errors).toEqual([]);
   await page.setViewportSize({ width: 390, height: 844 });
   await expect(views.group).toBeHidden();
   const searchBox = await page.getByRole("searchbox", { name: "현장 찾기" }).boundingBox();
   expect(searchBox!.width).toBeGreaterThanOrEqual(350);
-  await expect(page.getByText("필터·정렬", { exact: true }).filter({ visible: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "필터·정렬", exact: true })).toBeVisible();
   await expect(page.getByText("기본 이미지", { exact: true })).toHaveCount(0);
   await page.setViewportSize({ width: 768, height: 1000 });
   await expect(views.group).toBeHidden();

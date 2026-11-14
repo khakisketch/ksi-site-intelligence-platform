@@ -14,8 +14,8 @@ async function firstSiteId(page: Page) {
 }
 
 async function openPhoneFilters(page: Page) {
-  const toggle = page.getByText("필터·정렬", { exact: true }).filter({ visible: true });
-  if (!await toggle.evaluate((node) => node.closest("details")?.open)) await toggle.tap();
+  const toggle = page.getByRole("button", { name: "필터·정렬", exact: true });
+  if (!await toggle.evaluate((node) => document.getElementById(node.getAttribute("popovertarget") ?? "")?.matches(":popover-open"))) await toggle.tap();
   return toggle;
 }
 
@@ -56,7 +56,7 @@ test("폭에 맞춰 검색·정렬과 장식의 우선순위를 바꾼다", asyn
     await openPhoneFilters(page);
     await expect(sort).toBeVisible();
     await expect(page.getByRole("combobox", { name: "현장 상태" })).toBeVisible();
-    await page.getByText("필터·정렬", { exact: true }).filter({ visible: true }).click();
+    await page.getByRole("button", { name: "필터·정렬", exact: true }).click();
   } else {
     const sortBox = await sort.boundingBox();
     expect(searchBox!.height).toBe(sortBox!.height);
@@ -85,7 +85,7 @@ test("폭에 맞춰 검색·정렬과 장식의 우선순위를 바꾼다", asyn
     expect(actionBox!.height).toBeGreaterThanOrEqual(44);
     const card = open.locator("xpath=ancestor::li[1]");
     await expect(card.getByRole("link", { name: "자료", exact: true })).toBeVisible();
-    await expect(card.getByRole("link", { name: "결과", exact: true })).toBeVisible();
+    await expect(card.getByRole("link", { name: "분석", exact: true })).toBeVisible();
   }
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1);
   expect(overflow).toBe(false);
@@ -106,7 +106,7 @@ test("입력과 즉시 정렬이 겹쳐도 최신 검색어와 필터를 잃지 
   await expect(search).toHaveValue(id);
   if (phone) {
     await expect(sort).toBeHidden();
-    await expect.poll(() => page.getByText("필터·정렬", { exact: true }).filter({ visible: true }).evaluate((node) => node.closest("summary") === document.activeElement)).toBe(true);
+    await expect.poll(() => page.getByRole("button", { name: "필터·정렬", exact: true }).evaluate((node) => node === document.activeElement)).toBe(true);
   } else {
     await expect(sort).toHaveValue("name");
     await expect(sort).toBeFocused();
@@ -157,7 +157,7 @@ test("한글 조합 중에는 검색하지 않고 빈 결과에서도 입력과 
   expect(new URL(page.url()).searchParams.has("q")).toBe(false);
   await search.dispatchEvent("compositionend");
   await expect.poll(() => new URL(page.url()).searchParams.get("q")).toBe("검색 검증용 없는 현장");
-  await expect(page.getByText("조건에 맞는 현장이 없습니다", { exact: true })).toBeVisible();
+  await expect(page.getByRole("main").getByText("조건에 맞는 현장이 없습니다", { exact: true })).toBeVisible();
   await expect(search).toBeEnabled();
   await page.getByRole("link", { name: "필터 초기화", exact: true }).click();
   await expect(page).toHaveURL(/\/sites$/);
@@ -211,7 +211,7 @@ test("느린 필터 응답 중 이전 검색 타이머가 선택한 묶음을 �
 test("빈 결과의 초기화도 아직 적용되지 않은 검색을 취소한다", async ({ page }) => {
   await page.goto("/sites?q=처음부터 없는 현장");
   const search = page.getByRole("searchbox", { name: "현장 찾기" });
-  await expect(page.getByText("조건에 맞는 현장이 없습니다", { exact: true })).toBeVisible();
+  await expect(page.getByRole("main").getByText("조건에 맞는 현장이 없습니다", { exact: true })).toBeVisible();
   await page.route((url) => url.pathname === "/sites" && !url.searchParams.has("q"), async (route) => {
     await new Promise((resolve) => setTimeout(resolve, 700));
     await route.continue();
@@ -274,7 +274,7 @@ test("휴대폰 필터는 선택만으로 적용되지 않고 최신 검색 초�
   expect(new URL(page.url()).searchParams.has("group")).toBe(false);
   expect(new URL(page.url()).searchParams.get("q")).toBe(draft);
   await expect(sort).toBeHidden();
-  await expect.poll(() => toggle.evaluate((node) => node.closest("summary") === document.activeElement)).toBe(true);
+  await expect.poll(() => toggle.evaluate((node) => node === document.activeElement)).toBe(true);
   await openPhoneFilters(page);
   await page.getByRole("link", { name: "초기화", exact: true }).tap();
   await expect(page).toHaveURL(/\/sites$/);

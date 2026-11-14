@@ -1,11 +1,15 @@
+import { Disclosure } from "@/components/ui/Disclosure";
 import Link from "next/link";
 
-import { HomeAttentionCarousel, type HomeAttentionCardView } from "./HomeAttentionCarousel";
+import { HomeAttentionList, type HomeAttentionCardView } from "./HomeAttentionList";
 import { HomeRecentUpdates, type HomeRecentUpdateView } from "./HomeRecentUpdates";
+import { HomeSiteGrid } from "./HomeSiteGrid";
 import { HomeSituationList, type HomeSituationItem } from "./HomeSituationList";
 import { presentWorkOrder } from "./field/work-order-stage";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { ErrorState } from "@/components/ui/ErrorState";
+import { InlineNotice } from "@/components/ui/InlineNotice";
+import { Stat } from "@/components/ui/Stat";
 import { whoAmI } from "@/lib/core-api/auth";
 import { resolveSiteRegistrationMode } from "@/lib/core-api/permissions";
 import { getAnalysisReviewTarget, listAnalyses, listAnalysisReviews } from "@/lib/core-api/analysis";
@@ -22,7 +26,6 @@ import { selectHomeAnalysisReviewSources, selectHomeAttentionSources, selectHome
 import { resolveSiteOperatorNextAction } from "@/lib/operator-next-action";
 import { formatHomeReviewTechnicalRef, homeAnalysisReviewCardText, indexWorkAreaNamesBySite } from "@/lib/work-context-names";
 import { TopUnattendedHeadline } from "./TopUnattendedHeadline";
-import { SiteVisualPlaceholder } from "@/components/site/SiteVisualPlaceholder";
 
 export const metadata = { title: "홈 · KSI" };
 
@@ -225,7 +228,7 @@ export default async function HomePage() {
     const nextAction = resolveSiteOperatorNextAction(site, siteActionPermissions);
     return { key: `initial-setup:${site.siteId}`, siteId: site.siteId, siteName: site.name, statusLabel: SITE_STATUS_LABEL[site.status].label, statusTone: SITE_STATUS_LABEL[site.status].tone, title: "작업구역에 첫 관측 자료를 연결하세요.", detail: "관측 자료 등록에서 작업구역을 선택합니다. 현장 전체 경계는 선택 설정입니다.", href: nextAction?.href ?? `/sites/${encodeURIComponent(site.siteId)}`, actionLabel: nextAction?.label ?? "현장 맥락 보기" };
   });
-  // 대기열에 오르지 않은 실제 현장 바로가기 — 캐러셀·초기 설정에 이미 나온
+  // 대기열에 오르지 않은 실제 현장 바로가기 — 확인 목록·초기 설정에 이미 나온
   // 현장은 빼고, 남는 현장이 있을 때만 한 줄씩 둔다. 장식 이미지·가짜 요약은 두지 않는다.
   const surfacedSiteIds = new Set([
     ...attentionSources.map((source) => source.siteId),
@@ -238,96 +241,52 @@ export default async function HomePage() {
   // 부분 읽기 복구는 하나의 간결한 안내로 묶는다 — 사유별 문구는 그대로 두되
   // 접힌 `확인하지 못한 항목` 안에만 둔다. 알려진 안건 카드·건수 표시는 가리지 않는다.
   const unknownReasons = [
-    ...(operationsUnavailable ? [{ key: "operations", message: "외부 작업의 담당·마감·업무 종료 상태를 확인할 수 없습니다. 해당 작업을 확인 필요나 진행 중으로 분류하지 않았습니다." }] : []),
+    ...(operationsUnavailable ? [{ key: "operations", message: "외부 작업의 담당·마감·작업 종료 상태를 확인할 수 없습니다. 해당 작업을 확인 필요나 진행 중으로 분류하지 않았습니다." }] : []),
     ...(decisionsUnavailable ? [{ key: "decisions", message: "외부 결과의 검토·승인 대기 여부를 확인할 수 없습니다. 확인할 결과가 없다는 뜻이 아닙니다." }] : []),
     ...(analysisReviewsUnknown ? [{ key: "analysis-reviews", message: "분석 결과의 검토 대기 여부를 확인할 수 없습니다. 확인할 결과가 없다는 뜻이 아닙니다." }] : []),
   ];
 
   return <div className="console-page">
-    <header className="flex flex-wrap items-center justify-between gap-3 border-b border-line pb-3">
-      <div className="flex min-h-9 flex-wrap items-center gap-x-3 gap-y-1 text-[13px] leading-5">
-        <span className="font-semibold tracking-[-0.01em] break-keep">
-          볼 수 있는 현장 {sitesResult.ok ? `${sites.length}곳` : "—"}
-        </span>
-        <span aria-hidden="true" className="h-3 w-px bg-line-strong/70" />
-        <span className={`font-semibold break-keep ${portfolioComplete && attentionCount > 0 ? "text-accent" : "text-ink-2"}`}>
-          확인 필요 {portfolioComplete ? `${attentionCount}곳` : "—"}
-        </span>
-      </div>
-      <div className="flex min-h-9 items-center gap-3 text-[12.5px] leading-5">
+    <header className="flex flex-wrap items-end justify-between gap-x-8 gap-y-3 border-b border-line pb-4">
+      <dl className="flex flex-wrap gap-x-10 gap-y-3">
+        <Stat label="볼 수 있는 현장" value={sitesResult.ok ? sites.length : "—"} unit={sitesResult.ok ? "곳" : undefined} />
+        <Stat
+          label="확인 필요"
+          value={portfolioComplete ? attentionCount : "—"}
+          unit={portfolioComplete ? "곳" : undefined}
+          className={portfolioComplete && attentionCount > 0 ? "[&_dd:first-of-type]:text-accent" : undefined}
+        />
+      </dl>
+      <nav aria-label="홈 바로가기" className="flex min-h-9 items-center gap-3 text-caption leading-5">
         <Link href="/field/inbox" className="tap-target inline-flex min-h-9 items-center font-semibold whitespace-nowrap text-ink-2 hover:underline">
           <TopUnattendedHeadline pendingCount={inboxResult.ok ? inboxResult.value.items.length : null} />
         </Link>
         <span aria-hidden="true" className="hidden h-3 w-px bg-line sm:block" />
-        <Link href="/sites" className="tap-target hidden min-h-9 items-center font-semibold whitespace-nowrap text-accent hover:underline sm:inline-flex">
+        <Link href="/sites" className="tap-target hidden min-h-9 items-center font-semibold whitespace-nowrap text-accent-text hover:underline sm:inline-flex">
           현장 전체
         </Link>
-      </div>
+      </nav>
     </header>
 
     {!sitesResult.ok && <ErrorState message={sitesResult.message} retryable />}
     {sitesResult.ok && sites.length === 0 && <EmptyState title="현재 계정에서 볼 수 있는 현장이 없습니다" description="찾는 현장이 이미 있다면 관리자에게 이 계정의 현장 접근 권한을 확인해 주세요." action={canRegisterSite ? { label: "현장 등록", href: "/sites/new" } : { label: "현장 목록", href: "/sites" }} />}
-    {sites.length > 0 && !portfolioComplete && <section aria-label="일부 정보를 확인하지 못했습니다" className="rounded-lg border border-line bg-sunk px-4 py-3">
-      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1">
-        <p className="text-[12.5px] leading-5 break-keep text-ink-2">일부 현장 또는 작업 원장을 불러오지 못해 확인 필요 건수를 추측하지 않습니다.</p>
-        <Link href="/sites" className="tap-target inline-flex min-h-11 items-center font-semibold text-ink-1 underline underline-offset-2">현장 전체를 열어 직접 확인하세요.</Link>
-      </div>
-      {unknownReasons.length > 0 && <details className="mt-1 border-t border-line pt-1">
-        <summary className="tap-target inline-flex cursor-pointer items-center text-[12.5px] font-semibold text-ink-2">확인하지 못한 항목 {unknownReasons.length}건</summary>
-        <ul className="mt-1 flex flex-col gap-1">
-          {unknownReasons.map((reason) => <li key={reason.key} className="text-[12.5px] leading-5 break-keep text-ink-2">{reason.message}</li>)}
-        </ul>
-      </details>}
+    {sites.length > 0 && !portfolioComplete && <section aria-label="일부 정보를 확인하지 못했습니다">
+      <InlineNotice action={<Link href="/sites" className="tap-target inline-flex items-center underline underline-offset-2">현장 전체를 열어 직접 확인하세요.</Link>}>
+        <p>일부 현장 또는 작업 원장을 불러오지 못해 확인 필요 건수를 추측하지 않습니다.</p>
+        {unknownReasons.length > 0 && <Disclosure className="mt-0.5" label={`미확인 항목 상세 (${unknownReasons.length}건)`}>
+          <ul className="flex flex-col gap-1 pb-1">
+            {unknownReasons.map((reason) => <li key={reason.key} className="leading-5 break-keep">{reason.message}</li>)}
+          </ul>
+        </Disclosure>}
+      </InlineNotice>
     </section>}
 
     {sites.length > 0 && (
-      <div className="grid min-w-0 grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1.45fr)_minmax(340px,1fr)] xl:items-start">
-        <div className="flex min-w-0 flex-col gap-5">
-          {attentionItems.length > 0 ? <HomeAttentionCarousel items={attentionItems} /> : recentSiteItems.length > 0 ? <HomeAttentionCarousel items={recentSiteItems} title={portfolioComplete ? "조회된 범위에 새 운영 안건이 없습니다." : "최근 현장을 직접 확인하세요."} description={portfolioComplete ? "현재 조회된 현장·작업과 최근 분석 기록 기준입니다. 전체 기록의 확인 완료나 현장의 정상·안전을 뜻하지 않습니다. 현장을 선택해 자료와 작업 이력을 확인하세요." : "일부 원장을 불러오지 못해 새 안건 여부를 판단하지 않습니다. 현장을 선택해 상태를 직접 확인하세요."} regionLabel="최근 현장 캐러셀" /> : null}
+      <div className="flex min-w-0 flex-col gap-6">
+          {attentionItems.length > 0 ? <HomeAttentionList items={attentionItems} /> : recentSiteItems.length > 0 ? <HomeAttentionList items={recentSiteItems} title={portfolioComplete ? "조회된 범위에 새 운영 안건이 없습니다." : "최근 현장을 직접 확인하세요."} description={portfolioComplete ? "현재 조회된 현장·작업과 최근 분석 기록 기준입니다. 전체 기록의 확인 완료나 현장의 정상·안전을 뜻하지 않습니다. 현장을 선택해 자료와 작업 이력을 확인하세요." : "일부 원장을 불러오지 못해 새 안건 여부를 판단하지 않습니다. 현장을 선택해 상태를 직접 확인하세요."} regionLabel="최근 현장 목록" /> : null}
           {initialSetupItems.length > 0 && <HomeSituationList title="초기 설정이 필요한 현장" description="작업구역을 확인하고 고객이 준비한 관측 자료를 등록하세요." items={initialSetupItems} emptyMessage="초기 설정이 필요한 현장이 없습니다." allHref="/sites" allLabel="현장 전체" />}
+          <HomeSiteGrid sites={otherSites} />
           <HomeRecentUpdates items={recentItems} />
-        </div>
-
-        <aside aria-label="현장 및 운영 바로가기" className="flex min-w-0 flex-col gap-4">
-          {otherSites.length > 0 && (
-            <section aria-label="다른 현장 바로가기" className="flex min-w-0 flex-col gap-2.5 border-t border-line pt-4 xl:border-t-0 xl:pt-0">
-              <div className="flex items-baseline justify-between gap-2">
-                <h2 className="text-[16px] font-bold tracking-[-0.015em] break-keep">다른 현장</h2>
-                <Link href="/sites" className="tap-target text-[12px] font-semibold text-ink-2 hover:underline">전체 목록</Link>
-              </div>
-              <ul className="flex min-w-0 flex-col divide-y divide-line">
-                {otherSites.map((site) => {
-                  const encoded = encodeURIComponent(site.siteId);
-                  return (
-                    <li key={site.siteId} className="flex min-w-0 gap-3 py-3 first:pt-1 last:pb-0">
-                      <SiteVisualPlaceholder siteName={site.name} label="미리보기 없음" size="mini" />
-                      <div className="flex min-w-0 flex-1 flex-col gap-2">
-                        <div className="flex min-w-0 items-center justify-between gap-2">
-                          <span className="min-w-0 flex-1 truncate text-[13.5px] font-semibold break-keep">{site.name}</span>
-                          <span className="shrink-0 rounded-full border border-line bg-sunk/60 px-2 py-0.5 text-[11px] font-medium text-ink-2">
-                            {SITE_STATUS_LABEL[site.status].label}
-                          </span>
-                        </div>
-                        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[12px]">
-                          <Link href={`/sites/${encoded}`} aria-label={`${site.name} 열기`} className="tap-target font-semibold text-accent hover:underline">열기</Link>
-                          <span aria-hidden="true" className="text-line-strong">·</span>
-                          <Link href={`/sites/${encoded}/spatial-assets`} className="tap-target text-ink-2 hover:text-ink-1 hover:underline">자료</Link>
-                          <span aria-hidden="true" className="text-line-strong">·</span>
-                          <Link href={`/sites/${encoded}/analysis`} className="tap-target text-ink-2 hover:text-ink-1 hover:underline">결과</Link>
-                        </div>
-                      </div>
-                    </li>
-                  );
-                })}
-              </ul>
-            </section>
-          )}
-
-          <nav aria-label="주요 업무 이동" className="flex flex-wrap gap-x-5 border-t border-line pt-3 text-[12px] text-ink-2">
-            <Link href="/sites" className="tap-target inline-flex items-center hover:underline">현장 자료·작업 보기</Link>
-            <Link href="/field" className="tap-target inline-flex items-center hover:underline">관측 작업 목록</Link>
-          </nav>
-        </aside>
       </div>
     )}
   </div>;
