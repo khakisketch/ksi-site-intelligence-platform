@@ -118,7 +118,7 @@ async function renderPage(search: { reportRef?: string | string[] } = {}, workOr
   }));
 }
 
-describe("관측 작업 페이지 follow-up", () => {
+describe("작업 페이지 follow-up", () => {
   it("resolves and passes a same-Site, same-work-order report deep link to the existing panel", async () => {
     await renderPage({ reportRef });
 
@@ -158,16 +158,15 @@ describe("관측 작업 페이지 follow-up", () => {
     expect(document.body.textContent).not.toContain("2026-09-30T00:00:00Z");
   });
 
-  it("moves to (not auto-opens) operations disclosure and passes scoped area names to intake", async () => {
+  it("exposes work operations and links the permitted site intake panel", async () => {
     await renderPage();
 
-    // 앵커는 스크롤 이동만 약속한다 — disclosure를 대신 열어주지 않는다.
     expect(screen.getByRole("link", { name: "작업 운영으로 이동" }).getAttribute("href")).toBe("#work-operations");
     const operations = screen.getByTestId("operations-panel");
-    const disclosure = operations.closest("details");
-    expect(disclosure?.id).toBe("work-operations");
-    expect(disclosure?.open).toBe(false);
-    expect(disclosure?.querySelector("summary")?.textContent).toContain("작업 운영");
+    const section = operations.closest("section");
+    expect(section?.id).toBe("work-operations");
+    expect(section?.querySelector("details")).toBeNull();
+    expect(screen.getByRole("link", { name: "공간의 등록 진행 보기" }).getAttribute("href")).toBe("/sites/site-1?panel=intake");
   });
 
   it("uses the shared count format for WorkAreas and draft regions", async () => {
@@ -226,7 +225,7 @@ describe("관측 작업 페이지 follow-up", () => {
     expect(screen.getByText("산출물 제출을 마친 뒤 변화 분석 화면에서 기준 자료→비교 자료 분석을 요청하세요.")).toBeTruthy();
     expect(screen.getByRole("link", { name: "원본 결과·제안 보기" }).getAttribute("href")).toBe(`/field/work-orders/source-1?reportRef=${reportRef}#external-result`);
     expect(screen.getByRole("link", { name: "비교 요청·제안 상태로 이동" }).getAttribute("href")).toBe("#external-volume");
-    expect(screen.getByRole("link", { name: "변화 분석 열기" }).getAttribute("href")).toBe("/sites/site-1/analysis#new-analysis-request");
+    expect(screen.getByRole("link", { name: "변화 분석 열기" }).getAttribute("href")).toBe("/sites/site-1/analysis?request=new#new-analysis-request");
     expect(screen.getByRole("link", { name: "이 범위로 관측 자료 등록" }).getAttribute("href")).toBe("/sites/site-1/observations/new?repeatWorkOrderId=successor-1");
   });
 
@@ -248,9 +247,9 @@ describe("관측 작업 페이지 follow-up", () => {
     expect(screen.getByText(/화면을 새로고침하면 미제출 입력·파일 선택·동결된 요청이 사라지니/)).toBeTruthy();
     expect(screen.queryByText("외부 산출물 등록 준비")).toBeNull();
     expect(screen.queryByRole("region", { name: "등록 자료 다음 확인" })).toBeNull();
-    // 기존 등록·검사 진입과 재시도는 그대로 둔다 — 상태 배너와 작업 내 이동에 같은 앵커가 함께 있다.
+    // 기존 등록·검사 진입과 재시도는 그대로 둔다 — 상태의 주 버튼 한 곳에서 등록·검사 기록을 연다.
     const stageEntries = screen.getAllByRole("link", { name: "자료 등록·검사 기록으로 이동" });
-    expect(stageEntries).toHaveLength(2);
+    expect(stageEntries).toHaveLength(1);
     for (const entry of stageEntries) expect(entry.getAttribute("href")).toBe("#external-submissions");
   });
 
@@ -265,11 +264,11 @@ describe("관측 작업 페이지 follow-up", () => {
     await renderPage();
     const continuation = within(screen.getByRole("region", { name: "등록 자료 다음 확인" }));
     expect(continuation.getByRole("link", { name: "등록 자료 목록 보기" }).getAttribute("href"))
-      .toBe("/sites/site-1/spatial-assets?workAreaId=area-1");
+      .toBe("/sites/site-1?panel=materials&workAreaId=area-1");
     expect(continuation.getByRole("link", { name: "변화 분석에서 비교하기" }).getAttribute("href"))
-      .toBe("/sites/site-1/analysis?workAreaId=area-1&currentWorkOrderId=order-1#new-analysis-request");
-    // 현재 경로는 상태와 같은 묶음에서 유일한 primary로 이어진다.
-    expect(continuation.getByRole("link", { name: "변화 분석에서 비교하기" }).className).toContain("btn-primary");
+      .toBe("/sites/site-1/analysis?request=new&workAreaId=area-1&currentWorkOrderId=order-1#new-analysis-request");
+    // 등록·검사 기록으로 이동하는 주 버튼과 같은 무게로 보이지 않는다.
+    expect(continuation.getByRole("link", { name: "변화 분석에서 비교하기" }).className).not.toContain("btn-primary");
     expect(screen.getByText("플랫폼 작업 상태").closest("section")?.contains(continuation.getByText("등록 자료 다음 확인"))).toBe(true);
   });
 
@@ -277,9 +276,9 @@ describe("관측 작업 페이지 follow-up", () => {
     mocked.session.mockResolvedValueOnce({ kind: "ready", principal: { principalId: "viewer-1", organizationId: "org-1", permissions: [] } });
     await renderPage();
     expect(screen.queryByTestId("responsive-notice")).toBeNull();
-    // 조회 전용에도 상태 배너와 작업 내 이동의 같은 앵커 진입은 둔다.
+    // 조회 전용에도 상태의 주 버튼에서 등록·검사 기록을 연다.
     const viewerEntries = screen.getAllByRole("link", { name: "자료 등록·검사 기록으로 이동" });
-    expect(viewerEntries).toHaveLength(2);
+    expect(viewerEntries).toHaveLength(1);
     for (const entry of viewerEntries) expect(entry.getAttribute("href")).toBe("#external-submissions");
   });
 });

@@ -1,5 +1,6 @@
 "use client";
 
+import { Disclosure } from "@/components/ui/Disclosure";
 import { CoverageGridView } from "@/components/analysis/CoverageGridView";
 
 import { useEffect, useRef, useState } from "react";
@@ -661,9 +662,9 @@ export function MaskedAnalysisPanel({
   return <section className="rounded-lg border border-line bg-surface" aria-label="독립 마스크 계산">
     <div className="flex flex-wrap items-start justify-between gap-3 px-4 py-3">
       <div className="min-w-0">
-        <h2 className="text-[15px] font-bold">독립 마스크 계산</h2>
-        <p className="mt-1 text-[12px] leading-5 text-ink-2">V3 · 기존 V2 결과와 분리된 별도 계산입니다. V2 수치 성공 없이도 요청할 수 있습니다.</p>
-        <p className="mt-0.5 text-[12px] text-ink-2">{workAreaName}</p>
+        <h2 className="text-lead font-bold">독립 마스크 계산</h2>
+        <p className="mt-1 text-caption leading-5 text-ink-2">V3 · 기존 V2 결과와 분리된 별도 계산입니다. V2 수치 성공 없이도 요청할 수 있습니다.</p>
+        <p className="mt-0.5 text-caption text-ink-2">{workAreaName}</p>
       </div>
       {executionBadge && detail && <StateBadge label={executionBadge.label} tone={executionBadge.tone} />}
     </div>
@@ -671,23 +672,22 @@ export function MaskedAnalysisPanel({
     <p role="status" aria-live="polite" className="sr-only">{notice ?? actionError ?? "독립 마스크 계산 영역"}</p>
 
     {!connected && <div className="border-t border-line px-4 py-3" role="note">
-      <p className="text-[12.5px] leading-5 text-ink-2">마스크 입력 연결 전입니다. AP 사전확인의 원본 계산 신원을 먼저 선택하면 독립 마스크 계산을 요청할 수 있습니다.</p>
+      <p className="text-body leading-5 text-ink-2">마스크 입력 연결 전입니다. AP 사전확인의 원본 계산 신원을 먼저 선택하면 독립 마스크 계산을 요청할 수 있습니다.</p>
     </div>}
 
     {sourceCalculationIdentityDigest && <div className="border-t border-line px-4 py-3">
-      <h3 className="text-[13px] font-bold">원본 계산 신원</h3>
-      {(baselineLabel || currentLabel) && <p className="mt-1 text-[12px] leading-5 text-ink-2">기준 {baselineLabel ?? "—"} · 현재 {currentLabel ?? "—"}</p>}
-      <details className="mt-1 text-[11.5px] text-ink-muted">
-        <summary className="tap-target cursor-pointer font-semibold">원본 계산 신원 확인값(AP 사전확인)</summary>
+      <h3 className="text-body font-bold">원본 계산 신원</h3>
+      {(baselineLabel || currentLabel) && <p className="mt-1 text-caption leading-5 text-ink-2">기준 {baselineLabel ?? "—"} · 현재 {currentLabel ?? "—"}</p>}
+      <Disclosure label="원본 계산 식별 상세" className="mt-1 text-caption text-ink-muted">
         <p className="mt-1 break-all">{sourceCalculationIdentityDigest}</p>
-      </details>
+      </Disclosure>
       {!sourceContext && <div className="mt-2">
-        <p className="text-[12px] leading-5 text-ink-muted">원본 맥락 연결 전입니다. 확인된 원본 정보가 내려오면 선언할 수 있습니다.</p>
+        <p className="text-caption leading-5 text-ink-muted">원본 맥락 연결 전입니다. 확인된 원본 정보가 내려오면 선언할 수 있습니다.</p>
         <button type="button" className="btn mt-2" disabled={busy !== null} onClick={fetchSourceContext}>
           {busy === "context" ? "불러오는 중" : "마스크 설정 불러오기"}
         </button>
       </div>}
-      {sourceContext && <div className="mt-2 text-[12px] leading-5 text-ink-2">
+      {sourceContext && <div className="mt-2 text-caption leading-5 text-ink-2">
         <p>원본 맥락 확인됨 · 기준 자료 {sourceContext.baselineDsmArtifactId} · 원시 상한 {formatBytesKo(sourceContext.maxMaskBytes)}</p>
         <p className="mt-0.5 text-ink-muted">
           {sourceContext.sourceDisposition === "ADMIT_EVALUATED"
@@ -698,8 +698,8 @@ export function MaskedAnalysisPanel({
     </div>}
 
     {connected && needsRestore && <div className="border-t border-line px-4 py-3">
-      <h3 className="text-[13px] font-bold">이전 마스크 작업</h3>
-      <p className="mt-1 text-[12px] leading-5 text-ink-2">
+      <h3 className="text-body font-bold">이전 마스크 작업</h3>
+      <p className="mt-1 text-caption leading-5 text-ink-2">
         자식 {continuity?.maskChildId}{continuity?.requestId ? ` · 요청 ${continuity.requestId}` : " · 계산 요청 전"}.
         불러오기는 읽기 전용이며 파일·업로드를 만들지 않습니다.
       </p>
@@ -709,8 +709,8 @@ export function MaskedAnalysisPanel({
     </div>}
 
     {connected && <div className="border-t border-line px-4 py-3">
-      <h3 className="text-[13px] font-bold">마스크 파일 입력</h3>
-      <p className="mt-1 text-[12px] leading-5 text-ink-muted">
+      <h3 className="text-body font-bold">마스크 파일 입력</h3>
+      <p className="mt-1 text-caption leading-5 text-ink-muted">
         uint8 단일 밴드 TIFF만 가능하며{effectiveBudget !== null ? `, ${formatBytesKo(effectiveBudget)} 이하만 받습니다` : " — 서버 업로드 예산이 설정되지 않아 선택할 수 없습니다"}. 픽셀을 미리 읽거나 격자를 선언하지 않습니다.
       </p>
       <ResponsiveActionBoundary
@@ -719,7 +719,7 @@ export function MaskedAnalysisPanel({
         reason="마스크 입력·계산 요청은 전체 Operations Console이 필요한 쓰기 작업입니다."
       >
         {canRequest ? <div className="mt-3 grid gap-3">
-          <label className="text-[12.5px] font-semibold" htmlFor="masked-file-input">마스크 TIFF 선택
+          <label className="text-body font-semibold" htmlFor="masked-file-input">마스크 TIFF 선택
             <input
               id="masked-file-input"
               type="file"
@@ -735,17 +735,17 @@ export function MaskedAnalysisPanel({
             </button>
             <button
               type="button"
-              className="btn btn-primary"
+              className="btn"
               disabled={busy !== null || !selectedFile || !declared || !sourceContext}
               onClick={submitDeclare}
             >
               {busy === "declare" ? "선언 중" : "마스크 입력 선언"}
             </button>
-            {!sourceContext && <span className="text-[11.5px] text-ink-muted">원본 맥락 연결 전입니다. 기준선 바인딩이 내려오면 선언할 수 있습니다.</span>}
-            {!selectedFile && <span className="text-[11.5px] text-ink-muted">파일을 선택하면 확인값을 계산할 수 있습니다.</span>}
+            {!sourceContext && <span className="text-caption text-ink-muted">원본 맥락 연결 전입니다. 기준선 바인딩이 내려오면 선언할 수 있습니다.</span>}
+            {!selectedFile && <span className="text-caption text-ink-muted">파일을 선택하면 확인값을 계산할 수 있습니다.</span>}
           </div>
-          {declared && <p className="break-all text-[12px] text-ink-2">선언 크기 {formatBytesKo(declared.sizeBytes)} · 선언 확인값 {declared.sha256}</p>}
-          {child && <div className="rounded-md border border-line bg-sunk/50 px-3 py-2 text-[12px] leading-5 text-ink-2">
+          {declared && <p className="break-all text-caption text-ink-2">선언 크기 {formatBytesKo(declared.sizeBytes)} · 선언 확인값 {declared.sha256}</p>}
+          {child && <div className="rounded-md border border-line bg-sunk/50 px-3 py-2 text-caption leading-5 text-ink-2">
             <p>자식 {child.declaration.maskChildId} · 선언됨</p>
             {!inspection && <p className="mt-0.5">검사 상태를 새로고침으로 확인하세요. 검사 완료(봉인)가 확인되기 전에는 계산을 요청하지 않습니다.</p>}
             {inspection?.status === "COMPLETED" && <p className="mt-0.5">검사 완료(봉인됨) — V3 계산을 요청할 수 있습니다.</p>}
@@ -766,26 +766,25 @@ export function MaskedAnalysisPanel({
         </div> : <div className="mt-3"><ActionUnavailable label="마스크 입력 선언" description="마스크 입력 선언은 현장 쓰기 권한이 있는 담당자에게 요청하세요." /></div>}
       </ResponsiveActionBoundary>
       {actionError && <div className="mt-3 rounded-md border border-crit bg-crit-bg px-3 py-2" role="alert">
-        <p className="text-[12px] leading-5 text-crit-ink">{actionError}</p>
-        {actionCode && <details className="mt-1 text-[11.5px] text-crit-ink">
-          <summary className="tap-target cursor-pointer font-semibold">오류 코드</summary>
+        <p className="text-caption leading-5 text-crit-ink">{actionError}</p>
+        {actionCode && <Disclosure label="오류 코드 상세" className="mt-1 text-caption text-crit-ink">
           <p className="mt-1 break-all"><code>{actionCode}</code></p>
-        </details>}
+        </Disclosure>}
       </div>}
-      {notice && <p role="status" className="mt-3 rounded-md border border-line bg-sunk/50 px-3 py-2 text-[12px] leading-5 text-ink-2">{notice}</p>}
+      {notice && <p role="status" className="mt-3 rounded-md border border-line bg-sunk/50 px-3 py-2 text-caption leading-5 text-ink-2">{notice}</p>}
     </div>}
 
     {connected && effectiveMaskChildId && manifest && canRequest && <div className="border-t border-line px-4 py-3">
-      <h3 className="text-[13px] font-bold">V3 계산 요청</h3>
-      <p className="mt-1 text-[12px] leading-5 text-ink-muted">원본 계산 신원 + 마스크 자식만으로 요청합니다. 마스크 바인딩은 Core가 봉인 manifest로부터 만듭니다.</p>
-      {!inspectionSealed && <p className="mt-1 text-[12px] leading-5 text-ink-muted" role="note">V3 계산은 검사 완료(봉인)가 확인된 뒤 요청할 수 있습니다. 검사 상태를 새로고침하세요.</p>}
+      <h3 className="text-body font-bold">V3 계산 요청</h3>
+      <p className="mt-1 text-caption leading-5 text-ink-muted">원본 계산 신원 + 마스크 자식만으로 요청합니다. 마스크 바인딩은 Core가 봉인 manifest로부터 만듭니다.</p>
+      {!inspectionSealed && <p className="mt-1 text-caption leading-5 text-ink-muted" role="note">V3 계산은 검사 완료(봉인)가 확인된 뒤 요청할 수 있습니다. 검사 상태를 새로고침하세요.</p>}
       <ResponsiveActionBoundary
         action="ANALYSIS_REQUEST"
         title="노트북에서 계속"
         reason="마스크 계산 요청은 전체 Operations Console이 필요한 쓰기 작업입니다."
       >
         <div className="mt-2 flex flex-wrap gap-2">
-          <button type="button" className="btn btn-primary" disabled={busy !== null || !inspectionSealed} onClick={submitCreate}>
+          <button type="button" className="btn" disabled={busy !== null || !inspectionSealed} onClick={submitCreate}>
             {busy === "create" ? "요청 중" : detail ? "현재 원본으로 V3 다시 요청" : "V3 계산 요청"}
           </button>
           {detail && <button type="button" className="btn" disabled={busy !== null} onClick={refreshCalculation}>
@@ -799,8 +798,8 @@ export function MaskedAnalysisPanel({
     </div>}
 
     {detail && detail.disposition !== "AVAILABLE" && <div className="border-t border-line px-4 py-3" role="status">
-      <p className="text-[12.5px] leading-5 text-ink-2">{dispositionNote(detail.disposition) ?? `V3 계산이 ${statusBadge(detail.status).label} 상태입니다.`}</p>
-      {detail.admission && <p className="mt-1 text-[12px] leading-5 text-ink-muted">
+      <p className="text-body leading-5 text-ink-2">{dispositionNote(detail.disposition) ?? `V3 계산이 ${statusBadge(detail.status).label} 상태입니다.`}</p>
+      {detail.admission && <p className="mt-1 text-caption leading-5 text-ink-muted">
         승인 {detail.admission.disposition === "ADMIT_EVALUATED" ? "평가됨" : detail.admission.disposition === "ADMIT_PROVISIONAL" ? "임시 허용" : detail.admission.disposition}
         {detail.admission.disposition !== "ADMIT_EVALUATED" ? " — 품질 인증이 아닙니다. 정확도 검증·정산·완료 승인을 뜻하지 않습니다." : " — 물량 정확도 보증, 측량 승인 또는 정산 사용 승인을 뜻하지 않습니다."}
       </p>}
@@ -808,63 +807,61 @@ export function MaskedAnalysisPanel({
 
     {report && detail && <section className="border-t border-line px-4 py-3" aria-label="독립 마스크 계산 결과">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h3 className="text-[13px] font-bold">독립 마스크 계산 결과</h3>
+        <h3 className="text-body font-bold">독립 마스크 계산 결과</h3>
         <StateBadge label={statusBadge(detail.status).label} tone={statusBadge(detail.status).tone} />
       </div>
-      <p className="mt-1 text-[12px] leading-5 text-ink-muted">현재−기준 델타 · 단위 metre · 임계값 0 m 고정. 봉인된 V3 보고서에서만 읽으며, 내보내기 상태가 바뀌어도 이 표시는 바뀌지 않습니다.</p>
+      <p className="mt-1 text-caption leading-5 text-ink-muted">현재−기준 델타 · 단위 metre · 임계값 0 m 고정. 봉인된 V3 보고서에서만 읽으며, 내보내기 상태가 바뀌어도 이 표시는 바뀌지 않습니다.</p>
       <dl className="mt-2 grid gap-2 border-t border-line pt-2 sm:grid-cols-3 sm:gap-3">
-        <div className="min-w-0"><dt className="text-[12px] font-semibold text-ink-muted">절토</dt><dd className="num mt-1 break-words text-[16px] font-bold">{formatVolume(report.numericResult.metrics.cutM3)}</dd></div>
-        <div className="min-w-0"><dt className="text-[12px] font-semibold text-ink-muted">성토</dt><dd className="num mt-1 break-words text-[16px] font-bold">{formatVolume(report.numericResult.metrics.fillM3)}</dd></div>
-        <div className="min-w-0"><dt className="text-[12px] font-semibold text-ink-muted">순변화</dt><dd className="num mt-1 break-words text-[16px] font-bold">{formatVolume(report.numericResult.metrics.netM3)}</dd></div>
+        <div className="min-w-0"><dt className="text-caption font-semibold text-ink-muted">절토</dt><dd className="num mt-1 break-words text-title font-bold">{formatVolume(report.numericResult.metrics.cutM3)}</dd></div>
+        <div className="min-w-0"><dt className="text-caption font-semibold text-ink-muted">성토</dt><dd className="num mt-1 break-words text-title font-bold">{formatVolume(report.numericResult.metrics.fillM3)}</dd></div>
+        <div className="min-w-0"><dt className="text-caption font-semibold text-ink-muted">순변화</dt><dd className="num mt-1 break-words text-title font-bold">{formatVolume(report.numericResult.metrics.netM3)}</dd></div>
       </dl>
       {report.numericResult.metrics.uncertaintyM3 === null ? (
-        <p className="mt-2 text-[12px] leading-5 text-ink-2">불확실성 미기록 — 기록된 값이 없으므로 0으로 볼 수 없습니다. 검사점 평가와 별개입니다.</p>
+        <p className="mt-2 text-caption leading-5 text-ink-2">불확실성 미기록 — 기록된 값이 없으므로 0으로 볼 수 없습니다. 검사점 평가와 별개입니다.</p>
       ) : null}
-      <dl className="mt-3 grid gap-2 text-[12px] text-ink-2 sm:grid-cols-2">
+      <dl className="mt-3 grid gap-2 text-caption text-ink-2 sm:grid-cols-2">
         <div><dt className="text-ink-muted">원본 선택 셀</dt><dd>{formatCountKo(report.numericResult.coverage.originalSelectedCellCount)} · {formatArea(report.numericResult.coverage.originalSelectedAreaM2)}</dd></div>
         <div><dt className="text-ink-muted">마스크 제외 셀</dt><dd>{formatCountKo(report.numericResult.coverage.maskExcludedCellCount)}</dd></div>
         <div><dt className="text-ink-muted">유효 셀(원본−마스크)</dt><dd>{formatCountKo(report.numericResult.coverage.effectiveSelectedCellCount)} · {formatArea(report.numericResult.coverage.effectiveSelectedAreaM2)}</dd></div>
         <div><dt className="text-ink-muted">공통 유효 셀</dt><dd>{formatCountKo(report.numericResult.coverage.commonValidCellCount)} · 유효 커버리지 100%</dd></div>
       </dl>
-      <p className="mt-2 text-[12px] leading-5 text-ink-muted">작업구역 구멍이 먼저 제외되고 마스크가 그 다음에 제외됩니다. 확인할 수 없는 셀은 없습니다.</p>
-      <details className="mt-3 text-xs text-ink-2">
-        <summary className="tap-target cursor-pointer font-semibold">V3 계산·마스크 제외 영역 보기</summary>
+      <p className="mt-2 text-caption leading-5 text-ink-muted">작업구역 구멍이 먼저 제외되고 마스크가 그 다음에 제외됩니다. 확인할 수 없는 셀은 없습니다.</p>
+      <Disclosure label="계산·마스크 제외 영역 상세" className="mt-3 text-caption text-ink-2">
         <CoverageGridView witness={report.numericResult.coverage} />
-      </details>
-      {!report.numericResult.impact.unmaskedImpactKnown ? <div className="mt-3 rounded-md border border-line bg-sunk/50 px-3 py-2.5 text-[12.5px] leading-5 text-ink-2">
+      </Disclosure>
+      {!report.numericResult.impact.unmaskedImpactKnown ? <div className="mt-3 rounded-md border border-line bg-sunk/50 px-3 py-2.5 text-body leading-5 text-ink-2">
         <p className="font-semibold text-ink-1">제외 영역의 원래 수치는 확인할 수 없음</p>
         <p className="mt-1">원본 구역에 값이 없던 셀이 있어 마스크를 씌우지 않았을 때의 수치를 확정할 수 없습니다. 알 수 없는 값은 0으로 표시하지 않습니다.</p>
-      </div> : <dl className="mt-3 grid gap-2 text-[12px] text-ink-2 sm:grid-cols-3">
-        <div><dt className="font-semibold text-ink-muted">마스크 없음 절토</dt><dd className="num mt-1 break-words text-[14px] font-bold text-ink-1">{formatVolume(report.numericResult.impact.unmaskedCutM3 ?? 0)}</dd></div>
-        <div><dt className="font-semibold text-ink-muted">마스크 없음 성토</dt><dd className="num mt-1 break-words text-[14px] font-bold text-ink-1">{formatVolume(report.numericResult.impact.unmaskedFillM3 ?? 0)}</dd></div>
-        <div><dt className="font-semibold text-ink-muted">마스크 없음 순변화</dt><dd className="num mt-1 break-words text-[14px] font-bold text-ink-1">{formatVolume(report.numericResult.impact.unmaskedNetM3 ?? 0)}</dd></div>
-        <div><dt className="font-semibold text-ink-muted">제외된 절토</dt><dd className="num mt-1 break-words text-[14px] font-bold text-ink-1">{formatVolume(report.numericResult.impact.excludedCutM3 ?? 0)}</dd></div>
-        <div><dt className="font-semibold text-ink-muted">제외된 성토</dt><dd className="num mt-1 break-words text-[14px] font-bold text-ink-1">{formatVolume(report.numericResult.impact.excludedFillM3 ?? 0)}</dd></div>
-        <div><dt className="font-semibold text-ink-muted">제외된 순변화</dt><dd className="num mt-1 break-words text-[14px] font-bold text-ink-1">{formatVolume(report.numericResult.impact.excludedNetM3 ?? 0)}</dd></div>
+      </div> : <dl className="mt-3 grid gap-2 text-caption text-ink-2 sm:grid-cols-3">
+        <div><dt className="font-semibold text-ink-muted">마스크 없음 절토</dt><dd className="num mt-1 break-words text-lead font-bold text-ink-1">{formatVolume(report.numericResult.impact.unmaskedCutM3 ?? 0)}</dd></div>
+        <div><dt className="font-semibold text-ink-muted">마스크 없음 성토</dt><dd className="num mt-1 break-words text-lead font-bold text-ink-1">{formatVolume(report.numericResult.impact.unmaskedFillM3 ?? 0)}</dd></div>
+        <div><dt className="font-semibold text-ink-muted">마스크 없음 순변화</dt><dd className="num mt-1 break-words text-lead font-bold text-ink-1">{formatVolume(report.numericResult.impact.unmaskedNetM3 ?? 0)}</dd></div>
+        <div><dt className="font-semibold text-ink-muted">제외된 절토</dt><dd className="num mt-1 break-words text-lead font-bold text-ink-1">{formatVolume(report.numericResult.impact.excludedCutM3 ?? 0)}</dd></div>
+        <div><dt className="font-semibold text-ink-muted">제외된 성토</dt><dd className="num mt-1 break-words text-lead font-bold text-ink-1">{formatVolume(report.numericResult.impact.excludedFillM3 ?? 0)}</dd></div>
+        <div><dt className="font-semibold text-ink-muted">제외된 순변화</dt><dd className="num mt-1 break-words text-lead font-bold text-ink-1">{formatVolume(report.numericResult.impact.excludedNetM3 ?? 0)}</dd></div>
       </dl>}
-      <p className="mt-2 text-[12px] leading-5 text-ink-muted">
+      <p className="mt-2 text-caption leading-5 text-ink-muted">
         {detail.admission?.disposition === "ADMIT_EVALUATED"
           ? "독립 평가 근거가 있습니다. 이 기록은 물량 정확도 보증, 측량 승인 또는 정산 사용 승인을 뜻하지 않습니다."
           : "임시 허용이며 품질 인증이 아닙니다. 정확도 검증·정산·완료 승인을 뜻하지 않습니다."}
       </p>
       {handoffRef && onDeltaHandoff && <div className="mt-3 border-t border-line pt-3">
-        <p className="text-[12px] leading-5 text-ink-muted">이 V3 결과를 기존 내보내기 패널로 넘기면, 부모가 세 확인값과 자식으로 발행 경로를 compose합니다.</p>
+        <p className="text-caption leading-5 text-ink-muted">이 V3 결과를 기존 내보내기 패널로 넘기면, 부모가 세 확인값과 자식으로 발행 경로를 compose합니다.</p>
         <button type="button" className="btn mt-2" onClick={() => onDeltaHandoff(handoffRef)}>내보내기로 인계</button>
       </div>}
-      {detail.disposition === "AVAILABLE" && !handoffRef && <p className="mt-3 text-[12px] leading-5 text-ink-muted" role="note">인계 참조를 만들 수 없습니다(승인 또는 자식 식별자 확인 불가). 수치 표시는 그대로 둡니다.</p>}
-      <details className="mt-2 text-[11.5px] text-ink-2">
-        <summary className="tap-target cursor-pointer font-semibold text-ink-muted">처리 상세</summary>
+      {detail.disposition === "AVAILABLE" && !handoffRef && <p className="mt-3 text-caption leading-5 text-ink-muted" role="note">인계 참조를 만들 수 없습니다(승인 또는 자식 식별자 확인 불가). 수치 표시는 그대로 둡니다.</p>}
+      <Disclosure label="처리 상세" className="mt-2 text-caption text-ink-2">
         <div className="mt-1 grid gap-1 border-l-2 border-line pl-3 sm:grid-cols-2">
           <div className="min-w-0"><p className="text-ink-muted">수치 결과 확인값</p><p className="break-all">{report.numericResultIdentityDigest}</p></div>
           <div className="min-w-0"><p className="text-ink-muted">범위 근거 확인값</p><p className="break-all">{report.numericResult.coverage.coverageWitnessDigest}</p></div>
           <div className="min-w-0"><p className="text-ink-muted">마스크 바인딩 확인값</p><p className="break-all">{report.numericResult.maskBindingDigest}</p></div>
           <div className="min-w-0"><p className="text-ink-muted">보고서 확인값</p><p className="break-all">{report.reportDigest}</p></div>
         </div>
-      </details>
+      </Disclosure>
     </section>}
 
     {detail?.disposition === "AVAILABLE" && !report && <div className="border-t border-line px-4 py-3">
-      <p role="alert" className="text-[12.5px] leading-5 text-crit-ink">사용 가능 표시인데 수치 내용을 확인하지 못했습니다. 수치를 0으로 해석하지 말고 화면을 새로고침하세요.</p>
+      <p role="alert" className="text-body leading-5 text-crit-ink">사용 가능 표시인데 수치 내용을 확인하지 못했습니다. 수치를 0으로 해석하지 말고 화면을 새로고침하세요.</p>
     </div>}
   </section>;
 }

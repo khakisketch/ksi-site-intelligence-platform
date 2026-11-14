@@ -35,7 +35,7 @@ export function ExternalSanitizedOrthophoto({
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
           <h3 className="text-sm font-semibold">표시용 정사영상</h3>
-          <p className="mt-0.5 text-[12px] text-ink-2">검사 완료된 표시용 파생본입니다. 높이·면적·물량 수치를 계산하거나 표시하지 않습니다.</p>
+          <p className="mt-0.5 text-caption text-ink-2">검사 완료된 표시용 파생본입니다. 높이·면적·물량 수치를 계산하거나 표시하지 않습니다.</p>
         </div>
         <button className="btn" onClick={onDismiss}>표시 닫기</button>
       </div>

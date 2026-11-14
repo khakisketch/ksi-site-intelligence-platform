@@ -37,7 +37,7 @@ function workOrder(
   };
 }
 
-describe("Operations Console 작업 큐", () => {
+describe("Operations Console 작업 목록", () => {
   it("결정·진행·완료를 분리하고 각 그룹을 최신 갱신순으로 정렬한다", () => {
     const summary = summarizeWorkQueue([
       workOrder("PROCESSING", "active-old", "2026-08-23T01:00:00Z"),

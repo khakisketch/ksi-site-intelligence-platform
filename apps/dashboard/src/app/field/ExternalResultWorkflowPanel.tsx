@@ -1,5 +1,7 @@
 "use client";
 
+import { InlineNotice } from "@/components/ui/InlineNotice";
+import { Disclosure } from "@/components/ui/Disclosure";
 import { ExternalResultReviewActions } from "@/components/external-results/ExternalResultReviewActions";
 import { ExternalUseBlockerCard } from "@/components/external-results/ExternalUseBlockerCard";
 import { SingleVolumeResult } from "@/components/external-results/SingleVolumeResult";
@@ -194,8 +196,7 @@ const AUTO_REFRESH_STOPPED_NOTICE = "자동 상태 확인을 멈췄습니다. �
 function CoreBindings({ view }: { view: ExternalRelativeVolumeReportView }) {
   const { request, report, executionPolicy } = view;
   return (
-    <details className="mt-2 rounded border border-line px-3 py-2 text-[12px] text-ink-2">
-      <summary className="cursor-pointer font-semibold">파일 정보 · 처리 상세</summary>
+    <Disclosure label="파일·식별 상세" className="mt-2 rounded border border-line px-3 py-2 text-caption text-ink-2">
       <div className="mt-2 flex flex-col gap-1 break-all">
         <p>기준 대상: {subjectLabel(request.baseline.subject)}</p>
         <p>현재 대상: {subjectLabel(request.current.subject)}</p>
@@ -204,15 +205,15 @@ function CoreBindings({ view }: { view: ExternalRelativeVolumeReportView }) {
         <p>보고서 확인값(해시): {report.reportDigest ?? "기록 없음"} · 요청 확인값(해시) {request.requestDigest ?? "기록 없음"}</p>
         <p>독립 검사점 증거 기록: {request.evidenceRecordDigests.join(", ")}</p>
       </div>
-    </details>
+    </Disclosure>
   );
 }
 
 function Metric({ label, value }: { label: string; value: string }) {
   return (
     <div className="border-l border-line px-3 first:border-l-0 first:pl-0">
-      <dt className="text-[12px] font-semibold text-ink-muted">{label}</dt>
-      <dd className="num mt-1 text-[20px] font-bold tracking-tight text-ink-1">{value}</dd>
+      <dt className="text-caption font-semibold text-ink-muted">{label}</dt>
+      <dd className="num mt-1 text-display font-bold tracking-tight text-ink-1">{value}</dd>
     </div>
   );
 }
@@ -228,19 +229,19 @@ function ReportDetail({
   const coveragePassed = metrics.commonValidFraction >= view.executionPolicy.minimumCommonValidFraction;
 
   return (
-    <section id="external-result" tabIndex={-1} className="mt-3 scroll-mt-5 rounded-lg border border-line bg-surface text-[13px]">
+    <section id="external-result" tabIndex={-1} className="mt-3 scroll-mt-5 rounded-lg border border-line bg-surface text-body">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="px-4 py-3">
-          <h3 className="text-[16px] font-bold tracking-tight">외부 상대 물량 비교 결과</h3>
+          <h3 className="text-title font-bold tracking-tight">외부 상대 물량 비교 결과</h3>
           <p className="mt-1 leading-5 text-ink-2">작업구역 {workAreaName ?? "이름을 확인할 수 없는 구역"}</p>
-          <details className="mt-1 text-[12px] text-ink-2"><summary className="tap-target cursor-pointer">파일 정보</summary><p className="break-all font-mono">비교 구역 {view.request.zoneSnapshot.workAreaId} · {zoneVersionLabel(view.request.zoneSnapshot.revision)}</p></details>
+          <Disclosure label="식별 상세" className="mt-1 text-caption text-ink-2"><p className="break-all font-mono">비교 구역 {view.request.zoneSnapshot.workAreaId} · {zoneVersionLabel(view.request.zoneSnapshot.revision)}</p></Disclosure>
         </div>
-        <span className="px-4 text-[12px] text-ink-muted">보고 {formatKoreanDateTime(view.report.reportedAt, { dateStyle: "medium", timeStyle: "short" })}</span>
+        <span className="px-4 text-caption text-ink-muted">보고 {formatKoreanDateTime(view.report.reportedAt, { dateStyle: "medium", timeStyle: "short" })}</span>
       </div>
       <div className="border-t border-line bg-sunk px-4 py-3 leading-5 text-ink-2">
         <p>기준 촬영 {observationRange(view.request.baseline.capturedFrom, view.request.baseline.capturedTo)}</p>
         <p>현재 촬영 {observationRange(view.request.current.capturedFrom, view.request.current.capturedTo)}</p>
-        <p className="mt-1 text-[12px] text-ink-muted">측정 영역 {formatNumber(metrics.measuredAreaM2, 1)} m² / 작업구역 {formatNumber(metrics.zoneAreaM2, 1)} m² · 공통 유효 영역 {formatNumber(metrics.commonValidFraction * 100, 1)}%</p>
+        <p className="mt-1 text-caption text-ink-muted">측정 영역 {formatNumber(metrics.measuredAreaM2, 1)} m² / 작업구역 {formatNumber(metrics.zoneAreaM2, 1)} m² · 공통 유효 영역 {formatNumber(metrics.commonValidFraction * 100, 1)}%</p>
       </div>
       {coveragePassed ? (
         <>
@@ -250,7 +251,7 @@ function ReportDetail({
             <Metric label="순변화" value={`${formatSignedNumber(metrics.netM3)} m³`} />
           </dl>
           <div className="border-t border-line bg-sunk px-4 py-3 leading-5 text-ink-2">
-            <p className="text-[12px] text-ink-muted">절토는 깎아낸 양, 성토는 채워 넣은 양입니다.</p>
+            <p className="text-caption text-ink-muted">절토는 깎아낸 양, 성토는 채워 넣은 양입니다.</p>
             <p className="mt-1">
             {metrics.uncertaintyM3 === null
               ? `불확실성은 아직 산정되지 않았습니다. ${metrics.uncertaintyNote}`
@@ -273,8 +274,7 @@ function reviewRmseLabel(value: number | null): string {
 function ReviewAuditDetail({ review }: { review: ExternalResultReview }) {
   const { authority, decision, report, request } = review;
   return (
-    <details className="mt-2 rounded border border-line px-3 py-2 text-[12px] text-ink-2">
-      <summary className="cursor-pointer font-semibold">검토 기록 · 처리 상세</summary>
+    <Disclosure label="검토·식별 상세" className="mt-2 rounded border border-line px-3 py-2 text-caption text-ink-2">
       <div className="mt-2 flex flex-col gap-1 break-all">
         <p>검토 확인값(해시): {review.reviewDigest ?? "기록 없음"}</p>
         <p>검토 원본: 조직 {review.organizationId} · 현장 {review.siteId} · 작업 {review.sourceWorkOrderId}</p>
@@ -291,7 +291,7 @@ function ReviewAuditDetail({ review }: { review: ExternalResultReview }) {
         <p>증거 기록: {authority.evidenceRecordDigests.join(", ")}</p>
         {review.factualLimitations.map((limitation) => <p key={limitation}>검토 한계: {limitation}</p>)}
       </div>
-    </details>
+    </Disclosure>
   );
 }
 
@@ -302,8 +302,7 @@ function ReviewAuditDetail({ review }: { review: ExternalResultReview }) {
 function SingleVolumeReviewAuditDetail({ review }: { review: ExternalSingleVolumeResultReview }) {
   const { authority, decision, report, request } = review;
   return (
-    <details className="mt-2 rounded border border-line px-3 py-2 text-[12px] text-ink-2">
-      <summary className="cursor-pointer font-semibold">검토 기록 · 처리 상세</summary>
+    <Disclosure label="검토·식별 상세" className="mt-2 rounded border border-line px-3 py-2 text-caption text-ink-2">
       <div className="mt-2 flex flex-col gap-1 break-all">
         <p>검토 확인값(해시): {review.reviewDigest ?? "기록 없음"}</p>
         <p>검토 원본: 조직 {review.organizationId} · 현장 {review.siteId} · 작업 {review.sourceWorkOrderId}</p>
@@ -319,7 +318,7 @@ function SingleVolumeReviewAuditDetail({ review }: { review: ExternalSingleVolum
         <p>증거 기록: {authority.evidenceRecordDigests.join(", ")}</p>
         {review.factualLimitations.map((limitation) => <p key={limitation}>검토 한계: {limitation}</p>)}
       </div>
-    </details>
+    </Disclosure>
   );
 }
 
@@ -328,14 +327,14 @@ function SingleVolumeReportDetail({ view, workAreaName }: { view: ExternalSingle
   const coveragePassed = metrics.commonValidFraction >= view.executionPolicy.minimumCommonValidFraction
     && metrics.boundaryValidFraction >= view.executionPolicy.minimumBoundaryValidFraction;
   return (
-    <section className="mt-2 rounded-lg border border-line bg-surface text-[13px]">
+    <section className="mt-2 rounded-lg border border-line bg-surface text-body">
       <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3">
         <div>
-          <h4 className="text-[16px] font-bold tracking-tight">단일 시점 체적 결과</h4>
+          <h4 className="text-title font-bold tracking-tight">단일 시점 체적 결과</h4>
           <p className="mt-1 break-words leading-5 text-ink-2">작업구역 {workAreaName || "이름을 확인할 수 없는 구역"}</p>
-          <details className="mt-1 text-[12px] text-ink-2"><summary className="tap-target cursor-pointer">파일 정보</summary><p className="break-all font-mono">비교 구역 {view.request.zoneSnapshot.workAreaId} · {zoneVersionLabel(view.request.zoneSnapshot.revision)}</p></details>
+          <Disclosure label="식별 상세" className="mt-1 text-caption text-ink-2"><p className="break-all font-mono">비교 구역 {view.request.zoneSnapshot.workAreaId} · {zoneVersionLabel(view.request.zoneSnapshot.revision)}</p></Disclosure>
         </div>
-        <span className="text-[12px] text-ink-muted">보고 {formatKoreanDateTime(view.report.reportedAt, { dateStyle: "medium", timeStyle: "short" })}</span>
+        <span className="text-caption text-ink-muted">보고 {formatKoreanDateTime(view.report.reportedAt, { dateStyle: "medium", timeStyle: "short" })}</span>
       </div>
       {coveragePassed ? (
         <div className="border-t border-line px-4 py-3">
@@ -352,8 +351,7 @@ function SingleVolumeReportDetail({ view, workAreaName }: { view: ExternalSingle
       ) : (
         <p role="alert" className="border-t border-line px-4 py-3 text-high-ink">적용 범위가 측정 기준을 충족하지 않아 체적을 표시하지 않습니다.</p>
       )}
-      <details className="mx-4 mb-3 rounded border border-line px-3 py-2 text-[12px] text-ink-2">
-        <summary className="cursor-pointer font-semibold">파일 정보 · 처리 상세</summary>
+      <Disclosure label="파일·식별 상세" className="mx-4 mb-3 rounded border border-line px-3 py-2 text-caption text-ink-2">
         <div className="mt-2 flex flex-col gap-1 break-all">
           <p>대상: {subjectLabel(view.request.target.subject)}</p>
           <p>비교 구역 {view.request.zoneSnapshot.workAreaId} · {zoneVersionLabel(view.request.zoneSnapshot.revision)} · 구역 정의 확인값(해시) {view.request.zoneSnapshot.definitionDigest ?? "기록 없음"}</p>
@@ -361,7 +359,7 @@ function SingleVolumeReportDetail({ view, workAreaName }: { view: ExternalSingle
           <p>경계 셀 {metrics.boundaryCellCount}개 · 경계 표본 {metrics.boundarySampleCount}개</p>
           <p>보고서 확인값(해시): {view.report.reportDigest ?? "기록 없음"} · 요청 확인값(해시) {view.request.requestDigest ?? "기록 없음"}</p>
         </div>
-      </details>
+      </Disclosure>
     </section>
   );
 }
@@ -446,7 +444,7 @@ function SingleVolumeWorkflow({
   const [message, setMessage] = useState<string | null>(null);
   const requestsPath = `/api/observation-work-orders/${encodeURIComponent(workOrderId)}/single-volume-requests`;
   const currentSingleDecisionKey = decision ? `${decision.decisionId}|${decision.decisionDigest}` : null;
-  // 업무 종료 상태에서는 보관된 동일 시도를 정확히 되살리는 경우에만 발급한다.
+  // 작업 종료 상태에서는 보관된 동일 시도를 정확히 되살리는 경우에만 발급한다.
   // 관련 없는 오래된 시도가 새 결정의 버튼을 켜면 안 된다.
   const canIssue = canIssuePermission
     && (newIntentAllowed || (currentSingleDecisionKey !== null && currentSingleDecisionKey in retained));
@@ -698,7 +696,7 @@ function SingleVolumeWorkflow({
         return;
       }
       if (!newIntentAllowed) {
-        setMessage("업무 종료 상태에서는 새 단일 시점 체적 측정을 요청할 수 없습니다.");
+        setMessage("작업 종료 상태에서는 새 단일 시점 체적 측정을 요청할 수 없습니다.");
         return;
       }
       const uncertainOther = Object.entries(retained).some(([otherKey, entry]) => otherKey !== key && entry.outcome === "unknown");
@@ -778,7 +776,7 @@ function SingleVolumeWorkflow({
       {legacyDecisionClosed ? (
         <p role="status" className="text-ink-2">이 화면의 단일 시점 체적 측정 요청은 현재 계정의 배포 범위에 열려 있지 않습니다. 기존 체적 측정 요청 목록과 결과·검토 기록은 아래에서 그대로 볼 수 있습니다.</p>
       ) : !decision ? (
-        <p className="text-ink-2">{newIntentAllowed ? "현재 선택에서 단일 시점 체적 결정을 요청하세요." : "업무 종료된 작업입니다. 기존 체적 측정 기록만 확인할 수 있습니다."}</p>
+        <p className="text-ink-2">{newIntentAllowed ? "현재 선택에서 단일 시점 체적 결정을 요청하세요." : "작업 종료된 작업입니다. 기존 체적 측정 기록만 확인할 수 있습니다."}</p>
       ) : decision.verdict !== "ELIGIBLE" ? (
         <ExternalUseBlockerCard
           reasons={decision.reasons}
@@ -792,7 +790,7 @@ function SingleVolumeWorkflow({
           </button>
         </ResponsiveActionBoundary>
       ) : !newIntentAllowed ? (
-        <p className="text-ink-2">업무 종료 상태에서는 새 단일 시점 체적 측정을 요청할 수 없습니다.</p>
+        <p className="text-ink-2">작업 종료 상태에서는 새 단일 시점 체적 측정을 요청할 수 없습니다.</p>
       ) : (
         <ActionUnavailable label="단일 시점 체적 측정 요청" description="단일 시점 체적 측정 요청에는 현장 쓰기 권한이 필요합니다. 권한 있는 담당자에게 요청하세요." />
       )}
@@ -1282,7 +1280,7 @@ export function ExternalResultWorkflowPanel({
         return;
       }
       if (!newIntentAllowed) {
-        setMessage("업무 종료 상태에서는 새 상대 물량 비교를 요청할 수 없습니다.");
+        setMessage("작업 종료 상태에서는 새 상대 물량 비교를 요청할 수 없습니다.");
         return;
       }
       const uncertainOther = Object.entries(retained).some(([otherKey, entry]) => otherKey !== key && entry.outcome === "unknown");
@@ -1347,12 +1345,12 @@ export function ExternalResultWorkflowPanel({
   const pendingRelativeKey = pendingIssueConfirm ? `${pendingIssueConfirm.decisionId}|${pendingIssueConfirm.decisionDigest}` : null;
   const currentRelativeKey = decision ? `${decision.decisionId}|${decision.decisionDigest}` : null;
   return (
-    <section id="external-volume" className="flex flex-col gap-3 rounded-xl border border-line bg-surface p-4 text-[13px]">
+    <section id="external-volume" className="flex flex-col gap-3 rounded-xl border border-line bg-surface p-4 text-body">
       <div>
-        <h2 className="text-[16px] font-bold">외부 상대 물량과 재관측 검토</h2>
+        <h2 className="text-title font-bold">외부 상대 물량과 재관측 검토</h2>
         <p className="text-ink-2">등록된 상대 물량 요청·결과·검토·재관측 제안만 표시합니다. 이 화면만으로 현장 실행 여부를 판단할 수 없습니다.</p>
       </div>
-      {!newIntentAllowed && <p className="rounded-lg border border-line bg-sunk px-3 py-2 leading-5 text-ink-2">업무 종료 상태입니다. 새 비교·검토·재관측 요청은 시작할 수 없지만, 기존 요청과 결과는 계속 확인할 수 있습니다.</p>}
+      {!newIntentAllowed && <InlineNotice>작업이 종료되어 기존 비교 요청과 결과를 볼 수 있습니다.</InlineNotice>}
 
       {legacyDecisionClosed ? (
         <div role="status" className="flex flex-col gap-2">
@@ -1360,7 +1358,7 @@ export function ExternalResultWorkflowPanel({
           <a className="btn w-fit" href={`/sites/${encodeURIComponent(siteId)}/analysis`}>분석 화면 열기</a>
         </div>
       ) : !decision ? (
-        <p>{newIntentAllowed ? "현재 선택에서 상대 물량 비교를 요청하세요." : "업무 종료된 작업입니다. 기존 비교 결과와 요청 기록만 확인할 수 있습니다."}</p>
+        newIntentAllowed ? <p>현재 선택에서 상대 물량 비교를 요청하세요.</p> : null
       ) : decision.verdict !== "ELIGIBLE" ? (
         <ExternalUseBlockerCard
           reasons={decision.reasons}
@@ -1373,9 +1371,7 @@ export function ExternalResultWorkflowPanel({
             {busy === "issue" ? "비교 요청 중" : "상대 물량 비교 요청"}
           </button>
         </ResponsiveActionBoundary>
-      ) : !newIntentAllowed ? (
-        <p className="text-ink-2">업무 종료 상태에서는 새 상대 물량 비교를 요청할 수 없습니다.</p>
-      ) : (
+      ) : !newIntentAllowed ? null : (
         <ActionUnavailable label="상대 물량 비교 요청" description="상대 물량 비교 요청에는 현장 쓰기 권한이 필요합니다. 권한 있는 담당자에게 요청하세요." />
       )}
       {currentRelativeKey !== null && retained[currentRelativeKey]?.outcome === "unknown" && (

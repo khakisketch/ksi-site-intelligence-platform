@@ -60,7 +60,7 @@ describe("external reconstruction inspection presentation", () => {
         state: "INSPECTION_FAILED_INCOMPLETE", phase: "FAILED_INCOMPLETE",
         outcome: [{ artifactId: "ortho", outcome: "REJECTED", reason: "UNKNOWN_MACHINE_CODE" }], request: null, report: null,
       },
-    })).artifactReasons).toEqual(["정사영상: 추가 확인이 필요합니다. 파일 정보 · 처리 상세의 사유 코드를 확인하세요."]);
+    })).artifactReasons).toEqual(["정사영상: 추가 확인이 필요합니다. 파일·식별 상세의 사유 코드를 확인하세요."]);
     expect(presentExternalInspectionStatus(inspection({ inspection: { state: "INSPECTION_RUNNING", phase: "INSPECTION", outcome: null, request: null, report: null } })).autoRefresh).toBe(true);
     expect(presentExternalInspectionStatus(inspection({ inspection: { state: "INSPECTION_REPORTED", phase: "COMPLETE", outcome: [], request: null, report: null }, display: { state: "RETRY_EXHAUSTED", sanitizedDisplayRef: null, receiptDigest: null } })).nextAction).toMatch(/상태를 새로고침/);
   });

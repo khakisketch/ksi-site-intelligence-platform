@@ -363,7 +363,7 @@ export function Field({
     // 안에 넣으면 이름에 합쳐져 이름이 문단만큼 길어진다.
     <div className={`flex flex-col gap-1.5 ${wide ? "sm:col-span-2" : ""}`}>
       <label className="flex flex-col gap-1.5">
-        <span className="text-[12.5px] font-semibold break-keep text-ink-1">
+        <span className="text-body font-semibold break-keep text-ink-1">
           {label}
           {required && (
             <span aria-hidden className="ml-0.5 text-crit">
@@ -374,9 +374,9 @@ export function Field({
         {children}
       </label>
       {error ? (
-        <p className="text-[11.5px] font-semibold break-keep text-crit-ink">{error}</p>
+        <p className="text-caption font-semibold break-keep text-crit-ink">{error}</p>
       ) : (
-        helpText && <p className="text-[11.5px] break-keep text-ink-muted">{helpText}</p>
+        helpText && <p className="text-caption break-keep text-ink-muted">{helpText}</p>
       )}
     </div>
   );
