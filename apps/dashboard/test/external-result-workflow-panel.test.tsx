@@ -203,7 +203,7 @@ it("keeps results readable but blocks new comparison, review, and successor requ
   );
 
   expect(await screen.findByRole("heading", { name: "외부 상대 물량 비교 결과" })).toBeTruthy();
-  expect(screen.getByText(/업무 종료 상태입니다. 새 비교·검토·재관측 요청은 시작할 수 없지만/)).toBeTruthy();
+  expect(screen.getByText("작업이 종료되어 기존 비교 요청과 결과를 볼 수 있습니다.")).toBeTruthy();
   expect(screen.queryByRole("button", { name: "상대 물량 비교 요청" })).toBeNull();
   expect(screen.queryByRole("button", { name: "결과 검토 기록" })).toBeNull();
   expect(fetchMock.mock.calls.some(([, init]) => (init as RequestInit | undefined)?.method === "POST")).toBe(false);
@@ -222,7 +222,7 @@ it("keeps a closed result-only view from inviting a new comparison", async () =>
     />,
   );
 
-  expect(await screen.findByText("업무 종료된 작업입니다. 기존 비교 결과와 요청 기록만 확인할 수 있습니다.")).toBeTruthy();
+  expect(await screen.findByText("작업이 종료되어 기존 비교 요청과 결과를 볼 수 있습니다.")).toBeTruthy();
   expect(screen.queryByText("현재 선택에서 상대 물량 비교를 요청하세요.")).toBeNull();
 });
 
@@ -817,7 +817,7 @@ it("loads a retained work-order report without a current pair decision, renders 
   expect(screen.queryByText(/마감 시각 경과/)).toBeNull();
   expect(await screen.findByText("4 m³")).toBeTruthy();
   expect(screen.getByText("불확실성은 아직 산정되지 않았습니다. independent checkpoint RMSE is retained by Core evidence")).toBeTruthy();
-  fireEvent.click(screen.getByText("파일 정보 · 처리 상세"));
+  fireEvent.click(screen.getByText("파일·식별 상세"));
   expect(screen.getByText(`비교 구역 area-1 · 구역 버전 1 · 구역 정의 확인값(해시) ${digest("8")}`)).toBeTruthy();
   expect(screen.getByText(`독립 검사점 증거 기록: ${digest("5")}`)).toBeTruthy();
 });
@@ -1192,7 +1192,7 @@ describe("SINGLE_VOLUME measurement", () => {
     await waitFor(() => expect(router.push).toHaveBeenCalledWith("/field/work-orders/successor-1"));
     expect(router.refresh).toHaveBeenCalled();
     expect(screen.getByRole("link", { name: "후속 작업 보기" }).getAttribute("href")).toBe("/field/work-orders/successor-1");
-    fireEvent.click(screen.getByText("검토 기록 · 처리 상세"));
+    fireEvent.click(screen.getByText("검토·식별 상세"));
     const audit = screen.getByText(/대상 독립 검사점 RMSE/).closest("details")!;
     expect(audit.textContent).toContain("대상 촬영");
     expect(audit.textContent).toContain("0.04m");
@@ -1217,7 +1217,7 @@ describe("SINGLE_VOLUME measurement", () => {
     const reviewStatusLine = screen.getByText(/결과 검토 기록이 있습니다\./);
     expect(reviewStatusLine.textContent).toContain("2026. 9. 15. 12:00");
     expect(reviewStatusLine.textContent).not.toMatch(/T\d{2}:\d{2}:\d{2}Z/);
-    fireEvent.click(screen.getByText("검토 기록 · 처리 상세"));
+    fireEvent.click(screen.getByText("검토·식별 상세"));
     const audit = screen.getByText(/대상 독립 검사점 RMSE/).closest("details")!;
     expect(audit.textContent).toContain("기록 없음");
     expect(audit.textContent).toContain("대상 독립 검사점 RMSE: 기록 없음");

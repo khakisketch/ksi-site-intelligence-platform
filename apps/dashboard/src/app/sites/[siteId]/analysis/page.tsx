@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 
 import { OperationsSessionFailure } from "@/app/field/OperationsSessionFailure";
 import { resolveFieldSession } from "@/app/field/resolve-session";
+import type { Metadata } from "next";
 import { SiteHeader } from "@/app/sites/[siteId]/SiteHeader";
 import { ConsolePage } from "@/components/nav/ConsolePage";
 import { ErrorState } from "@/components/ui/ErrorState";
@@ -22,7 +23,7 @@ import { resolveAnalysisCurrentHint, resolveAnalysisScope, resolveExactAnalysisS
 import { AnalysisRequestPanel, type CatalogInspectPair } from "./AnalysisRequestPanel";
 import { parseScopeId } from "../site-spatial";
 
-export const metadata = { title: "분석 · KSI" };
+export const metadata: Metadata = { title: "분석 · KSI" };
 
 export default async function SiteAnalysisPage({ params, searchParams }: {
   params: Promise<{ siteId: string }>;

@@ -4,7 +4,7 @@ import Link from "next/link";
 import { whoAmI } from "@/lib/core-api/auth";
 import { CoreApiError } from "@/lib/core-api/client";
 import { MissingSessionError } from "@/lib/core-api/session";
-import { PATHNAME_HEADER, RETURN_TO_HEADER } from "@/lib/core-api/session-cookie";
+import { PATHNAME_HEADER, RETURN_TO_HEADER, SEARCH_HEADER } from "@/lib/core-api/session-cookie";
 
 import { BackButton } from "./BackButton";
 import { PageTitle } from "./PageTitle";
@@ -26,7 +26,7 @@ function TopBarFrame({
     <header
       data-shell-topbar="true"
       data-session-state={sessionState}
-      className="print:hidden flex shrink-0 flex-wrap items-center gap-x-3.5 gap-y-2 border-b border-line bg-surface px-4 py-2.5 sm:px-5"
+      className="print:hidden flex shrink-0 flex-wrap items-center gap-x-3.5 gap-y-2 border-b border-line bg-surface px-4 py-2.5 sm:px-5 lg:min-h-10 lg:py-1"
     >
       <BackButton />
       <PageTitle fallback={title} />
@@ -40,7 +40,7 @@ export async function TopBar() {
   const headerStore = await headers();
   const currentPathname = headerStore.get(PATHNAME_HEADER);
   const onLoginPage = currentPathname === "/login";
-  const title = resolvePageTitle(currentPathname);
+  const title = resolvePageTitle(currentPathname, new URLSearchParams(headerStore.get(SEARCH_HEADER) ?? ""));
 
   // 신원·역할·로그아웃은 **레일 하단**(SidebarUserBlock)이 갖는다. 상단바에도 두면
   // 같은 정보가 한 화면에 두 벌 뜨고, 좁은 폭에서 제목을 밀어낸다(디자인 §0).
@@ -61,7 +61,7 @@ export async function TopBar() {
     const denied = error instanceof CoreApiError && error.status === 403;
     if (!expired && !denied) {
       return <TopBarFrame title={title} sessionState="unknown">
-        <span role="status" className="rounded-md bg-sunk px-2.5 py-1 text-[13px] break-keep text-ink-2">
+        <span role="status" className="rounded-md bg-sunk px-2.5 py-1 text-body break-keep text-ink-2">
           서버 연결을 확인하지 못했습니다. 잠시 후 다시 시도하세요.
         </span>
       </TopBarFrame>;
@@ -77,12 +77,12 @@ export async function TopBar() {
       : "/login";
     return (
       <TopBarFrame title={title} sessionState="expired">
-        <span className="rounded-md bg-high-bg px-2.5 py-1 text-[13px] break-keep text-high-ink">
+        <span className="rounded-md bg-high-bg px-2.5 py-1 text-body break-keep text-high-ink">
           {denied ? "이 계정의 접근 권한을 확인하세요." : "세션이 만료되었습니다."}
         </span>
         <Link
           href={loginHref}
-          className="tap-target flex min-h-11 items-center rounded-md border border-line-strong px-3 text-[13px] font-semibold hover:bg-sunk"
+          className="tap-target flex min-h-11 items-center rounded-md border border-line-strong px-3 text-body font-semibold hover:bg-sunk"
         >
           {denied ? "다른 계정으로 로그인" : "다시 로그인"}
         </Link>

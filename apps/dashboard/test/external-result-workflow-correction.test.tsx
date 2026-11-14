@@ -269,8 +269,10 @@ it("keeps the initial actual-Core first unapproved proposal separate from a late
   render(<ExternalResultWorkflowPanel workOrderId="work-1" siteId="site-1" decision={null} permissions={["WORK_ORDERS_WRITE", "REOBSERVATION_APPROVE"]} />);
   await select(0);
   await screen.findByText("재관측 제안이 기록되었습니다.");
-  fireEvent.click(screen.getByText("전문가 정보"));
   const firstCard = await screen.findByText((_, element) => element?.tagName === "P" && element.textContent?.includes(`제안 ${actualCoreFirstProposalRef} · v1`) === true);
+  const details = firstCard.closest("details");
+  expect(details?.open).toBe(false);
+  fireEvent.click(details?.querySelector("summary") as HTMLElement);
   await waitFor(() => expect(firstCard.parentElement?.textContent).not.toContain(actualCoreSuccessorWorkOrderId));
   expect(screen.getByRole("button", { name: "재관측 후속 작업 승인" })).toBeTruthy();
 });
@@ -324,7 +326,7 @@ it("renders a full retained Core review receipt with known and unknown RMSE valu
   }));
   render(<ExternalResultWorkflowPanel workOrderId="work-1" siteId="site-1" decision={null} permissions={[]} />);
   await select(0);
-  fireEvent.click(await screen.findByText("검토 기록 · 처리 상세"));
+  fireEvent.click(await screen.findByText("검토·식별 상세"));
   expect(screen.getByText(`검토 확인값(해시): ${digest("c")}`)).toBeTruthy();
   expect(screen.getByText("기준 독립 검사점 RMSE: 0.12m")).toBeTruthy();
   expect(screen.getByText("현재 독립 검사점 RMSE: 기록 없음")).toBeTruthy();

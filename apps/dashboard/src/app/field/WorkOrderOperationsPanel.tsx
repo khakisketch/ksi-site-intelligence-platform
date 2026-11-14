@@ -58,7 +58,7 @@ function deadlineNotice(operations: ObservationWorkOrderOperationsView): string 
 }
 
 function statusLabel(status: ObservationWorkOrderOperationsView["workflowStatus"]): string {
-  if (status === "CLOSED") return "업무 종료";
+  if (status === "CLOSED") return "작업 종료";
   if (status === "OPEN") return "운영 중";
   return "운영 상태 확인 필요";
 }
@@ -68,7 +68,7 @@ function errorMessage(response: Response, payload: unknown): string {
     ? (payload as { detail?: unknown }).detail
     : null;
   if (response.status === 409) {
-    if (detail === "EXTERNAL_WORKFLOW_CLOSED") return "이 작업은 이미 업무 종료 상태입니다. 최신 상태를 확인하세요.";
+    if (detail === "EXTERNAL_WORKFLOW_CLOSED") return "이 작업은 이미 작업 종료 상태입니다. 최신 상태를 확인하세요.";
     return "다른 변경이 먼저 저장되었습니다. 최신 상태를 불러왔고 입력은 유지했습니다.";
   }
   return "요청을 저장하지 못했습니다. 같은 요청을 다시 시도하세요.";
@@ -400,7 +400,7 @@ export function WorkOrderOperationsPanel({
       setUnresolvedRetry(null);
       setConfirmingDiscard(false);
       setFeedback(null);
-      notify(kind === "close" ? "업무를 종료했습니다." : "운영 정보를 저장했습니다.");
+      notify(kind === "close" ? "작업을 종료했습니다." : "운영 정보를 저장했습니다.");
       if (kind === "close" || kind === "reopen") router.refresh();
     } catch {
       unresolvedRetryRef.current = attempt;
@@ -459,12 +459,12 @@ export function WorkOrderOperationsPanel({
   if (operations === null) {
     return (
       <section className="rounded-xl border border-line bg-surface px-4 py-3">
-        <h2 className="text-[15px] font-bold">작업 운영 정보</h2>
-        <p className="mt-1 text-[13px] leading-5 text-ink-2">
-          담당·기한·업무 종료 상태를 불러오지 못했습니다.
+        <h2 className="text-lead font-bold">작업 운영 정보</h2>
+        <p className="mt-1 text-body leading-5 text-ink-2">
+          담당·기한·작업 종료 상태를 불러오지 못했습니다.
         </p>
         <button className="btn mt-3" disabled={pending !== null} onClick={() => void refresh().then(() => setFeedback("운영 정보를 다시 불러왔습니다.")).catch(() => setFeedback("운영 정보를 다시 불러오지 못했습니다."))}>다시 불러오기</button>
-        {feedback && <p role="status" className="mt-2 text-[13px] leading-5 text-ink-2">{feedback}</p>}
+        {feedback && <p role="status" className="mt-2 text-body leading-5 text-ink-2">{feedback}</p>}
       </section>
     );
   }
@@ -473,7 +473,7 @@ export function WorkOrderOperationsPanel({
   // 내놓지 않고 읽기 전용 새로고침·확정 버리기만 둔다. 어느 쪽도 새 변이를
   // 만들지 않으며, 같은 키 재시도는 쓰기 권한이 있을 때만 가능하다.
   const renderFrozenBox = (allowRetry: boolean) => (
-    <div className="rounded-lg border border-line bg-surface px-3 py-2 text-[13px] leading-5 text-ink-2">
+    <div className="rounded-lg border border-line bg-surface px-3 py-2 text-body leading-5 text-ink-2">
       <p>이전 저장 요청의 응답을 확인하지 못했습니다. 같은 요청을 먼저 확인하세요.</p>
       <p className="mt-1">주의: 이 요청은 이미 기록됐을 수 있습니다. 버린 뒤 다시 저장하면 새 요청(새 키)으로 기록됩니다.</p>
       <p className="mt-1">이 요청의 기억은 이 화면에만 있어 새로고침·화면 이동·기기 변경 뒤에는 같은 키로 다시 시도할 수 없습니다. 현재 상태를 먼저 확인하세요.</p>
@@ -499,18 +499,18 @@ export function WorkOrderOperationsPanel({
     <section className="rounded-xl border border-line bg-surface">
       <div className="flex items-start justify-between gap-3 border-b border-line px-4 py-3">
         <div className="min-w-0">
-          <h2 className="text-[15px] font-bold">작업 운영</h2>
-          <p className="mt-1 text-[13px] leading-5 text-ink-2">
-            담당과 기한을 정하고, 끝난 작업은 업무 종료로 남깁니다.
+          <h2 className="text-lead font-bold">작업 운영</h2>
+          <p className="mt-1 text-body leading-5 text-ink-2">
+            담당과 기한을 정하고, 끝난 작업은 작업 종료로 남깁니다.
           </p>
         </div>
-        <span className={`shrink-0 rounded-full pl-0 pr-2.5 py-1 text-[12px] font-semibold ${isClosed ? "bg-sunk text-ink-2" : "bg-accent-tint text-accent-text"}`}>
+        <span className={`shrink-0 rounded-full pl-0 pr-2.5 py-1 text-caption font-semibold ${isClosed ? "bg-sunk text-ink-2" : "bg-accent-tint text-accent-text"}`}>
           {statusLabel(operations.workflowStatus)}
         </span>
       </div>
 
       <div className="grid gap-4 px-4 py-4 lg:grid-cols-2">
-        <div className="space-y-2 text-[13px]">
+        <div className="space-y-2 text-body">
           <p><span className="font-semibold">담당</span> · {assignedToMe ? "내 작업" : assignedElsewhere ? "다른 담당자에게 배정됨" : "미배정"}</p>
           <p><span className="font-semibold">마감</span> · {operations.dueAt ? formatKoreanDateTime(operations.dueAt, { dateStyle: "medium", timeStyle: "short" }) : "설정 안 함"}</p>
           {operations.workflowStatus === "CLOSED" && operations.closedAt && (
@@ -520,7 +520,7 @@ export function WorkOrderOperationsPanel({
           {notice && <p className="rounded-lg border border-high/30 bg-high-bg px-3 py-2 leading-5 text-high-ink">{notice}</p>}
         </div>
 
-        <ResponsiveActionBoundary action="WORK_ORDERS_WRITE" inlineNotice={false} reason="노트북에서 같은 계정으로 이 작업 상세를 열어 담당·기한·업무 종료 변경을 이어가세요.">
+        <ResponsiveActionBoundary action="WORK_ORDERS_WRITE" inlineNotice={false} reason="노트북에서 같은 계정으로 이 작업 상세를 열어 담당·기한·작업 종료 변경을 이어가세요.">
           {canWrite ? (
           <div className="flex flex-col gap-3 rounded-lg bg-sunk p-3">
             {unresolvedRetry && renderFrozenBox(true)}
@@ -536,10 +536,10 @@ export function WorkOrderOperationsPanel({
                   담당 해제
                 </button>
               </div>
-              {(members !== null || rosterError) && <div className="flex flex-wrap items-end gap-2 rounded-lg border border-line bg-surface p-3">{rosterError ? <><p className="w-full text-[12.5px] text-ink-2">배정할 팀원 목록을 확인하지 못했습니다.</p><button className="btn" disabled={membersLoading} onClick={() => void loadAssignableMembers()}>팀원 목록 다시 불러오기</button></> : <><label className="flex min-w-56 flex-1 flex-col gap-1 text-[13px] font-semibold">배정할 팀원<select aria-label="배정할 팀원" className="input" value={assigneePrincipalId} disabled={membersLoading || pending !== null || retryPending} onChange={(event) => setAssigneePrincipalId(event.target.value)}><option value="">팀원을 선택하세요</option>{members!.map((member) => <option key={member.principalId} value={member.principalId}>{member.displayName} · {member.principalId}</option>)}</select></label><button className="btn btn-primary" disabled={!assigneePrincipalId || pending !== null || retryPending} onClick={() => void mutate("assignment", { expectedOperationsRevision: operations.operationsRevision, action: "ASSIGN_TO_MEMBER", assigneePrincipalId })}>선택한 팀원에게 배정</button>{members!.length === 0 && <p className="w-full text-[12.5px] text-ink-2">배정 가능한 활성 팀원이 없습니다. 열람자는 결과 공유만 받을 수 있습니다.</p>}</>}</div>}
-              <label className="flex flex-col gap-1 text-[13px] font-semibold">마감 시각 (한국 표준시)
+              {(members !== null || rosterError) && <div className="flex flex-wrap items-end gap-2 rounded-lg border border-line bg-surface p-3">{rosterError ? <><p className="w-full text-caption text-ink-2">배정할 팀원 목록을 확인하지 못했습니다.</p><button className="btn" disabled={membersLoading} onClick={() => void loadAssignableMembers()}>팀원 목록 다시 불러오기</button></> : <><label className="flex min-w-56 flex-1 flex-col gap-1 text-body font-semibold">배정할 팀원<select aria-label="배정할 팀원" className="input" value={assigneePrincipalId} disabled={membersLoading || pending !== null || retryPending} onChange={(event) => setAssigneePrincipalId(event.target.value)}><option value="">팀원을 선택하세요</option>{members!.map((member) => <option key={member.principalId} value={member.principalId}>{member.displayName} · {member.principalId}</option>)}</select></label><button className="btn" disabled={!assigneePrincipalId || pending !== null || retryPending} onClick={() => void mutate("assignment", { expectedOperationsRevision: operations.operationsRevision, action: "ASSIGN_TO_MEMBER", assigneePrincipalId })}>선택한 팀원에게 배정</button>{members!.length === 0 && <p className="w-full text-caption text-ink-2">배정 가능한 활성 팀원이 없습니다. 열람자는 결과 공유만 받을 수 있습니다.</p>}</>}</div>}
+              <label className="flex flex-col gap-1 text-body font-semibold">마감 시각 (한국 표준시)
                 <input className="input" type="datetime-local" value={dueAt} disabled={!canWrite || pending !== null || retryPending} onChange={(event) => setDueAt(event.target.value)} />
-                {dueAtUtc && <span className="font-normal text-[12px] text-ink-muted">선택: {formatKoreanDateTime(dueAtUtc, { dateStyle: "short", timeStyle: "short" })}</span>}
+                {dueAtUtc && <span className="font-normal text-caption text-ink-muted">선택: {formatKoreanDateTime(dueAtUtc, { dateStyle: "short", timeStyle: "short" })}</span>}
               </label>
               <div className="flex flex-wrap gap-2">
                 <button className="btn" disabled={!canWrite || pending !== null || retryPending || dueAtUtc === null} onClick={() => void mutate("due-date", { expectedOperationsRevision: operations.operationsRevision, dueAt: dueAtUtc })}>
@@ -549,17 +549,17 @@ export function WorkOrderOperationsPanel({
                   마감 지우기
                 </button>
               </div>
-              <label className="flex flex-col gap-1 text-[13px] font-semibold">종료 메모 <span className="font-normal text-ink-muted">(선택)</span>
+              <label className="flex flex-col gap-1 text-body font-semibold">종료 메모 <span className="font-normal text-ink-muted">(선택)</span>
                 <textarea className="input min-h-20" maxLength={500} value={closeNote} disabled={!canWrite || pending !== null || retryPending} onChange={(event) => setCloseNote(event.target.value)} placeholder="예: 현장 확인과 결과 검토를 마쳤습니다." />
               </label>
-              <button className="btn btn-primary w-fit" disabled={!canWrite || pending !== null || retryPending} onClick={() => setCloseConfirm({ body: { expectedOperationsRevision: operations.operationsRevision, note: closeNote.trim() || null } })}>
-                {pending?.kind === "close" ? "업무 종료 저장 중" : "업무 종료"}
+              <button className="btn w-fit" disabled={!canWrite || pending !== null || retryPending} onClick={() => setCloseConfirm({ body: { expectedOperationsRevision: operations.operationsRevision, note: closeNote.trim() || null } })}>
+                {pending?.kind === "close" ? "작업 종료 저장 중" : "작업 종료"}
               </button>
               <ConfirmDialog
                 open={closeConfirm !== null}
-                title="업무를 종료할까요?"
-                description="종료하면 새 산출물 등록이 멈춥니다. 이미 진행 중인 등록·측정과 기존 결과는 계속 확인할 수 있으며, 필요하면 업무를 다시 열 수 있습니다."
-                confirmLabel="업무 종료"
+                title="작업을 종료할까요?"
+                description="종료하면 새 산출물 등록이 멈춥니다. 이미 진행 중인 등록·측정과 기존 결과는 계속 확인할 수 있으며, 필요하면 작업을 다시 열 수 있습니다."
+                confirmLabel="작업 종료"
                 pending={pending !== null}
                 onCancel={() => setCloseConfirm(null)}
                 onConfirm={() => {
@@ -568,27 +568,27 @@ export function WorkOrderOperationsPanel({
                   if (target) void mutate("close", target.body);
                 }}
               />
-              <p className="text-[12.5px] leading-5 text-ink-2">종료하면 새 산출물 등록이 멈추고, 이미 등록한 기록과 결과는 계속 확인할 수 있습니다.</p>
+              <p className="text-caption leading-5 text-ink-2">종료하면 새 산출물 등록이 멈추고, 이미 등록한 기록과 결과는 계속 확인할 수 있습니다.</p>
             </>}
-            {isClosed && <button className="btn btn-primary w-fit" disabled={!canWrite || pending !== null || retryPending} onClick={() => void mutate("reopen", { expectedOperationsRevision: operations.operationsRevision })}>
-              {pending?.kind === "reopen" ? "다시 열기 저장 중" : "업무 다시 열기"}
+            {isClosed && <button className="btn w-fit" disabled={!canWrite || pending !== null || retryPending} onClick={() => void mutate("reopen", { expectedOperationsRevision: operations.operationsRevision })}>
+              {pending?.kind === "reopen" ? "다시 열기 저장 중" : "작업 다시 열기"}
             </button>}
-            {feedback && <p role="status" className="text-[13px] leading-5 text-ink-2">{feedback}</p>}
+            {feedback && <p role="status" className="text-body leading-5 text-ink-2">{feedback}</p>}
           </div>
           ) : (
             <>
               {unresolvedRetry && (
                 <div className="flex flex-col gap-3 rounded-lg bg-sunk p-3">
                   {renderFrozenBox(false)}
-                  {feedback && <p role="status" className="text-[13px] leading-5 text-ink-2">{feedback}</p>}
+                  {feedback && <p role="status" className="text-body leading-5 text-ink-2">{feedback}</p>}
                 </div>
               )}
-              <ActionUnavailable label="작업 운영 정보 변경" description="현재 계정으로는 담당·기한·업무 종료를 변경할 수 없습니다. 작업 담당자에게 문의하세요." />
+              <ActionUnavailable label="작업 운영 정보 변경" description="현재 계정으로는 담당·기한·작업 종료를 변경할 수 없습니다. 작업 담당자에게 문의하세요." />
             </>
           )}
         </ResponsiveActionBoundary>
         {unresolvedRetry && (
-          <div className="rounded-lg border border-line bg-surface px-3 py-2 text-[13px] leading-5 text-ink-2 lg:hidden">
+          <div className="rounded-lg border border-line bg-surface px-3 py-2 text-body leading-5 text-ink-2 lg:hidden">
             <p>이전 저장 요청의 응답을 확인하지 못했습니다. 결과는 알 수 없습니다.</p>
             <p className="mt-1">이 요청의 기억은 이 화면에만 있어 새로고침·화면 이동·기기 변경 뒤에는 같은 키로 다시 시도할 수 없습니다. 노트북의 같은 화면에서 원래 기록을 먼저 확인하세요.</p>
           </div>

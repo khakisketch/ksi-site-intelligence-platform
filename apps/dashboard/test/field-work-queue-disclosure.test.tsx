@@ -29,7 +29,7 @@ function order(overrides: Partial<ObservationWorkOrderView> = {}): ObservationWo
     organizationId: "org-1",
     siteId: "site-1",
     purpose: "PROGRESS_QUANTITY",
-    name: "고유 관측 작업",
+    name: "고유 작업",
     workAreaIds: ["area-1"],
     scheduleId: null,
     executionMode: "EXTERNAL_RECONSTRUCTION",
@@ -95,7 +95,7 @@ describe("Field work queue technical disclosure", () => {
     for (const link of links) {
       const disclosure = link.closest("li")?.querySelector("details");
       expect(disclosure?.open).toBe(false);
-      expect(within(disclosure as HTMLElement).getByText("파일 정보").tagName).toBe("SUMMARY");
+      expect(within(disclosure as HTMLElement).getByText("식별 상세").closest("summary")?.tagName).toBe("SUMMARY");
     }
     expect(document.body.textContent).toContain("wo-dup-1");
     expect(document.body.textContent).toContain("wo-dup-2");
@@ -105,7 +105,7 @@ describe("Field work queue technical disclosure", () => {
     mocked.workOrders.mockResolvedValue([order({ workOrderId: "wo-missing-1", workAreaIds: ["area-gone"] })]);
     render(await FieldWorkListPage({}));
 
-    const link = screen.getByRole("link", { name: /고유 관측 작업/ });
+    const link = screen.getByRole("link", { name: /고유 작업/ });
     expect(link.textContent).not.toContain("wo-missing-1");
     const disclosure = link.closest("li")?.querySelector("details");
     expect(disclosure?.textContent).toContain("wo-missing-1");

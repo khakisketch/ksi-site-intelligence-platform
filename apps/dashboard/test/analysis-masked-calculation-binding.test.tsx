@@ -58,7 +58,6 @@ describe("masked V3 result/export composition", () => {
     mocked.current = { ...available, disposition: "REASSESSMENT_REQUIRED", report: null } as MaskedCalculationDetailWire;
     render(<AnalysisMaskedCalculation detail={detail} pages={pages} workAreaName="합성 구역" canRequest
       maskBudgetBytes={1000000} delivery={{ lifetimeSeconds: 60, downloadBudgetBytes: 1000000 }} />);
-    fireEvent.click(screen.getByText("독립 마스크로 별도 계산 · V3"));
     fireEvent.click(screen.getByRole("button", { name: "합성 V3 결과 읽기" }));
     expect(screen.getByRole("region", { name: "V3 내보내기 인계" })).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "합성 V3 현재 상태 읽기" }));
@@ -69,7 +68,6 @@ describe("masked V3 result/export composition", () => {
     mocked.available = available;
     render(<AnalysisMaskedCalculation detail={detail} pages={pages} workAreaName="합성 구역" canRequest
       maskBudgetBytes={1000000} delivery={{ lifetimeSeconds: 60, downloadBudgetBytes: 1000000 }} />);
-    fireEvent.click(screen.getByText("독립 마스크로 별도 계산 · V3"));
     fireEvent.click(screen.getByRole("button", { name: "합성 V3 결과 읽기" }));
     expect(screen.getByRole("region", { name: "V3 내보내기 인계" })).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "합성 마스크 접근 불가" }));
@@ -82,7 +80,6 @@ describe("masked V3 result/export composition", () => {
       delivery: { lifetimeSeconds: 60, downloadBudgetBytes: 1000000 } };
     const { rerender } = render(<AnalysisMaskedCalculation {...props}
       sessionScope={{ organizationId: "org-1", principalId: "operator-a" }} />);
-    fireEvent.click(screen.getByText("독립 마스크로 별도 계산 · V3"));
     expect(mocked.sessionScope).toEqual({ organizationId: "org-1", principalId: "operator-a" });
     fireEvent.click(screen.getByRole("button", { name: "합성 V3 결과 읽기" }));
     expect(screen.getByRole("region", { name: "V3 내보내기 인계" })).toBeTruthy();
@@ -98,7 +95,6 @@ describe("masked V3 result/export composition", () => {
     const load = vi.fn();
     render(<AnalysisMaskedCalculation detail={detail} pages={[]} workAreaName="합성 구역" canRequest
       maskBudgetBytes={1000000} delivery={null} onLoadSource={load} />);
-    fireEvent.click(screen.getByText("독립 마스크로 별도 계산 · V3"));
     expect(load).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: "원본 근거 불러오기" }));
     expect(load).toHaveBeenCalledOnce();

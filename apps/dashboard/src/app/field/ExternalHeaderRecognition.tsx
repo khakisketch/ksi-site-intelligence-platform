@@ -29,13 +29,13 @@ export function ExternalHeaderRecognition({ slot, state, crs, onCrsChange, crsLo
 }) {
   const label = SLOT_LABEL[slot];
   if (state.status === "not-geotiff") {
-    return <p role="alert" className="rounded-lg border border-line bg-sunk px-3 py-2 text-[12px] text-high-ink">
+    return <p role="alert" className="rounded-lg border border-line bg-sunk px-3 py-2 text-caption text-high-ink">
       {label} 파일에서 GeoTIFF 헤더를 읽지 못했습니다. 올바른 파일인지 확인하세요. 등록하면 KSI 검사에서 형식을 다시 확인합니다.
     </p>;
   }
   const value = state.value;
   const other = slot === "ortho" ? "dsm" : "ortho";
-  return <div className="flex flex-col gap-2 rounded-lg border border-line bg-sunk p-3 text-[12px]">
+  return <div className="flex flex-col gap-2 rounded-lg border border-line bg-sunk p-3 text-caption">
     <p className="text-ink-2">파일 헤더에서 읽은 {label} 정보입니다. 신고값이며, 등록 후 KSI 검사로 확인합니다.</p>
     {slotMismatch(slot, value.kindHint) && <p role="alert" className="text-high-ink">
       이 파일은 {SLOT_LABEL[other]}처럼 보입니다({value.kindHint === "dsm" ? "단일 실수 밴드" : "8비트 컬러 밴드"}). 올바른 칸에 넣었는지 확인하세요.
@@ -52,7 +52,7 @@ export function ExternalHeaderRecognition({ slot, state, crs, onCrsChange, crsLo
     <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-ink-2">
       <dt>크기</dt><dd>{formatCountKo(value.width)} × {formatCountKo(value.height)} 픽셀</dd>
       {value.pixelSize && <><dt>픽셀 크기</dt><dd>{formatPixelSize(value.pixelSize)} (좌표계 단위, 참고)</dd></>}
-      {value.producer && <><dt>생산 소프트웨어</dt><dd>{value.producer.name}{value.producer.version ? ` ${value.producer.version}` : ""} (비어 있는 소프트웨어 칸에만 채움)</dd></>}
+      {value.producer && <><dt>TIFF Software 태그</dt><dd>{value.producer.name}{value.producer.version ? ` ${value.producer.version}` : ""} (참고: 내보내기 도구일 수 있어 재구성 제작자로 단정하지 않습니다)</dd></>}
       {value.headerDateTime && <><dt>헤더 날짜</dt><dd>{value.headerDateTime} (참고: 소프트웨어에 따라 촬영 시각 또는 파일 생성 시각)</dd></>}
     </dl>
   </div>;

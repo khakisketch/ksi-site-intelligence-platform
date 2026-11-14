@@ -23,7 +23,7 @@ afterEach(cleanup);
 describe("team collaboration page heading hierarchy", () => {
   it.each([
     ["/field/team", "팀 관리"],
-    ["/field/inbox", "받은 업무"],
+    ["/field/inbox", "받은 작업"],
   ])("keeps the shell's unique h1 on %s", async (pathname, title) => {
     mocked.pathname = pathname;
     const body = pathname === "/field/team"

@@ -33,11 +33,11 @@ export function AnalysisMaskedCalculation({ detail, pages, workAreaName, canRequ
   onLoadSource?: () => void; sourceLoading?: boolean;
 }) {
   const sourceIdentity = boundMaskedSourceIdentity(detail, pages);
-  return <details className="border-t border-line px-4 py-3">
-    <summary className="tap-target cursor-pointer text-[13px] font-semibold">독립 마스크로 별도 계산 · V3</summary>
-    <p className="mb-3 mt-2 text-[12px] leading-5 text-ink-2">기존 결과는 유지하고, 마스크로 제외할 셀을 지정해 별도 계산합니다. 마스크 등록·검사가 정확도 보증을 만들지는 않습니다.</p>
+  return <section className="border-t border-line px-4 py-3" aria-label="독립 마스크로 별도 계산">
+    <h3 className="text-body font-semibold">독립 마스크로 별도 계산</h3>
+    <p className="mb-3 mt-2 text-caption leading-5 text-ink-2">기존 결과는 유지하고, 마스크로 제외할 셀을 지정해 별도 계산합니다. 마스크 등록·검사가 정확도 보증을 만들지는 않습니다.</p>
     {!sourceIdentity && onLoadSource && <div className="mb-3">
-      <p className="mb-2 text-[12px] text-ink-2">먼저 이 분석 기록의 원본 근거를 불러오세요. 읽기만 하며 계산을 시작하지 않습니다.</p>
+      <p className="mb-2 text-caption text-ink-2">먼저 이 분석 기록의 원본 근거를 불러오세요. 읽기만 하며 계산을 시작하지 않습니다.</p>
       <button type="button" className="btn" disabled={sourceLoading} onClick={onLoadSource}>
         {sourceLoading ? "원본 근거 불러오는 중" : "원본 근거 불러오기"}
       </button>
@@ -45,7 +45,7 @@ export function AnalysisMaskedCalculation({ detail, pages, workAreaName, canRequ
     <BoundMaskedWorkflow key={`${sessionScope?.organizationId ?? ""}:${sessionScope?.principalId ?? ""}:${detail.analysisId}:${sourceIdentity ?? "unresolved"}`}
       sourceIdentity={sourceIdentity} siteId={detail.siteId} workAreaId={detail.workAreaId}
       workAreaName={workAreaName} canRequest={canRequest} maskBudgetBytes={maskBudgetBytes} delivery={delivery} sessionScope={sessionScope} />
-  </details>;
+  </section>;
 }
 
 function BoundMaskedWorkflow({ sourceIdentity, siteId, workAreaId, workAreaName, canRequest, maskBudgetBytes, delivery, sessionScope }: {
@@ -64,6 +64,6 @@ function BoundMaskedWorkflow({ sourceIdentity, siteId, workAreaId, workAreaName,
       siteId={siteId} workAreaId={workAreaId} workAreaLabel={`${workAreaName} · 독립 마스크 V3`}
       source={output} canRequest={canRequest} lifetimeSeconds={delivery.lifetimeSeconds}
       downloadBudgetBytes={delivery.downloadBudgetBytes} />}
-    {output && !delivery && <p className="mt-2 text-[12px] text-ink-2">마스크 수치 결과는 유지됩니다. 이 환경에는 차분 파일 내보내기가 연결되지 않았습니다.</p>}
+    {output && !delivery && <p className="mt-2 text-caption text-ink-2">마스크 수치 결과는 유지됩니다. 이 환경에는 차분 파일 내보내기가 연결되지 않았습니다.</p>}
   </>;
 }

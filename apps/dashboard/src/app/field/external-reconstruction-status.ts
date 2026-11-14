@@ -26,7 +26,7 @@ function presentOutcomeReason(reason: string): string {
   };
   if (known[reason]) return known[reason];
   return /^[A-Z][A-Z0-9_]*$/.test(reason)
-    ? "추가 확인이 필요합니다. 파일 정보 · 처리 상세의 사유 코드를 확인하세요."
+    ? "추가 확인이 필요합니다. 파일·식별 상세의 사유 코드를 확인하세요."
     : reason;
 }
 
@@ -109,7 +109,7 @@ export function presentExternalInspectionStatus(view: ExternalArtifactInspection
       return presentation(
         "검사 상태를 확인할 수 없음",
         "현재 검사 또는 표시 상태를 해석할 수 없습니다. 준비 완료로 추정하지 않습니다.",
-        "상태를 새로고침하고 계속되면 파일 정보 · 처리 상세와 함께 운영자에게 문의하세요.",
+        "상태를 새로고침하고 계속되면 파일·식별 상세와 함께 운영자에게 문의하세요.",
         { autoRefresh: false, displayReady: false },
         outcomeReasons(view),
       );
@@ -178,7 +178,7 @@ export function presentExternalInspectionStatus(view: ExternalArtifactInspection
       return presentation(
         "검사 상태를 확인할 수 없음",
         "현재 검사 또는 표시 상태를 해석할 수 없습니다. 준비 완료로 추정하지 않습니다.",
-        "상태를 새로고침하고 계속되면 파일 정보 · 처리 상세와 함께 운영자에게 문의하세요.",
+        "상태를 새로고침하고 계속되면 파일·식별 상세와 함께 운영자에게 문의하세요.",
         { autoRefresh: false, displayReady: false },
         outcomeReasons(view),
       );

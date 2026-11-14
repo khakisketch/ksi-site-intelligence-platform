@@ -38,8 +38,8 @@ export function AnalysisDeltaPublication({ detail, workAreaLabel, canRequest, de
 }) {
   const source = boundDeltaPublicationSource(detail, reviewAnalysisId, target);
   if (!delivery || !source) return <section aria-label="차분 파일" className="border-t border-line px-4 py-3">
-    <h3 className="text-[13px] font-semibold">차분 파일</h3>
-    <p className="mt-1 text-[12px] leading-5 text-ink-2">
+    <h3 className="text-body font-semibold">차분 파일</h3>
+    <p className="mt-1 text-caption leading-5 text-ink-2">
       {!delivery ? "이 환경에는 차분 파일 내보내기가 연결되지 않았습니다."
         : sourceLoading ? "파일에 사용할 결과 출처를 확인하고 있습니다."
           : "파일에 사용할 결과 출처를 확인하지 못했습니다."}
