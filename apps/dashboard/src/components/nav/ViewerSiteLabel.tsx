@@ -19,10 +19,10 @@ export function ViewerSiteLabel() {
   if (!current) return null;
   return (
     <span className="hidden min-w-0 items-center gap-1.5 xl:flex" aria-hidden="true">
-      <span className="grid size-5 flex-none place-items-center rounded bg-sidebar text-[9px] font-bold text-sidebar-text">
+      <span className="grid size-5 flex-none place-items-center rounded bg-sidebar text-micro font-bold text-sidebar-text">
         {siteMark(current.name)}
       </span>
-      <span className="max-w-[190px] truncate text-[11.5px] font-semibold text-ink-2" title={current.name}>
+      <span className="max-w-[190px] truncate text-caption font-semibold text-ink-2" title={current.name}>
         {siteShortName(current.name)}
       </span>
     </span>

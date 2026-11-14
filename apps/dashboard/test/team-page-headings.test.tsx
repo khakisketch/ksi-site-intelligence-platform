@@ -3,7 +3,7 @@ import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const mocked = vi.hoisted(() => ({ pathname: "/field/team" }));
-vi.mock("next/navigation", () => ({ usePathname: () => mocked.pathname }));
+vi.mock("next/navigation", () => ({ usePathname: () => mocked.pathname, useSearchParams: () => new URLSearchParams() }));
 vi.mock("@/app/field/resolve-session", () => ({
   resolveFieldSession: async () => ({ kind: "ready", principal: { role: "ADMIN", principalId: "operator-a" } }),
 }));

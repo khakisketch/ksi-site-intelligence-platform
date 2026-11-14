@@ -106,6 +106,7 @@ vi.mock("@/components/map/AoiPolygonMap", () => ({
 }));
 
 import { SiteRegistrationOnlyWizard } from "@/app/sites/new/SiteRegistrationOnlyWizard";
+import { installFakeSessionStorage } from "./storage-fakes";
 import { createHash } from "node:crypto";
 
 function fingerprint(org: string, actor: string): string {
@@ -482,31 +483,32 @@ it.each(['{"version":2}', '{broken'])("미지원·손상 지도 기록은 원문
 
 it("지도 저장 quota 실패는 화면 원문을 보존하고 경고·제출 차단한다", async () => {
   await fillToMapStep();
-  const spy = vi.spyOn(Storage.prototype, "setItem").mockImplementation(function(this: Storage, key, value) {
-    if (key === MAP_KEY) throw new DOMException("quota", "QuotaExceededError");
-    return originalSet.call(this, key, value);
+  installFakeSessionStorage({
+    setItem: (key, value, write) => {
+      if (key === MAP_KEY) throw new DOMException("quota", "QuotaExceededError");
+      write(key, value);
+    },
   });
-  try {
-    fireEvent.change(screen.getByRole("textbox", { name: "키보드 원문" }), { target: { value: "저장 실패 원문" } });
+  fireEvent.change(screen.getByRole("textbox", { name: "키보드 원문" }), { target: { value: "저장 실패 원문" } });
     expect((screen.getByRole("textbox", { name: "키보드 원문" }) as HTMLInputElement).value).toBe("저장 실패 원문");
     expect(screen.getByRole("alert").textContent).toContain("이동하면 잃을 수");
     expect(screen.getByRole("alert").textContent).toContain("자동으로 복구하거나 삭제하지 않습니다");
     expect(screen.getByRole("link", { name: "별도 탭에서 새로 시작하기" }).getAttribute("rel")).toContain("noopener");
     expect((screen.getByRole("button", { name: "다음" }) as HTMLButtonElement).disabled).toBe(true);
     expect(requestMock).not.toHaveBeenCalled();
-  } finally { spy.mockRestore(); }
 });
 
 it("지도 저장 실패 후 계정이 바뀌어도 원문을 숨기고 복구 안내를 유지한다", async () => {
   await fillToMapStep();
   fireEvent.change(screen.getByRole("textbox", { name: "키보드 원문" }), { target: { value: "기존 원문" } });
   const raw = sessionStorage.getItem(MAP_KEY);
-  const spy = vi.spyOn(Storage.prototype, "setItem").mockImplementation(function(this: Storage, key, value) {
-    if (key === MAP_KEY) throw new DOMException("quota", "QuotaExceededError");
-    return originalSet.call(this, key, value);
+  installFakeSessionStorage({
+    setItem: (key, value, write) => {
+      if (key === MAP_KEY) throw new DOMException("quota", "QuotaExceededError");
+      write(key, value);
+    },
   });
-  try {
-    fireEvent.change(screen.getByRole("textbox", { name: "키보드 원문" }), { target: { value: "저장 실패 원문" } });
+  fireEvent.change(screen.getByRole("textbox", { name: "키보드 원문" }), { target: { value: "저장 실패 원문" } });
     fireEvent.blur(window);
     identityResponse = async () => jsonResponse({ fingerprint: `v1-${"b".repeat(64)}` }, 200);
     await act(async () => window.dispatchEvent(new Event("focus")));
@@ -515,24 +517,27 @@ it("지도 저장 실패 후 계정이 바뀌어도 원문을 숨기고 복구 �
     expect(screen.getByRole("alert").textContent).toContain("남은 백업은 자동으로 복구하거나 삭제하지 않습니다");
     expect(sessionStorage.getItem(MAP_KEY)).toBe(raw);
     expect(requestMock).not.toHaveBeenCalled();
-  } finally { spy.mockRestore(); }
 });
-const originalSet = Storage.prototype.setItem;
 
 it("재기록 readback 불일치는 이전 원문을 백업에 보존하고 차단한다", async () => {
   await fillToMapStep();
   fireEvent.change(screen.getByRole("textbox", { name: "키보드 원문" }), { target: { value: "이전 원문" } });
   const previous = sessionStorage.getItem(MAP_KEY);
-  const originalGet = Storage.prototype.getItem;
   let written = false;
-  const set = vi.spyOn(Storage.prototype, "setItem").mockImplementation(function(this: Storage, key, value) { originalSet.call(this, key, value); if (key === MAP_KEY) written = true; });
-  const get = vi.spyOn(Storage.prototype, "getItem").mockImplementation(function(this: Storage, key) { if (key === MAP_KEY && written) return "mismatch"; return originalGet.call(this, key); });
-  try {
-    fireEvent.change(screen.getByRole("textbox", { name: "키보드 원문" }), { target: { value: "새 원문" } });
-    expect(originalGet.call(sessionStorage, `${MAP_KEY}:backup`)).toBe(previous);
-    expect(screen.getByRole("alert").textContent).toContain("이동하면 잃을 수");
-    expect(requestMock).not.toHaveBeenCalled();
-  } finally { set.mockRestore(); get.mockRestore(); }
+  installFakeSessionStorage({
+    setItem: (key, value, write) => {
+      write(key, value);
+      if (key === MAP_KEY) written = true;
+    },
+    getItem: (key, read) => {
+      if (key === MAP_KEY && written) return "mismatch";
+      return read(key);
+    },
+  });
+  fireEvent.change(screen.getByRole("textbox", { name: "키보드 원문" }), { target: { value: "새 원문" } });
+  expect(sessionStorage.getItem(`${MAP_KEY}:backup`)).toBe(previous);
+  expect(screen.getByRole("alert").textContent).toContain("이동하면 잃을 수");
+  expect(requestMock).not.toHaveBeenCalled();
 });
 
 
@@ -588,34 +593,40 @@ it("지도 저장소를 읽지 못하면 존재 여부를 추측하지 않고 �
   const draft = '{ "name": "기존 요청", "aoi": [], "originFingerprint": "' + ALICE + '" }';
   sessionStorage.setItem(DRAFT_KEY, draft);
   sessionStorage.setItem(MAP_KEY, '{ "unsupported": true }');
-  const get = vi.spyOn(Storage.prototype, "getItem").mockImplementation(function(this: Storage, key) {
-    if (key === MAP_KEY) throw new DOMException("unavailable", "SecurityError");
-    return originalGetForFailure.call(this, key);
+  // 읽기는 막되, 저장된 원본이 그대로인지는 저장소 내부를 직접 확인한다.
+  const { store } = installFakeSessionStorage({
+    getItem: (key, read) => {
+      if (key === MAP_KEY) throw new DOMException("unavailable", "SecurityError");
+      return read(key);
+    },
   });
-  try {
-    render(<SiteRegistrationOnlyWizard mode="MAPPED_BOOTSTRAP" />);
-    expect(await screen.findByRole("heading", { name: "지도 입력을 안전하게 복구할 수 없습니다" })).toBeTruthy();
-    expect(screen.getByText(/남은 백업은 자동으로 복구하거나 삭제하지 않습니다/)).toBeTruthy();
-    expect(originalGetForFailure.call(sessionStorage, MAP_KEY)).toBe('{ "unsupported": true }');
-    expect(originalGetForFailure.call(sessionStorage, DRAFT_KEY)).toBe(draft);
-    expect(requestMock).not.toHaveBeenCalled();
-  } finally { get.mockRestore(); }
+  render(<SiteRegistrationOnlyWizard mode="MAPPED_BOOTSTRAP" />);
+  expect(await screen.findByRole("heading", { name: "지도 입력을 안전하게 복구할 수 없습니다" })).toBeTruthy();
+  expect(screen.getByText(/남은 백업은 자동으로 복구하거나 삭제하지 않습니다/)).toBeTruthy();
+  expect(store.get(MAP_KEY)).toBe('{ "unsupported": true }');
+  expect(sessionStorage.getItem(DRAFT_KEY)).toBe(draft);
+  expect(requestMock).not.toHaveBeenCalled();
 });
-const originalGetForFailure = Storage.prototype.getItem;
 
 it("초안 지도 결속 기록의 readback 실패는 기존 초안 바이트를 백업하고 진입을 막는다", async () => {
   render(<SiteRegistrationOnlyWizard mode="MAPPED_BOOTSTRAP" />);
   fireEvent.change(await screen.findByPlaceholderText("예: OO산업단지 3공구 신축공사 현장"), { target: { value: "결속 실패" } });
   const before = sessionStorage.getItem(DRAFT_KEY);
   let written = false;
-  const set = vi.spyOn(Storage.prototype, "setItem").mockImplementation(function(this: Storage, key, value) { originalSet.call(this, key, value); if (key === DRAFT_KEY) written = true; });
-  const get = vi.spyOn(Storage.prototype, "getItem").mockImplementation(function(this: Storage, key) { if (key === DRAFT_KEY && written) return "mismatch"; return originalGetForFailure.call(this, key); });
-  try {
-    fireEvent.click(screen.getByRole("button", { name: "다음" }));
-    expect(originalGetForFailure.call(sessionStorage, `${DRAFT_KEY}:map-draft-backup`)).toBe(before);
-    expect(screen.getByRole("heading", { name: "지도 입력을 안전하게 복구할 수 없습니다" })).toBeTruthy();
-    expect(screen.queryByTestId("mock-map")).toBeNull();
-  } finally { set.mockRestore(); get.mockRestore(); }
+  installFakeSessionStorage({
+    setItem: (key, value, write) => {
+      write(key, value);
+      if (key === DRAFT_KEY) written = true;
+    },
+    getItem: (key, read) => {
+      if (key === DRAFT_KEY && written) return "mismatch";
+      return read(key);
+    },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "다음" }));
+  expect(sessionStorage.getItem(`${DRAFT_KEY}:map-draft-backup`)).toBe(before);
+  expect(screen.getByRole("heading", { name: "지도 입력을 안전하게 복구할 수 없습니다" })).toBeTruthy();
+  expect(screen.queryByTestId("mock-map")).toBeNull();
 });
 
 it("재진입 신원 확인 실패는 저장된 원문을 공개하거나 변경하지 않는다", async () => {

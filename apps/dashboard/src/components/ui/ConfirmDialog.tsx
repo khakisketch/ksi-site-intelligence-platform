@@ -105,10 +105,10 @@ export function ConfirmDialog({
     >
       {open && (
         <div className="flex max-h-[calc(100dvh-3rem)] w-[min(24rem,calc(100vw-2rem))] flex-col gap-3 overflow-y-auto p-4">
-          <h2 id={titleId} className="text-[15px] font-bold break-keep">
+          <h2 id={titleId} className="text-lead font-bold break-keep">
             {title}
           </h2>
-          <div id={descriptionId} className="text-[13px] leading-6 break-keep text-ink-2">{description}</div>
+          <div id={descriptionId} className="text-body leading-6 break-keep text-ink-2">{description}</div>
           <div className="flex justify-end gap-2">
             <button
               ref={cancelRef}

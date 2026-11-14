@@ -22,7 +22,10 @@ from pathlib import Path, PurePosixPath
 from typing import Any
 
 from jsonschema import Draft202012Validator, FormatChecker
-from ksi_core.processing_profiles import KSI_ODM_CIVIL_V1_ID, ksi_odm_civil_v1
+from ksi_core.domains.processing.historical_processing_profiles import (
+    HISTORICAL_KSI_ODM_CIVIL_V1_DIGEST,
+    HISTORICAL_KSI_ODM_CIVIL_V1_ID,
+)
 from ksi_geo_spatial.crs import UnsupportedCrsError, assert_supported_project_crs
 from ksi_processing_controller.landxml import (
     MAX_LANDXML_BYTES,
@@ -45,10 +48,9 @@ def _canonical_evidence_root() -> Path:
 
 
 def _expected_processing_profile_digest() -> str:
-    digest = ksi_odm_civil_v1().profile_digest
-    if digest is None:  # pragma: no cover - sealed registry contract protects this.
-        raise RuntimeError("issued civil processing profile has no digest")
-    return digest
+    # Task 2 retirement: the executable ODM recipe is gone. The auditor checks
+    # the manifest against the sealed historical fact, never a live registry.
+    return HISTORICAL_KSI_ODM_CIVIL_V1_DIGEST
 
 
 def _schema_validator() -> Draft202012Validator:
@@ -243,7 +245,7 @@ def _validate_attestations(manifest: Mapping[str, Any], audit: _Audit) -> None:
         if not isinstance(basis, str) or not basis.strip():
             audit.block("RIGHTS_BASIS_REQUIRED")
         audit.exact_file(attestation.get("evidence"))
-    if manifest.get("processingProfileId") != KSI_ODM_CIVIL_V1_ID:
+    if manifest.get("processingProfileId") != HISTORICAL_KSI_ODM_CIVIL_V1_ID:
         audit.block("PROCESSING_PROFILE_MISMATCH")
     if manifest.get("processingProfileDigest") != _expected_processing_profile_digest():
         audit.block("PROCESSING_PROFILE_DIGEST_MISMATCH")

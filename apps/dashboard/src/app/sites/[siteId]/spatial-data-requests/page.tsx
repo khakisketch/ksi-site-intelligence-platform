@@ -1,3 +1,5 @@
+import { PageHeader } from "@/components/ui/PageHeader";
+import { Disclosure } from "@/components/ui/Disclosure";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
@@ -105,7 +107,7 @@ function stateBadge(state: SpatialDataExecutionState) {
 }
 
 function availabilityText(availability: SpatialDataAvailability) {
-  return <span className="text-[11.5px] text-ink-2">{AVAILABILITY_LABEL[availability]}</span>;
+  return <span className="text-caption text-ink-2">{AVAILABILITY_LABEL[availability]}</span>;
 }
 
 function errorView(error: unknown, scope: "areas" | "list" | "detail", siteId: string) {
@@ -133,8 +135,8 @@ function errorView(error: unknown, scope: "areas" | "list" | "detail", siteId: s
 
 function Fact({ label, value, mono = false }: { label: string; value: string; mono?: boolean }) {
   return <div className="min-w-0">
-    <dt className="text-[11px] text-ink-muted">{label}</dt>
-    <dd className={`mt-0.5 break-words text-[12.5px] text-ink-2 ${mono ? "font-mono text-[11px]" : ""}`}>{value}</dd>
+    <dt className="text-micro text-ink-muted">{label}</dt>
+    <dd className={`mt-0.5 break-words text-body text-ink-2 ${mono ? "font-mono text-micro" : ""}`}>{value}</dd>
   </div>;
 }
 
@@ -173,10 +175,10 @@ function ReceiptFacts({ receipt }: { receipt: SpatialDataReceipt }) {
   return <section className="border-t border-line pt-4">
     <div className="flex flex-wrap items-start justify-between gap-2 border-b border-line pb-3">
       <div>
-        <h3 className="text-[15px] font-bold">준비된 출력 정보</h3>
-        <p className="mt-1 text-[11.5px] text-ink-muted">선택한 요청의 준비 당시 출력·공간 기록입니다. 정확도 평가나 현장 적합성 판정이 아닙니다.</p>
+        <h3 className="text-lead font-bold">준비된 출력 정보</h3>
+        <p className="mt-1 text-caption text-ink-muted">선택한 요청의 준비 당시 출력·공간 기록입니다. 정확도 평가나 현장 적합성 판정이 아닙니다.</p>
       </div>
-      {receipt.receiptDigest && <span className="max-w-full break-all font-mono text-[10.5px] text-ink-muted">출력 정보 {receipt.receiptDigest}</span>}
+      {receipt.receiptDigest && <span className="max-w-full break-all font-mono text-micro text-ink-muted">출력 정보 {receipt.receiptDigest}</span>}
     </div>
     <dl className="mt-4 grid gap-x-5 gap-y-3 sm:grid-cols-2 lg:grid-cols-3">
       <Fact label="산출물 종류" value={receipt.artifactKind} mono />
@@ -191,12 +193,12 @@ function ReceiptFacts({ receipt }: { receipt: SpatialDataReceipt }) {
       <Fact label="준비 시각" value={formatKoreanDateTime(receipt.preparedAt, { dateStyle: "medium", timeStyle: "short" })} />
       <Fact label="정확도 평가" value="수행하지 않음 (accuracyAssessed=false)" />
     </dl>
-    <p className="mt-3 text-[11.5px] leading-5 text-ink-muted">이 크기는 준비 당시 기록이며 현재 보관량·실제 전송량·연산 사용량·비용을 뜻하지 않습니다.</p>
+    <p className="mt-3 text-caption leading-5 text-ink-muted">이 크기는 준비 당시 기록이며 현재 보관량·실제 전송량·연산 사용량·비용을 뜻하지 않습니다.</p>
     <div className="mt-4 grid gap-3 border-t border-line pt-4 sm:grid-cols-2">
-      <div><p className="text-[11px] text-ink-muted">Attribution</p><p className="mt-1 break-words text-[12.5px] leading-5 text-ink-2">{receipt.attribution}</p></div>
-      <div><p className="text-[11px] text-ink-muted">Modification notice</p><p className="mt-1 break-words text-[12.5px] leading-5 text-ink-2">{receipt.modificationNotice}</p></div>
+      <div><p className="text-micro text-ink-muted">Attribution</p><p className="mt-1 break-words text-body leading-5 text-ink-2">{receipt.attribution}</p></div>
+      <div><p className="text-micro text-ink-muted">Modification notice</p><p className="mt-1 break-words text-body leading-5 text-ink-2">{receipt.modificationNotice}</p></div>
     </div>
-    <div className="mt-3 rounded-md border border-high/30 bg-high-bg px-3 py-2 text-[11.5px] leading-5 text-high-ink">
+    <div className="mt-3 rounded-md border border-high/30 bg-high-bg px-3 py-2 text-caption leading-5 text-high-ink">
       <p className="font-semibold">해석 범위</p>
       <p className="mt-0.5">파일 준비와 출력 정보 기록은 좌표 기준의 현장 정확도, 측량·정산 적합성 또는 분석 적격성을 보증하지 않습니다.</p>
       {receipt.limitations.length > 0 && <ul className="mt-1 list-disc pl-5">{receipt.limitations.map((limitation, index) => <li key={`${index}-${limitation}`} className="break-words">{limitation}</li>)}</ul>}
@@ -227,52 +229,50 @@ function RequestDetail({
   return <section className="flex flex-col gap-4 rounded-xl border border-line bg-surface p-4 sm:p-5">
     <header className="flex flex-col gap-3 border-b border-line pb-4 sm:flex-row sm:items-start sm:justify-between">
       <div className="min-w-0">
-        <p className="text-[11px] font-semibold uppercase tracking-wide text-ink-muted">선택한 요청 · 구분 #{shortRequestId(item.jobId)}</p>
-        <h2 className="mt-1 text-[16px] font-bold tracking-tight break-keep">{dataRequestTitle(item.createdAt)}</h2>
-        <p className="mt-1 break-words text-[12.5px] text-ink-2">{workAreaName} · {formatKoreanDateTime(item.createdAt, { dateStyle: "medium", timeStyle: "short" })} 요청 기록 생성{assetInfo ? ` · ${dataKindLabel(assetInfo.kind)}` : ""}</p>
-        <p className="mt-0.5 break-all font-mono text-[10.5px] text-ink-muted">요청 ID 전체는 처리 상세에서 확인 · 짧은 구분 #{shortRequestId(item.jobId)} (앞 8자리·끝 4자리)</p>
+        <p className="text-micro font-semibold uppercase tracking-wide text-ink-muted">선택한 요청 · 구분 #{shortRequestId(item.jobId)}</p>
+        <h2 className="mt-1 text-title font-bold tracking-tight break-keep">{dataRequestTitle(item.createdAt)}</h2>
+        <p className="mt-1 break-words text-body text-ink-2">{workAreaName} · {formatKoreanDateTime(item.createdAt, { dateStyle: "medium", timeStyle: "short" })} 요청 기록 생성{assetInfo ? ` · ${dataKindLabel(assetInfo.kind)}` : ""}</p>
+        <p className="mt-0.5 break-all font-mono text-micro text-ink-muted">요청 ID 전체는 처리 상세에서 확인 · 짧은 구분 #{shortRequestId(item.jobId)} (앞 8자리·끝 4자리)</p>
       </div>
       <div className="flex flex-wrap items-center gap-2">{stateBadge(item.executionState)}{availabilityText(item.availability)}</div>
     </header>
     <section aria-label="원본 자료" className="rounded-lg border border-line bg-sunk/50 px-3 py-2">
-      <h3 className="text-[12.5px] font-bold">원본 자료</h3>
+      <h3 className="text-body font-bold">원본 자료</h3>
       {assetInfo
-        ? <p className="mt-1 break-words text-[12.5px] leading-5 text-ink-2">{dataKindLabel(assetInfo.kind)} · {capturePeriodTitle(assetInfo.captureStartedAt ?? null, assetInfo.captureEndedAt ?? null)} · {workAreaName}</p>
-        : <p className="mt-1 text-[12px] leading-5 text-ink-2">원본 정보를 확인하지 못했습니다. 현재 조회한 카탈로그에서 확인되지 않아 표시만 생략합니다. 원본이 삭제됐다는 뜻이 아닙니다.</p>}
-      <details className="mt-1 text-[12px] text-ink-2">
-        <summary className="tap-target cursor-pointer font-semibold text-ink-muted">원본 처리 상세 보기</summary>
+        ? <p className="mt-1 break-words text-body leading-5 text-ink-2">{dataKindLabel(assetInfo.kind)} · {capturePeriodTitle(assetInfo.captureStartedAt ?? null, assetInfo.captureEndedAt ?? null)} · {workAreaName}</p>
+        : <p className="mt-1 text-caption leading-5 text-ink-2">원본 정보를 확인하지 못했습니다. 현재 조회한 카탈로그에서 확인되지 않아 표시만 생략합니다. 원본이 삭제됐다는 뜻이 아닙니다.</p>}
+      <Disclosure label="원본 처리 상세" className="mt-1 text-caption text-ink-2">
         {assetInfo && <p className="mt-1 break-words border-l-2 border-line pl-2">원본 파일명 · {assetInfo.fileName}</p>}
         {assetInfo && !isSupportedDataKind(assetInfo.kind) && <p className="mt-1 break-all border-l-2 border-line pl-2">원본 종류(원문) · {assetInfo.kind}</p>}
         <p className="mt-1 break-all border-l-2 border-line pl-2">원본 assetRef · {item.assetRef}</p>
-      </details>
-      <p className="mt-1 text-[11.5px] leading-5 text-ink-muted">{hasReceipt
+      </Disclosure>
+      <p className="mt-1 text-caption leading-5 text-ink-muted">{hasReceipt
         ? "요청 범위는 아래 준비된 출력 정보에 기록된 값(요청 범위·실제 범위)으로 확인하세요."
         : "출력 정보가 없어 요청 범위를 표시하지 않습니다. 원본이 없다는 뜻이 아닙니다."}</p>
     </section>
-    <details className="text-[12px] text-ink-2">
-      <summary className="tap-target cursor-pointer font-semibold text-ink-muted">처리 상세</summary>
+    <Disclosure label="처리 상세" className="text-caption text-ink-2">
       <dl className="mt-1 grid gap-2 border-l-2 border-line pl-3 sm:grid-cols-2">
-        <div className="min-w-0"><dt className="text-[11px] text-ink-muted">요청 ID</dt><dd className="break-all font-mono text-[11px]">{item.jobId}</dd></div>
-        <div className="min-w-0"><dt className="text-[11px] text-ink-muted">Site / WorkArea</dt><dd className="break-all font-mono text-[11px]">{item.siteId} / {item.workAreaId}</dd></div>
-        <div className="min-w-0"><dt className="text-[11px] text-ink-muted">Core 실행 상태</dt><dd className="break-all font-mono text-[11px]">{item.executionState}</dd></div>
-        <div className="min-w-0"><dt className="text-[11px] text-ink-muted">Core availability</dt><dd className="break-all font-mono text-[11px]">{item.availability}</dd></div>
-        <div className="min-w-0 sm:col-span-2"><dt className="text-[11px] text-ink-muted">Core 사유</dt><dd className="break-all font-mono text-[11px]">{item.reason ?? "기록 없음"}</dd></div>
+        <div className="min-w-0"><dt className="text-micro text-ink-muted">요청 ID</dt><dd className="break-all font-mono text-micro">{item.jobId}</dd></div>
+        <div className="min-w-0"><dt className="text-micro text-ink-muted">Site / WorkArea</dt><dd className="break-all font-mono text-micro">{item.siteId} / {item.workAreaId}</dd></div>
+        <div className="min-w-0"><dt className="text-micro text-ink-muted">Core 실행 상태</dt><dd className="break-all font-mono text-micro">{item.executionState}</dd></div>
+        <div className="min-w-0"><dt className="text-micro text-ink-muted">Core availability</dt><dd className="break-all font-mono text-micro">{item.availability}</dd></div>
+        <div className="min-w-0 sm:col-span-2"><dt className="text-micro text-ink-muted">Core 사유</dt><dd className="break-all font-mono text-micro">{item.reason ?? "기록 없음"}</dd></div>
       </dl>
-    </details>
-    {item.reason && <details className="rounded-md border border-line bg-sunk px-3 py-2 text-[12px] leading-5 text-ink-2"><summary className="tap-target cursor-pointer font-semibold">처리 사유 확인</summary><code className="break-all font-mono">{item.reason}</code></details>}
+    </Disclosure>
+    {item.reason && <Disclosure label="처리 사유 상세" className="rounded-md border border-line bg-sunk px-3 py-2 text-caption leading-5 text-ink-2"><code className="break-all font-mono">{item.reason}</code></Disclosure>}
 
     {hasReceipt && <ReceiptFacts receipt={item.receipt!} />}
-    {isCompleted && !hasReceipt && <p className="rounded-md border border-high/30 bg-high-bg px-3 py-2 text-[12px] leading-5 text-high-ink">
+    {isCompleted && !hasReceipt && <p className="rounded-md border border-high/30 bg-high-bg px-3 py-2 text-caption leading-5 text-high-ink">
       처리는 완료로 기록됐지만, 해당 요청의 출력 정보를 확인하지 못했습니다. 파일을 제공할 수 없습니다.
     </p>}
-    {!isCompleted && item.receipt && <p className="rounded-md border border-line bg-sunk px-3 py-2 text-[12px] leading-5 text-ink-2">처리 완료 전에는 출력 정보와 파일을 제공하지 않습니다.</p>}
+    {!isCompleted && item.receipt && <p className="rounded-md border border-line bg-sunk px-3 py-2 text-caption leading-5 text-ink-2">처리 완료 전에는 출력 정보와 파일을 제공하지 않습니다.</p>}
 
     {hasReceipt && item.availability === "AVAILABLE"
       ? <div className="flex flex-col items-start gap-2 border-t border-line pt-4 sm:flex-row sm:items-center sm:justify-between">
-        <p className="max-w-2xl text-[12px] leading-5 text-ink-2">파일이 준비되었습니다. 요청한 계정으로만 받을 수 있으며, 내려받을 때 현재 접근 권한과 파일 보관 상태를 다시 확인합니다.</p>
+        <p className="max-w-2xl text-caption leading-5 text-ink-2">파일이 준비되었습니다. 요청한 계정으로만 받을 수 있으며, 내려받을 때 현재 접근 권한과 파일 보관 상태를 다시 확인합니다.</p>
         <a className="btn btn-primary min-h-11 shrink-0" href={fileHref} download>준비된 파일 다운로드</a>
       </div>
-      : isCompleted && <p className="rounded-md border border-high/30 bg-high-bg px-3 py-2 text-[12px] leading-5 text-high-ink">
+      : isCompleted && <p className="rounded-md border border-high/30 bg-high-bg px-3 py-2 text-caption leading-5 text-high-ink">
         현재 파일을 제공할 수 없습니다. {AVAILABILITY_LABEL[item.availability]} 상태입니다.
       </p>}
 
@@ -322,69 +322,66 @@ function RequestRow({
   const detailName = `${baseTitle} · 요청 ID ${item.jobId} 상세 보기 (짧은 구분 #${shortId})`;
   return <li className={`grid gap-3 px-4 py-4 sm:grid-cols-[minmax(0,1.35fr)_minmax(135px,0.8fr)_minmax(145px,0.8fr)_minmax(145px,0.9fr)] sm:items-center ${selected ? "bg-sunk/70" : "bg-surface"}`}>
     <div className="min-w-0">
-      <p className="mb-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[10.5px] text-ink-muted"><span>요청</span><span aria-hidden="true">·</span><span>구분 #{shortId}{collided ? " · 같은 시각 다른 요청" : ""}{shortAmbiguous ? " · 짧은 구분도 같음" : ""}{selected ? " · 현재 선택됨" : ""}</span></p>
-      <p className="break-words text-left text-[13px] font-semibold text-ink-1">
+      <p className="mb-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-micro text-ink-muted"><span>요청</span><span aria-hidden="true">·</span><span>구분 #{shortId}{collided ? " · 같은 시각 다른 요청" : ""}{shortAmbiguous ? " · 짧은 구분도 같음" : ""}{selected ? " · 현재 선택됨" : ""}</span></p>
+      <p className="break-words text-left text-body font-semibold text-ink-1">
         {baseTitle}
       </p>
       <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 sm:hidden">
         {stateBadge(item.executionState)}
         {availabilityText(item.availability)}
       </div>
-      {sizeLine != null && <p className="mt-1 text-[11.5px] text-ink-2 sm:hidden">{sizeLine}</p>}
-      <p className="mt-1 break-words text-[11.5px] text-ink-2">{sourceLine}</p>
-      <p className="mt-2"><Link href={href} aria-current={selected ? "page" : undefined} aria-label={detailName} className="tap-target inline-flex min-h-11 items-center rounded-md border border-line-strong bg-surface px-3 text-[12.5px] font-semibold text-ink-1 hover:bg-sunk focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent sm:min-h-9">상세 보기</Link></p>
-      <details className="mt-1 text-[11.5px]">
-        <summary className="tap-target cursor-pointer font-semibold text-ink-muted">요청·원본 처리 상세 보기</summary>
+      {sizeLine != null && <p className="mt-1 text-caption text-ink-2 sm:hidden">{sizeLine}</p>}
+      <p className="mt-1 break-words text-caption text-ink-2">{sourceLine}</p>
+      <p className="mt-2"><Link href={href} aria-current={selected ? "page" : undefined} aria-label={detailName} className="tap-target inline-flex min-h-11 items-center rounded-md border border-line-strong bg-surface px-3 text-body font-semibold text-ink-1 hover:bg-sunk focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent sm:min-h-9">상세 보기</Link></p>
+      <Disclosure label="요청·원본 처리 상세" className="mt-1 text-caption">
         <div className="mt-1 flex flex-col gap-0.5 break-all border-l-2 border-line pl-2 text-ink-2">
           <p>요청 ID · {item.jobId}</p>
           <p>요청 구분 · #{shortId}{collided ? " · 같은 시각 다른 요청과 전체 ID로 구분" : ""}{shortAmbiguous ? " · 짧은 구분도 같아 전체 ID로 구분" : ""}</p>
           {rawSourceKind && <p>원본 종류(원문) · {rawSourceKind}</p>}
           <p>원본 assetRef · {item.assetRef}</p>
         </div>
-      </details>
+      </Disclosure>
     </div>
     <div>
-      <p className="mb-1 text-[10.5px] text-ink-muted sm:hidden">생성 시각</p>
-      <p className="text-[12px] text-ink-2">{formatKoreanDateTime(item.createdAt, { dateStyle: "medium", timeStyle: "short" })}</p>
+      <p className="mb-1 text-micro text-ink-muted sm:hidden">생성 시각</p>
+      <p className="text-caption text-ink-2">{formatKoreanDateTime(item.createdAt, { dateStyle: "medium", timeStyle: "short" })}</p>
     </div>
     <div className="hidden sm:block">
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
         {stateBadge(item.executionState)}
         {availabilityText(item.availability)}
       </div>
-      {sizeLine != null && <p className="mt-1 text-[11.5px] text-ink-2">{sizeLine}</p>}
+      {sizeLine != null && <p className="mt-1 text-caption text-ink-2">{sizeLine}</p>}
     </div>
     <div className="min-w-0">
-      <p className="mb-1 text-[10.5px] text-ink-muted sm:hidden">처리 사유</p>
+      <p className="mb-1 text-micro text-ink-muted sm:hidden">처리 사유</p>
       {item.reason
-        ? <p className="break-all font-mono text-[11.5px] text-ink-2">{item.reason}</p>
-        : <p className="text-[11.5px] text-ink-muted">기록 없음</p>}
+        ? <p className="break-all font-mono text-caption text-ink-2">{item.reason}</p>
+        : <p className="text-caption text-ink-muted">기록 없음</p>}
     </div>
   </li>;
 }
 
 function requestCreationHref(siteId: string, workAreaId?: string, assetRef?: string): string {
   const sitePath = `/sites/${encodeURIComponent(siteId)}`;
-  if (!workAreaId) return `${sitePath}/spatial-assets`;
-  const query = new URLSearchParams({ workAreaId });
+  if (!workAreaId) return `${sitePath}?panel=materials`;
+  const query = new URLSearchParams({ panel: "materials", workAreaId });
   // 정확한 자료가 있을 때만 정보 서랍을 연다 — 없으면 기본 A를 열어
   // 다른 자료의 요청 폼을 보여 주는 오해를 만들지 않는다.
   if (assetRef) {
     query.set("assetRef", assetRef);
     query.set("info", "1");
   }
-  return `${sitePath}/spatial-assets?${query.toString()}`;
+  return `${sitePath}?${query}`;
 }
 
 function RequestPageHeader({
   siteId,
-  siteName,
   workAreaId,
   assetRef,
   canRequestData,
 }: {
   siteId: string;
-  siteName: string;
   workAreaId?: string;
   /** 만료 미리보기에서 넘어온 정확한 자료 — 이력 페이지만 보고 끝나지 않게 한다. */
   assetRef?: string;
@@ -392,22 +389,19 @@ function RequestPageHeader({
 }) {
   const sitePath = `/sites/${encodeURIComponent(siteId)}`;
   const assetHref = requestCreationHref(siteId, workAreaId, assetRef);
-  return <header className="flex flex-col gap-3 border-b border-line pb-4 sm:flex-row sm:items-end sm:justify-between">
-    <div>
-      <p className="text-[12.5px] text-ink-2">{siteName} · 구역 자료</p>
-      <h2 className="mt-1 text-[22px] font-bold tracking-tight">구역 자료 준비</h2>
-      <p className="mt-1 max-w-3xl text-[13px] leading-5 text-ink-2">작업구역별로 요청한 자료의 준비 상태와 파일을 확인하세요. 자료 준비 완료는 정확도나 분석 사용 가능 여부를 보증하지 않습니다.</p>
-    </div>
-    <nav aria-label="구역 자료 준비 화면" className="flex flex-wrap gap-2">
-      {canRequestData && (
-        <Link href={assetHref} className="btn btn-primary min-h-11">
-          {assetRef ? "이 자료 새로 준비 요청" : "자료에서 새 준비 요청"}
+  return (
+    <PageHeader
+      title="구역 자료 준비"
+      headingLevel={2}
+      description="작업구역별 준비 상태와 요청한 파일을 확인하세요. 준비 완료는 정확도나 분석 적합성 판단과 별개입니다."
+      actions={<>
+        <Link href={assetHref} className={canRequestData ? "btn btn-primary" : "btn btn-quiet"}>
+          {canRequestData ? (assetRef ? "이 자료 새로 준비 요청" : "자료에서 새 준비 요청") : "등록 자료"}
         </Link>
-      )}
-      {!canRequestData && <Link href={assetHref} className="btn min-h-11">등록 자료</Link>}
-      <Link href={sitePath} className="btn min-h-11">현장으로 돌아가기</Link>
-    </nav>
-  </header>;
+        <Link href={sitePath} className="btn btn-quiet">공간으로 돌아가기</Link>
+      </>}
+    />
+  );
 }
 
 export default async function SpatialDataRequestsPage({
@@ -438,7 +432,7 @@ export default async function SpatialDataRequestsPage({
 
   const basePath = `/sites/${encodeURIComponent(siteId)}/spatial-data-requests`;
   const header = (workAreaId?: string, assetRef?: string, canRequestData = false) =>
-    <RequestPageHeader siteId={siteId} siteName={site.name} workAreaId={workAreaId} assetRef={assetRef} canRequestData={canRequestData} />;
+    <RequestPageHeader siteId={siteId} workAreaId={workAreaId} assetRef={assetRef} canRequestData={canRequestData} />;
   if (!session.principal.permissions.includes("SPATIAL_DATA_READ")) {
     return <div className="mx-auto flex max-w-5xl flex-col gap-4 p-4 sm:p-5">
       {header()}
@@ -559,9 +553,7 @@ export default async function SpatialDataRequestsPage({
   const frame = <SiteHeader
     site={site}
     selectedEpochId={null}
-    tab="materials"
-    canCreateWorkOrder={session.principal.permissions.includes("WORK_ORDERS_WRITE")}
-    canEditAoi={session.principal.permissions.includes("SITES_WRITE")}
+    tab="space"
     scopedWorkAreaId={workAreaId ?? null}
   />;
   return <div className="flex flex-col">
@@ -571,18 +563,18 @@ export default async function SpatialDataRequestsPage({
 
     <section className="rounded-lg border border-line bg-surface px-4 py-3">
       <form action={basePath} method="get" className="flex flex-wrap items-end gap-2">
-        <label className="flex min-w-56 flex-col gap-1 text-[12px] font-semibold" htmlFor="spatial-request-work-area">작업구역 선택
+        <label className="flex min-w-56 flex-col gap-1 text-caption font-semibold" htmlFor="spatial-request-work-area">작업구역 선택
           <WorkAreaHistorySelect key={workAreaId ?? ""} value={workAreaId ?? ""}>
             <option value="" disabled>작업구역을 선택하세요</option>
             {areas?.workAreas.map((area) => <option key={area.workAreaId} value={area.workAreaId}>{area.name}{area.status === "ARCHIVED" ? " · 보관됨" : ""}</option>)}
           </WorkAreaHistorySelect>
         </label>
-        <button className="btn btn-primary min-h-11" type="submit">요청 이력 불러오기</button>
+        <button className="btn" type="submit">요청 이력 불러오기</button>
       </form>
-      <p id="spatial-request-work-area-help" className="mt-2 text-[12px] leading-5 text-ink-muted">구역을 바꾸면 요청 이력을 불러옵니다. 자동으로 열리지 않으면 조회 버튼을 누르세요.</p>
-      {areas?.workAreas.length === 0 && <p className="mt-3 text-[12.5px] leading-5 text-ink-2">요청 이력을 조회할 작업구역이 없습니다. 현장 담당자에게 작업구역 등록 여부를 확인하세요.</p>}
-      {!workAreaId && <p className="mt-3 text-[12.5px] leading-5 text-ink-2">작업구역을 선택해 해당 구역의 자료 준비 요청을 확인하세요.</p>}
-      {workAreaId && selectedArea && <p className="mt-2 text-[12px] text-ink-muted">선택: {selectedArea.name}{selectedArea.status === "ARCHIVED" ? " · 보관됨" : ""} · 페이지당 최대 50건</p>}
+      <p id="spatial-request-work-area-help" className="mt-2 text-caption leading-5 text-ink-muted">구역을 바꾸면 요청 이력을 불러옵니다. 자동으로 열리지 않으면 조회 버튼을 누르세요.</p>
+      {areas?.workAreas.length === 0 && <p className="mt-3 text-body leading-5 text-ink-2">요청 이력을 조회할 작업구역이 없습니다. 현장 담당자에게 작업구역 등록 여부를 확인하세요.</p>}
+      {!workAreaId && <p className="mt-3 text-body leading-5 text-ink-2">작업구역을 선택해 해당 구역의 자료 준비 요청을 확인하세요.</p>}
+      {workAreaId && selectedArea && <p className="mt-2 text-caption text-ink-muted">선택: {selectedArea.name}{selectedArea.status === "ARCHIVED" ? " · 보관됨" : ""} · 페이지당 최대 50건</p>}
     </section>
 
     {pageError !== null && <div>{errorView(pageError, "list", siteId)}</div>}
@@ -595,8 +587,8 @@ export default async function SpatialDataRequestsPage({
 
       <section className="overflow-hidden rounded-xl border border-line bg-surface">
         <header className="flex flex-wrap items-end justify-between gap-2 border-b border-line px-4 py-3">
-          <div><h2 className="text-[15px] font-bold">요청 이력</h2><p className="mt-1 text-[11.5px] text-ink-muted">현재 페이지 {formatCountKo(scopedItems.length)}건 · 생성 시각은 Core 기록{hasRecordedSize ? " · 크기는 준비 당시 개별 파일 크기이며 누적 사용량이나 비용이 아닙니다" : ""}</p></div>
-          <span className="text-[11px] text-ink-muted">최신 상태를 다시 조회하려면 페이지를 새로 고치세요.</span>
+          <div><h2 className="text-lead font-bold">요청 이력</h2><p className="mt-1 text-caption text-ink-muted">현재 페이지 {formatCountKo(scopedItems.length)}건 · 생성 시각은 Core 기록{hasRecordedSize ? " · 크기는 준비 당시 개별 파일 크기이며 누적 사용량이나 비용이 아닙니다" : ""}</p></div>
+          <span className="text-micro text-ink-muted">최신 상태를 다시 조회하려면 페이지를 새로 고치세요.</span>
         </header>
         {scopedItems.length === 0
           ? <div className="p-4"><EmptyState
@@ -613,7 +605,7 @@ export default async function SpatialDataRequestsPage({
               : undefined}
           /></div>
           : <>
-            <div className="hidden border-b border-line bg-sunk/60 px-4 py-2 text-[10.5px] font-semibold text-ink-muted sm:grid sm:grid-cols-[minmax(0,1.35fr)_minmax(135px,0.8fr)_minmax(145px,0.8fr)_minmax(145px,0.9fr)]"><span>요청</span><span>생성 시각</span><span>상태 · 접근 가능 여부 · 준비 당시 크기</span><span>처리 사유</span></div>
+            <div className="hidden border-b border-line bg-sunk/60 px-4 py-2 text-micro font-semibold text-ink-muted sm:grid sm:grid-cols-[minmax(0,1.35fr)_minmax(135px,0.8fr)_minmax(145px,0.8fr)_minmax(145px,0.9fr)]"><span>요청</span><span>생성 시각</span><span>상태 · 접근 가능 여부 · 준비 당시 크기</span><span>처리 사유</span></div>
             <ul className="divide-y divide-line">
               {scopedItems.map((item, position) => REQUEST_ID_PATTERN.test(item.jobId)
                 ? <RequestRow key={item.jobId} item={item} siteId={siteId} workAreaId={workAreaId} cursor={cursor} selected={requestId === item.jobId} title={rowPresentations[position]!.title} sourceLine={rowPresentations[position]!.sourceLine} rawSourceKind={rowPresentations[position]!.rawSourceKind} shortAmbiguous={(shortIdCounts.get(shortRequestId(item.jobId)) ?? 0) > 1} />

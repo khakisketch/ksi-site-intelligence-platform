@@ -252,7 +252,7 @@ describe("spatial data request Console surface", () => {
     expect(html).toContain("지표면 높이 자료(DSM) · 2026. 10. 9. 14:00–14:30 촬영");
     expect(html).toContain("원본 파일 · north-dsm.tif");
     expect(html).not.toContain("north-dsm.tif · 지표면 높이 자료(DSM)");
-    expect(html).toContain("요청·원본 처리 상세 보기");
+    expect(html).toContain("요청·원본 처리 상세");
     expect(html).toContain(requestId);
   });
 
@@ -261,7 +261,7 @@ describe("spatial data request Console surface", () => {
     expect(html).toContain("mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 sm:hidden");
     expect(html).toContain("hidden sm:block");
     const mobileStatus = html.indexOf("mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 sm:hidden");
-    const technicalDetails = html.indexOf("요청·원본 처리 상세 보기");
+    const technicalDetails = html.indexOf("요청·원본 처리 상세");
     expect(mobileStatus).toBeGreaterThan(-1);
     expect(technicalDetails).toBeGreaterThan(-1);
     expect(mobileStatus).toBeLessThan(technicalDetails);
@@ -318,7 +318,7 @@ describe("spatial data request Console surface", () => {
   it("offers a real create action from the request history instead of a dead end", async () => {
     const html = renderToStaticMarkup(await callPage({ workAreaId: "area-1" }));
     expect(html).toContain("자료에서 새 준비 요청");
-    expect(html).toContain("/sites/site-1/spatial-assets?workAreaId=area-1");
+    expect(html).toContain("/sites/site-1?panel=materials&amp;workAreaId=area-1");
     // 정확한 자료 없이 기본 A의 정보 서랍을 열지 않는다.
     expect(html).not.toContain("info=1");
   });

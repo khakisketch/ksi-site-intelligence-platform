@@ -170,7 +170,7 @@ describe("mosaic absent-pixel state from current jobs", () => {
 
     expect(screen.getByText(/미리보기 보관 기간이 끝났습니다/)).toBeTruthy();
     // 범위 도식은 닫힌 펼침 뒤에만 둔다 — 사진 행세를 하지 않는다.
-    expect(screen.getByText("자료 범위 보기").closest("details")?.open).toBe(false);
+    expect(screen.getByText("자료 범위 상세").closest("details")?.open).toBe(false);
     expect(screen.getByText("범위 도식 · 사진 아님")).toBeTruthy();
     // Scoped to this observation: no blanket claim about every artifact.
     expect(screen.queryByText(/모든 자료/)).toBeNull();
@@ -201,7 +201,7 @@ describe("mosaic absent-pixel state from current jobs", () => {
     expect(screen.getByText("100 – 500")).toBeTruthy();
     expect(screen.getByText("200 – 500")).toBeTruthy();
     expect(screen.queryByText("0 – 1,000")).toBeNull();
-    expect(screen.getByText("좌표·검사 격자 정보").closest("details")?.open).toBe(false);
+    expect(screen.getByText("좌표·검사 격자 상세").closest("details")?.open).toBe(false);
   });
 
   it("shows queued windows as a compact preparing state, never as an empty canvas", () => {
@@ -218,7 +218,7 @@ describe("mosaic absent-pixel state from current jobs", () => {
     expect(screen.queryByRole("button", { name: "전체 보기" })).toBeNull();
     expect(screen.queryByText(/보관 기간이 끝났습니다/)).toBeNull();
     // Preparing is not an absence: extent stays behind its closed disclosure, no empty copy.
-    expect(screen.getByText("자료 범위 보기").closest("details")?.open).toBe(false);
+    expect(screen.getByText("자료 범위 상세").closest("details")?.open).toBe(false);
     expect(screen.queryByText("준비된 표시 자료가 없습니다.")).toBeNull();
     // Explicit GET-only retry stays reachable; nothing is auto-prepared.
     expect(screen.getByRole("button", { name: "준비 상태 다시 확인" })).toBeTruthy();
@@ -256,20 +256,21 @@ describe("mosaic absent-pixel state from current jobs", () => {
     // 1차 회복은 선택한 자료의 받기 요청으로 바로 연결한다 — 이력 목록이 아니다.
     const direct = screen.getByRole("link", { name: "선택한 자료에서 다시 준비" });
     expect(direct.getAttribute("href")).toBe(
-      "/sites/site-1/spatial-assets?workAreaId=area-1&assetRef=ksa-v1-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb#asset-ksa-v1-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "/sites/site-1?panel=materials&workAreaId=area-1&assetRef=ksa-v1-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb&info=1#asset-ksa-v1-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
     );
     // 요청 이력은 보조 안내로만 둔다.
     expect(screen.getByText("요청 이력은 구역 자료 준비에서 확인합니다.")).toBeTruthy();
-    const folded = screen.getByText("상세·준비").closest("details")!;
-    expect(folded.open).toBe(false);
+    const trigger = screen.getByRole("button", { name: "보기 도구" });
+    const folded = document.getElementById(trigger.getAttribute("popovertarget")!)!;
+    expect(folded.getAttribute("popover")).toBe("auto");
     // 명시적 다시 준비는 권한·노트북 게이트 그대로 접힘 안에만 둔다.
     expect(folded.querySelector('button')).not.toBeNull();
     expect(folded.textContent).toContain("미리보기 다시 준비");
     // 펼침 요약은 하나로 둔다 — 범위·준비 과정은 그 안의 절 제목으로만 둔다.
-    expect(screen.getAllByText("상세·준비")).toHaveLength(1);
-    expect(screen.queryByText("자료 범위 보기")).toBeNull();
-    expect(screen.queryByText("준비 과정·상세 상태", { selector: "summary" })).toBeNull();
-    expect(screen.queryByText("자료 범위 보기")).toBeNull();
+    expect(screen.getAllByText("보기 도구")).toHaveLength(1);
+    expect(screen.queryByText("자료 범위 상세")).toBeNull();
+    expect(screen.queryByText("준비 상태 상세", { selector: "summary" })).toBeNull();
+    expect(screen.queryByText("자료 범위 상세")).toBeNull();
     expect(fetchMock).not.toHaveBeenCalled();
   });
 

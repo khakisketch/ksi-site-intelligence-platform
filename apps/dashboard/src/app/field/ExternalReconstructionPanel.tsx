@@ -13,6 +13,7 @@ import {
   type TrustedExternalResultLink,
 } from "@/app/field/ExternalResultWorkflowPanel";
 import { putExternalReconstructionFile } from "@/lib/external-reconstruction-upload";
+import { isAccountContinuityMismatch } from "@/lib/account-continuity-mismatch";
 import { describeExternalBasenameIssue } from "@/lib/external-reconstruction-basename";
 import { formatKoreanDateTime } from "@/lib/datetime";
 import { formatBytesKo, formatNumberKo } from "@/lib/number-format";
@@ -92,8 +93,8 @@ function inspectionKey(revision: Revision): string { return `${revision.submissi
 const CONTINUITY_FINGERPRINT_PATTERN = /^v1-[0-9a-f]{64}(?![\s\S])/;
 // 서버 전용 모듈을 클라이언트에 들여오지 않으므로 같은 문자열을 둔다.
 const CONTINUITY_FINGERPRINT_HEADER = "x-ksi-continuity-fingerprint";
-// BFF 계정 연속성 거부 코드 — 관측 등록 폼과 같은 값만 비교한다.
-const ACCOUNT_CONTINUITY_MISMATCH = "ACCOUNT_CONTINUITY_MISMATCH";
+// BFF 계정 연속성 거부 탐지는 `@/lib/account-continuity-mismatch` 공유 모듈을
+// 쓴다. 서버 전용 모듈을 클라이언트에 들여오지 않으므로 문자열 복제를 두지 않는다.
 // Core revision 주소의 화면 측 모양 — 목록·상세 진입이 이미 쓰는 패턴과 같다.
 // Core 계약의 digest 표면(_DIGEST_PATTERN): submissionDigest·manifestDigest는
 // sealed 기록에만 적히며 항상 `sha256:` + 64 hex다. 없거나 어긋나면 같은
@@ -101,11 +102,6 @@ const ACCOUNT_CONTINUITY_MISMATCH = "ACCOUNT_CONTINUITY_MISMATCH";
 const SUBMISSION_REF_PATTERN = /^ers-v1-[0-9a-f]{64}$/;
 const DIGEST_PATTERN = /^sha256:[0-9a-f]{64}$/;
 
-function responseCode(value: unknown): string {
-  return value && typeof value === "object" && "code" in value
-    ? String((value as { code?: unknown }).code ?? "")
-    : "";
-}
 
 // 계정이 바뀌어 같은 요청을 다시 보내지 않을 때의 안내 — 원래 시도·파일·키는
 // 그대로 두고 같은 화면의 같은 시도로 돌아오게 한다. 중복 방지나 권한 판정을
@@ -1047,10 +1043,9 @@ function ExternalReconstructionPanelState({ workOrderId, siteId = "", expectedEp
         declarationHeaders[CONTINUITY_FINGERPRINT_HEADER] = submitContinuity;
         const response = await fetch(`/api/observation-work-orders/${encodeURIComponent(workOrderId)}/external-reconstruction-submissions-v3`, { method: "POST", headers: declarationHeaders, body: JSON.stringify(attempt!.requestBody), signal: controller.signal });
         if (!response.ok) {
-          const failureCode = responseCode(await response.json().catch(() => null));
           // 계정 연속성 거부 — 원래 시도를 버리지 않고 같은 화면의 같은
           // 시도로 돌아오게 둔다. 첫 시도·재시도를 가리지 않는다.
-          if (response.status === 409 && failureCode === ACCOUNT_CONTINUITY_MISMATCH) {
+          if (isAccountContinuityMismatch(response.status, await response.json().catch(() => null))) {
             say(accountMismatchMessage(), true);
             return;
           }
@@ -1119,7 +1114,7 @@ function ExternalReconstructionPanelState({ workOrderId, siteId = "", expectedEp
       grantHeaders[CONTINUITY_FINGERPRINT_HEADER] = submitContinuity;
       const grantsResponse = await fetch(`/api/observation-work-orders/${encodeURIComponent(workOrderId)}/external-reconstruction-submissions/${encodeURIComponent(revision.submissionRef)}/revisions/${revision.submission.revision}/upload-grants`, { method: "POST", headers: grantHeaders, signal: controller.signal });
       if (!grantsResponse.ok) {
-        if (grantsResponse.status === 409 && responseCode(await grantsResponse.json().catch(() => null)) === ACCOUNT_CONTINUITY_MISMATCH) {
+        if (isAccountContinuityMismatch(grantsResponse.status, await grantsResponse.json().catch(() => null))) {
           say(accountMismatchMessage(), true);
           return;
         }
@@ -1156,7 +1151,7 @@ function ExternalReconstructionPanelState({ workOrderId, siteId = "", expectedEp
       const seal = await fetch(`/api/observation-work-orders/${encodeURIComponent(workOrderId)}/external-reconstruction-submissions/${encodeURIComponent(revision.submissionRef)}/revisions/${revision.submission.revision}/seal`, { method: "POST", headers: sealHeaders, signal: controller.signal });
       const sealPayload: unknown = await seal.json().catch(() => null);
       if (!seal.ok) {
-        if (seal.status === 409 && responseCode(sealPayload) === ACCOUNT_CONTINUITY_MISMATCH) {
+        if (isAccountContinuityMismatch(seal.status, sealPayload)) {
           say(accountMismatchMessage(), true);
           return;
         }

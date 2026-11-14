@@ -50,7 +50,13 @@
     ".next-operator-language/types/**/*.ts",
     ".next-operator-language/dev/types/**/*.ts",
     ".next-site-ia/types/**/*.ts",
-    ".next-site-ia/dev/types/**/*.ts"
+    ".next-site-ia/dev/types/**/*.ts",
+    ".next-uiux-goal/types/**/*.ts",
+    ".next-uiux-goal/dev/types/**/*.ts",
+    ".next-uiux-followthrough/types/**/*.ts",
+    ".next-uiux-followthrough/dev/types/**/*.ts",
+    ".next-uiux-run/types/**/*.ts",
+    ".next-uiux-run/dev/types/**/*.ts"
   ],
   "exclude": [
     "node_modules",

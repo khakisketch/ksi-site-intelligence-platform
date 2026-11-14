@@ -38,7 +38,7 @@ export function LiveIndicator() {
         if (paused) setElapsed(0);
       }}
       title="이 화면이 마지막으로 서버 데이터를 받은 뒤 흐른 시간입니다(근사). 눌러서 갱신 표시를 끄거나 켭니다."
-      className="tap-target hidden items-center gap-1.5 rounded-md border border-line bg-surface px-2.5 text-[12px] text-ink-2 hover:bg-sunk sm:inline-flex"
+      className="tap-target hidden items-center gap-1.5 rounded-md border border-line bg-surface px-2.5 text-caption text-ink-2 hover:bg-sunk sm:inline-flex"
     >
       <span className="relative grid size-[7px] flex-none place-items-center">
         <span className={`absolute inset-0 rounded-full ${status.dotClass}`} />

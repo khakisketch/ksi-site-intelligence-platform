@@ -17,7 +17,7 @@ describe("external report followup trace", () => {
     expect(screen.getByRole("link", { name: "결과 검토와 후속 작업" }).getAttribute("href")).toContain("/field/work-orders/current-order?reportRef=");
     expect(screen.getByRole("link", { name: "기준 작업 보기" }).getAttribute("href")).toBe("/field/work-orders/source-order");
     expect(screen.getByRole("link", { name: "승인된 후속 작업 보기" }).getAttribute("href")).toBe("/field/work-orders/successor-order");
-    expect(screen.getByText("업무 종료")).toBeTruthy();
+    expect(screen.getByText("작업 종료")).toBeTruthy();
     expect(screen.getByText("현장 확인 완료")).toBeTruthy();
   });
 
@@ -41,7 +41,7 @@ describe("external report followup trace", () => {
     expect(screen.getByRole("link", { name: "결과 검토와 후속 작업" }).getAttribute("href")).toContain("/field/work-orders/current-order?reportRef=");
     expect(screen.queryByRole("link", { name: "기준 작업 보기" })).toBeNull();
     expect(screen.getByRole("link", { name: "승인된 후속 작업 보기" }).getAttribute("href")).toBe("/field/work-orders/successor-order");
-    expect(screen.getByText("업무 종료")).toBeTruthy();
+    expect(screen.getByText("작업 종료")).toBeTruthy();
     expect(document.body.textContent ?? "").not.toContain("준비 중");
     expect(document.body.innerHTML).not.toContain("work-orders/null");
   });

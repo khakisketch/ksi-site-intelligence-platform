@@ -1,3 +1,4 @@
+import { Disclosure } from "@/components/ui/Disclosure";
 import Link from "next/link";
 
 import type { AnalysisEvidencePage, AnalysisView } from "@/lib/core-api/analysis";
@@ -33,8 +34,12 @@ export function AnalysisRecordReuse({
     { label: "현재 입력", title: inputLabels?.current, selector: record.current },
   ];
 
-  return <details className="rounded-lg border border-line bg-surface px-4 py-3 text-[12px] leading-5 text-ink-2">
-    <summary className="tap-target cursor-pointer font-semibold text-ink-1">결과 계보·재사용 정보</summary>
+  return <section className="rounded-lg border border-line bg-surface px-4 py-3 text-caption text-ink-2" aria-label="결과 계보와 재사용">
+    <div className="flex flex-wrap items-center justify-between gap-2">
+      <h3 className="text-body font-bold text-ink-1">결과 계보와 재사용</h3>
+      <Link href={recordHref} className="btn">이 분석 기록의 링크 열기</Link>
+    </div>
+    <Disclosure label="결과 계보·식별 상세" className="mt-2">
     <div className="mt-3 flex min-w-0 flex-col gap-3">
       <p>이 기록의 원래 입력과 결과를 확인합니다. 탐색 중인 자료나 화면 범위로 계산 입력을 바꾸지 않습니다.</p>
       <dl className="grid gap-3 sm:grid-cols-2">
@@ -58,8 +63,7 @@ export function AnalysisRecordReuse({
         <div className="min-w-0"><dt className="text-ink-muted">현재 근거 목록 확인값</dt><dd className="break-all"><code>{record.evidenceDigest}</code></dd></div>
       </dl>
 
-      {calculation ? <details className="border-t border-line pt-2">
-        <summary className="tap-target cursor-pointer font-semibold">계산 조건·실행 버전</summary>
+      {calculation ? <Disclosure label="계산 조건·실행 버전 상세" className="border-t border-line pt-2">
         <dl className="mt-2 grid gap-3 sm:grid-cols-2">
           <div className="min-w-0"><dt className="text-ink-muted">계산 기록</dt><dd className="break-all"><code>{calculation.calculationId}</code></dd></div>
           <div className="min-w-0"><dt className="text-ink-muted">작업구역 정의 확인값</dt><dd className="break-all"><code>{calculation.workAreaDefinitionDigest}</code></dd></div>
@@ -75,26 +79,25 @@ export function AnalysisRecordReuse({
           <div className="min-w-0"><dt className="text-ink-muted">실행 이미지 확인값</dt><dd className="break-all"><code>{calculation.runtime.runtimeImageOciDigest}</code></dd></div>
           <div className="min-w-0"><dt className="text-ink-muted">의존성 버전 확인값</dt><dd className="break-all"><code>{calculation.runtime.dependencyLockDigest}</code></dd></div>
         </dl>
-      </details> : <p className="border-t border-line pt-2">
+      </Disclosure> : <p className="border-t border-line pt-2">
         {evidencePages.length > 0 && !evidenceMatches
           ? "불러온 근거의 개정이 현재 기록과 달라 계산 조건을 합쳐 표시하지 않았습니다. 근거를 다시 확인하세요."
           : "이 기록에 맞는 계산 조건을 아직 불러오지 못했습니다. 이 화면의 ‘근거 확인’에서 확인하세요."}
       </p>}
 
       <div className="border-t border-line pt-2">
-        <Link href={recordHref} className="tap-target inline-flex font-semibold text-ink-1 underline">이 분석 기록의 링크 열기</Link>
-        <p className="mt-1">링크 주소를 복사해 같은 기록을 다시 열 수 있습니다. 링크 자체에 열람 권한은 없으며 로그인과 현장 접근 권한을 다시 확인합니다.</p>
+        <p>복사한 주소로 같은 기록을 열 수 있습니다. 로그인과 현장 접근 권한을 확인합니다.</p>
         <p className="mt-1">기록된 계산 결과와 현재 활용 가능 여부는 별개입니다. 이후 근거 평가·검토 상태는 바뀔 수 있으며, 이 정보는 정확도·측량·정산 승인이 아닙니다.</p>
       </div>
-      <details className="border-t border-line pt-2">
-        <summary className="tap-target cursor-pointer font-semibold">API·MCP 조회 참고</summary>
+      <Disclosure label="API·MCP 조회 상세" className="border-t border-line pt-2">
         <p className="mt-2">아래는 같은 분석 기록을 가리키는 기존 Core API 경로입니다. Console 로그인 세션을 외부 도구의 인증으로 대신 쓰지 않습니다. 서버 주소·API 인증·현장 권한은 별도로 설정해야 합니다.</p>
         <p className="mt-2 break-all"><code>GET {apiPath}</code></p>
         <p className="mt-1 break-all"><code>GET {apiPath}/evidence</code></p>
         <p className="mt-2">기존 로컬 stdio MCP 어댑터의 조회 도구에 사용할 식별 정보:</p>
         <p className="mt-1 break-all"><code>ksi_get_analysis</code> · <code>{JSON.stringify({ siteId: record.siteId, analysisId: record.analysisId })}</code></p>
         <p className="mt-2">MCP는 전용 신원과 별도 현장 AI 반출 동의를 요구합니다. 이 화면은 연결·반출 동의를 설정하거나 허용 여부를 판정하지 않으며, 외부 클라이언트의 연결 성공을 보증하지 않습니다.</p>
-      </details>
+      </Disclosure>
     </div>
-  </details>;
+    </Disclosure>
+  </section>;
 }

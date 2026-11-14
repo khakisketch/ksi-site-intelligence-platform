@@ -94,7 +94,7 @@ export interface WorkQueueRowContext {
   updatedAt: string;
 }
 
-/** 작업 큐 행의 맥락 한 줄: 현장 · 구역 · 정식 회차 · 갱신 시각. */
+/** 작업 목록 행의 맥락 한 줄: 현장 · 구역 · 정식 회차 · 갱신 시각. */
 export function formatWorkQueueRowContext(context: WorkQueueRowContext): string {
   const site = context.siteName ?? SITE_NAME_UNAVAILABLE;
   const areas = formatWorkAreaSummary(context.workAreaIds, context.nameById);
@@ -214,7 +214,7 @@ export interface SplitInboxItemContext {
 }
 
 /**
- * 받은 업무 항목의 맥락 두 줄. 작업 이름과 현장을 분리해 긴 이름이 현장
+ * 받은 작업 항목의 맥락 두 줄. 작업 이름과 현장을 분리해 긴 이름이 현장
  * 식별자를 잘라내지 않게 한다. 확인할 수 있는 이름만 쓰고, 없으면 null을
  * 돌려줘 호출자가 ID를 산문으로 찍지 않게 한다.
  */

@@ -178,7 +178,19 @@ def lease_raw_fields(*, lease: JobLease, mode: LeaseMode) -> dict[str, object]:
     }
 
 
+# Default lease lifetime shared by the staying worker-led ledgers
+# (comparison, design-conformance, region-extraction).  Task 2 moved it here
+# from the retired processing-jobs execution surface: it is lease
+# infrastructure, not reconstruction execution authority.
+#
+# "작업이 끝나는 데 걸리는 시간"이 아니라 **"워커가 죽었다고 판정하기까지
+# 기다리는 시간"**이다 — 살아 있는 워커는 갱신(heartbeat)으로 계속 연장한다.
+# 15분은 그 사이의 운용값이다.
+DEFAULT_LEASE_TTL = timedelta(minutes=15)
+
+
 __all__ = [
+    "DEFAULT_LEASE_TTL",
     "JobLease",
     "LeaseDenialReason",
     "LeaseFence",

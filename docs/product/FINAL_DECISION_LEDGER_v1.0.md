@@ -119,7 +119,7 @@
   부족은 의존하는 주장만 제한한다. 원본 미업로드만으로 정량 사용을 영구 금지하지
   않는다. 형식·실제 export 호환성·검증 정책은 후속 명세/수용 대상이다. bounded Core
   ingress API의 local software evidence는
-  [`audit/EXTERNAL_RECONSTRUCTION_INGRESS_API_VERIFICATION.md`](../audit/EXTERNAL_RECONSTRUCTION_INGRESS_API_VERIFICATION.md)에,
+  당시 로컬 검증에,
   현재 product/goal 상태는 [`superpowers/product-state.md`](../superpowers/product-state.md)와
   그 named plan ledger에 기록된다.
   이는 semantic analysis, release/device/vendor/deployment acceptance를 뜻하지 않는다

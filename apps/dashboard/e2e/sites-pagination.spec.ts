@@ -41,7 +41,8 @@ test("실제 현장4개씩 나누고 등록 진입은 머리말에만 둔다", a
   const finalId = await cards(page).first().getAttribute("data-site-card");
   expect(new Set([...firstIds, finalId]).size).toBe(5);
   await expect(pager(page).getByText("2", { exact: true })).toHaveAttribute("aria-current", "page");
-  await expect(page.getByRole("heading", { name: "현장", exact: true, level: 2 })).toBeInViewport();
+  await expect(root(page).getByRole("heading", { name: "현장", exact: true, level: 2 })).toBeFocused();
+  await expect(cards(page).first()).toBeInViewport();
   await capture(page, `page2-create-${testInfo.project.name}`);
   await page.reload();
   await expect(root(page)).toHaveAttribute("data-site-page", "2");

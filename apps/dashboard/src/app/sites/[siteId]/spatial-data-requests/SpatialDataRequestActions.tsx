@@ -91,8 +91,8 @@ export function SpatialDataRequestActions({
   };
 
   return <section className="rounded-lg border border-line bg-surface px-4 py-3">
-    <h3 className="text-[13px] font-semibold">요청 취소</h3>
-    <p className="mt-1 text-[12px] leading-5 text-ink-2">대기 또는 처리 중인 요청만 Core에서 취소할 수 있습니다. 상태가 바뀌었으면 Core 응답을 다시 확인합니다.</p>
+    <h3 className="text-body font-semibold">요청 취소</h3>
+    <p className="mt-1 text-caption leading-5 text-ink-2">대기 또는 처리 중인 요청만 Core에서 취소할 수 있습니다. 상태가 바뀌었으면 Core 응답을 다시 확인합니다.</p>
     <button className="btn btn-danger mt-3 min-h-11" type="button" disabled={busy || isRefreshing} onClick={() => { setMessage(null); setConfirming(true); }}>요청 취소</button>
     <ConfirmDialog
       open={confirming}
@@ -103,6 +103,6 @@ export function SpatialDataRequestActions({
       onCancel={() => { if (!busy) setConfirming(false); }}
       onConfirm={() => void cancel()}
     />
-    {message && <p className="mt-3 rounded-md border border-line bg-sunk px-3 py-2 text-[12px] leading-5 text-ink-2" role="status" aria-live="polite">{message}</p>}
+    {message && <p className="mt-3 rounded-md border border-line bg-sunk px-3 py-2 text-caption leading-5 text-ink-2" role="status" aria-live="polite">{message}</p>}
   </section>;
 }

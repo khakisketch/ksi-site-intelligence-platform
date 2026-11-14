@@ -14,9 +14,9 @@ describe("정적 경로", () => {
     ["/", "홈"],
     ["/sites", "현장"],
     ["/sites/new", "현장 등록"],
-    ["/field", "업무"],
+    ["/field", "작업"],
     ["/field/new", "관측 자료 등록"],
-    ["/field/inbox", "받은 업무"],
+    ["/field/inbox", "받은 작업"],
     ["/field/team", "팀 관리"],
     ["/more", "내 계정"],
   ])("%s → %s", (pathname, expected) => {
@@ -26,16 +26,21 @@ describe("정적 경로", () => {
 
 describe("동적 경로", () => {
   it("상세 화면은 대상 이름이 아니라 종류를 적는다 — 이름은 본문 h1 이 갖는다", () => {
-    expect(resolvePageTitle("/sites/SITE-1")).toBe("현장 상세");
-    expect(resolvePageTitle("/field/work-orders/WO-1")).toBe("현장 작업");
+    expect(resolvePageTitle("/sites/SITE-1")).toBe("공간");
+    expect(resolvePageTitle("/field/work-orders/WO-1")).toBe("작업 상세");
     expect(resolvePageTitle("/sites/SITE-1/observations/new")).toBe("관측 자료 등록");
-    expect(resolvePageTitle("/sites/SITE-1/observations")).toBe("외부 비교 기록");
+    expect(resolvePageTitle("/sites/SITE-1/observations")).toBe("분석");
     expect(resolvePageTitle("/sites/SITE-1/observations/external-relative-volume-report-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")).toBe("외부 비교 결과");
-    expect(resolvePageTitle("/sites/SITE-1/analysis")).toBe("분석 기록·검토");
-    expect(resolvePageTitle("/sites/SITE-1/analysis/")).toBe("분석 기록·검토");
+    expect(resolvePageTitle("/sites/SITE-1/analysis")).toBe("분석");
+    expect(resolvePageTitle("/sites/SITE-1/analysis/")).toBe("분석");
     expect(resolvePageTitle("/sites/SITE-1/ai")).toBe("");
     expect(resolvePageTitle("/sites/SITE-1/surveys/new")).toBe("");
     expect(resolvePageTitle("/sites/SITE-1/design")).toBe("");
+  });
+
+  it("query navigation uses the current result or settings title", () => {
+    expect(resolvePageTitle("/sites/SITE-1", new URLSearchParams("mode=results"))).toBe("분석 결과");
+    expect(resolvePageTitle("/sites/SITE-1", new URLSearchParams("section=manage"))).toBe("현장 설정");
   });
 
   it("작업구역(M4-C)도 마찬가지다 — 패턴이 없으면 topbar 가 제목을 잃는다", () => {
@@ -44,14 +49,14 @@ describe("동적 경로", () => {
   });
 
   it("공간 자산 화면도 접근 가능한 상태와 현장 거부 상태에서 같은 제목을 유지한다", () => {
-    expect(resolvePageTitle("/sites/SITE-1/spatial-assets")).toBe("등록 자료");
-    expect(resolvePageTitle("/sites/SITE-1/spatial-assets/")).toBe("등록 자료");
+    expect(resolvePageTitle("/sites/SITE-1/spatial-assets")).toBe("공간");
+    expect(resolvePageTitle("/sites/SITE-1/spatial-assets/")).toBe("공간");
     expect(resolvePageTitle("/sites/SITE-1/spatial-data-requests")).toBe("구역 자료 준비");
     expect(resolvePageTitle("/sites/SITE-1/spatial-data-requests/")).toBe("구역 자료 준비");
   });
 
   it("후행 슬래시가 있어도 같은 제목이다", () => {
-    expect(resolvePageTitle("/sites/SITE-1/")).toBe("현장 상세");
+    expect(resolvePageTitle("/sites/SITE-1/")).toBe("공간");
     expect(resolvePageTitle("/sites/SITE-1/surveys/new/")).toBe("");
   });
 

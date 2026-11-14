@@ -42,9 +42,9 @@ export function SiteListDesktopCards({
         <h2 id={headingId} className="sr-only">
           현장
         </h2>
-        <span className="text-[11.5px] text-ink-muted">{meta}</span>
+        <span className="text-caption text-ink-muted">{meta}</span>
       </div>
-      <div className="grid w-full gap-4 lg:grid-cols-2 2xl:grid-cols-3">
+      <div className="grid w-full gap-4 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
       {rows.map((row) => <SiteDirectoryCard key={row.site.siteId} row={row} sameName={sameNameSites.has(row.site.name)} />)}
       {trailing}
       </div>

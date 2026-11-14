@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 from collections.abc import Callable
+from dataclasses import replace
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -167,14 +168,17 @@ def _bound_policy(
     *,
     permitted_subject: SealedExternalSubjectV1 | None = None,
     max_deadline_seconds: float | None = None,
+    max_queue_depth: int | None = None,
 ) -> tuple[ExternalValidationPolicyV1, _Authority]:
     template = policy_template()
-    if max_deadline_seconds is not None:
+    if max_deadline_seconds is not None or max_queue_depth is not None:
         assert template.resource_envelope is not None
-        envelope = template.resource_envelope.model_copy(
-            update={"max_deadline_seconds": max_deadline_seconds, "resource_envelope_digest": None},
-            deep=True,
-        ).sealed()
+        updates: dict[str, object] = {"resource_envelope_digest": None}
+        if max_deadline_seconds is not None:
+            updates["max_deadline_seconds"] = max_deadline_seconds
+        if max_queue_depth is not None:
+            updates["max_queue_depth"] = max_queue_depth
+        envelope = template.resource_envelope.model_copy(update=updates, deep=True).sealed()
         template = template.model_copy(
             update={
                 "resource_envelope": envelope,
@@ -995,8 +999,11 @@ def test_historical_display_obligation_survives_revocation_without_a_display_sto
     )
 
 
+@pytest.mark.parametrize("max_queue_depth", [1, 4])
+@pytest.mark.parametrize("restart", [False, True])
+@pytest.mark.parametrize("already_running", [False, True])
 def test_superseded_inspection_generation_is_not_listed_and_the_reissued_one_is(
-    tmp_path: Path,
+    tmp_path: Path, max_queue_depth: int, restart: bool, already_running: bool,
 ) -> None:
     """A queued request under a superseded policy must not starve the queue.
 
@@ -1004,9 +1011,9 @@ def test_superseded_inspection_generation_is_not_listed_and_the_reissued_one_is(
     every worker retry it forever; the subject's re-issued request under the
     current policy carries the work instead.
     """
-    policy_v1, authority_v1 = _bound_policy()
-    template = policy_template()
-    v2_body = template.model_copy(update={"version": 2}, deep=True)
+    policy_v1, authority_v1 = _bound_policy(max_queue_depth=max_queue_depth)
+    template = policy_v1
+    v2_body = template.model_copy(update={"version": 2, "policy_digest": None}, deep=True)
     authority_v2 = PolicyAuthorityRecord(
         policy_id=template.policy_id,
         policy_version=2,
@@ -1034,11 +1041,17 @@ def test_superseded_inspection_generation_is_not_listed_and_the_reissued_one_is(
         DurableJournal(tmp_path / "inspection.jsonl"),
         policy_registry=registry,
         external_reconstruction=_FixtureIngress(),
+        coordinator=registry.coordinator,
         clock=lambda: current_time[0],
     )
     first = store.issue_after_seal(subject(), now=NOW)
     assert first.request is not None
     assert store.list_pending(1)[0].request_id == first.request.request_id
+
+    if already_running:
+        assert store.claim(
+            first.request.request_id, LeaseFence(WORKER_A, ACQUISITION, 0), now=NOW
+        ).verdict == "LEASED"
 
     registry.admit(policy_v2, actor="authority", now=NOW)
     registry.revoke(policy_v1.policy_id, policy_v1.version, actor="authority", now=NOW)
@@ -1048,11 +1061,72 @@ def test_superseded_inspection_generation_is_not_listed_and_the_reissued_one_is(
         == "POLICY_UNAVAILABLE"
     )
 
+    if restart:
+        store._journal.close()  # noqa: SLF001 - verify durable queue replay.
+        store = ExternalArtifactInspectionStore(
+            DurableJournal(tmp_path / "inspection.jsonl"),
+            policy_registry=registry,
+            external_reconstruction=_FixtureIngress(),
+            coordinator=registry.coordinator,
+            clock=lambda: current_time[0],
+        )
+
     reissued = store.issue_after_seal(subject(), now=NOW)
     assert reissued.request is not None
     assert reissued.request.request_id != first.request.request_id
     pending = store.list_pending(1)
     assert len(pending) == 1 and pending[0].request_id == reissued.request.request_id
+
+    assert store.reconcile_sealed(NOW) == 0
+    if already_running:
+        fence = LeaseFence(WORKER_B, ACQUISITION_B, 0)
+        assert store.claim(reissued.request.request_id, fence, now=NOW).verdict == (
+            "CONCURRENCY_LIMIT"
+        )
+        current_time[0] = NOW + timedelta(seconds=5)
+        assert store.claim(
+            reissued.request.request_id, fence, now=current_time[0]
+        ).verdict == "LEASED"
+
+
+def test_current_queued_work_still_consumes_tenant_capacity(tmp_path: Path) -> None:
+    first_subject = subject()
+    second_subject = first_subject.model_copy(update={"work_order_id": "work-order-2"})
+    first_revision = _FixtureIngress().sealed_revisions_snapshot()[0]
+    second_revision = replace(first_revision, work_order_id=second_subject.work_order_id)
+
+    class TwoSealedSubjects(SealedExternalReconstructionSnapshotPort):
+        def sealed_revisions_snapshot(self) -> tuple[ExternalReconstructionRevision, ...]:
+            return first_revision, second_revision
+
+    template, authority = _bound_policy(max_queue_depth=1)
+    approval = replace(
+        _sealed_record(authority, template),
+        permitted_subjects=(first_subject, second_subject), digest=None,
+    ).sealed()
+    policy = template.model_copy(
+        update={"authority_record_digest": approval.digest, "policy_digest": None}, deep=True,
+    ).sealed()
+    registry = _policy_registry(
+        DurableJournal(tmp_path / "policy.jsonl"), _Authority(approval), clock=lambda: NOW,
+    )
+    registry.admit(policy, actor="authority", now=NOW)
+    store = ExternalArtifactInspectionStore(
+        DurableJournal(tmp_path / "inspection.jsonl"), policy_registry=registry,
+        external_reconstruction=TwoSealedSubjects(), clock=lambda: NOW,
+        coordinator=registry.coordinator,
+    )
+    first = store.issue_after_seal(first_subject, now=NOW)
+    assert first.request is not None
+    assert store.issue_after_seal(second_subject, now=NOW).verdict == "QUEUE_FULL"
+    assert store.claim(
+        first.request.request_id, LeaseFence(WORKER_A, ACQUISITION, 0), now=NOW,
+    ).verdict == "LEASED"
+    second = store.issue_after_seal(second_subject, now=NOW)
+    assert second.request is not None
+    assert store.claim(
+        second.request.request_id, LeaseFence(WORKER_B, ACQUISITION_B, 0), now=NOW,
+    ).verdict == "CONCURRENCY_LIMIT"
 
 
 def _sealed_record(

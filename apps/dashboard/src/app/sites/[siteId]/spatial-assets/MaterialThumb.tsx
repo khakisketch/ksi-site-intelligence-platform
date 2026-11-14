@@ -15,7 +15,7 @@ function fileHrefFor(siteId: string, workAreaId: string, jobId: string): string 
 
 function ThumbGlyph({ fileName }: { fileName: string }) {
   const ext = fileName.includes(".") ? fileName.split(".").pop()!.toUpperCase().slice(0, 4) : "FILE";
-  return <span aria-hidden="true" className="flex h-[54px] w-[72px] shrink-0 items-center justify-center rounded-md border border-line bg-sunk font-mono text-[10px] font-bold text-ink-2">{ext}</span>;
+  return <span aria-hidden="true" className="flex h-[54px] w-[72px] shrink-0 items-center justify-center rounded-md border border-line bg-sunk font-mono text-micro font-bold text-ink-2">{ext}</span>;
 }
 
 /**

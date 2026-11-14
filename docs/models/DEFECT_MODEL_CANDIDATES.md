@@ -154,7 +154,7 @@ dacl10k(CC BY-NC)·GYU-DET(YOLOv11 + CC BY-NC-ND) 배제는 기존 판단 그대
 - CrackMamba(Topology-aware) — [arXiv 2410.19894](https://arxiv.org/abs/2410.19894) / [Automation in Construction](https://www.sciencedirect.com/science/article/abs/pii/S0926580524005818) / [GitHub](https://github.com/shengyu27/CrackMamba)
 - 재현성 함정 서베이 — [arXiv 2508.10256](https://arxiv.org/html/2508.10256v1)
 - AGPL §13 원문 — [gnu.org/licenses/agpl-3.0](https://www.gnu.org/licenses/agpl-3.0.en.html), Ultralytics의 공격적 해석 — [docs.ultralytics.com/models/yolo11](https://docs.ultralytics.com/models/yolo11), 마이크로서비스 경계 미확정 논의 — [OSPOCO](https://ospo.co/blog/questions-and-answers-about-the-agpl/)
-- ADR-KSI-012 D2 — `docs/architecture/ADR-KSI-012-reconstruction-pipeline.md`(AGPL 경계 정책 원본, 44-67행)
+- ADR-KSI-012 D2 — `docs/reference/ksi-terra/KSI_TERRA_LICENSE_COMPLIANCE_PLAN.md`(AGPL 경계 검토)
 - dacl10k/CiF/GYU-DET 관련 출처는 아래 "후보 상세"·"확장" 절 인용 그대로
 
 ---

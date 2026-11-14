@@ -28,8 +28,8 @@ export function TableShell({
   return (
     <section className="overflow-hidden rounded-lg border border-line bg-surface">
       <div className="flex flex-wrap items-center gap-x-2.5 gap-y-2 border-b border-line px-4 py-2.5">
-        <h2 className="text-[14px] font-bold tracking-tight break-keep">{title}</h2>
-        {meta && <span className="text-[11.5px] break-keep text-ink-muted">{meta}</span>}
+        <h2 className="text-lead font-bold tracking-tight break-keep">{title}</h2>
+        {meta && <span className="text-caption break-keep text-ink-muted">{meta}</span>}
         {actions && <span className="ml-auto flex flex-wrap items-center gap-2">{actions}</span>}
       </div>
       {/* 가로 스크롤은 **표 안에서만** 일어난다 — 본문 전체가 옆으로 밀리면
@@ -62,8 +62,8 @@ export function TableRow({
       style={{ gridTemplateColumns: columns, minWidth }}
       className={
         head
-          ? "grid items-center gap-2.5 border-b border-line bg-sunk px-4 py-2 text-[11px] font-bold break-keep text-ink-muted"
-          : "grid items-center gap-2.5 border-b border-line px-4 py-2.5 text-[12.5px] transition-colors last:border-b-0 hover:bg-sunk"
+          ? "grid items-center gap-2.5 border-b border-line bg-sunk px-4 py-2 text-micro font-bold break-keep text-ink-muted"
+          : "grid items-center gap-2.5 border-b border-line px-4 py-2.5 text-body transition-colors last:border-b-0 hover:bg-sunk"
       }
     >
       {children}
@@ -84,7 +84,7 @@ export function TableAction({
   return (
     <Link
       href={href}
-      className={`tap-target inline-flex items-center rounded-md border px-2.5 text-[11.5px] font-semibold whitespace-nowrap transition-colors ${
+      className={`tap-target inline-flex items-center rounded-md border px-2.5 text-caption font-semibold whitespace-nowrap transition-colors ${
         primary
           ? "border-accent bg-accent text-accent-on hover:brightness-110"
           : "border-line-strong bg-surface hover:bg-sunk"

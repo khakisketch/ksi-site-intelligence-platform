@@ -25,7 +25,7 @@ future evidence package names an executed result. Authority: [ADR-KSI-035](../ar
 | TAP-08 | INV-017/018/051/053 | test independent quantitative eligibility blockers for integrity, CRS, vertical, profile, lineage, temporal and quality gaps | NOT_RUN | no quantitative claim without listed evidence |
 | TAP-09 | INV-060 | cross-organization/site attempts for every eventual planning/evidence record return indistinguishable not-found behavior | NOT_RUN | isolation in tested implementation only |
 | TAP-10 | INV-011/012/016 | autonomous-profile regression: manual exception cannot bypass signed artifact, digest, device or activation gates | NOT_RUN | future autonomous contract safety only |
-| TAP-11 | REQ-ACQ-101/103 | approved propeller-off Pilot import/edit/export and original/log evidence procedure, using [FIELD-0a](../hil/FIELD_0A_CHECKLIST.md) where applicable | NOT_VERIFIED | import/export evidence only, never flight or capability activation |
+| TAP-11 | REQ-ACQ-101/103 | approved propeller-off Pilot import/edit/export and original/log evidence procedure, using [physical capability acceptance](../hil/CAPABILITY_ACCEPTANCE.md) where applicable | NOT_VERIFIED | import/export evidence only, never flight or capability activation |
 | TAP-12 | REQ-UX-101 | Console shows original plan, declared/unknown final plan, actual evidence and claim gaps without presenting a file path as execution fact | NOT_RUN | UX projection only |
 
 ## Acceptance ladder

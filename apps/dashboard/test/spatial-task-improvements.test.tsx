@@ -156,6 +156,6 @@ describe("fewer than two observations links the existing registration path", () 
     fireEvent.click(screen.getByLabelText("동측 구역"));
     expect(screen.getByText(/두 개 미만입니다/)).toBeTruthy();
     expect(screen.getByRole("link", { name: "등록 자료와 검사 상태 확인" }).getAttribute("href"))
-      .toBe("/sites/site-a/spatial-assets?workAreaId=area-a");
+      .toBe("/sites/site-a?panel=materials&workAreaId=area-a");
   });
 });

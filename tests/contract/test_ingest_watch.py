@@ -5,9 +5,10 @@
 계속되는가**다.
 
 ADR-KSI-019 §4 의 G4 서술("사람이 사진을 손으로 올린다")은 2026-08-15 실측으로
-좁혀졌다: ``tools/upload_source_bundle.py`` 가 이미 브라우저 없이 등록·업로드·봉인·
-재구성 발행을 한다. 남아 있던 구멍은 **그 명령을 임무마다 치는 주체**였고, 이
-도구가 그 주체를 사람에서 프로그램으로 옮긴다.
+좁혀졌다: ``tools/upload_source_bundle.py`` 가 이미 브라우저 없이 등록·업로드·봉인
+(Task 3: 관리형 재구성 발행 제거 — 촬영 원본 전용)을 한다. 남아 있던 구멍은
+**그 명령을 임무마다 치는 주체**였고, 이 도구가 그 주체를 사람에서 프로그램으로
+옮긴다.
 """
 
 from __future__ import annotations
@@ -59,7 +60,6 @@ class _FakeUploader:
         outcome.discovered = 2
         outcome.uploaded = 2
         outcome.sealed = True
-        outcome.processing_job_id = f"{mission_id}-pj1"
         return outcome
 
     @property
@@ -413,11 +413,14 @@ def test_cli_help_does_not_crash() -> None:
     assert "--quiet-seconds" in result.stdout
 
 
-def test_uploader_adapter_always_seals_and_issues(tmp_path: Path) -> None:
-    """[핵심] 어댑터가 봉인·재구성 발행을 끄지 않는다.
+def test_uploader_adapter_always_seals_without_issuing_reconstruction(
+    tmp_path: Path,
+) -> None:
+    """[핵심] 어댑터가 봉인을 끄지 않고, 재구성 발행은 하지 않는다.
 
-    이 도구의 계약은 "디렉터리가 채워지면 그 뒤는 사람 손 없이 서버까지 간다"이다.
-    봉인만 하고 멈추면 그 계약이 반만 지켜지고, 사람이 다시 버튼을 눌러야 한다.
+    Task 3: 관리형 재구성 발행 체인이 제거됐다. 이 도구의 계약은 "디렉터리가
+    채워지면 그 뒤는 사람 손 없이 서버까지(등록·업로드·봉인) 간다"이며,
+    봉인 없이 멈추면 주기 실행이 같은 번들을 매번 재등록한다.
     """
     import ingest_watch
 
@@ -443,7 +446,7 @@ def test_uploader_adapter_always_seals_and_issues(tmp_path: Path) -> None:
         ingest_watch.run_sync = original
 
     assert captured["seal"] is True
-    assert captured["start_reconstruction"] is True
+    assert "start_reconstruction" not in captured
     assert captured["mission_id"] == "m-alpha"
 
 

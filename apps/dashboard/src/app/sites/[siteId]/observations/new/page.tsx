@@ -109,7 +109,7 @@ async function resolveRepeatObservationTemplate({
         initialWorkAreaIds: [],
         temporalPolicy: null,
         suggestedName: null,
-        notice: "이전 관측 작업의 범위를 확인하지 못했습니다. 관측 자료를 등록하려면 작업구역을 직접 선택하세요.",
+        notice: "이전 작업의 범위를 확인하지 못했습니다. 관측 자료를 등록하려면 작업구역을 직접 선택하세요.",
       };
     }
     const initialWorkAreaIds = repeat.workAreaIds.filter((workAreaId) => activeAreaIds.has(workAreaId));

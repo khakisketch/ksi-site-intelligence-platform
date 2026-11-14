@@ -35,18 +35,18 @@ export function HomeSituationList({
     <section aria-labelledby="home-situation-heading" className="flex min-w-0 flex-col gap-3">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h2 id="home-situation-heading" className="text-[20px] font-bold tracking-[-0.025em] break-keep sm:text-[22px]">
+          <h2 id="home-situation-heading" className="text-display font-bold tracking-[-0.025em] break-keep sm:text-display">
             {title}
           </h2>
-          <p className="mt-1 max-w-3xl text-[12.5px] leading-5 break-keep text-ink-2">{description}</p>
+          <p className="mt-1 max-w-3xl text-caption leading-5 break-keep text-ink-2">{description}</p>
         </div>
-        <Link href={allHref} className="tap-target text-[12px] font-semibold text-accent hover:underline">
+        <Link href={allHref} className="tap-target text-caption font-semibold text-accent hover:underline">
           {allLabel}
         </Link>
       </div>
 
       {items.length === 0 ? (
-        <p className="rounded-lg border border-line bg-surface px-4 py-5 text-[12.5px] break-keep text-ink-2">{emptyMessage}</p>
+        <p className="rounded-lg border border-line bg-surface px-4 py-5 text-caption break-keep text-ink-2">{emptyMessage}</p>
       ) : (
         <ul className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
           {items.map((item, index) => (
@@ -55,18 +55,18 @@ export function HomeSituationList({
                 <div className="flex min-w-0 flex-wrap items-center gap-2">
                   <Link
                     href={`/sites/${encodeURIComponent(item.siteId)}`}
-                    className="min-w-0 truncate text-[13px] font-bold hover:underline"
+                    className="min-w-0 truncate text-body font-bold hover:underline"
                   >
                     {item.siteName}
                   </Link>
                   <StateBadge label={item.statusLabel} tone={item.statusTone} />
                 </div>
-                <span aria-hidden="true" className="num text-[11px] font-semibold text-ink-muted">
+                <span aria-hidden="true" className="num text-micro font-semibold text-ink-muted">
                   {String(index + 1).padStart(2, "0")}
                 </span>
               </div>
-              <p className="mt-4 text-[16px] leading-snug font-bold tracking-[-0.015em] break-keep text-ink-1">{item.title}</p>
-              <p className="mt-2 flex-1 text-[12.5px] leading-5 break-keep text-ink-2">{item.detail}</p>
+              <p className="mt-4 text-title leading-snug font-bold tracking-[-0.015em] break-keep text-ink-1">{item.title}</p>
+              <p className="mt-2 flex-1 text-caption leading-5 break-keep text-ink-2">{item.detail}</p>
               <Link
                 href={item.href}
                 className="btn mt-4 w-full justify-between sm:w-fit sm:min-w-44"

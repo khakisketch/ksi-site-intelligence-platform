@@ -21,6 +21,9 @@ export function SiteWorkspaceWorkbench({
   contextControls,
   catalog,
   catalogLabel,
+  intake,
+  initialPanel = null,
+  initialInfoOpen = false,
   stage,
   inspector,
   inspectorLabel,
@@ -34,6 +37,9 @@ export function SiteWorkspaceWorkbench({
   catalog: ReactNode;
   /** 목록 드로어 이름. */
   catalogLabel: string;
+  intake?: ReactNode;
+  initialPanel?: "materials" | "intake" | null;
+  initialInfoOpen?: boolean;
   /** 중앙 시각 무대 — 단일 또는 좌·우 독립 보기. */
   stage: ReactNode;
   /** 오른쪽 정보 내용 — 열렸을 때만 둔다. */
@@ -47,7 +53,20 @@ export function SiteWorkspaceWorkbench({
   /** 공간 탐색이면 lg+에서 viewer 배치를 쓴다. 결과 검토 모드는 밀도 유지. */
   viewerMode?: boolean;
 }) {
-  const [infoOpen, setInfoOpen] = useState(false);
+  const [infoOpen, setInfoOpen] = useState(initialInfoOpen);
+  const [panel, setPanel] = useState<"materials" | "intake">(initialPanel ?? "materials");
+  const tabId = "workspace-catalog-tab";
+  const catalogBody = intake ? (
+    <div className="flex min-w-0 flex-col gap-3">
+      <div role="group" aria-label="자료 패널 보기" className="flex flex-wrap gap-1 rounded-md bg-sunk p-1">
+        <button type="button" onClick={() => setPanel("materials")} aria-pressed={panel === "materials"} aria-controls={tabId}
+          className={`tap-target grow rounded-md px-2 text-caption ${panel === "materials" ? "bg-surface font-bold" : "text-ink-2"}`}>자료</button>
+        <button type="button" onClick={() => setPanel("intake")} aria-pressed={panel === "intake"} aria-controls={tabId}
+          className={`tap-target grow rounded-md px-2 text-caption ${panel === "intake" ? "bg-surface font-bold" : "text-ink-2"}`}>등록 진행</button>
+      </div>
+      <div id={tabId}>{panel === "intake" ? intake : catalog}</div>
+    </div>
+  ) : catalog;
   return (
     <SpatialWorkbenchFrame
       contextBar={
@@ -59,24 +78,25 @@ export function SiteWorkspaceWorkbench({
             aria-expanded={infoOpen}
             aria-controls={inspectorId}
             onClick={() => setInfoOpen((open) => !open)}
-            className={`tap-target ml-auto inline-flex shrink-0 items-center text-[12px] underline max-sm:min-h-9 max-sm:rounded-md max-sm:border max-sm:border-line max-sm:bg-surface max-sm:px-2 max-sm:py-1 max-sm:no-underline xl:hidden ${infoOpen ? "font-semibold" : "text-ink-2"}`}
+            className={`tap-target ml-auto inline-flex shrink-0 items-center text-caption underline max-sm:min-h-9 max-sm:rounded-md max-sm:border max-sm:border-line max-sm:bg-surface max-sm:px-2 max-sm:py-1 max-sm:no-underline xl:hidden ${infoOpen ? "font-semibold" : "text-ink-2"}`}
           >
             정보
           </button>
         </>
       }
-      catalog={catalog}
+      catalog={catalogBody}
+      defaultCatalogOpen={initialPanel !== null}
       catalogLabel={catalogLabel}
       stage={stage}
       inspector={
         <>
-          <div className="flex min-w-0 items-center justify-between gap-2">
-            <h3 className="min-w-0 break-words text-[13px] font-bold">{inspectorLabel}</h3>
+          <div data-workbench-inspector-heading className="flex min-w-0 items-center justify-between gap-2">
+            <h3 className="min-w-0 break-words text-body font-bold">{inspectorLabel}</h3>
             <button
               type="button"
               data-workbench-info-close
               onClick={() => setInfoOpen(false)}
-              className="tap-target shrink-0 text-[12px] underline text-ink-2 xl:hidden"
+              className="tap-target shrink-0 text-caption underline text-ink-2 xl:hidden"
             >
               닫기
             </button>
@@ -90,7 +110,7 @@ export function SiteWorkspaceWorkbench({
       inspectorLabel={inspectorLabel}
       detailsHostId={detailsHostId}
       viewerMode={viewerMode}
-      viewerInspectorDefaultOpen={false}
+      viewerInspectorDefaultOpen={initialInfoOpen}
     />
   );
 }

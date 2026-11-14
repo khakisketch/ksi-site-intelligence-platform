@@ -14,7 +14,15 @@ services:
       KSI_CORE_OIDC_JWKS_URL: ${KSI_CORE_OIDC_JWKS_URL:?set KSI_CORE_OIDC_JWKS_URL}
       KSI_CORE_OIDC_ALLOWED_ALGORITHMS: ${KSI_CORE_OIDC_ALLOWED_ALGORITHMS:-RS256}
       KSI_CORE_OIDC_JWKS_TTL_SECONDS: ${KSI_CORE_OIDC_JWKS_TTL_SECONDS:-300}
+      KSI_CORE_OIDC_SUBJECT_REGISTRY_FILE: /run/ksi-identity/oidc-subject-registry.json
       KSI_CORE_S3_PUBLIC_ENDPOINT: https://objects.${KSI_CLOUD_DOMAIN:?set KSI_CLOUD_DOMAIN}
+    volumes:
+      - type: bind
+        source: ${KSI_VM_OIDC_SUBJECT_REGISTRY_FILE:?set protected OIDC registry host file}
+        target: /run/ksi-identity/oidc-subject-registry.json
+        read_only: true
+        bind:
+          create_host_path: false
     networks: [ksi-private]
 
   minio:

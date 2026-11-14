@@ -3,10 +3,10 @@
 - Status: ACCEPTED — product responsibility boundary and current-vs-history routing
 - Date: 2026-10-07
 - Human approval: physical-site rebaseline foundation plan
-  (`docs/superpowers/plans/2026-10-07-physical-site-rebaseline-foundation.md`),
+  (`docs/superpowers/plans/2026-10-07-agent-first-platform-rebaseline.md`),
   sequential task execution at `738b4a9`
 - Implements: approved rebaseline spec
-  (`docs/superpowers/specs/2026-10-07-physical-site-platform-rebaseline-design.md`)
+  (`docs/superpowers/plans/2026-10-07-agent-first-platform-rebaseline.md`)
   §2 responsibility boundary and §7 authority reconciliation (RB-01)
 - Consumes (preserved, not rewritten): ADR-KSI-036 customer originals/identity,
   ADR-KSI-037 quantitative/calculation/authority semantics, ADR-KSI-038

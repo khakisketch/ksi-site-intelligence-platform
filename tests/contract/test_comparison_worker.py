@@ -33,15 +33,9 @@ from ksi_processing_controller.comparison_worker import (
     run_comparison_request,
 )
 from ksi_processing_controller.core_client import (
-    ArtifactSubmission,
-    ArtifactUploadTarget,
     ComparisonInput,
     CoreClientError,
-    JobInput,
-    LeaseHandle,
-    MeasuredImage,
     PendingComparisonRequest,
-    PendingJob,
 )
 from pyproj import CRS
 from rasterio.transform import from_origin
@@ -129,44 +123,8 @@ class FakeComparisonCoreClient:
     volume_change_reports: list[tuple[str, VolumeChangeReport]] = field(default_factory=list)
 
     # ── CoreClient protocol conformance ──
-    # 비교 흐름은 아래 managed 재구성 표면을 호출하지 않는다(실측상 0건) —
-    # ``test_worker.py`` 가 archive 로 분리된 뒤에도 이 fake 가 공유
-    # ``CoreClient`` 프로토콜을 만족하도록 자리만 둔다. 호출되면 테스트 버그이므로
-    # 크게 실패한다.
-    def list_pending(self, *, limit: int = 50) -> list[PendingJob]:
-        del limit
-        raise NotImplementedError("comparison flow never lists reconstruction jobs")
-
-    def acquire_lease(self, job_id: str) -> LeaseHandle | None:
-        raise NotImplementedError(f"comparison flow never leases a job: {job_id}")
-
-    def get_input(self, job_id: str) -> JobInput:
-        raise NotImplementedError(f"comparison flow never reads a job input: {job_id}")
-
-    def transition(self, job_id: str, target: str, *, detail: str | None = None) -> None:
-        raise NotImplementedError(f"comparison flow never transitions a job: {job_id}")
-
-    def verify_source_media(self, job_id: str, measurements: list[MeasuredImage]) -> None:
-        del job_id, measurements
-        raise NotImplementedError("comparison flow never verifies source media")
-
-    def presign_artifact_upload(
-        self,
-        job_id: str,
-        *,
-        artifact_id: str,
-        content_type: str,
-        filename: str | None = None,
-        sha256: str | None = None,
-        size_bytes: int | None = None,
-    ) -> ArtifactUploadTarget:
-        del job_id, artifact_id, content_type, filename, sha256, size_bytes
-        raise NotImplementedError("comparison flow never presigns artifact upload")
-
-    def register_artifact(self, job_id: str, submission: ArtifactSubmission) -> None:
-        del job_id, submission
-        raise NotImplementedError("comparison flow never registers artifacts")
-
+    # Task 3: ``CoreClient`` 프로토콜에서 관리형 재구성 호출이 제거됐으므로 이
+    # fake 는 비교 표면만 둔다. 비교 흐름이 재구성 표면을 호출한 적은 없다.
     def list_pending_comparisons(self, *, limit: int = 50) -> list[PendingComparisonRequest]:
         """이 파일의 시험 대상은 ``run_comparison_request(request_id, ...)`` 직접
         호출이라 대기 목록을 쓰지 않는다 — 대기 목록 자체를 시험하지 않는다."""
@@ -889,9 +847,11 @@ def test_same_family_but_different_datums_still_refuses_to_pick_one(tmp_path: Pa
 
 
 def test_pending_comparison_request_is_a_lightweight_reference() -> None:
-    """워커가 다음에 잡을 후보는 requestId 뿐이다 — PendingJob(jobId 뿐)과 동형(문서화 고정)."""
+    """워커가 다음에 잡을 후보는 requestId 뿐이다.
+
+    Task 3: 관리형 재구성 ``PendingJob`` 타입이 제거됐다 — 비교 후보는 처음부터
+    독립 타입이었으며 단일 필드라는 것만 고정한다.
+    """
     pending = PendingComparisonRequest(request_id="mission-1-cmp5")
     assert pending.request_id == "mission-1-cmp5"
-    # PendingJob 과 필드 "개수"가 같다는 것을 구조적으로 남긴다(이름은 job_id/
-    # request_id 로 다르다 — 각자의 도메인을 반영한다, 회귀 시 이 assert 가 깨진다).
     assert len(PendingComparisonRequest.__dataclass_fields__) == 1

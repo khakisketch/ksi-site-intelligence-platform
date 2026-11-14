@@ -1,68 +1,76 @@
-"""Static guard for the owner-triggered civil live-processing workflow.
+"""Removal boundary for the owner-triggered civil live-processing workflow.
 
-The workflow is intentionally separate from ordinary CI because it consumes
-owner-approved image bytes.  This test makes a future YAML edit fail locally if
-it turns into an ungated scheduled/push job, drops the immutable NodeODM image,
-or loses its explicit skipped-gate behaviour.
+Task 3 retired the NodeODM live reconstruction chain. The workflow file is
+gone with it: the live job executed a pinned NodeODM image against
+owner-approved photo bytes and ran ``tests/contract/test_odm_live.py``,
+which has no live-tree copy (only the archived historical record). No valid
+non-ODM verification remained in the workflow, so the file itself was
+removed instead of being kept as an empty shell.
+
+This guard fails locally if the workflow — or any live-contract execution
+like it — is reintroduced under any workflow file name.
 """
 
 from __future__ import annotations
 
-import subprocess
 from pathlib import Path
 
 import yaml
 
-_WORKFLOW = (
-    Path(__file__).resolve().parents[2] / ".github" / "workflows" / "civil-live-contracts.yml"
-).read_text(encoding="utf-8")
+_WORKFLOWS_DIR = Path(__file__).resolve().parents[2] / ".github" / "workflows"
+_RETIRED_WORKFLOW = _WORKFLOWS_DIR / "civil-live-contracts.yml"
 
-_NODEODM_DIGEST = "sha256:cb07d06e21fd6189cfad287c6fedfa0b72568100355635cd9035cb86eed42ee2"
-_MINIO_DIGEST = "sha256:a1ea29fa28355559ef137d71fc570e508a214ec84ff8083e39bc5428980b015e"
+# Markers of the retired live reconstruction execution. The pinned digests
+# stay listed so a reintroduction under a new file name still trips the gate.
+_RETIRED_LIVE_MARKERS = (
+    "opendronemap/nodeodm",
+    "test_odm_live",
+    "KSI_ODM_IMAGES",
+    "KSI_NODEODM_URL",
+    "LIVE_CONTRACTS_SKIPPED",
+    "fixture-gate",
+)
 
 
-def test_civil_live_workflow_is_manual_gated_and_digest_pinned() -> None:
-    assert "workflow_dispatch:" in _WORKFLOW
-    assert "schedule:" not in _WORKFLOW
-    assert "push:" not in _WORKFLOW
-    assert "pull_request:" not in _WORKFLOW
-    assert "LIVE_CONTRACTS_SKIPPED" in _WORKFLOW
-    assert "if: needs.fixture-gate.outputs.ready == 'true'" in _WORKFLOW
-    assert "secrets.KSI_CIVIL_LIVE_FIXTURE_URL" in _WORKFLOW
-    assert "fixture_archive_url:" not in _WORKFLOW
-    assert _NODEODM_DIGEST in _WORKFLOW
-    assert _MINIO_DIGEST in _WORKFLOW
-    assert (
-        "test_completed_reconstruction_artifacts_persist_and_redownload_with_matching_digest"
-        in _WORKFLOW
+def _workflow_files() -> list[Path]:
+    return sorted(
+        path
+        for path in _WORKFLOWS_DIR.glob("*.yml")
+        if path.is_file()
     )
 
 
-def test_civil_live_workflow_keeps_raw_fixture_bytes_outside_git() -> None:
-    assert "fixture_archive_sha256" in _WORKFLOW
-    assert "sha256sum" in _WORKFLOW
-    assert "UNSAFE_LIVE_FIXTURE_MEMBER_TYPE" in _WORKFLOW
-    assert "LIVE_FIXTURE_TOO_MANY_MEMBERS" in _WORKFLOW
-    assert "LIVE_FIXTURE_UNCOMPRESSED_SIZE_EXCEEDED" in _WORKFLOW
-    assert "UNSAFE_LIVE_FIXTURE_MEMBER_SIZE" in _WORKFLOW
-    assert "uv run --locked python" in _WORKFLOW
-    assert "normalized in seen" in _WORKFLOW
-    assert "member.issym() or member.islnk()" in _WORKFLOW
-    assert "source.extractall(target, members=members, filter=\"data\")" in _WORKFLOW
-    assert "rm -rf \"$RUNNER_TEMP/ksi-civil-live-fixture\"" in _WORKFLOW
+def test_civil_live_contracts_workflow_is_removed() -> None:
+    """The NodeODM live workflow file itself is gone — not emptied, removed."""
+    assert not _RETIRED_WORKFLOW.exists(), (
+        "civil-live-contracts.yml must stay removed: its only live jobs were "
+        "the pinned NodeODM/MinIO live reconstruction contracts"
+    )
 
 
-def test_civil_live_workflow_yaml_and_shell_blocks_parse() -> None:
-    """Keep an untested manual workflow from becoming invalid YAML or shell."""
-    workflow = yaml.safe_load(_WORKFLOW)
-    assert isinstance(workflow, dict)
-    jobs = workflow["jobs"]
-    assert "fixture-gate" in jobs
-    assert "live-contracts" in jobs
-    for job in jobs.values():
-        for step in job.get("steps", []):
-            if "run" in step:
-                result = subprocess.run(
-                    ["bash", "-n"], input=step["run"], text=True, capture_output=True, check=False
-                )
-                assert result.returncode == 0, (step.get("name"), result.stderr)
+def test_no_workflow_runs_nodeodm_live_contracts() -> None:
+    """No remaining workflow may run the retired live reconstruction execution."""
+    files = _workflow_files()
+    assert files, "expected at least one workflow file to guard"
+    for path in files:
+        text = path.read_text(encoding="utf-8")
+        for marker in _RETIRED_LIVE_MARKERS:
+            assert marker not in text, f"{path.name} reintroduces {marker}"
+
+
+def test_live_odm_contract_test_has_no_live_tree_copy() -> None:
+    """The workflow's test subject lives only in the archive, never the live tree."""
+    live_test = (
+        Path(__file__).resolve().parents[2] / "tests" / "contract" / "test_odm_live.py"
+    )
+    assert not live_test.exists(), (
+        "tests/contract/test_odm_live.py must not exist in the live tree: "
+        "the live reconstruction chain is retired"
+    )
+
+
+def test_remaining_workflows_still_parse_as_yaml() -> None:
+    """Keep an untested manual workflow from becoming invalid YAML."""
+    for path in _workflow_files():
+        workflow = yaml.safe_load(path.read_text(encoding="utf-8"))
+        assert isinstance(workflow, dict), path.name

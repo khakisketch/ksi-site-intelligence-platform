@@ -13,9 +13,7 @@ function headerHtml(props: Partial<Parameters<typeof SiteHeader>[0]> = {}) {
     <SiteHeader
       site={site}
       selectedEpochId={null}
-      tab="materials"
-      canCreateWorkOrder={false}
-      canEditAoi={false}
+      tab="space"
       {...props}
     />,
   );
@@ -28,24 +26,24 @@ describe("unified site header", () => {
     expect(html).toContain('href="/sites"');
     expect(html).toContain("동측 현장");
     expect(html).toContain("현장 등록됨");
-    expect(html).toContain('aria-label="현장 업무 메뉴"');
+    expect(html).toContain('aria-label="현장 영역 메뉴"');
   });
 
-  it("keeps exactly three underlined section links and one current section", () => {
+  it("keeps exactly two underlined section links and one current section", () => {
     const html = headerHtml({ scopedWorkAreaId: "wa-a", scopedAssetRef: visualA });
-    const navLabel = html.indexOf('aria-label="현장 업무 메뉴"');
+    const navLabel = html.indexOf('aria-label="현장 영역 메뉴"');
     const navOpen = html.lastIndexOf("<nav", navLabel);
     const nav = html.slice(navOpen, html.indexOf("</nav>", navLabel));
-    expect(nav.match(/<a[\s>]/g)).toHaveLength(3);
+    expect(nav.match(/<a[\s>]/g)).toHaveLength(2);
     expect(nav.match(/aria-current="page"/g)).toHaveLength(1);
-    for (const label of ["작업공간", "자료", "결과"]) expect(nav).toContain(`>${label}<`);
-    expect(nav).not.toContain("관측 작업 기록");
+    for (const label of ["공간", "분석"]) expect(nav).toContain(`>${label}<`);
+    expect(nav).not.toContain("작업 기록");
     expect(nav).not.toContain("section=manage");
   });
 
   it("moves the site sections to the desktop rail at lg without removing the mobile tabs", () => {
     const html = headerHtml({ scopedWorkAreaId: "wa-a" });
-    const navLabel = html.indexOf('aria-label="현장 업무 메뉴"');
+    const navLabel = html.indexOf('aria-label="현장 영역 메뉴"');
     const navOpen = html.lastIndexOf("<nav", navLabel);
     const nav = html.slice(navOpen, html.indexOf("</nav>", navLabel));
     expect(nav).toContain("lg:hidden");
@@ -58,7 +56,7 @@ describe("unified site header", () => {
       scopedAssetRef: visualA,
       visualContext: { workAreaId: "wa-a", visualAAssetRef: visualA, visualBAssetRef: visualB },
     });
-    expect(html).toContain("/sites/site-1/spatial-assets?workAreaId=wa-a");
+    expect(html).toContain("/sites/site-1?workAreaId=wa-a");
     expect(html).toContain("/sites/site-1/analysis?workAreaId=wa-a");
     expect(html).toContain(`visualAAssetRef=${visualA}`);
     expect(html).toContain(`visualBAssetRef=${visualB}`);
@@ -66,28 +64,24 @@ describe("unified site header", () => {
     expect(html).not.toContain("hintCurrent");
   });
 
-  it("keeps site settings in one disclosure without duplicating the records tab", () => {
-    const html = headerHtml({ scopedWorkAreaId: "wa-a" });
-    expect(html).toContain("설정·정보");
-    expect(html).toContain("작업구역 관리");
-    expect(html).toContain("현장 전체 범위");
-    expect(html).toContain("/sites/site-1?section=manage#site-aoi");
-    // 관측 작업 기록은 자료 문맥의 「더 보기」가 소유한다 — 헤더에 중복하지 않는다.
-    expect(html).not.toContain("관측 작업 기록");
+  it("keeps settings separate from the tabs, with one link", () => {
+    const html = headerHtml();
+    expect(html.match(/aria-label="현장 설정"/g)).toHaveLength(1);
+    expect(html).toContain("/sites/site-1?section=manage");
+    expect(html).not.toContain("작업 기록");
   });
 
-  it("leaves observation registration to the work-order record, while preserving distinct header actions", () => {
-    const workOrders = headerHtml({ tab: "work-orders", canCreateWorkOrder: true, canEditAoi: true, workOrderRecordOwnsAction: true });
-    expect(workOrders).not.toContain('href="/sites/site-1/observations/new"');
-    const results = headerHtml({ tab: "results", canCreateWorkOrder: true, canEditAoi: true });
-    expect(results).toContain('href="/sites/site-1/observations/new"');
-    const areaManagement = headerHtml({ tab: "work-orders", canCreateWorkOrder: false, canEditAoi: true, workOrderRecordOwnsAction: true });
-    expect(areaManagement).toContain(">작업구역 설정</a>");
+  it("leaves primary actions to each surface", () => {
+    for (const tab of ["space", "analysis", "manage"] as const) {
+      const html = headerHtml({ tab });
+      expect(html).not.toContain("/observations/new");
+      expect(html).not.toContain("/work-areas");
+    }
   });
 
   it("drops unverified scope instead of inventing query parameters", () => {
     const html = headerHtml({});
-    expect(html).toContain("/sites/site-1/spatial-assets");
+    expect(html).toContain("/sites/site-1");
     expect(html).toContain("/sites/site-1/analysis");
     expect(html).not.toContain("workAreaId");
     expect(html).not.toContain("assetRef");

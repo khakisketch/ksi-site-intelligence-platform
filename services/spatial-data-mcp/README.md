@@ -9,7 +9,7 @@ console/SDK flow, including the local mutation preflight below, have also been
 verified in a private local test environment with generated data. This
 repository does not install the adapter into a shared
 environment or AI-host configuration, or publish/deploy it. See
-`docs/ops/SPATIAL_DATA_MCP_SOFTWARE_EVIDENCE.md` for the exact verification scope.
+`docs/acceptance/SPATIAL_PLATFORM_CUSTOMER_SAMPLE.md` for the exact verification scope.
 
 ## Configuration
 
@@ -114,5 +114,5 @@ Core/MCP file maximum — a large authorized raster need not force an oversized
 MCP JSON budget). Receipt/download targets must be caller-owned local paths;
 SDK child cleanup relies on the official SDK close, with no host-compat claim. Full parity, restart, replay, and
 rights-matrix evidence is recorded in
-`docs/ops/SPATIAL_DATA_MCP_SOFTWARE_EVIDENCE.md`. Host, customer, accuracy,
+`docs/acceptance/SPATIAL_PLATFORM_CUSTOMER_SAMPLE.md`. Host, customer, accuracy,
 cost, and containment acceptance remain open.

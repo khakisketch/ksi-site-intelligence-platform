@@ -34,9 +34,9 @@ export function EmptyState({
       } ${inline ? "sm:flex-row sm:justify-between sm:text-left" : ""}`}
     >
       <div className={inline ? "min-w-0" : undefined}>
-        <p className="text-[15px] font-bold break-keep">{title}</p>
+        <p className="text-lead font-bold break-keep">{title}</p>
         {description && (
-          <p className={`text-[13px] break-keep text-ink-2 ${inline ? "mt-1 max-w-2xl" : "max-w-sm"}`}>
+          <p className={`text-body break-keep text-ink-2 ${inline ? "mt-1 max-w-2xl" : "max-w-sm"}`}>
             {description}
           </p>
         )}
@@ -65,7 +65,7 @@ export function EmptyState({
           title 툴팁은 터치 기기에 hover 가 없어 뜨지 않고 키보드로도 도달하지 못한다.
           이 제품의 1급 기기가 태블릿이라 툴팁은 사실상 아무에게도 안 보인다. */}
       {blockedReason && (
-        <p className="text-[12.5px] break-keep text-ink-muted">{blockedReason}</p>
+        <p className="text-body break-keep text-ink-muted">{blockedReason}</p>
       )}
     </div>
   );

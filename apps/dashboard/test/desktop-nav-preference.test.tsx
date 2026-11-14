@@ -5,8 +5,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DesktopSidebar } from "@/components/nav/DesktopSidebar";
 import { ShellLayoutMode } from "@/components/nav/ShellPathBoundary";
 import { setDesktopNavCollapsed } from "@/components/nav/desktop-nav-preference";
+import { installFakeLocalStorage } from "./storage-fakes";
 
-const route = vi.hoisted(() => ({ pathname: "/sites/site-1/spatial-assets", query: new URLSearchParams() }));
+const route = vi.hoisted(() => ({ pathname: "/sites/site-1", query: new URLSearchParams() }));
 vi.mock("next/navigation", () => ({
   usePathname: () => route.pathname,
   useSearchParams: () => route.query,
@@ -16,13 +17,15 @@ vi.mock("@/components/nav/SidebarSearchTrigger", () => ({ SidebarSearchTrigger: 
 function shell() { return <><ShellLayoutMode /><DesktopSidebar /></>; }
 
 beforeEach(() => {
+  // 이 jsdom 설정에는 localStorage가 없으므로 가짜를 깐다.
+  installFakeLocalStorage();
   window.localStorage.clear();
-  route.pathname = "/sites/site-1/spatial-assets";
+  route.pathname = "/sites/site-1";
 });
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
-  window.localStorage.clear();
+  vi.unstubAllGlobals();
   document.body.className = "";
 });
 
@@ -68,8 +71,10 @@ describe("user-controlled desktop navigation", () => {
   });
 
   it("still toggles when browser storage is denied", () => {
-    vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => { throw new Error("denied"); });
-    vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => { throw new Error("denied"); });
+    installFakeLocalStorage({
+      getItem: () => { throw new Error("denied"); },
+      setItem: () => { throw new Error("denied"); },
+    });
     act(() => setDesktopNavCollapsed(false));
     render(shell());
     fireEvent.click(screen.getByRole("button", { name: "주 메뉴 접기" }));

@@ -33,6 +33,7 @@ vi.mock("@/components/map/AoiPolygonMap", () => ({
 }));
 
 import { SiteRegistrationOnlyWizard } from "@/app/sites/new/SiteRegistrationOnlyWizard";
+import { installFakeSessionStorage } from "./storage-fakes";
 
 const AOI = [
   { latDeg: 37.5, lonDeg: 127 },
@@ -257,12 +258,11 @@ describe("동일 계정의 영수증과 편집 초안 충돌", () => {
     fireEvent.click(screen.getByRole("button", { name: "현장 등록" }));
     expect(await screen.findByText("현장이 등록되었습니다.")).toBeTruthy();
     const originalReceipt = sessionStorage.getItem("ksi-wizard-site-registration-only:success");
-    const remove = vi.spyOn(Storage.prototype, "removeItem").mockImplementation(() => { throw new Error("blocked"); });
+    installFakeSessionStorage({ removeItem: () => { throw new Error("blocked"); } });
     fireEvent.click(screen.getByRole("button", { name: "이전" }));
     fireEvent.click(screen.getByRole("button", { name: "이전" }));
     fireEvent.change(screen.getByDisplayValue("현장 A"), { target: { value: "다시 작성 중" } });
     await waitFor(() => expect(JSON.parse(sessionStorage.getItem("ksi-wizard-site-registration-only")!).name).toBe("다시 작성 중"));
-    remove.mockRestore();
     cleanup();
     render(<SiteRegistrationOnlyWizard mode="LEGACY_SITE_ID" accountFingerprint={FINGERPRINT} />);
     expect(await screen.findByDisplayValue("다시 작성 중")).toBeTruthy();

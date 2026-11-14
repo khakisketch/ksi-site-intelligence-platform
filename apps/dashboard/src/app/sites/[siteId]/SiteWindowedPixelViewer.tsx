@@ -1,5 +1,7 @@
 "use client";
 
+import { ActionMenu } from "@/components/ui/ActionMenu";
+import { Disclosure } from "@/components/ui/Disclosure";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
@@ -501,17 +503,17 @@ function WindowedLayerView({
   const layerDetailsBody = (
         <div className="mt-2 flex flex-col gap-2">
           {supportingDetails}
-          <h4 className="text-[13px] font-semibold">낱창 보기 · 새 창 준비</h4>
-      <h4 className="text-[13px] font-bold">{WINDOWED_VIEWER_READ_LABEL}</h4>
+          <h4 className="text-body font-semibold">낱창 보기 · 새 창 준비</h4>
+      <h4 className="text-body font-bold">{WINDOWED_VIEWER_READ_LABEL}</h4>
       {readable.length === 0 && pending.length === 0 && (
-        <p className="text-[12.5px] leading-5 text-ink-2">
+        <p className="text-body leading-5 text-ink-2">
           이 층에서 현재 계정이 볼 수 있는 준비된 창이 없습니다. 아래에서 새 창 준비를 요청하거나, 구역 자료 준비에서 이력을 확인하세요.
         </p>
       )}
       {pending.length > 0 && (
         <ul className="flex flex-col gap-1">
           {pending.map((job) => (
-            <li key={job.jobId} className="text-[12px] leading-5 text-ink-2">
+            <li key={job.jobId} className="text-caption leading-5 text-ink-2">
               준비 중 · 상태 {job.executionState} — 끝난 뒤에 볼 수 있습니다.
             </li>
           ))}
@@ -520,7 +522,7 @@ function WindowedLayerView({
       {readable.length > 0 && (
         <ul className="flex flex-col gap-1">
           {readable.map((job) => (
-            <li key={job.jobId} className="flex flex-wrap items-center gap-2 text-[12.5px]">
+            <li key={job.jobId} className="flex flex-wrap items-center gap-2 text-body">
               <button
                 type="button"
                 onClick={() => void load(job)}
@@ -547,20 +549,20 @@ function WindowedLayerView({
               구역 자료 준비에서 확인
             </Link>}
       </p>
-      <p className="text-[11.5px] leading-5 text-ink-muted">
+      <p className="text-caption leading-5 text-ink-muted">
         같은 계정이 준비한 창만 볼 수 있습니다. 목록 새로고침·낱창 보기는 읽기만 하며 새 요청을 만들지 않습니다.
       </p>
 
       {phase.name === "loading" && (
         <div className="flex flex-wrap items-center gap-2">
-          <p className="text-[12px] text-ink-2" role="status">자료 읽는 중…</p>
+          <p className="text-caption text-ink-2" role="status">자료 읽는 중…</p>
           <button type="button" className="btn min-h-11" onClick={() => abortRef.current?.abort()}>
             불러오기 취소
           </button>
         </div>
       )}
       {phase.name === "failure" && (
-        <p className="rounded-md border border-line bg-sunk px-3 py-2 text-[12px] leading-5 text-ink-2" role="alert">
+        <p className="rounded-md border border-line bg-sunk px-3 py-2 text-caption leading-5 text-ink-2" role="alert">
           {phase.message}
         </p>
       )}
@@ -587,19 +589,19 @@ function WindowedLayerView({
             <ViewportResetButton onReset={viewport.reset} />
           </div>
           {viewport.note && (
-            <p className="text-[12px] leading-5 text-ink-2" role="status">{viewport.note}</p>
+            <p className="text-caption leading-5 text-ink-2" role="status">{viewport.note}</p>
           )}
           <ViewportGestureHint />
           {isDisplayViewMoved(view) && (
-            <p className="text-[12px] leading-5 text-ink-2" role="status">
+            <p className="text-caption leading-5 text-ink-2" role="status">
               표시 확대 {displayZoomPercent(view)}%
               {view.cx !== 0.5 || view.cy !== 0.5 ? " · 이동한 화면" : ""} · 원본 버퍼는 그대로 둡니다.
             </p>
           )}
-          <p className="text-[12px] leading-5 text-ink-2">
+          <p className="text-caption leading-5 text-ink-2">
             {`실제 파일 · 준비된 창 · ${receipt.width} × ${receipt.height} 픽셀 · ${formatNativeWindowExtent(receipt.actualBounds, receipt.observedCrsIdentifier)}`}
           </p>
-          <p className="text-[11.5px] leading-5 text-ink-muted">
+          <p className="text-caption leading-5 text-ink-muted">
             파일 자체의 해상도·범위를 그대로 둡니다. 지도 재투영이 아닙니다.
             {ringPoints && samePlane
               ? " 점선은 같은 좌표 평면의 작업구역 경계입니다."
@@ -607,29 +609,29 @@ function WindowedLayerView({
           </p>
           {!phase.color && (
             <>
-              <p className="text-[12px] leading-5 text-ink-2">{DSM_RELATIVE_SHADING_NOTE}</p>
-              <div className="flex items-center gap-2 text-[11.5px] text-ink-muted" aria-label="상대 음영 범례">
+              <p className="text-caption leading-5 text-ink-2">{DSM_RELATIVE_SHADING_NOTE}</p>
+              <div className="flex items-center gap-2 text-caption text-ink-muted" aria-label="상대 음영 범례">
                 <span>어두움</span>
                 <span aria-hidden="true" className="inline-block h-2 w-24 rounded" style={{ background: "linear-gradient(to right, #000, #fff)" }} />
                 <span>밝음</span>
               </div>
-              <p className="text-[11.5px] leading-5 text-ink-muted">{DSM_RELATIVE_LEGEND_LABEL}</p>
-              <p className="text-[11.5px] leading-5 text-ink-muted">{DSM_WINDOW_STRETCH_NOTE}</p>
+              <p className="text-caption leading-5 text-ink-muted">{DSM_RELATIVE_LEGEND_LABEL}</p>
+              <p className="text-caption leading-5 text-ink-muted">{DSM_WINDOW_STRETCH_NOTE}</p>
             </>
           )}
           {phase.color && (
-            <p className="text-[12px] leading-5 text-ink-2">
+            <p className="text-caption leading-5 text-ink-2">
               실제 픽셀 색상을 그대로 표시합니다. WGS84 변환·지도 타일·보정을 적용하지 않았습니다.
             </p>
           )}
-          <p className="text-[11.5px] leading-5 text-ink-muted">
+          <p className="text-caption leading-5 text-ink-muted">
             정확도 평가·측량·정산 근거가 아닙니다. 체적·면적 등 정량 계산을 하지 않습니다. 확대·이동은 화면 표시용이며 측정값이 아닙니다.
           </p>
         </div>
       )}
 
       {hidePrepareActions ? (
-        <p className="text-[12px] leading-5 text-ink-2">
+        <p className="text-caption leading-5 text-ink-2">
           새 창 준비 요청은{" "}
           <Link href={prepareHref ?? requestsHref} className="tap-target underline">
             {prepareHref ? "선택 자료 정보" : "구역 자료 준비"}
@@ -638,32 +640,32 @@ function WindowedLayerView({
         </p>
       ) : (
       <div className="flex flex-col gap-2 rounded-lg border border-line bg-sunk/50 px-3 py-2">
-        <h4 className="text-[13px] font-bold">{WINDOWED_VIEWER_REQUEST_LABEL}</h4>
-        <p className="text-[12px] leading-5 text-ink-2">
+        <h4 className="text-body font-bold">{WINDOWED_VIEWER_REQUEST_LABEL}</h4>
+        <p className="text-caption leading-5 text-ink-2">
           보고 싶은 이웃 창을 고르면 같은 자료의 유한 픽셀 창으로 준비를 요청합니다. Core가 현재 명시된 사용 권리와 범위를 확인한 뒤에만 작업을 만듭니다.
         </p>
         {!grid && (
-          <p className="text-[12px] leading-5 text-ink-2" role="status">{PIXEL_WINDOW_BLOCKER_COPY.NO_INSPECTION}</p>
+          <p className="text-caption leading-5 text-ink-2" role="status">{PIXEL_WINDOW_BLOCKER_COPY.NO_INSPECTION}</p>
         )}
         {grid && (
           <>
             <div className="flex flex-wrap items-end gap-3">
-              <label className="flex min-w-24 flex-col gap-1 text-[12px] font-semibold" htmlFor={`${idPrefix}-window-width`}>
+              <label className="flex min-w-24 flex-col gap-1 text-caption font-semibold" htmlFor={`${idPrefix}-window-width`}>
                 너비 (1–{Math.min(grid.width, MAX_SPATIAL_DATA_PIXEL_WINDOW_DIM)})
                 <input id={`${idPrefix}-window-width`} className="input min-h-11" inputMode="numeric" value={draft.width}
                   onChange={(event) => setDraft({ ...draft, width: event.target.value })} disabled={requestBusy || accepted !== null} />
               </label>
-              <label className="flex min-w-24 flex-col gap-1 text-[12px] font-semibold" htmlFor={`${idPrefix}-window-height`}>
+              <label className="flex min-w-24 flex-col gap-1 text-caption font-semibold" htmlFor={`${idPrefix}-window-height`}>
                 높이 (1–{Math.min(grid.height, MAX_SPATIAL_DATA_PIXEL_WINDOW_DIM)})
                 <input id={`${idPrefix}-window-height`} className="input min-h-11" inputMode="numeric" value={draft.height}
                   onChange={(event) => setDraft({ ...draft, height: event.target.value })} disabled={requestBusy || accepted !== null} />
               </label>
-              <label className="flex min-w-24 flex-col gap-1 text-[12px] font-semibold" htmlFor={`${idPrefix}-window-col`}>
+              <label className="flex min-w-24 flex-col gap-1 text-caption font-semibold" htmlFor={`${idPrefix}-window-col`}>
                 원점 열 (0부터)
                 <input id={`${idPrefix}-window-col`} className="input min-h-11" inputMode="numeric" value={draft.col}
                   onChange={(event) => setDraft({ ...draft, col: event.target.value })} disabled={requestBusy || accepted !== null} />
               </label>
-              <label className="flex min-w-24 flex-col gap-1 text-[12px] font-semibold" htmlFor={`${idPrefix}-window-row`}>
+              <label className="flex min-w-24 flex-col gap-1 text-caption font-semibold" htmlFor={`${idPrefix}-window-row`}>
                 원점 행 (0부터)
                 <input id={`${idPrefix}-window-row`} className="input min-h-11" inputMode="numeric" value={draft.row}
                   onChange={(event) => setDraft({ ...draft, row: event.target.value })} disabled={requestBusy || accepted !== null} />
@@ -676,11 +678,11 @@ function WindowedLayerView({
               <button type="button" className="btn min-h-11" disabled={!resolution.ok} onClick={() => moveDraft(0, 1)}>↓ 이웃 창</button>
             </div>
             {resolution.ok ? (
-              <p className="text-[12px] leading-5 text-ink-2">
+              <p className="text-caption leading-5 text-ink-2">
                 픽셀 창 · 원점 {resolution.value.window[0]}, {resolution.value.window[1]} · 너비 {resolution.value.width} × 높이 {resolution.value.height} 네이티브 픽셀
               </p>
             ) : (
-              <p className="text-[12px] leading-5 text-high-ink" role="status">{PIXEL_WINDOW_BLOCKER_COPY[resolution.reason]}</p>
+              <p className="text-caption leading-5 text-high-ink" role="status">{PIXEL_WINDOW_BLOCKER_COPY[resolution.reason]}</p>
             )}
           </>
         )}
@@ -708,16 +710,16 @@ function WindowedLayerView({
               </button>
             </div>
             {lane?.laneCopy && (
-              <p role="status" className="mt-1 text-[12px] leading-5 text-ink-2">{lane.laneCopy}</p>
+              <p role="status" className="mt-1 text-caption leading-5 text-ink-2">{lane.laneCopy}</p>
             )}
             {lane?.retryCopy && (
-              <p role="status" className="mt-1 text-[12px] leading-5 text-ink-2">{lane.retryCopy}</p>
+              <p role="status" className="mt-1 text-caption leading-5 text-ink-2">{lane.retryCopy}</p>
             )}
           </ResponsiveActionBoundary>
         )}
-        {requestMessage && <p role="status" aria-live="polite" className="mt-1 rounded-md border border-line bg-surface px-3 py-2 text-[12px] leading-5 text-ink-2">{requestMessage}</p>}
+        {requestMessage && <p role="status" aria-live="polite" className="mt-1 rounded-md border border-line bg-surface px-3 py-2 text-caption leading-5 text-ink-2">{requestMessage}</p>}
         {accepted && (
-          <p className="text-[12px] leading-5 text-ink-2">
+          <p className="text-caption leading-5 text-ink-2">
             처리가 끝나면 <Link href={requestsHref} className="tap-target underline">구역 자료 준비</Link> 또는 위의 준비 상태 다시 확인에서 받을 수 있습니다. 준비 완료는 정확도나 분석 사용 가능 여부를 보증하지 않습니다.
           </p>
         )}
@@ -732,7 +734,7 @@ function WindowedLayerView({
           새 준비 요청은 아래의 명시적 버튼에서만 나간다. */}
       {existingCrop?.receipt ? (
         <div className="flex flex-col gap-2">
-          <p className="text-[12px] leading-5 text-ink-2">{presentation === "canvas" ? "일부 범위 · 전체 관측이 아님" : "준비된 일부 범위 · 전체 관측이 아닌 현재 계정의 출력 범위를 표시합니다."}</p>
+          <p className="text-caption leading-5 text-ink-2">{presentation === "canvas" ? "일부 범위 · 전체 관측이 아님" : "준비된 일부 범위 · 전체 관측이 아닌 현재 계정의 출력 범위를 표시합니다."}</p>
           <SpatialDataReceiptPreview
             key={existingCrop.jobId}
             siteId={siteId}
@@ -745,7 +747,7 @@ function WindowedLayerView({
             gestureControls
             presentation={presentation}
           />
-          {layer.isDsm && <p className="text-[11.5px] leading-5 text-ink-muted">{DSM_WINDOW_STRETCH_NOTE}</p>}
+          {layer.isDsm && <p className="text-caption leading-5 text-ink-muted">{DSM_WINDOW_STRETCH_NOTE}</p>}
         </div>
       ) : grid && (
         <SiteMosaicViewport
@@ -773,16 +775,14 @@ function WindowedLayerView({
       {/* 낱창 도구·수동 설정은 펼침 하나에 둔다. 보통 흐름은 이어 보기+다시 확인이면 된다. */}
       {detailsTargetId ? (
         <DetailsPortal targetId={detailsTargetId}>
-          <details className="rounded-lg border border-line bg-surface px-3 py-2 text-[12px] text-ink-2">
-            <summary className="tap-target cursor-pointer font-semibold">보기·준비 상세</summary>
+          <ActionMenu label="보기 도구" className="rounded-lg border border-line bg-surface px-3 py-2 text-caption text-ink-2" panelClassName="w-[min(34rem,calc(100vw-2rem))] max-h-[65vh]">
             {layerDetailsBody}
-          </details>
+          </ActionMenu>
         </DetailsPortal>
       ) : (
-        <details className="rounded-lg border border-line bg-sunk/50 px-3 py-2 text-[12px] text-ink-2">
-          <summary className="tap-target cursor-pointer font-semibold">{presentation === "canvas" ? "상세·준비" : "보기 상세"}</summary>
+        <ActionMenu label="보기 도구" className="rounded-lg border border-line bg-sunk/50 px-3 py-2 text-caption text-ink-2" panelClassName="w-[min(34rem,calc(100vw-2rem))] max-h-[65vh]">
           {layerDetailsBody}
-        </details>
+        </ActionMenu>
       )}
     </div>
   );
@@ -826,7 +826,7 @@ export function SiteWindowedPixelViewer({
     setControlsTarget(node && layerControlsTargetId ? document.getElementById(layerControlsTargetId) : null);
   }, [layerControlsTargetId]);
   const layerControls = layers.length > 1 ? (
-    <div data-workbench-pane-controls={canvasMode || undefined} className={`flex gap-1 ${canvasMode ? "min-w-0 flex-nowrap overflow-x-auto text-[12px]" : "flex-wrap lg:flex-col"}`} role="group" aria-label="자료 층 전환">
+    <div data-workbench-pane-controls={canvasMode || undefined} className={`flex gap-1 ${canvasMode ? "min-w-0 flex-nowrap overflow-x-auto text-caption" : "flex-wrap lg:flex-col"}`} role="group" aria-label="자료 층 전환">
       {layers.map((item) => {
         const selected = item.assetRef === layer?.assetRef;
         // URL 전환이 있으면 링크로 둔다 — Back·reload·분석 복귀가 같은 층을
@@ -837,7 +837,7 @@ export function SiteWindowedPixelViewer({
           const href = `${target.pathname}?${target.searchParams.toString()}${target.hash}`;
           return <Link key={item.assetRef} href={href}
             aria-current={selected ? "true" : undefined}
-            className={`tap-target inline-flex items-center rounded-md px-3 py-1.5 text-[12.5px] break-keep ${selected ? "bg-sunk font-bold" : "text-ink-2"}`}>
+            className={`tap-target inline-flex items-center rounded-md px-3 py-1.5 text-body break-keep ${selected ? "bg-sunk font-bold" : "text-ink-2"}`}>
             {item.kindLabel}
           </Link>;
         }
@@ -849,7 +849,7 @@ export function SiteWindowedPixelViewer({
               router.push(`${layerSelectionHref}${layerSelectionHref.includes("?") ? "&" : "?"}assetRef=${encodeURIComponent(item.assetRef)}`);
             } else setLayerOverride(item.assetRef);
           }}
-          className={`tap-target inline-flex items-center rounded-md px-3 py-1.5 text-[12.5px] break-keep ${selected ? "bg-sunk font-bold" : "text-ink-2"}`}>
+          className={`tap-target inline-flex items-center rounded-md px-3 py-1.5 text-body break-keep ${selected ? "bg-sunk font-bold" : "text-ink-2"}`}>
           {item.kindLabel}
         </button>;
       })}
@@ -887,10 +887,9 @@ export function SiteWindowedPixelViewer({
   ) : null;
 
   const supportingDetails = (
-    <details id={`${idPrefix}-display-conditions`} className="scroll-mt-5 text-[12px] text-ink-2">
-        <summary className="tap-target cursor-pointer font-semibold">표시 조건·근거</summary>
+    <Disclosure label="표시 조건 상세" id={`${idPrefix}-display-conditions`} className="scroll-mt-5 text-caption text-ink-2">
         <p className="mt-1">{WINDOWED_VIEWER_ADAPTER_LABEL} — {WINDOWED_VIEWER_ADAPTER_NOTE}</p>
-        <p className="mt-1 text-[11.5px] leading-5 text-ink-muted">{NO_COMPOSITE_FLAG_COPY}</p>
+        <p className="mt-1 text-caption leading-5 text-ink-muted">{NO_COMPOSITE_FLAG_COPY}</p>
         <p className="mt-1"><span className="font-semibold">감사 추적</span> · {AUDIT_STATE_NOTE}</p>
         <p className="mt-1"><span className="font-semibold">데이터 검증 적합성</span> · {VALIDATION_STATE_NOTE}</p>
         <p className="mt-1"><span className="font-semibold">공간 표시 가능 여부</span> · {VIEWABILITY_STATE_NOTE}</p>
@@ -904,8 +903,8 @@ export function SiteWindowedPixelViewer({
             <div><dt className="font-semibold text-ink-muted">등록 버전</dt><dd>revision {layer.revision} · 제출 묶음 {layer.submissionRef}</dd></div>
           </dl>
         )}
-        <p className="mt-1 text-[11.5px] text-ink-muted">볼 수 있다는 뜻이 분석에 쓸 수 있다는 뜻이 아닙니다. 적합성은 검사·평가·검토 기록이 말합니다.</p>
-      </details>
+        <p className="mt-1 text-caption text-ink-muted">볼 수 있다는 뜻이 분석에 쓸 수 있다는 뜻이 아닙니다. 적합성은 검사·평가·검토 기록이 말합니다.</p>
+      </Disclosure>
   );
 
   return (
@@ -917,8 +916,8 @@ export function SiteWindowedPixelViewer({
     >
       {!slimHeader && (
         <header>
-          <h3 className="break-words text-[14px] font-bold">{observationHeading ?? WINDOWED_VIEWER_ADAPTER_LABEL}</h3>
-          <p className="mt-1 text-[12px] leading-5 text-ink-2">실제 파일의 준비된 창을 그대로 둡니다. 지도 재투영·보정을 하지 않습니다.</p>
+          <h3 className="break-words text-lead font-bold">{observationHeading ?? WINDOWED_VIEWER_ADAPTER_LABEL}</h3>
+          <p className="mt-1 text-caption leading-5 text-ink-2">실제 파일의 준비된 창을 그대로 둡니다. 지도 재투영·보정을 하지 않습니다.</p>
         </header>
       )}
 
@@ -928,18 +927,18 @@ export function SiteWindowedPixelViewer({
       {canvasMode && canvasMedia}
 
       {!canvasMode && !layer && (
-        <p className="rounded-lg border border-line bg-sunk px-3 py-2 text-[12.5px] leading-5 text-ink-2">
+        <p className="rounded-lg border border-line bg-sunk px-3 py-2 text-body leading-5 text-ink-2">
           이 관측에서 화면에 둘 정사영상·DSM 층을 확인하지 못했습니다. 등록 자료에서 파일 검사 상태를 확인하세요.
         </p>
       )}
 
       {!canvasMode && layer && jobsState === "denied" && (
-        <p className="rounded-lg border border-line bg-sunk px-3 py-2 text-[12.5px] leading-5 text-ink-2">
+        <p className="rounded-lg border border-line bg-sunk px-3 py-2 text-body leading-5 text-ink-2">
           준비 기록을 조회할 권한이 없습니다. 담당자에게 조회 권한을 요청하세요. 권한이 없어 빈 목록으로 단정하지 않습니다.
         </p>
       )}
       {!canvasMode && layer && jobsState === "unavailable" && (
-        <p className="rounded-lg border border-line bg-sunk px-3 py-2 text-[12.5px] leading-5 text-ink-2">
+        <p className="rounded-lg border border-line bg-sunk px-3 py-2 text-body leading-5 text-ink-2">
           준비 기록을 불러오지 못했습니다. 잠시 후 다시 확인하세요. 빈 목록으로 단정하지 않습니다.
         </p>
       )}
@@ -976,16 +975,14 @@ export function SiteWindowedPixelViewer({
 
       {!(layer && jobsState === "ready" && canRead) && (detailsTargetId ? (
         <DetailsPortal targetId={detailsTargetId}>
-          <details className="rounded-lg border border-line bg-surface px-3 py-2 text-[12px] text-ink-2">
-            <summary className="tap-target cursor-pointer font-semibold">보기·준비 상세</summary>
+          <ActionMenu label="보기 도구" className="rounded-lg border border-line bg-surface px-3 py-2 text-caption text-ink-2" panelClassName="w-[min(34rem,calc(100vw-2rem))] max-h-[65vh]">
             <div className="mt-2">{supportingDetails}</div>
-          </details>
+          </ActionMenu>
         </DetailsPortal>
       ) : canvasMode ? (
-        <details className="rounded-lg border border-line bg-surface px-3 py-2 text-[12px] text-ink-2">
-          <summary className="tap-target cursor-pointer font-semibold">상세·준비</summary>
+        <ActionMenu label="보기 도구" className="rounded-lg border border-line bg-surface px-3 py-2 text-caption text-ink-2" panelClassName="w-[min(34rem,calc(100vw-2rem))] max-h-[65vh]">
           <div className="mt-2">{supportingDetails}</div>
-        </details>
+        </ActionMenu>
       ) : supportingDetails)}
     </section>
   );
@@ -1069,30 +1066,30 @@ export function SiteWindowedPixelCompare({
   return (
     <div className={`flex min-w-0 flex-col ${canvasMode ? "gap-2" : "gap-3"}`}>
       {canvasMode ? (
-        <p className="text-[11.5px] leading-5 text-ink-muted" role="status">
+        <p className="text-caption leading-5 text-ink-muted" role="status">
           {verdict.ok
             ? "각 칸은 독립된 보기입니다. 같은 범위 맞춤·같은 색 눈금은 지원하지 않습니다."
             : verdict.notice}
         </p>
       ) : (
         <div className="rounded-lg border border-line bg-surface px-4 py-3">
-          <h3 className="text-[13px] font-bold">{baselineRoleLabel === "관측 A" ? "독립 보기 — 정합 근거 없음" : "나란히 보기 안내(창 단위 픽셀 보기)"}</h3>
+          <h3 className="text-body font-bold">{baselineRoleLabel === "관측 A" ? "독립 보기 — 정합 근거 없음" : "나란히 보기 안내(창 단위 픽셀 보기)"}</h3>
           {verdict.ok ? (
-            <p className="mt-1 text-[12.5px] leading-5 text-ink-2">
+            <p className="mt-1 text-body leading-5 text-ink-2">
               두 칸은 같은 위치 기준({verdict.crs})의 작업구역 경계와 함께 둡니다. 화면 맞춤이 실제 지형 일치를 뜻하지 않으며,
               동기화된 공간 비교(같은 범위 맞춤·같은 색 눈금)는 지원하지 않습니다. 화면을 겹쳐도 분석 근거가 되지 않습니다.
             </p>
           ) : (
-            <p className="mt-1 text-[12.5px] leading-5 text-ink-2" role="status">{verdict.notice}</p>
+            <p className="mt-1 text-body leading-5 text-ink-2" role="status">{verdict.notice}</p>
           )}
-          <p className="mt-1 text-[11.5px] leading-5 text-ink-muted">
+          <p className="mt-1 text-caption leading-5 text-ink-muted">
             각 칸의 DSM 명암은 그 창 안에서만 늘이기한 상대 음영입니다. 창이 다르면 밝기가 달라도 높이 차이로 읽지 마세요.
           </p>
         </div>
       )}
       <div className={`grid min-w-0 gap-3 ${canvasMode ? "md:grid-cols-2" : "gap-4 md:grid-cols-2"}`}>
         <div className="flex min-w-0 flex-col gap-1">
-          <p className="text-[12px] font-bold">{baselineRoleLabel} · {baselineHeading}</p>
+          <p className="text-caption font-bold">{baselineRoleLabel} · {baselineHeading}</p>
           <SiteWindowedPixelViewer
             siteId={siteId}
             workAreaId={workAreaId}
@@ -1117,7 +1114,7 @@ export function SiteWindowedPixelCompare({
           />
         </div>
         <div className="flex min-w-0 flex-col gap-1">
-          <p className="text-[12px] font-bold">{currentRoleLabel} · {currentHeading}</p>
+          <p className="text-caption font-bold">{currentRoleLabel} · {currentHeading}</p>
           <SiteWindowedPixelViewer
             siteId={siteId}
             workAreaId={workAreaId}

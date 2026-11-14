@@ -12,11 +12,7 @@ function headerHtml(props: Partial<Parameters<typeof SiteHeader>[0]> = {}) {
     <SiteHeader
       site={site}
       selectedEpochId={null}
-      tab="workspace"
-      latestExternalReportAt={null}
-      latestExternalReportKnown={false}
-      canCreateWorkOrder={false}
-      canEditAoi={false}
+      tab="space"
       {...props}
     />,
   );
@@ -26,9 +22,9 @@ describe("siteTabHref", () => {
   it("goes direct to actual routes without scope", () => {
     const scope = { workAreaId: null, assetRef: null };
     expect(siteTabHref("site-1", "analysis", {}, scope)).toBe("/sites/site-1/analysis");
-    expect(siteTabHref("site-1", "materials", {}, scope)).toBe("/sites/site-1/spatial-assets");
+    expect(siteTabHref("site-1", "materials", {}, scope)).toBe("/sites/site-1?panel=materials");
     expect(siteTabHref("site-1", "overview", {}, scope)).toBe("/sites/site-1");
-    expect(siteTabHref("site-1", "work-orders", {}, scope)).toBe("/sites/site-1?section=work-orders");
+    expect(siteTabHref("site-1", "work-orders", {}, scope)).toBe("/sites/site-1?panel=intake");
     expect(siteTabHref("site-1", "manage", {}, scope)).toBe("/sites/site-1?section=manage");
   });
 
@@ -38,12 +34,12 @@ describe("siteTabHref", () => {
       "/sites/site-1/analysis?workAreaId=wa-a&assetRef=asset-1",
     );
     expect(siteTabHref("site-1", "materials", {}, scope)).toBe(
-      "/sites/site-1/spatial-assets?workAreaId=wa-a&assetRef=asset-1",
+      "/sites/site-1?panel=materials&workAreaId=wa-a&assetRef=asset-1",
     );
     // 탐색으로 돌아갈 때 정확한 관측을 잃지 않도록 현황·작업·관리에도 싣는다.
     expect(siteTabHref("site-1", "overview", {}, scope)).toBe("/sites/site-1?workAreaId=wa-a&assetRef=asset-1");
     expect(siteTabHref("site-1", "work-orders", {}, scope)).toBe(
-      "/sites/site-1?section=work-orders&workAreaId=wa-a&assetRef=asset-1",
+      "/sites/site-1?panel=intake&workAreaId=wa-a&assetRef=asset-1",
     );
     expect(siteTabHref("site-1", "manage", {}, scope)).toBe(
       "/sites/site-1?section=manage&workAreaId=wa-a&assetRef=asset-1",
@@ -52,7 +48,7 @@ describe("siteTabHref", () => {
 
   it("drops assetRef without its work area", () => {
     expect(siteTabHref("site-1", "materials", {}, { workAreaId: null, assetRef: "asset-1" })).toBe(
-      "/sites/site-1/spatial-assets",
+      "/sites/site-1?panel=materials",
     );
     expect(siteTabHref("site-1", "analysis", {}, { workAreaId: null, assetRef: "asset-1" })).toBe(
       "/sites/site-1/analysis",
@@ -64,39 +60,37 @@ describe("siteTabHref", () => {
 });
 
 describe("SiteHeader scoped navigation", () => {
-  it("links results and materials direct with scope in the directly visible nav", () => {
+  it("links analysis and space direct with scope in the directly visible nav", () => {
     const html = headerHtml({ scopedWorkAreaId: "wa-a", scopedAssetRef: "asset-1" });
     // 데스크톱·모바일 구분 없는 직접 nav 하나에 같은 목적지를 둔다.
     expect(html.match(/\/sites\/site-1\/analysis\?workAreaId=wa-a/g)?.length).toBe(1);
-    expect(html.match(/\/sites\/site-1\/spatial-assets\?workAreaId=wa-a&amp;assetRef=asset-1/g)?.length).toBe(1);
+    expect(html.match(/\/sites\/site-1\?workAreaId=wa-a&amp;assetRef=asset-1/g)?.length).toBe(1);
     expect(html).not.toContain("section=analysis");
     expect(html).not.toContain("section=materials");
     // 세 영역을 펼침 없이 바로 보인다 — 이름 없는 아이콘-only 진입 금지.
     // 설정은 최상위 nav가 아니라 머리 설정 메뉴에 둔다. 끝 위치는 nav 닫힘으로
     // 끊는다(뒤따르는 설정 메뉴 링크를 세지 않는다).
-    const navLabel = html.indexOf('aria-label="현장 업무 메뉴"');
+    const navLabel = html.indexOf('aria-label="현장 영역 메뉴"');
     const navOpen = html.lastIndexOf("<nav", navLabel);
     const nav = html.slice(navOpen, html.indexOf("</nav>", navLabel));
-    expect(nav.match(/<a[\s>]/g)?.length).toBe(3);
+    expect(nav.match(/<a[\s>]/g)?.length).toBe(2);
     expect(nav).not.toContain("section=work-orders");
     expect(nav).not.toContain("section=manage");
-    expect(html).toContain("작업공간");
+    expect(html).toContain("공간");
     expect(html).toContain("설정");
-    expect(html).toContain("자료");
-    expect(html).toContain("결과");
+    expect(html).toContain("분석");
     expect(html).toContain('aria-current="page"');
   });
 
   it("keeps in-page sections and old deep-URL compat for work and manage", () => {
     const html = headerHtml({ scopedWorkAreaId: "wa-a" });
-    expect(html).toContain("/sites/site-1?section=manage&amp;workAreaId=wa-a");
-    expect(html).toContain("/sites/site-1?section=manage#site-aoi");
+    expect(html).toContain("/sites/site-1?section=manage");
     // 옛 작업 URL은 최상위 탭이 아니라 자료 문맥의 「더 보기」가 소유한다 —
     // 헤더에 네 번째 탭이나 중복 링크를 만들지 않는다. 표준 목적지는
     // canonical helper가 그대로 유지한다.
     expect(html).not.toContain("section=work-orders");
     expect(siteTabHref("site-1", "work-orders", {}, { workAreaId: "wa-a", assetRef: null })).toBe(
-      "/sites/site-1?section=work-orders&workAreaId=wa-a",
+      "/sites/site-1?panel=intake&workAreaId=wa-a",
     );
   });
 
@@ -107,40 +101,11 @@ describe("SiteHeader scoped navigation", () => {
     expect(html).not.toContain("assetRef");
   });
 
-  it("preserves a validated scope on the new-registration action, never on AOI setup", () => {
-    const html = headerHtml({
-      tab: "work-orders",
-      canCreateWorkOrder: true,
-      scopedWorkAreaId: "wa-a",
-    });
-    expect(html).toContain("/sites/site-1/observations/new?workAreaId=wa-a");
-  });
-
-  it("leaves work-area setup without a scope query", () => {
-    const html = headerHtml({
-      tab: "work-orders",
-      canCreateWorkOrder: false,
-      canEditAoi: true,
-      scopedWorkAreaId: "wa-a",
-    });
-    expect(html).toContain("/sites/site-1/work-areas");
-    expect(html).not.toContain("/sites/site-1/work-areas?workAreaId");
-  });
-
-  it("shows no preparation action without the role grant", () => {
-    const ready = { ...site, status: "PATROL_READY" } as SiteView;
-    const html = renderToStaticMarkup(
-      <SiteHeader
-        site={ready}
-        selectedEpochId={null}
-        tab="work-orders"
-        latestExternalReportAt={null}
-        latestExternalReportKnown={false}
-        canCreateWorkOrder={false}
-        canEditAoi={false}
-        scopedWorkAreaId="wa-a"
-      />,
-    );
-    expect(html).not.toContain("observations/new");
+  it("leaves registration and work area actions to their owning screens", () => {
+    for (const tab of ["space", "analysis", "manage"] as const) {
+      const html = headerHtml({ tab, scopedWorkAreaId: "wa-a" });
+      expect(html).not.toContain("observations/new");
+      expect(html).not.toContain("/work-areas");
+    }
   });
 });

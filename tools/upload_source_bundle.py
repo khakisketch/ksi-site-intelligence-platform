@@ -1,19 +1,21 @@
 #!/usr/bin/env python3
-"""로컬 사진 디렉터리를 원본 미디어 번들로 업로드하고 재구성까지 발행 (B1 — 3D 파이프라인 입구).
+"""로컬 사진 디렉터리를 원본 미디어 번들로 업로드하고 봉인한다 (촬영 원본 전용).
 
 디렉터리의 사진을 ``POST /v1/missions/{mission_id}/source-media`` 로 배치
 등록해 presigned PUT URL 을 받고, 그 URL 로 실제 바이트를 올린 뒤(``--seal``
-지정 시) ``POST .../source-media/seal`` 로 번들을 봉인하고, (``--start-reconstruction``
-지정 시) ``POST /v1/missions/{mission_id}/processing-jobs`` 로 재구성 작업까지
-발행한다.
+지정 시) ``POST .../source-media/seal`` 로 번들을 봉인한다.
+
+Task 3: 관리형 재구성 발행(``POST /v1/missions/{mission_id}/processing-jobs``)
+체인은 이 도구에서 제거됐다 — 재구성 실행 권한은 Core 에서 퇴역했고, 이
+도구는 촬영 원본의 등록·업로드·봉인만 담당한다. 외부 파생 산출물 폴더
+감시기로 이름을 바꿔 재사용하지 않는다.
 
 ## 이 도구가 닫는 구멍 — 사람이 브라우저에서 사진을 고르는 단계
 
 제품 목표는 "사람이 웹 화면에서 사진을 직접 선택해서 업로드하는 작업 0회"다
-(ADR-KSI-018 P1). 서버 쪽 입구(``source_media.py``)와 재구성 발행
-(``processing_jobs.py``)은 이미 순수 JSON REST 라 브라우저가 필요 없는데,
-**그 셋을 순서대로 부르는 주체가 대시보드의 버튼 세 개뿐이었다.** 이 도구가
-그 주체를 사람에서 프로그램으로 옮긴다.
+(ADR-KSI-018 P1). 서버 쪽 입구(``source_media.py``)는 이미 순수 JSON REST 라
+브라우저가 필요 없는데, **그 호출을 순서대로 부르는 주체가 대시보드의 버튼뿐이었다.**
+이 도구가 그 주체를 사람에서 프로그램으로 옮긴다.
 
 ## 어디서 도는가 — 기체가 아니라 지상이다
 
@@ -34,8 +36,7 @@ PENDING-SN/01_env_inventory/``. 이 도구는 그 제약과 무관하다.)
 같은 ``mediaId`` + 같은 신고값 재전송은 서버가 멱등 재발급으로 받고
 (``source_media.py`` ``_register_one_locked``), 다른 신고값이면
 ``CLAIM_CONFLICT`` 로 거부한다(파일이 그 사이 바뀌었다는 뜻이므로 조용히
-넘어가지 않는다). 봉인·재구성 발행도 각각 ``ALREADY_SEALED``/``ALREADY_ISSUED``
-로 재시도가 안전하다.
+넘어가지 않는다). 봉인도 ``ALREADY_SEALED`` 로 재시도가 안전하다.
 
 그래서 이 도구는 **새 durable queue 를 만들지 않는다.** ``--state-dir`` 에 두는
 확인 캐시는 정합성 장치가 아니라 "이미 올린 바이트를 다시 올리지 않는" 속도
@@ -49,7 +50,7 @@ Usage::
         --mission-id mission-abc \\
         --source-dir /path/to/photos \\
         --state-dir /var/lib/ksi/upload-state \\
-        --seal --start-reconstruction
+        --seal
 """
 
 from __future__ import annotations
@@ -86,10 +87,6 @@ _EXTENSION_CONTENT_TYPES: dict[str, str] = {
 # though the upload/API contract rejects them; that produces a misleading
 # "capture found" state with zero sealable SourceMedia records.
 SUPPORTED_SOURCE_MEDIA_SUFFIXES = frozenset(_EXTENSION_CONTENT_TYPES)
-
-# Core expands this id to the immutable profile snapshot. Keeping engine knobs
-# out of the local uploader prevents it from drifting from the Console path.
-RECONSTRUCTION_SPEC: dict[str, Any] = {"processingProfileId": "ksi-odm-civil-v1"}
 
 _CONFIRMED_CACHE_NAME = "uploaded.json"
 
@@ -149,7 +146,6 @@ class SyncOutcome:
     failures: list[str] = field(default_factory=list)
     sealed: bool = False
     source_bundle_digest: str | None = None
-    processing_job_id: str | None = None
     #: 이번 실행 전에 이미 봉인이 끝나 있었다 — 재실행이 아무것도 새로 하지 않았다는 뜻이고,
     #: 실패가 아니다(주기 실행이 첫 성공 이후 영원히 실패로 뜨는 것을 막는다).
     already_complete: bool = False
@@ -540,31 +536,6 @@ def seal_bundle(client: _SourceBundleHttpClient, mission_id: str, outcome: SyncO
     return True
 
 
-def issue_reconstruction(
-    client: _SourceBundleHttpClient,
-    mission_id: str,
-    outcome: SyncOutcome,
-    *,
-    spec: dict[str, Any] | None = None,
-) -> bool:
-    """재구성 작업 발행. ``ALREADY_ISSUED``(200)도 성공으로 다룬다(같은 사양 재요청)."""
-    try:
-        response = client.post(
-            f"/v1/missions/{mission_id}/processing-jobs", json=spec or RECONSTRUCTION_SPEC
-        )
-    except httpx.HTTPError as exc:
-        outcome.failures.append(f"재구성 발행 요청 실패 — {type(exc).__name__}: {exc}")
-        return False
-    if response.status_code not in (200, 201):
-        outcome.failures.append(
-            f"재구성 발행 실패({response.status_code}) — {response.text[:200]}"
-        )
-        return False
-    job = response.json().get("job") or {}
-    outcome.processing_job_id = job.get("jobId")
-    return True
-
-
 def run_sync(
     client: _SourceBundleHttpClient,
     *,
@@ -574,16 +545,15 @@ def run_sync(
     timeout: float = 60.0,
     state_dir: Path | None = None,
     seal: bool = False,
-    start_reconstruction: bool = False,
     ground_control: Path | None = None,
     ground_control_crs: str | None = None,
     put_object: PutObject = default_put_object,
 ) -> SyncOutcome:
-    """디렉터리 → 등록 → 업로드 → (봉인) → (재구성 발행) 전 과정 1회.
+    """디렉터리 → 등록 → 업로드 → (봉인) 전 과정 1회.
 
-    **fail-closed 순서**: 업로드에 하나라도 실패가 있으면 봉인하지 않고, 봉인하지
-    않았으면 재구성도 발행하지 않는다 — 빠진 사진이 있는 채로 번들이 잠기거나
-    그 위에서 재구성이 도는 것을 막는다. 재시도는 같은 명령을 다시 부르면 된다.
+    **fail-closed 순서**: 업로드에 하나라도 실패가 있으면 봉인하지 않는다 —
+    빠진 사진이 있는 채로 번들이 잠기는 것을 막는다. 재시도는 같은 명령을
+    다시 부르면 된다.
     """
     outcome = SyncOutcome()
     files = _collect_files(source_dir)
@@ -638,14 +608,9 @@ def run_sync(
 
     if not seal or outcome.failures:
         return outcome
-    # already_complete 여도 봉인·발행을 그대로 부른다 — 둘 다 멱등이라
-    # (ALREADY_SEALED / ALREADY_ISSUED) 결과가 바뀌지 않고, 대신 "봉인은 됐는데
-    # 재구성 발행이 빠진" 중간 상태에서 재실행이 그 구멍을 메운다.
-    if not seal_bundle(client, mission_id, outcome):
-        return outcome
-    if not start_reconstruction:
-        return outcome
-    issue_reconstruction(client, mission_id, outcome)
+    # already_complete 여도 봉인을 그대로 부른다 — 멱등이라(ALREADY_SEALED)
+    # 결과가 바뀌지 않는다.
+    seal_bundle(client, mission_id, outcome)
     return outcome
 
 
@@ -672,12 +637,6 @@ def main() -> int:
         "--seal", action="store_true", help="업로드 완료 후 번들을 봉인한다(기본은 봉인하지 않음)"
     )
     parser.add_argument(
-        "--start-reconstruction",
-        action="store_true",
-        help="봉인 후 재구성 작업까지 발행한다(--seal 필요). 이 플래그가 사람의 마지막 "
-        "버튼을 대체한다",
-    )
-    parser.add_argument(
         "--ground-control",
         default=None,
         help="지상 기준점 파일(gcp_list.txt) 경로 — 봉인 전에 번들에 붙는다. "
@@ -696,8 +655,6 @@ def main() -> int:
         parser.error("--token 또는 KSI_CORE_TOKEN 환경변수가 필요하다")
     if bool(args.ground_control) != bool(args.ground_control_crs):
         parser.error("--ground-control 과 --ground-control-crs 는 함께 줘야 한다")
-    if args.start_reconstruction and not args.seal:
-        parser.error("--start-reconstruction 은 --seal 과 함께 써야 한다(봉인 전 재구성 불가)")
 
     source_dir = Path(args.source_dir)
     if not source_dir.is_dir():
@@ -719,7 +676,6 @@ def main() -> int:
             timeout=args.timeout,
             state_dir=state_dir,
             seal=args.seal,
-            start_reconstruction=args.start_reconstruction,
             ground_control=Path(args.ground_control) if args.ground_control else None,
             ground_control_crs=args.ground_control_crs,
         )
@@ -741,15 +697,13 @@ def main() -> int:
     if outcome.discovered == 0:
         return 1
     if outcome.failures:
-        # 업로드 실패가 봉인을 막은 경우와, 봉인·발행 자체가 실패한 경우를 나눈다.
+        # 업로드 실패가 봉인을 막은 경우와, 봉인 자체가 실패한 경우를 나눈다.
         return 2 if not outcome.sealed and args.seal else 3
     if not args.seal:
         print("--seal 이 지정되지 않아 봉인하지 않았다.")
         return 0
 
     print(f"봉인 완료 — sourceBundleDigest={outcome.source_bundle_digest}")
-    if args.start_reconstruction:
-        print(f"재구성 발행 완료 — jobId={outcome.processing_job_id}")
     return 0
 
 

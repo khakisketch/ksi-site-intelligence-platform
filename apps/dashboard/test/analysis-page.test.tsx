@@ -9,7 +9,7 @@ vi.mock("@/lib/core-api/workAreas", () => ({ listWorkAreas: mocked.areas }));
 vi.mock("@/lib/core-api/spatial-assets", () => ({ getSpatialAsset: mocked.asset }));
 vi.mock("@/lib/core-api/analysis", () => ({ listAnalysisObservations: mocked.observations, listAnalyses: mocked.list, getAnalysis: mocked.detail }));
 vi.mock("@/lib/core-api/observation-work-orders", () => ({ listObservationWorkOrders: mocked.workOrders }));
-vi.mock("@/app/sites/[siteId]/analysis/AnalysisRequestPanel", () => ({ AnalysisRequestPanel: ({ initialPage, initialAnalysisId, initialSelectedDetail, observations, unattributedObservationCount, workOrderNames, initialWorkAreaId, scopeNotice, ...extra }: { initialPage: { items: Array<{ analysisId: string }> }; initialAnalysisId: string; initialSelectedDetail: { analysisId: string } | null; observations: Array<{ observationEpochId: string; workAreaIds: string[] }>; unattributedObservationCount: number; workOrderNames: Record<string, string>; initialWorkAreaId?: string; scopeNotice?: string | null; [key: string]: unknown }) => <><p>{`${initialAnalysisId}:${initialSelectedDetail?.analysisId ?? "none"}:${initialPage.items.map((item) => item.analysisId).join(",")}`}</p><p data-testid="panel-attribution">{`${observations.map((item) => `${item.observationEpochId}:${item.workAreaIds.join(",")}`).join(";")}|unknown:${unattributedObservationCount}`}</p><p data-testid="panel-work-names">{Object.entries(workOrderNames ?? {}).map(([id, name]) => `${id}=${name}`).join(";")}</p><p data-testid="panel-scope">{`${initialWorkAreaId ?? ""}|${scopeNotice ?? ""}`}</p><p data-testid="panel-exact">{JSON.stringify(extra)}</p></> }));
+vi.mock("@/app/sites/[siteId]/analysis/AnalysisRequestPanel", () => ({ AnalysisRequestPanel: ({ initialPage, initialAnalysisId, initialSelectedDetail, observations, unattributedObservationCount, workOrderNames, initialWorkAreaId, scopeNotice, emptyHistoryGuide, ...extra }: { initialPage: { items: Array<{ analysisId: string }> }; initialAnalysisId: string; initialSelectedDetail: { analysisId: string } | null; observations: Array<{ observationEpochId: string; workAreaIds: string[] }>; unattributedObservationCount: number; workOrderNames: Record<string, string>; initialWorkAreaId?: string; scopeNotice?: string | null; emptyHistoryGuide?: import("react").ReactNode; [key: string]: unknown }) => <><p>{`${initialAnalysisId}:${initialSelectedDetail?.analysisId ?? "none"}:${initialPage.items.map((item) => item.analysisId).join(",")}`}</p><p data-testid="panel-attribution">{`${observations.map((item) => `${item.observationEpochId}:${item.workAreaIds.join(",")}`).join(";")}|unknown:${unattributedObservationCount}`}</p><p data-testid="panel-work-names">{Object.entries(workOrderNames ?? {}).map(([id, name]) => `${id}=${name}`).join(";")}</p><p data-testid="panel-scope">{`${initialWorkAreaId ?? ""}|${scopeNotice ?? ""}`}</p><p data-testid="panel-exact">{JSON.stringify(extra)}</p>{emptyHistoryGuide}</> }));
 vi.mock("next/navigation", () => ({
   notFound: () => { throw new Error("NEXT_NOT_FOUND"); },
   useRouter: () => ({ refresh: vi.fn() }),
@@ -58,9 +58,7 @@ describe("analysis deep link", () => {
 
     render(await SiteAnalysisPage({ params: Promise.resolve({ siteId: "site-1" }), searchParams: Promise.resolve({}) }));
 
-    // 후보·구역이 있어 실제 선택이 먼저이므로 안내는 접힌 도움말로 둔다.
-    const summary = screen.getByText("변화 분석 시작 안내");
-    expect(summary.closest("details")?.hasAttribute("open")).toBe(false);
+    expect(screen.getByRole("heading", { name: "변화 분석 시작 안내" })).toBeTruthy();
     expect(screen.getByText("2개 확인됨")).toBeTruthy();
     expect(screen.getByText("2개 표시됨")).toBeTruthy();
     expect(screen.getByText("표시된 기록 없음")).toBeTruthy();
@@ -116,7 +114,7 @@ describe("analysis deep link", () => {
     ]);
     mocked.workOrders.mockResolvedValue([
       { workOrderId: "work-1", siteId: "site-1", organizationId: "org-1", name: "북측 1차 관측", workAreaIds: ["area-1"] },
-      { workOrderId: "work-foreign", siteId: "another-site", organizationId: "org-1", name: "다른 현장 작업", workAreaIds: ["area-1"] },
+      { workOrderId: "work-foreign", siteId: "another-site", organizationId: "org-1", name: "다른 작업", workAreaIds: ["area-1"] },
       { workOrderId: "work-other-org", siteId: "site-1", organizationId: "org-2", name: "다른 조직 작업", workAreaIds: ["area-1"] },
     ]);
 
@@ -136,7 +134,7 @@ describe("analysis deep link", () => {
 
     expect(calls[0]).toBe("site");
     expect(screen.getAllByText("접근 확인된 현장").length).toBeGreaterThan(0);
-    expect(screen.getByRole("heading", { level: 2, name: "현장 변화 분석" })).toBeTruthy();
+    expect(screen.getByRole("heading", { level: 2, name: "분석" })).toBeTruthy();
     // 관측 실패가 기록 이력까지 닫지 않는다 — 구역별 상태로만 전달된다.
     const props = JSON.parse(screen.getByTestId("panel-exact").textContent!);
     expect(props.listsState.observations).toBe("unconfirmed");
@@ -300,7 +298,7 @@ describe("browse source return scope", () => {
 
     render(await SiteAnalysisPage({ params: Promise.resolve({ siteId: "site-1" }), searchParams: Promise.resolve({ workAreaId: "area-1" }) }));
     const plainScope = screen.getByTestId("panel-scope").textContent;
-    const [plainHome] = screen.getAllByRole("link", { name: "작업공간" });
+    const [plainHome] = screen.getAllByRole("link", { name: "공간" });
     expect(plainHome?.getAttribute("href")).toBe("/sites/site-1?workAreaId=area-1");
     cleanup();
 
@@ -308,11 +306,8 @@ describe("browse source return scope", () => {
     // 분석 선택은 그대로 — assetRef는 분석 선택자(analysisId·currentWorkOrderId)가 아니다.
     expect(screen.getByTestId("panel-scope").textContent).toBe(plainScope);
     // 헤더 복귀 링크에는 탐색 출처(구역·관측)가 그대로 실린다.
-    expect(screen.getAllByRole("link", { name: "작업공간" })[0]?.getAttribute("href")).toBe(
+    expect(screen.getAllByRole("link", { name: "공간" })[0]?.getAttribute("href")).toBe(
       "/sites/site-1?workAreaId=area-1&assetRef=browse-asset-1",
-    );
-    expect(screen.getAllByRole("link", { name: "자료" })[0]?.getAttribute("href")).toBe(
-      "/sites/site-1/spatial-assets?workAreaId=area-1&assetRef=browse-asset-1",
     );
   });
 
@@ -322,8 +317,7 @@ describe("browse source return scope", () => {
     render(await SiteAnalysisPage({ params: Promise.resolve({ siteId: "site-1" }), searchParams: Promise.resolve({ workAreaId: "ghost-area", assetRef: "browse-asset-1" }) }));
 
     expect(screen.getByTestId("panel-scope").textContent?.startsWith("|")).toBe(true);
-    expect(screen.getAllByRole("link", { name: "작업공간" })[0]?.getAttribute("href")).toBe("/sites/site-1");
-    expect(screen.getAllByRole("link", { name: "자료" })[0]?.getAttribute("href")).toBe("/sites/site-1/spatial-assets");
+    expect(screen.getAllByRole("link", { name: "공간" })[0]?.getAttribute("href")).toBe("/sites/site-1");
   });
 });
 

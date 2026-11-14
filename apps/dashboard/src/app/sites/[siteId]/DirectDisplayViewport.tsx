@@ -1,5 +1,6 @@
 "use client";
 
+import { Disclosure } from "@/components/ui/Disclosure";
 import { useCallback, useRef, useState } from "react";
 import type {
   KeyboardEvent as ReactKeyboardEvent,
@@ -313,16 +314,15 @@ export function ViewportResetButton({ onReset }: { onReset: () => void }) {
 export function ViewportGestureHint() {
   return (
     <>
-      <p className="text-[11.5px] leading-5 text-ink-muted">{DISPLAY_GESTURE_HINT}</p>
-      <details className="text-[12px] text-ink-2">
-        <summary className="tap-target cursor-pointer font-semibold">조작 안내</summary>
+      <p className="text-caption leading-5 text-ink-muted">{DISPLAY_GESTURE_HINT}</p>
+      <Disclosure label="조작 상세" className="text-caption text-ink-2">
         <ul className="mt-1 flex list-disc flex-col gap-1 pl-5 leading-5">
           <li>마우스·펜·한 손가락으로 끌면 그림이 따라옵니다.</li>
           <li>휠·두 손가락·두 번 두드리기로 누른 자리부터 확대합니다.</li>
           <li>그림을 선택한 뒤 방향키·+ −·Home 키를 쓸 수 있습니다.</li>
           <li>빈 곳은 아직 준비되지 않은 범위이며, 새 자료가 아닙니다.</li>
         </ul>
-      </details>
+      </Disclosure>
     </>
   );
 }

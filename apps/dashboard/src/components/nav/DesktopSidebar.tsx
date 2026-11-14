@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import { Fragment, Suspense, useEffect, useRef } from "react";
 
 import { isChromelessPath } from "./chromeless-path";
@@ -11,7 +11,7 @@ import { NavIcon } from "./NavIcon";
 import { SidebarSearchTrigger } from "./SidebarSearchTrigger";
 import { SiteContextNav } from "./SiteContextNav";
 import { useSiteListSnapshot } from "./SiteListContext";
-import { resolveSiteId, siteMark, siteShortName, type SidebarSite } from "./site-context";
+import { resolveSiteId, resolveSiteSection, SITE_CONTEXT_SECTIONS, siteSectionHref, siteSettingsHref, siteMark, siteShortName, type SidebarSite } from "./site-context";
 
 /** 사이드바에 띄울 실측 건수. 값이 없으면(집계 실패 포함) 배지를 아예 그리지 않는다 —
  *  0 과 "모름"은 다른 상태이고, 안전 화면에서 그 둘을 같게 보이면 안 된다. */
@@ -32,7 +32,9 @@ function CompactSidebar({
   toggle: React.ReactNode;
 }) {
   const items = DESKTOP_NAV_GROUPS.flatMap((group) => group.items).filter((item) => item.key !== "more");
+  const search = useSearchParams();
   const siteId = resolveSiteId(pathname);
+  const activeSection = resolveSiteSection(pathname, search);
   const currentSite = siteId ? sites.find((site) => site.siteId === siteId) ?? null : null;
   const active = (href: string) => href === "/" ? pathname === "/" : pathname.startsWith(href);
 
@@ -47,7 +49,7 @@ function CompactSidebar({
       <Link
         href="/"
         aria-label="KSI 홈"
-        className="mb-3 grid size-7 flex-none place-items-center rounded-md bg-accent text-[10px] font-extrabold tracking-tight text-accent-on ring-1 ring-white/10"
+        className="mb-3 grid size-7 flex-none place-items-center rounded-md bg-accent text-micro font-extrabold tracking-tight text-accent-on ring-1 ring-white/10"
       >
         KSI
       </Link>
@@ -74,9 +76,32 @@ function CompactSidebar({
             href={`/sites/${encodeURIComponent(currentSite.siteId)}`}
             title={currentSite.name}
             aria-label={`현재 현장: ${siteShortName(currentSite.name)}`}
-            className="tap-target grid size-9 place-items-center rounded-md bg-white/[0.07] text-[11px] font-bold text-sidebar-text hover:bg-sidebar-hover"
+            className="tap-target grid size-9 place-items-center rounded-md bg-white/[0.07] text-micro font-bold text-sidebar-text hover:bg-sidebar-hover"
           >
             {siteMark(currentSite.name)}
+          </Link>
+          <div role="group" aria-label="현재 현장 메뉴" className="flex flex-col gap-1">
+            {SITE_CONTEXT_SECTIONS.map(({ key, label, icon }) => (
+              <Link
+                key={key}
+                href={siteSectionHref(currentSite.siteId, key)}
+                aria-label={label}
+                title={label}
+                aria-current={activeSection === key ? "page" : undefined}
+                className={`tap-target grid size-9 place-items-center rounded-md ${activeSection === key ? "bg-sidebar-active text-sidebar-active-ink" : "hover:bg-sidebar-hover"}`}
+              >
+                <NavIcon name={icon} className="size-[18px]" />
+              </Link>
+            ))}
+          </div>
+          <Link
+            href={siteSettingsHref(currentSite.siteId)}
+            aria-label="현장 설정"
+            title="현장 설정"
+            aria-current={search?.get("section") === "manage" ? "page" : undefined}
+            className="tap-target grid size-9 place-items-center rounded-md hover:bg-sidebar-hover"
+          >
+            <NavIcon name="settings" className="size-[18px]" />
           </Link>
         </div>
       )}
@@ -150,7 +175,7 @@ export function DesktopSidebar({
         restoreToggleFocus.current = true;
         setDesktopNavCollapsed(!collapsed);
       }}
-      className="tap-target mx-2 mb-2 inline-flex min-h-9 items-center justify-center gap-2 rounded-md px-2 text-[12px] text-sidebar-text hover:bg-sidebar-hover"
+      className="tap-target mx-2 mb-2 inline-flex min-h-9 items-center justify-center gap-2 rounded-md px-2 text-caption text-sidebar-text hover:bg-sidebar-hover"
     >
       <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" className="size-[18px] shrink-0">
         <rect x="3" y="4" width="18" height="16" rx="2" />
@@ -176,17 +201,17 @@ export function DesktopSidebar({
       <div className="flex items-center gap-[9px] px-[18px] pb-[22px]">
         <span
           aria-hidden="true"
-          className="grid size-[26px] flex-none place-items-center rounded-md bg-accent text-[12px] font-extrabold tracking-tight text-accent-on ring-1 ring-white/10"
+          className="grid size-[26px] flex-none place-items-center rounded-md bg-accent text-caption font-extrabold tracking-tight text-accent-on ring-1 ring-white/10"
         >
           KSI
         </span>
         <span className="min-w-0">
-          <span className="block text-[13.5px] leading-tight font-bold tracking-tight">
+          <span className="block text-lead leading-tight font-bold tracking-tight">
             현장 지능
           </span>
           {/* 176px 레일(1024~1279)에서는 두 줄로 접혀 브랜드 블록이 위아래로 벌어진다.
               장식 문구라 232px 레일에서만 보인다. */}
-          <span className="hidden font-mono text-[10.5px] tracking-[0.04em] text-sidebar-muted xl:block">
+          <span className="hidden font-mono text-micro tracking-[0.04em] text-sidebar-muted xl:block">
             SITE INTELLIGENCE
           </span>
         </span>
@@ -199,14 +224,14 @@ export function DesktopSidebar({
       <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-2.5">
         {DESKTOP_NAV_GROUPS.map((group) => (
           <div key={group.key} className={group.key === "account" ? "mt-auto border-t border-white/10 pt-3 pb-2" : undefined}>
-            {group.key === "account" && <Link href="/help" aria-current={pathname.startsWith("/help") ? "page" : undefined} className={`tap-target flex items-center gap-2.5 rounded-md px-2 text-[13px] hover:bg-sidebar-hover ${pathname.startsWith("/help") ? "bg-sidebar-active font-semibold text-sidebar-active-ink" : ""}`}>
+            {group.key === "account" && <Link href="/help" aria-current={pathname.startsWith("/help") ? "page" : undefined} className={`tap-target flex items-center gap-2.5 rounded-md px-2 text-body hover:bg-sidebar-hover ${pathname.startsWith("/help") ? "bg-sidebar-active font-semibold text-sidebar-active-ink" : ""}`}>
               <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="size-[17px]"><circle cx="12" cy="12" r="9" /><path d="M9.5 9a2.5 2.5 0 0 1 5 .5c0 1.5-2.5 1.5-2.5 3.5M12 16.5v.5" /></svg>
               도움말
             </Link>}
             {group.label && (
               // tracking 0.1em 은 라틴 대문자용이다 — 한글에 그대로 걸면 자모가 흩어져
               // 오히려 읽기 나빠진다. uppercase 는 라틴 라벨이 섞일 때를 위해 남긴다.
-              <div className="px-2 pt-3.5 pb-1.5 text-[10.5px] font-bold tracking-[0.02em] text-sidebar-muted uppercase">
+              <div className="px-2 pt-3.5 pb-1.5 text-micro font-bold tracking-[0.02em] text-sidebar-muted uppercase">
                 {group.label}
               </div>
             )}
@@ -219,7 +244,7 @@ export function DesktopSidebar({
                   <Link
                     href={item.href}
                     aria-current={active ? "page" : undefined}
-                    className={`tap-target flex items-center justify-between gap-2 rounded-md p-2 text-[13px] break-keep transition-colors ${
+                    className={`tap-target flex items-center justify-between gap-2 rounded-md p-2 text-body break-keep transition-colors ${
                       active
                         ? "bg-sidebar-active font-semibold text-sidebar-active-ink"
                         : "hover:bg-sidebar-hover"
@@ -236,7 +261,7 @@ export function DesktopSidebar({
                     </span>
                     {count && (
                       <span
-                        className={`tabular rounded-full px-1.5 py-px text-[11px] ${
+                        className={`tabular rounded-full px-1.5 py-px text-micro ${
                           count.urgent
                             ? "bg-crit font-bold text-white"
                             : "bg-white/[0.13] text-sidebar-text"

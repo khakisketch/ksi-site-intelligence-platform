@@ -1,15 +1,18 @@
-"""Core HTTP 클라이언트 — 워커가 처리 작업 표면을 말하는 유일한 경로.
+"""Core HTTP 클라이언트 — 외부 분석 워커가 Core 표면을 말하는 유일한 경로.
 
 :mod:`ksi_processing_controller.odm`/``http_node_odm`` 과 같은 관용구다 —
 Protocol 로 포트를 두고, httpx 구현체는 "요청을 보내고 봉투를 벗긴다"까지만
-한다. 상태 판정·재시도 정책은 이 모듈 밖(:mod:`worker`)에 둔다.
+한다. 상태 판정·재시도 정책은 이 모듈 밖(각 워커 함수)에 둔다.
+
+Task 3: 관리형 재구성 호출(작업 목록·lease·입력·전이·검증·산출물 등록)은
+제거됐다.
 
 ## Core 가 이미 정한 것을 여기서 다시 판단하지 않는다
 
 lease 관문·전이표·INV-051 게이트는 전부 Core(``ksi_core.processing_jobs``)
 쪽에 있다. 이 클라이언트는 그 판정 결과(HTTP status + verdict 문자열)를
 그대로 :class:`CoreClientError` 로 옮길 뿐, "이 verdict 면 재시도해도 될까"
-같은 판단을 하지 않는다 — 그 판단은 호출자(:mod:`worker`)의 몫이다.
+같은 판단을 하지 않는다 — 그 판단은 호출자(각 워커 함수)의 몫이다.
 """
 
 from __future__ import annotations
@@ -36,7 +39,6 @@ from ksi_event_contracts.vertical_reference import (
 from ksi_event_contracts.volume_change_report import VolumeChangeReport
 from ksi_geo_spatial.crs import UnsupportedCrsError, assert_supported_project_crs
 
-from ksi_processing_controller.capture_time import ImageCaptureTime
 from ksi_processing_controller.observability import REQUEST_ID_HEADER, current_correlation_id
 
 
@@ -121,139 +123,8 @@ class LeaseHandle:
 
 
 @dataclass(frozen=True, slots=True)
-class ArtifactObjectBinding:
-    """One uploaded object as reported back to Core's authoritative manifest."""
-
-    name: str
-    object_key: str
-    sha256: str
-    size_bytes: int
-    content_type: str
-
-
-def _object_binding_wire(binding: ArtifactObjectBinding) -> dict[str, str | int]:
-    """Core owns the target; auxiliary names belong to map keys, not bindings."""
-    return {
-        "objectKey": binding.object_key,
-        "sha256": binding.sha256,
-        "sizeBytes": binding.size_bytes,
-        "contentType": binding.content_type,
-    }
-
-
-@dataclass(frozen=True, slots=True)
-class PendingJob:
-    """워커가 다음에 잡을 후보 1건 — Core 의 ``PendingProcessingJobView`` 를 옮긴 것.
-
-    ``mission_id``·계약 내용이 없는 것이 의도다(``PROCESSING_WORK`` 는
-    ``MISSIONS_READ`` 를 포함하지 않는다 — Core 쪽 스키마 docstring 참조). lease 를
-    잡은 다음에야 :meth:`CoreClient.get_input` 이 전체 사양을 준다.
-    """
-
-    job_id: str
-
-
-@dataclass(frozen=True, slots=True)
-class JobInputMedia:
-    media_id: str
-    download_url: str
-
-
-@dataclass(frozen=True, slots=True)
-class JobInputGroundControl:
-    """이 작업에 붙은 기준점 파일 — 좌표계 **신고값**과 받아올 자리.
-
-    ``crs`` 는 Core 원장의 선언이고, 파일 내용이 그 선언과 같은지는 워커가
-    제출 전에 대조한다(사진의 sha256 을 워커가 실측 대조하는 것과 같은 분담).
-    """
-
-    crs: str
-    sha256: str
-    download_url: str
-
-
-@dataclass(frozen=True, slots=True)
-class JobInput:
-    """``GET /input`` 을 옮긴 것 — **신고값이 없다**(source_media.py 참고)."""
-
-    mission_id: str
-    site_id: str
-    status: str
-    provider: str
-    engine_version: str
-    engine_digest: str
-    execution_locus: str
-    processing_params: dict[str, Any]
-    source_bundle_digest: str
-    media: tuple[JobInputMedia, ...]
-    # 현장 등록 시점의 CRS — Core 가 site_store 에서 읽어 준다(워커·발급자가
-    # 자기 신고하지 않는다). None 이면 현장 원장 이상 상태다.
-    site_crs: str | None
-    # Missing fields are historical fact, not a reason to prevent an old job
-    # from being failed/reported by a newer worker.
-    processing_profile_id: str | None = None
-    processing_profile_digest: str | None = None
-    processing_profile_classification: str = "LEGACY_UNMANAGED"
-    # 기준점 파일(있으면). None 이면 이 조사는 기준점 없이 찍혔고, 엔진은 EXIF 로
-    # 좌표계를 고른다 — 그 성과는 두 시점 비교에서 거부된다.
-    ground_control: JobInputGroundControl | None = None
-
-
-@dataclass(frozen=True, slots=True)
-class MeasuredImage:
-    """워커가 실측한 값 — 신고값이 아니라 **바이트에서 잰 값**이다."""
-
-    media_id: str
-    sha256: str
-    size_bytes: int
-    width: int
-    height: int
-    capture_time: ImageCaptureTime = ImageCaptureTime.unavailable()
-
-
-@dataclass(frozen=True, slots=True)
-class ArtifactSubmission:
-    """``POST .../artifacts`` 요청 payload — 계보 앵커를 실을 자리가 없다."""
-
-    artifact_id: str
-    kind: str
-    authority: str
-    derived_from: tuple[str, ...]
-    digest: str
-    format: str
-    crs: str | None
-    gsd: float | None
-    # 주 파일(digest/objectKey 가 가리키는 파일) 외 나머지 파일들의 basename —
-    # 산출물이 파일 하나면 빈 튜플(mesh-multi-file-artifact-persistence).
-    auxiliary_files: tuple[str, ...] = ()
-    # 이 산출물 높이의 수직기준 — **파이프라인이 자기 동작을 근거로 선언한다**
-    # (worker._ODM_VERTICAL_REFERENCE). None 이면 payload 에서 키째 빠져,
-    # 그 등록은 수직기준을 밝히지 않은 v1.1 산출물로 남는다.
-    vertical_reference: VerticalReference | None = None
-    # New-format processing results bind every uploaded byte to the candidate
-    # generation.  ``None`` remains only for historical Core compatibility;
-    # the new Core endpoint rejects missing bindings.
-    primary_object: ArtifactObjectBinding | None = None
-    auxiliary_objects: tuple[ArtifactObjectBinding, ...] = ()
-
-
-@dataclass(frozen=True, slots=True)
-class ArtifactUploadTarget:
-    """산출물 바이트를 올릴 자리 — Core 가 정해서 내려준다.
-
-    **워커가 객체 키를 고르지 않는다.** 고를 수 있으면 워커 토큰 하나로 버킷의
-    임의 경로에 쓸 수 있고, "서버가 정한 자리에만 쓴다"를 워커 코드가 매번
-    기억해야 한다.
-    """
-
-    object_key: str
-    upload_url: str
-    required_headers: tuple[tuple[str, str], ...] = ()
-
-
-@dataclass(frozen=True, slots=True)
 class PendingComparisonRequest:
-    """비교 워커가 다음에 잡을 후보 1건 — ``PendingJob`` 과 동형(§ 그 docstring)."""
+    """비교 워커가 다음에 잡을 후보 1건."""
 
     request_id: str
 
@@ -272,7 +143,7 @@ class ComparisonInput:
     mission_id: str
     # 워커가 QUEUED→RUNNING 전이를 시도해도 되는지는 이 값으로만 안다 — 재개된
     # 요청(다른 워커가 이미 RUNNING 으로 바꿔 놓은 것)에 또 전이를 시도하면
-    # ILLEGAL_TRANSITION 이다(worker.py 의 JobInput.status 와 동일 원칙).
+    # ILLEGAL_TRANSITION 이다(상태 전이는 Core 전이표가 판정한다).
     status: str
     # 이 요청 생성 시점에 굳어진 기준값 — 계산 함수의 기본값 대신 **이 값**을
     # 쓴다. 그래야 원장의 스냅샷이 "실제로 쓴 값"이 되고, 화면이 그 값을
@@ -312,7 +183,7 @@ class PendingDesignSurface:
 
     **선언값(sha256·CRS)이 없는 것이 이 모델의 요점이다.** 그 값을 워커가 알면
     파일을 읽지 않고 되읊어 검증을 통과할 수 있다 — Core 는 "어느 파일을 어디서
-    받아라"만 준다(``PendingJob``·``JobInput`` 과 같은 원칙).
+    받아라"만 준다 — 신고값은 주지 않는다.
     """
 
     design_surface_id: str
@@ -392,7 +263,7 @@ class DesignSurfaceMeasurement:
 
     ``measuredAt``/``measuredBy`` 가 빠진 것이 의도다. 둘 다 Core 가 서버 시계와
     인증된 principal 로 채운다 — 워커가 "저쪽이 쟀다"거나 "어제 쟀다"를 주장할
-    통로를 만들지 않는다(``MeasuredImage`` 와 같은 경계).
+    통로를 만들지 않는다.
     """
 
     sha256: str
@@ -492,7 +363,7 @@ class DesignConformanceInput:
 
 @dataclass(frozen=True, slots=True)
 class DiffRasterUploadTarget:
-    """차분 래스터를 올릴 자리 — ``ArtifactUploadTarget`` 과 같은 경계(키는 Core 가 정한다)."""
+    """차분 래스터를 올릴 자리 — 키는 Core 가 정한다(워커가 객체 키를 고르지 않는다)."""
 
     object_key: str
     upload_url: str
@@ -618,49 +489,7 @@ class RegionExtractionCoreClient(Protocol):
 
 
 class CoreClient(Protocol):
-    """워커가 필요로 하는 Core 표면. 이 이상을 워커가 알 필요는 없다."""
-
-    def list_pending(self, *, limit: int = 50) -> list[PendingJob]:
-        """``GET /v1/processing-jobs``. QUEUED + lease 만료된 RUNNING(죽은 워커가
-        쥐고 있던 작업), 오래된 것부터(FIFO)."""
-        ...
-
-    def acquire_lease(self, job_id: str) -> LeaseHandle | None:
-        """``POST /lease``. LEASED·LEASE_RENEWED 외엔 :class:`CoreClientError`."""
-        ...
-
-    def get_input(self, job_id: str) -> JobInput:
-        """``GET /input``. INPUT_READY 외엔 :class:`CoreClientError`."""
-        ...
-
-    def transition(self, job_id: str, target: str, *, detail: str | None = None) -> None:
-        """``POST /transitions``. TRANSITIONED 외엔 :class:`CoreClientError`."""
-        ...
-
-    def verify_source_media(self, job_id: str, measurements: list[MeasuredImage]) -> None:
-        """Fenced ``POST /processing-jobs/{id}/verify-input`` worker mutation."""
-        ...
-
-    def presign_artifact_upload(
-        self,
-        job_id: str,
-        *,
-        artifact_id: str,
-        content_type: str,
-        filename: str | None = None,
-        sha256: str | None = None,
-        size_bytes: int | None = None,
-    ) -> ArtifactUploadTarget:
-        """``POST /artifacts/upload-url``. UPLOAD_READY 외엔 :class:`CoreClientError`.
-
-        ``filename`` 은 다중 파일 산출물(mesh 등)에서 주 파일 외 나머지 각각을
-        올릴 때 채운다 — ``None`` 이면 주 파일 자리(기존 동작과 동일)다.
-        """
-        ...
-
-    def register_artifact(self, job_id: str, submission: ArtifactSubmission) -> None:
-        """``POST /artifacts``. ARTIFACT_REGISTERED 외엔 :class:`CoreClientError`."""
-        ...
+    """비교 워커가 필요로 하는 Core 표면. 이 이상을 비교 워커가 알 필요는 없다."""
 
     # ── W2 비교 요청(comparison_requests.py) ────────────────────────────────
 
@@ -699,11 +528,11 @@ class WorkerCoreClient(
     RegionExtractionCoreClient,
     Protocol,
 ):
-    """폴링 루프(:mod:`runner`) 하나가 요구하는 표면 전부 — 여섯 종류 후보의 합집합.
+    """외부 분석 폴링 루프가 요구하는 표면 전부 — 다섯 종류 후보의 합집합.
 
     Protocol 을 나눠 두고 여기서만 합치는 이유: 각 워커 함수는 자기가 쓰는
     것만 요구해야 가짜 구현이 작아지고(``run_comparison_request`` 는 설계면 표면을
-    모른다), 반대로 **한 프로세스가 여섯 종류를 다 도는 것**은 runner 의 사실이라
+    모른다), 반대로 **한 프로세스가 다섯 종류를 다 도는 것**은 폴링 루프의 사실이라
     그 자리에서만 합집합을 요구한다.
     """
 
@@ -933,13 +762,10 @@ class HttpCoreClient:
     ) -> tuple[dict[str, Any], Mapping[str, str]]:
         """``ok`` 는 문자열 하나 또는 성공으로 볼 verdict 집합이다.
 
-        **집합을 받는 이유가 실기동에서 드러났다.** ``acquire_lease`` 가 처음엔
-        ``ok="LEASED"`` 만 넘기고, 갱신(``LEASE_RENEWED``)까지 성공으로 보는
-        검증은 이 함수가 이미 예외를 던진 **뒤**에 있는 죽은 코드였다 — 가짜
-        ``CoreClient`` 로 짠 단위 테스트는 이 HTTP 번역 계층 자체를 우회해서
-        통과했지만, 실제 Core+NodeODM 대상 완주 시도에서 heartbeat 갱신이
-        일어나는 순간 곧바로 죽었다(``lease: LEASE_RENEWED`` 예외). 그래서
-        판정 집합은 호출부가 아니라 이 함수가 한 번에 본다.
+        **집합을 받는 이유가 실기동에서 드러났다.** lease 갱신(``LEASE_RENEWED``)
+        까지 성공으로 보는 검증을 호출부가 이 함수 **뒤**에 두면, 갱신 응답이
+        오는 순간 그 호출부가 먼저 죽는다 — 판정 집합은 호출부가 아니라 이
+        함수가 한 번에 본다.
         """
         request_headers = self._correlation_headers(
             include_worker_identity=include_worker_identity
@@ -966,7 +792,7 @@ class HttpCoreClient:
     def _get_json(
         self, path: str, *, what: str, params: dict[str, Any] | None = None
     ) -> dict[str, Any]:
-        """대기 목록 여섯 종류가 공유하는 GET — 봉투를 벗기고 status 를 verdict 로 옮긴다.
+        """대기 목록 다섯 종류가 공유하는 GET — 봉투를 벗기고 status 를 verdict 로 옮긴다.
 
         ``_post`` 와 달리 verdict 필드가 없는 표면이라(목록 응답은 성공 하나뿐)
         HTTP 상태가 곧 판정이다. 각 목록 호출이 같은 다섯 줄을 반복하고 있었다.
@@ -985,12 +811,6 @@ class HttpCoreClient:
                 detail=str(payload.get("detail")) if isinstance(payload, dict) else None,
             )
         return dict(payload)
-
-    def list_pending(self, *, limit: int = 50) -> list[PendingJob]:
-        payload = self._get_json(
-            "/v1/processing-jobs", what="list-pending", params={"limit": limit}
-        )
-        return [PendingJob(job_id=item["jobId"]) for item in payload["jobs"]]
 
     def _claim_or_renew(
         self, *, work_kind: str, resource_id: str, path: str, what: str
@@ -1038,192 +858,6 @@ class HttpCoreClient:
             payload=payload,
             headers=response_headers,
             expected_acquisition_id=expected_acquisition_id,
-        )
-
-    def acquire_lease(self, job_id: str) -> LeaseHandle:
-        return self._claim_or_renew(
-            work_kind="processing", resource_id=job_id,
-            path=f"/v1/processing-jobs/{job_id}/lease", what="lease",
-        )
-
-    def renew_lease(self, job_id: str) -> LeaseHandle:
-        return self.acquire_lease(job_id)
-
-    def get_input(self, job_id: str) -> JobInput:
-        response = self._get(
-            f"/v1/processing-jobs/{job_id}/input",
-            headers=self._required_fence_headers(work_kind="processing", resource_id=job_id),
-        )
-        try:
-            payload = response.json()
-        except ValueError as exc:
-            raise CoreClientError(
-                what="input", verdict="NON_JSON_RESPONSE", detail=response.text[:200]
-            ) from exc
-        if payload.get("verdict") != "INPUT_READY":
-            raise CoreClientError(
-                what="input", verdict=str(payload.get("verdict")), detail=payload.get("detail")
-            )
-        data = payload["input"]
-        return JobInput(
-            mission_id=data["missionId"],
-            site_id=data["siteId"],
-            status=data["status"],
-            provider=data["provider"],
-            engine_version=data["engineVersion"],
-            engine_digest=data["engineDigest"],
-            execution_locus=data["executionLocus"],
-            processing_params=data["processingParams"],
-            processing_profile_id=data.get("processingProfileId"),
-            processing_profile_digest=data.get("processingProfileDigest"),
-            processing_profile_classification=data.get(
-                "processingProfileClassification", "LEGACY_UNMANAGED"
-            ),
-            source_bundle_digest=data["sourceBundleDigest"],
-            site_crs=data.get("siteCrs"),
-            media=tuple(
-                JobInputMedia(media_id=m["mediaId"], download_url=m["downloadUrl"])
-                for m in data["media"]
-            ),
-            ground_control=(
-                JobInputGroundControl(
-                    crs=gc["crs"], sha256=gc["sha256"], download_url=gc["downloadUrl"]
-                )
-                if (gc := data.get("groundControl")) is not None
-                else None
-            ),
-        )
-
-    def transition(self, job_id: str, target: str, *, detail: str | None = None) -> None:
-        # CANCELLED is an operator action and Core deliberately does not fence
-        # it; all worker-owned processing transitions require this job's handle.
-        handle = (
-            None
-            if target == "CANCELLED"
-            else self._required_lease_handle(work_kind="processing", resource_id=job_id)
-        )
-        self._post(
-            f"/v1/processing-jobs/{job_id}/transitions",
-            what=f"transition→{target}",
-            ok="TRANSITIONED",
-            json={"targetStatus": target, "detail": detail},
-            headers=self._fence_headers(handle) if handle is not None else None,
-            include_worker_identity=handle is not None,
-        )
-        if handle is not None and target in {"SUCCEEDED", "FAILED"}:
-            self._retire_lease(handle)
-
-    def verify_source_media(self, job_id: str, measurements: list[MeasuredImage]) -> None:
-        # ALREADY_VERIFIED 도 성공이다 — 재시도 작업(이전 시도가 실패한 뒤
-        # 새로 발급된 작업)이 같은 미션의 이미 검증된 번들에 다시 보고하면
-        # 정확히 이 verdict 가 나온다(실기동에서 실제로 발생, 2026-08-06).
-        self._post(
-            f"/v1/processing-jobs/{job_id}/verify-input",
-            what="verify",
-            ok=frozenset({"VERIFIED", "ALREADY_VERIFIED"}),
-            headers=self._required_fence_headers(work_kind="processing", resource_id=job_id),
-            json={
-                "measurements": [
-                    {
-                        "mediaId": m.media_id,
-                        "sha256": m.sha256,
-                        "bytes": m.size_bytes,
-                        "width": m.width,
-                        "height": m.height,
-                        "captureTime": {
-                            "capturedAt": (
-                                m.capture_time.captured_at.isoformat()
-                                if m.capture_time.captured_at is not None
-                                else None
-                            ),
-                            "source": m.capture_time.source.value,
-                            "status": m.capture_time.status.value,
-                        },
-                    }
-                    for m in measurements
-                ]
-            },
-        )
-
-    def presign_artifact_upload(
-        self,
-        job_id: str,
-        *,
-        artifact_id: str,
-        content_type: str,
-        filename: str | None = None,
-        sha256: str | None = None,
-        size_bytes: int | None = None,
-    ) -> ArtifactUploadTarget:
-        payload = self._post(
-            f"/v1/processing-jobs/{job_id}/artifacts/upload-url",
-            what=f"upload-url:{artifact_id}:{filename or '(primary)'}",
-            ok="UPLOAD_READY",
-            headers=self._required_fence_headers(work_kind="processing", resource_id=job_id),
-            json={
-                "artifactId": artifact_id,
-                "contentType": content_type,
-                "filename": filename,
-                "sha256": sha256,
-                "sizeBytes": size_bytes,
-            },
-        )
-        object_key = payload.get("objectKey")
-        upload_url = payload.get("uploadUrl")
-        if not isinstance(object_key, str) or not isinstance(upload_url, str):
-            # verdict 는 UPLOAD_READY 인데 자리가 안 왔다 — 여기서 잡지 않으면
-            # 다음 줄의 PUT 이 None 을 URL 로 쓴다.
-            raise CoreClientError(
-                what=f"upload-url:{artifact_id}",
-                verdict="UPLOAD_READY",
-                detail="응답에 objectKey/uploadUrl 이 없다",
-            )
-        raw_headers = payload.get("requiredHeaders", {})
-        if not isinstance(raw_headers, dict) or not all(
-            isinstance(key, str) and isinstance(value, str)
-            for key, value in raw_headers.items()
-        ):
-            raise CoreClientError(
-                what=f"upload-url:{artifact_id}", verdict="UPLOAD_READY",
-                detail="requiredHeaders must be a string map",
-            )
-        return ArtifactUploadTarget(
-            object_key=object_key,
-            upload_url=upload_url,
-            required_headers=tuple(sorted(raw_headers.items())),
-        )
-
-    def register_artifact(self, job_id: str, submission: ArtifactSubmission) -> None:
-        payload: dict[str, Any] = {
-            "artifactId": submission.artifact_id,
-            "kind": submission.kind,
-            "authority": submission.authority,
-            "derivedFrom": list(submission.derived_from),
-            "digest": submission.digest,
-            "format": submission.format,
-            "crs": submission.crs,
-            "gsd": submission.gsd,
-            "auxiliaryFiles": list(submission.auxiliary_files),
-        }
-        if submission.primary_object is not None:
-            payload["primaryObject"] = _object_binding_wire(submission.primary_object)
-            payload["auxiliaryObjects"] = {
-                artifact.name: _object_binding_wire(artifact)
-                for artifact in submission.auxiliary_objects
-            }
-        if submission.vertical_reference is not None:
-            # 모를 때 명시적 null 을 보내지 않는다 — 키가 없는 것과 null 은
-            # Core 에서 같은 None 이지만, 보내지 않으면 옛 워커의 payload 와
-            # 바이트가 같아 "이 필드가 무해하다"가 요청 표면에서도 사실이 된다.
-            payload["verticalReference"] = submission.vertical_reference.model_dump(
-                by_alias=True, mode="json"
-            )
-        self._post(
-            f"/v1/processing-jobs/{job_id}/artifacts",
-            what=f"artifact:{submission.artifact_id}",
-            ok="ARTIFACT_REGISTERED",
-            json=payload,
-            headers=self._required_fence_headers(work_kind="processing", resource_id=job_id),
         )
 
     # ── W2 비교 요청(comparison_requests.py) ────────────────────────────────
@@ -1623,7 +1257,7 @@ class HttpCoreClient:
             or not isinstance(content_type, str)
         ):
             # verdict 는 UPLOAD_READY 인데 자리가 안 왔다 — 여기서 잡지 않으면
-            # 다음 줄의 PUT 이 None 을 URL 로 쓴다(presign_artifact_upload 와 동일).
+            # 다음 줄의 PUT 이 None 을 URL 로 쓴다.
             raise CoreClientError(
                 what=f"diff-raster-upload-url:{request_id}",
                 verdict="UPLOAD_READY",
@@ -1776,9 +1410,6 @@ class HttpCoreClient:
 
 
 __all__ = [
-    "ArtifactObjectBinding",
-    "ArtifactSubmission",
-    "ArtifactUploadTarget",
     "CheckpointValidationCoreClient",
     "CheckpointValidationMeasurement",
     "ComparisonInput",
@@ -1790,16 +1421,11 @@ __all__ = [
     "DesignSurfaceMeasurement",
     "DiffRasterUploadTarget",
     "HttpCoreClient",
-    "JobInput",
-    "JobInputGroundControl",
-    "JobInputMedia",
     "LeaseHandle",
-    "MeasuredImage",
     "PendingComparisonRequest",
     "PendingCheckpointValidation",
     "PendingDesignConformanceRequest",
     "PendingDesignSurface",
-    "PendingJob",
     "PendingRegionExtractionRequest",
     "RegionExtractionCoreClient",
     "RegionExtractionInput",

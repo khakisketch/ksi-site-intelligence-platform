@@ -7,6 +7,7 @@ vi.mock("next/navigation", () => ({ useRouter: () => navigation }));
 vi.mock("@/components/map/AoiPolygonMap", () => ({ AoiPolygonMap: () => null }));
 
 import { SiteRegistrationOnlyWizard } from "@/app/sites/new/SiteRegistrationOnlyWizard";
+import { installFakeSessionStorage } from "./storage-fakes";
 
 const KEY = "ksi-wizard-site-registration-only";
 const IDENTITY = `v1-${"a".repeat(64)}`;
@@ -220,7 +221,7 @@ describe("실시간 계정과 저장 상태", () => {
   });
 
   it("쓰기 실패를 안내하고 저장 성공이라고 말하지 않는다", async () => {
-    vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => { throw new Error("quota"); });
+    installFakeSessionStorage({ setItem: () => { throw new Error("quota"); } });
     render(<SiteRegistrationOnlyWizard mode="MAPPED_BOOTSTRAP" accountFingerprint={IDENTITY} />);
     const input = await screen.findByPlaceholderText(NAME_PLACEHOLDER);
     const { fireEvent } = await import("@testing-library/react");

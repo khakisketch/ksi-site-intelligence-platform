@@ -23,7 +23,7 @@ export const PALETTE_OPEN_EVENT = "ksi:palette-open";
 
 function KeyCap({ children }: { children: React.ReactNode }) {
   return (
-    <kbd className="tabular rounded border border-line-strong bg-surface px-1.5 py-0.5 font-mono text-[11.5px] text-ink-2">
+    <kbd className="tabular rounded border border-line-strong bg-surface px-1.5 py-0.5 font-mono text-caption text-ink-2">
       {children}
     </kbd>
   );
@@ -327,10 +327,10 @@ export function CommandPalette({ items }: { items: PaletteItem[] }) {
       >
         {helpOpen ? (
           <div className="p-4">
-            <h2 className="mb-3 text-[14px] font-bold">단축키</h2>
+            <h2 className="mb-3 text-lead font-bold">단축키</h2>
             <ul className="flex flex-col gap-2">
               {shortcutRows.map((row) => (
-                <li key={row.desc} className="flex items-center gap-3 text-[13px]">
+                <li key={row.desc} className="flex items-center gap-3 text-body">
                   <span className="flex flex-none gap-1">
                     {row.keys.map((key) => (
                       <KeyCap key={key}>{key}</KeyCap>
@@ -380,7 +380,7 @@ export function CommandPalette({ items }: { items: PaletteItem[] }) {
                 aria-controls={listboxId}
                 aria-activedescendant={activeId}
                 aria-autocomplete="list"
-                className="min-h-11 w-full border-0 bg-transparent py-3 text-[14px] outline-none placeholder:text-ink-muted"
+                className="min-h-11 w-full border-0 bg-transparent py-3 text-lead outline-none placeholder:text-ink-muted"
               />
               {/* 보이는 닫기 — 백드롭 클릭만으로는 터치·키보드 사용자가 닫을 수단을
                   찾기 어렵다. 44px 탭 타겟. */}
@@ -407,7 +407,7 @@ export function CommandPalette({ items }: { items: PaletteItem[] }) {
             {/* 정직한 범위 — 팔레트는 셸이 쥔 화면·현장 이름만 찾는다. 파일·작업
                 기록은 각 현장 화면에서 확인한다(없는 범위를 암시하지 않는다).
                 현재 현장 범위(작업구역·관측)가 있으면 같은 범위로 이동한다. */}
-            <p className="border-b border-line bg-sunk px-3.5 py-1.5 text-[11.5px] break-keep text-ink-muted">
+            <p className="border-b border-line bg-sunk px-3.5 py-1.5 text-caption break-keep text-ink-muted">
               화면·현장 이름 검색이며 파일·작업 기록은 각 현장에서 확인
               {scopedSite?.workAreaId ? " · 현재 현장 범위를 함께 이동합니다" : ""}
             </p>
@@ -423,7 +423,7 @@ export function CommandPalette({ items }: { items: PaletteItem[] }) {
               className="max-h-[46dvh] overflow-y-auto py-1.5"
             >
               {results.length === 0 ? (
-                <li role="presentation" className="px-4 py-8 text-center text-[13px] break-keep text-ink-muted">
+                <li role="presentation" className="px-4 py-8 text-center text-body break-keep text-ink-muted">
                   일치하는 화면이나 현장이 없습니다.
                 </li>
               ) : (
@@ -439,31 +439,31 @@ export function CommandPalette({ items }: { items: PaletteItem[] }) {
                       tabIndex={-1}
                       onMouseEnter={() => setActive(index)}
                       onClick={() => goTo(item)}
-                      className={`tap-target flex w-full items-center gap-3 px-3.5 text-left text-[13px] ${
+                      className={`tap-target flex w-full items-center gap-3 px-3.5 text-left text-body ${
                         index === active ? "bg-accent-tint" : ""
                       }`}
                     >
                       <span className="min-w-0 flex-1">
                         <span className="block truncate font-medium">{item.label}</span>
                         {item.hint && (
-                          <span className="block truncate text-[12px] text-ink-muted">
+                          <span className="block truncate text-caption text-ink-muted">
                             {item.hint}
                           </span>
                         )}
                       </span>
                       {item.pending && (
-                        <span className="flex-none rounded bg-sunk px-1.5 py-px text-[11.5px] text-ink-2">
+                        <span className="flex-none rounded bg-sunk px-1.5 py-px text-caption text-ink-2">
                           준비 중
                         </span>
                       )}
-                      <span className="flex-none text-[11.5px] text-ink-muted">{item.group}</span>
+                      <span className="flex-none text-caption text-ink-muted">{item.group}</span>
                     </button>
                   </li>
                 ))
               )}
             </ul>
 
-            <div className="flex items-center gap-2 border-t border-line bg-sunk px-3.5 py-2 text-[11.5px] text-ink-muted">
+            <div className="flex items-center gap-2 border-t border-line bg-sunk px-3.5 py-2 text-caption text-ink-muted">
               <KeyCap>↑</KeyCap>
               <KeyCap>↓</KeyCap>
               <span>이동</span>

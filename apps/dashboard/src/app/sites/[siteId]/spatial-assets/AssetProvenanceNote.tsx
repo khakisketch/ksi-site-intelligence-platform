@@ -1,5 +1,6 @@
 "use client";
 
+import { Disclosure } from "@/components/ui/Disclosure";
 import { useEffect, useRef, useState } from "react";
 
 import { formatKoreanDate } from "@/lib/datetime";
@@ -107,21 +108,21 @@ function AssetProvenanceNoteBody({
   const shownDigests = digestEntries.filter((entry): entry is [string, string] => entry !== null);
   return (
     <section aria-label="제작·촬영·격자 출처" className="rounded-lg border border-line bg-sunk/35 px-3 py-2.5">
-      <dl className="grid gap-1.5 text-[12px] leading-5 text-ink-2">
+      <dl className="grid gap-1.5 text-caption leading-5 text-ink-2">
         <div className="min-w-0">
-          <dt className="text-[11px] text-ink-muted">제작</dt>
+          <dt className="text-micro text-ink-muted">제작</dt>
           <dd className="mt-0.5 break-words font-semibold text-ink-1">
             {producerName.length > 0 ? producerName : "제작 도구 정보 없음"} · {knowledgeLabel[description.producer.producerKnowledge]}
           </dd>
         </div>
         <div className="min-w-0">
-          <dt className="text-[11px] text-ink-muted">촬영·원본 보관</dt>
+          <dt className="text-micro text-ink-muted">촬영·원본 보관</dt>
           <dd className="mt-0.5 break-words font-semibold text-ink-1">
             {captureLine} · 원본 보관 {retentionLocusLabel[description.capture.originalRetentionLocus]}
           </dd>
         </div>
         <div className="min-w-0">
-          <dt className="text-[11px] text-ink-muted">격자</dt>
+          <dt className="text-micro text-ink-muted">격자</dt>
           <dd className="mt-0.5 break-words font-semibold text-ink-1">
             {description.raster
               ? `${description.raster.bandCount}밴드 · ${description.raster.dtype} · ${description.raster.layout} · ${nodataLabel(description.raster)} · 유효 픽셀 ${formatCountKo(description.raster.validPixelCount)}`
@@ -130,17 +131,16 @@ function AssetProvenanceNoteBody({
         </div>
       </dl>
       {shownDigests.length > 0 && (
-        <details className="mt-1 text-[11.5px] text-ink-2">
-          <summary className="tap-target cursor-pointer font-semibold">확인값 보기</summary>
+        <Disclosure label="확인값 상세" className="mt-1">
           <dl className="mt-1 grid gap-1 border-l-2 border-line pl-3">
             {shownDigests.map(([label, digest]) => (
               <div key={label} className="min-w-0">
                 <dt className="text-ink-muted">{label}</dt>
-                <dd className="break-all font-mono text-[11px]">{digest}</dd>
+                <dd className="break-all font-mono text-micro">{digest}</dd>
               </div>
             ))}
           </dl>
-        </details>
+        </Disclosure>
       )}
     </section>
   );

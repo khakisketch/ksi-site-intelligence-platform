@@ -61,6 +61,17 @@ def test_vm_compose_resolves_with_only_caddy_80_443_published() -> None:
     for name in ("core", "dashboard", "minio", "caddy"):
         assert "ksi-private" in config["services"][name]["networks"]
 
+    core = config["services"]["core"]
+    registry_path = "/run/ksi-identity/oidc-subject-registry.json"
+    assert core["environment"].get("KSI_CORE_OIDC_SUBJECT_REGISTRY_FILE") == registry_path
+    registry_mounts = [mount for mount in core["volumes"] if mount["target"] == registry_path]
+    assert len(registry_mounts) == 1
+    registry_mount = registry_mounts[0]
+    assert registry_mount["type"] == "bind"
+    assert registry_mount["source"] == str(_DEPLOY / "secrets" / "oidc-subject-registry.json")
+    assert registry_mount["read_only"] is True
+    assert registry_mount["bind"].get("create_host_path", False) is False
+
 
 def test_vm_profile_separates_oidc_humans_secrets_and_public_object_origin() -> None:
     assert "KSI_CORE_HUMAN_AUTH_MODE: OIDC" in _VM_COMPOSE

@@ -32,7 +32,7 @@ export function WorkQueueOperationsNotices({ notices }: { notices: readonly Noti
               <span className="flex flex-wrap items-center justify-end gap-1.5 text-[11.5px] font-semibold">
                 {notice.overdue && <span className="rounded-full bg-high-bg px-2 py-1 text-high-ink">마감 지남</span>}
                 {notice.dueSoon && <span className="rounded-full bg-sunk px-2 py-1 text-ink-2">마감 임박</span>}
-                {notice.assignedToMe && <span className="rounded-full bg-accent-bg px-2 py-1 text-accent-text">내 작업</span>}
+                {notice.assignedToMe && <span className="rounded-full bg-accent-tint px-2 py-1 text-accent-text">내 작업</span>}
               </span>
             </Link>
           </li>

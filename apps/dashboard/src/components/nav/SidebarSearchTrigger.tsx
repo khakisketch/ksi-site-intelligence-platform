@@ -13,7 +13,7 @@ export function SidebarSearchTrigger() {
     <button
       type="button"
       onClick={() => window.dispatchEvent(new CustomEvent(PALETTE_OPEN_EVENT))}
-      className="tap-target flex w-full items-center gap-2 rounded-md border border-white/[0.13] bg-white/[0.05] px-2.5 text-left text-[12.5px] text-sidebar-muted transition-colors hover:bg-white/10 hover:text-sidebar-text"
+      className="tap-target flex w-full items-center gap-2 rounded-md border border-white/[0.13] bg-white/[0.05] px-2.5 text-left text-body text-sidebar-muted transition-colors hover:bg-white/10 hover:text-sidebar-text"
     >
       <svg
         aria-hidden="true"
@@ -31,7 +31,7 @@ export function SidebarSearchTrigger() {
       <span className="flex-1 truncate">검색 · 이동</span>
       {/* 실제 OS의 수식키 하나만 적는다 — 둘 다 적으면 폭이 늘어 레일에서 잘리고,
           실제 동작은 두 키를 모두 지원한다(shortcuts.ts). */}
-      <kbd className="tabular flex-none rounded border border-white/[0.16] px-1 font-mono text-[10.5px]">
+      <kbd className="tabular flex-none rounded border border-white/[0.16] px-1 font-mono text-micro">
         {commandModifier}K
       </kbd>
     </button>

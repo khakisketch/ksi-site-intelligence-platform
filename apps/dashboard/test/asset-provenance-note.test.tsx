@@ -67,9 +67,9 @@ describe("asset provenance note", () => {
     expect(screen.getByText(/원본 보관 고객 작업장/)).toBeTruthy();
     expect(screen.getByText(/1밴드 · float32 · GTiff · NoData 값 -9999 · 유효 픽셀 900/)).toBeTruthy();
     // 확인값은 펼침에만 둔다.
-    const details = screen.getByText("확인값 보기").closest("details")!;
+    const details = screen.getByText("확인값 상세").closest("details")!;
     expect(details.hasAttribute("open")).toBe(false);
-    fireEvent.click(screen.getByText("확인값 보기"));
+    fireEvent.click(screen.getByText("확인값 상세"));
     expect(details.textContent).toContain(description.raster.sourceReportDigest);
   });
 

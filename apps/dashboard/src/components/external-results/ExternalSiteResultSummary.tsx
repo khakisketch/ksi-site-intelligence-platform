@@ -64,8 +64,8 @@ function measurementCopy(result: ExternalResultSummaryView): { label: string; to
 function Metric({ label, value }: { label: string; value: string }) {
   return (
     <div className="border-l border-line px-3 first:border-l-0 first:pl-0">
-      <dt className="text-[12px] font-semibold text-ink-muted">{label}</dt>
-      <dd className="num mt-1 text-[20px] font-bold tracking-tight text-ink-1">{value}</dd>
+      <dt className="text-caption font-semibold text-ink-muted">{label}</dt>
+      <dd className="num mt-1 text-display font-bold tracking-tight text-ink-1">{value}</dd>
     </div>
   );
 }
@@ -99,8 +99,8 @@ function SingleVolumeSummary({
     <section className="rounded-lg border border-line bg-surface">
       <div className="flex flex-wrap items-start justify-between gap-3 border-b border-line px-4 py-3">
         <div className="min-w-0">
-          <h3 className="text-[15px] font-bold tracking-tight break-keep">단일 시점 체적 결과</h3>
-          <p className="mt-1 text-[13px] leading-5 break-keep text-ink-2">
+          <h3 className="text-lead font-bold tracking-tight break-keep">단일 시점 체적 결과</h3>
+          <p className="mt-1 text-body leading-5 break-keep text-ink-2">
             작업구역 {workAreaName ?? result.workAreaId} · 촬영 {observationRange(result.currentCapturedFrom, result.currentCapturedTo)}
           </p>
         </div>
@@ -121,7 +121,7 @@ function SingleVolumeSummary({
           />
         </div>
       ) : (
-        <p className="px-4 py-3 text-[13px] leading-5 break-keep text-ink-2">
+        <p className="px-4 py-3 text-body leading-5 break-keep text-ink-2">
           {result.measurementStatus === "FAILED"
             ? "체적 측정을 완료하지 못했습니다. 결과 수치는 표시하지 않습니다."
             : "측정이 완료되면 체적 수치가 표시됩니다."}
@@ -130,7 +130,7 @@ function SingleVolumeSummary({
 
       {!compact && (
         <div className="flex flex-wrap items-center justify-between gap-3 border-t border-line px-4 py-3">
-          <p className="text-[12px] break-keep text-ink-muted">
+          <p className="text-caption break-keep text-ink-muted">
             {result.reviewedAt ? "결과 검토 기록이 있습니다." : "결과를 확인한 뒤 검토 또는 추가 관측을 선택할 수 있습니다."}
           </p>
           <Link
@@ -162,8 +162,8 @@ export function ExternalSiteResultSummary({
   if (externalResult.state !== "AVAILABLE") {
     return (
       <section className="rounded-lg border border-line bg-surface px-4 py-3">
-        <h3 className="text-[14px] font-bold tracking-tight break-keep">외부 관측 비교 결과</h3>
-        <p className="mt-1 text-[13px] leading-5 break-keep text-ink-2">
+        <h3 className="text-lead font-bold tracking-tight break-keep">외부 관측 비교 결과</h3>
+        <p className="mt-1 text-body leading-5 break-keep text-ink-2">
           {availabilityCopy(externalResult.state)}
         </p>
       </section>
@@ -173,8 +173,8 @@ export function ExternalSiteResultSummary({
   if (externalResult.result === null || externalResult.result === undefined) {
     return (
       <section className="rounded-lg border border-line bg-surface px-4 py-3">
-        <h3 className="text-[14px] font-bold tracking-tight break-keep">외부 관측 비교 결과</h3>
-        <p className="mt-1 text-[13px] leading-5 break-keep text-ink-2">비교 결과를 아직 확인할 수 없습니다.</p>
+        <h3 className="text-lead font-bold tracking-tight break-keep">외부 관측 비교 결과</h3>
+        <p className="mt-1 text-body leading-5 break-keep text-ink-2">비교 결과를 아직 확인할 수 없습니다.</p>
       </section>
     );
   }
@@ -190,8 +190,8 @@ export function ExternalSiteResultSummary({
     <section className="rounded-lg border border-line bg-surface">
       <div className="flex flex-wrap items-start justify-between gap-3 border-b border-line px-4 py-3">
         <div className="min-w-0">
-          <h3 className="text-[15px] font-bold tracking-tight break-keep">외부 관측 비교 결과</h3>
-          <p className="mt-1 text-[13px] leading-5 break-keep text-ink-2">
+          <h3 className="text-lead font-bold tracking-tight break-keep">외부 관측 비교 결과</h3>
+          <p className="mt-1 text-body leading-5 break-keep text-ink-2">
             {comparisonCopy(result, workAreaName)}
           </p>
         </div>
@@ -205,7 +205,7 @@ export function ExternalSiteResultSummary({
             <Metric label="성토" value={`${formatNumber(metrics.fillM3)} m³`} />
             <Metric label="순변화" value={`${formatSignedNumber(metrics.netM3)} m³`} />
           </dl>
-          <div className="border-t border-line bg-sunk px-4 py-3 text-[13px] leading-5 text-ink-2">
+          <div className="border-t border-line bg-sunk px-4 py-3 text-body leading-5 text-ink-2">
             <p>
               측정 영역 {formatNumber(metrics.measuredAreaM2, 1)} m² / 작업구역 {formatNumber(metrics.zoneAreaM2, 1)} m² · 공통 유효 영역 {formatNumber(metrics.commonValidFraction * 100, 1)}%
             </p>
@@ -214,11 +214,11 @@ export function ExternalSiteResultSummary({
                 ? `불확실성은 아직 산정되지 않았습니다. ${metrics.uncertaintyNote}`
                 : `불확실성 ±${formatNumber(metrics.uncertaintyM3)} m³ · ${metrics.uncertaintyNote}`}
             </p>
-            <p className="mt-1 text-[12px] text-ink-muted">절토는 깎아낸 양, 성토는 채워 넣은 양입니다.</p>
+            <p className="mt-1 text-caption text-ink-muted">절토는 깎아낸 양, 성토는 채워 넣은 양입니다.</p>
           </div>
         </>
       ) : (
-        <p className="px-4 py-3 text-[13px] leading-5 break-keep text-ink-2">
+        <p className="px-4 py-3 text-body leading-5 break-keep text-ink-2">
           {result.measurementStatus === "FAILED"
             ? "비교를 완료하지 못했습니다. 결과 수치는 표시하지 않습니다."
             : "비교가 완료되면 결과 수치가 표시됩니다."}
@@ -227,7 +227,7 @@ export function ExternalSiteResultSummary({
 
       {!compact && (
         <div className="flex flex-wrap items-center justify-between gap-3 border-t border-line px-4 py-3">
-          <p className="text-[12px] break-keep text-ink-muted">
+          <p className="text-caption break-keep text-ink-muted">
             {result.reviewedAt ? "결과 검토 기록이 있습니다." : "결과를 확인한 뒤 검토 또는 추가 관측을 선택할 수 있습니다."}
           </p>
           <Link href={resultLink(result)} className="btn btn-primary shrink-0 print:hidden">

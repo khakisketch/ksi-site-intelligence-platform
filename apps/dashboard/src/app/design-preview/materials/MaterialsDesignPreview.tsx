@@ -1,5 +1,6 @@
 "use client";
 
+import { Disclosure } from "@/components/ui/Disclosure";
 import Link from "next/link";
 import { useState } from "react";
 import { DEFAULT_MATERIALS_DESIGN_RETURN } from "@/lib/design-preview-return";
@@ -96,14 +97,14 @@ function ExamplePane({
   return (
     <div data-workbench-pane className="flex min-w-0 flex-col gap-1.5 md:px-3 md:first:pl-0 md:last:pr-0 lg:h-full lg:min-h-0">
       <div data-workbench-pane-controls className="flex min-w-0 shrink-0 flex-wrap items-center gap-x-2 gap-y-1">
-        <span aria-hidden="true" className="flex h-6 w-6 shrink-0 items-center justify-center rounded bg-sunk text-[11px] font-bold">{side}</span>
+        <span aria-hidden="true" className="flex h-6 w-6 shrink-0 items-center justify-center rounded bg-sunk text-micro font-bold">{side}</span>
         <span className="sr-only">{side} 칸</span>
         <label className="sr-only" htmlFor={selectId}>{side} 관측 선택</label>
         <select
           id={selectId}
           value={observation.id}
           onChange={(event) => onObservationChange(event.target.value as ExampleObservation["id"])}
-          className="input min-w-0 max-w-44 text-[12.5px]"
+          className="input min-w-0 max-w-44 text-body"
         >
           {OBSERVATIONS.map((candidate) => (
             <option key={candidate.id} value={candidate.id}>
@@ -118,7 +119,7 @@ function ExamplePane({
               type="button"
               aria-pressed={layer === candidate}
               onClick={() => onLayerChange(candidate)}
-              className={`tap-target inline-flex items-center rounded-md px-3 py-1.5 text-[12.5px] break-keep ${layer === candidate ? "bg-sunk font-bold" : "text-ink-2"}`}
+              className={`tap-target inline-flex items-center rounded-md px-3 py-1.5 text-body break-keep ${layer === candidate ? "bg-sunk font-bold" : "text-ink-2"}`}
             >
               {layerLabel(candidate)}
             </button>
@@ -144,7 +145,7 @@ function ExamplePane({
         <ViewportResetButton onReset={viewport.reset} />
       </div>
       {viewport.note && (
-        <p className="shrink-0 text-[12px] leading-5 text-ink-2" role="status">{viewport.note}</p>
+        <p className="shrink-0 text-caption leading-5 text-ink-2" role="status">{viewport.note}</p>
       )}
     </div>
   );
@@ -161,7 +162,7 @@ function ObservationPicker({
 }) {
   return (
     <fieldset className="flex min-w-0 flex-col gap-1">
-      <legend className="px-1.5 pb-1 text-[12px] font-bold text-ink-muted">
+      <legend className="px-1.5 pb-1 text-caption font-bold text-ink-muted">
         {side === "A" ? "A(왼쪽·한 장) 관측" : "B(오른쪽) 관측"}
       </legend>
       <div className="flex min-w-0 flex-col gap-1">
@@ -182,10 +183,10 @@ function ObservationPicker({
                 <img src={observation.orthoSrc} alt="" className="block h-full w-full object-cover" draggable={false} />
               </span>
               <span className="min-w-0">
-                <span className={`block break-words text-[12.5px] leading-snug ${selected ? "font-bold" : "font-semibold"}`}>
+                <span className={`block break-words text-body leading-snug ${selected ? "font-bold" : "font-semibold"}`}>
                   {side} · {observation.dateLabel}{selected ? " · 보는 중" : ""}
                 </span>
-                <span className="block text-[11.5px] text-ink-2">시각 미상</span>
+                <span className="block text-caption text-ink-2">시각 미상</span>
               </span>
             </button>
           );
@@ -222,12 +223,12 @@ export default function MaterialsDesignPreview({
   };
 
   return (
-    <div className="flex w-full min-w-0 min-h-0 flex-1 flex-col px-2 py-2 sm:px-3">
+    <div className="flex w-full min-w-0 min-h-0 flex-1 flex-col px-2 py-2 sm:px-3 lg:h-full">
       <h2 className="sr-only">디자인 예시</h2>
       <SpatialWorkbenchFrame
         contextBar={
           <>
-            <span className="min-w-0 shrink-0 truncate text-[12px] leading-5 text-ink-2">
+            <span className="min-w-0 shrink-0 truncate text-caption leading-5 text-ink-2">
               <strong className="font-bold text-ink-1">디자인 예시 · 현재 등록 자료 아님</strong>
               {" · "}
               <Link className="tap-target font-semibold underline" href={returnHref}>
@@ -241,7 +242,7 @@ export default function MaterialsDesignPreview({
                   type="button"
                   aria-pressed={mode === candidate}
                   onClick={() => setMode(candidate)}
-                  className={`tap-target rounded-md px-3 py-1.5 text-[12.5px] break-keep ${mode === candidate ? "bg-sunk font-bold" : "text-ink-2"}`}
+                  className={`tap-target rounded-md px-3 py-1.5 text-body break-keep ${mode === candidate ? "bg-sunk font-bold" : "text-ink-2"}`}
                 >
                   {modeLabel(candidate)}
                 </button>
@@ -253,12 +254,12 @@ export default function MaterialsDesignPreview({
               aria-expanded={infoOpen}
               aria-controls="design-example-info"
               onClick={() => setInfoOpen(!infoOpen)}
-              className={`tap-target shrink-0 text-[12px] underline ${infoOpen ? "font-semibold" : "text-ink-2"}`}
+              className={`tap-target shrink-0 text-caption underline ${infoOpen ? "font-semibold" : "text-ink-2"}`}
             >
               정보
             </button>
             <span className="ml-auto flex shrink-0 items-center">
-              <Link href="/sites" className="tap-target shrink-0 text-[12px] underline decoration-dotted text-ink-2">
+              <Link href="/sites" className="tap-target shrink-0 text-caption underline decoration-dotted text-ink-2">
                 실제 현장에서 등록
               </Link>
             </span>
@@ -279,13 +280,13 @@ export default function MaterialsDesignPreview({
               <>
                 <div data-workbench-pane-controls className="flex min-w-0 shrink-0 flex-wrap items-center gap-x-2 gap-y-1">
                   <div className="flex min-w-0 shrink-0 items-center gap-2">
-                  <span aria-hidden="true" className="flex h-6 w-6 shrink-0 items-center justify-center rounded bg-sunk text-[11px] font-bold">A</span>
+                  <span aria-hidden="true" className="flex h-6 w-6 shrink-0 items-center justify-center rounded bg-sunk text-micro font-bold">A</span>
                   <label className="sr-only" htmlFor="example-swipe-observation-a">A 관측 선택</label>
                   <select
                     id="example-swipe-observation-a"
                     value={observationA.id}
                     onChange={(event) => setSideAObservation(event.target.value as ExampleObservation["id"])}
-                    className="input min-w-0 w-44 text-[12.5px]"
+                    className="input min-w-0 w-44 text-body"
                   >
                     {OBSERVATIONS.map((candidate) => (
                       <option key={candidate.id} value={candidate.id}>
@@ -295,13 +296,13 @@ export default function MaterialsDesignPreview({
                   </select>
                   </div>
                   <div className="flex min-w-0 shrink-0 items-center gap-2">
-                  <span aria-hidden="true" className="flex h-6 w-6 shrink-0 items-center justify-center rounded bg-sunk text-[11px] font-bold">B</span>
+                  <span aria-hidden="true" className="flex h-6 w-6 shrink-0 items-center justify-center rounded bg-sunk text-micro font-bold">B</span>
                   <label className="sr-only" htmlFor="example-swipe-observation-b">B 관측 선택</label>
                   <select
                     id="example-swipe-observation-b"
                     value={observationB.id}
                     onChange={(event) => setSideBObservation(event.target.value as ExampleObservation["id"])}
-                    className="input min-w-0 w-44 text-[12.5px]"
+                    className="input min-w-0 w-44 text-body"
                   >
                     {OBSERVATIONS.map((candidate) => (
                       <option key={candidate.id} value={candidate.id}>
@@ -317,7 +318,7 @@ export default function MaterialsDesignPreview({
                         type="button"
                         aria-pressed={swipeLayersMatch && layerA === candidate}
                         onClick={() => setBothLayers(candidate)}
-                        className={`tap-target inline-flex items-center rounded-md px-3 py-1.5 text-[12.5px] break-keep ${swipeLayersMatch && layerA === candidate ? "bg-sunk font-bold" : "text-ink-2"}`}
+                        className={`tap-target inline-flex items-center rounded-md px-3 py-1.5 text-body break-keep ${swipeLayersMatch && layerA === candidate ? "bg-sunk font-bold" : "text-ink-2"}`}
                       >
                         {layerLabel(candidate)}
                       </button>
@@ -326,8 +327,8 @@ export default function MaterialsDesignPreview({
                 </div>
                 {!swipeLayersMatch ? (
                   <div className="flex min-w-0 flex-col items-start gap-2 rounded-lg border border-line bg-surface px-4 py-6" role="status">
-                    <p className="break-words text-[13px] font-bold">두 칸의 층이 다릅니다</p>
-                    <p className="text-[12px] leading-5 text-ink-2">
+                    <p className="break-words text-body font-bold">두 칸의 층이 다릅니다</p>
+                    <p className="text-caption leading-5 text-ink-2">
                       A는 {layerLabel(layerA)}, B는 {layerLabel(layerB)}입니다. 겹쳐 보기 전에 같은 층을
                       고르세요 — 날짜는 그대로 둡니다.
                     </p>
@@ -343,7 +344,7 @@ export default function MaterialsDesignPreview({
                 ) : (
                   <>
                     {swipeSameObservation && (
-                      <p role="status" className="min-w-0 shrink-0 break-words text-[11.5px] text-ink-muted">
+                      <p role="status" className="min-w-0 shrink-0 break-words text-caption text-ink-muted">
                         같은 관측을 두 번 선택했습니다. 같은 사진이 양쪽에 겹쳐 보입니다.
                       </p>
                     )}
@@ -386,7 +387,7 @@ export default function MaterialsDesignPreview({
                       />
                     </div>
                     {swipeViewport.note && (
-                      <p className="shrink-0 text-[12px] leading-5 text-ink-2" role="status">{swipeViewport.note}</p>
+                      <p className="shrink-0 text-caption leading-5 text-ink-2" role="status">{swipeViewport.note}</p>
                     )}
                   </>
                 )}
@@ -398,66 +399,64 @@ export default function MaterialsDesignPreview({
               </div>
             ) : (
               <>
-                <p className="min-w-0 shrink-0 break-words text-[11.5px] text-ink-muted">선택한 관측</p>
+                <p className="min-w-0 shrink-0 break-words text-caption text-ink-muted">선택한 관측</p>
                 <div className="min-w-0 lg:min-h-0 lg:flex-1">
                   <ExamplePane side="A" observation={observationA} layer={layerA} onObservationChange={setSideAObservation} onLayerChange={setLayerA} />
                 </div>
               </>
             )}
             <div className="flex min-w-0 shrink-0 flex-wrap items-center gap-x-3 gap-y-1">
-              <p className="text-[11.5px] leading-5 text-ink-muted">{swipeMode ? "표시용 겹쳐 보기 · 정량 비교 아님" : "독립 보기 · 정량 비교 아님"}</p>
-              <p className="text-[11.5px] leading-5 text-ink-2">
+              <p className="text-caption leading-5 text-ink-muted">{swipeMode ? "표시용 겹쳐 보기 · 정량 비교 아님" : "독립 보기 · 정량 비교 아님"}</p>
+              <p className="text-caption leading-5 text-ink-2">
                 출처 · {SOURCE_LINE}{" "}
                 <a className="tap-target underline" href={LICENSE_HREF} target="_blank" rel="noreferrer">
                   라이선스 보기
                 </a>
               </p>
-              <details className="text-[12px] text-ink-2">
-                <summary className="tap-target cursor-pointer font-semibold">조작 안내</summary>
+              <Disclosure label="조작 상세" className="text-caption text-ink-2">
                 <ul className="mt-1 flex list-disc flex-col gap-1 pl-5 leading-5">
                   <li>마우스·펜·한 손가락으로 끌면 그림이 따라옵니다.</li>
                   <li>휠·두 손가락·두 번 두드리기로 누른 자리부터 확대합니다.</li>
                   <li>그림을 선택한 뒤 방향키·+ −·Home 키를 쓸 수 있습니다.</li>
                   <li>화면 확대·이동은 표시용이며 측정값이 아닙니다.</li>
                 </ul>
-              </details>
+              </Disclosure>
             </div>
           </section>
         }
         inspector={
           <>
             <div className="flex min-w-0 items-center justify-between gap-2">
-              <h3 className="min-w-0 break-words text-[13px] font-bold">예시 화면 정보</h3>
-              <button type="button" onClick={() => setInfoOpen(false)} className="tap-target shrink-0 text-[12px] underline text-ink-2 xl:hidden">
+              <h3 className="min-w-0 break-words text-body font-bold">예시 화면 정보</h3>
+              <button type="button" onClick={() => setInfoOpen(false)} className="tap-target shrink-0 text-caption underline text-ink-2 xl:hidden">
                 닫기
               </button>
             </div>
             <section aria-label="예시 출처와 한계" className="rounded-lg border border-line bg-surface p-3">
-              <h4 className="text-[13px] font-bold">출처와 라이선스</h4>
-              <p className="mt-1 text-[12px] leading-5 text-ink-2">
+              <h4 className="text-body font-bold">출처와 라이선스</h4>
+              <p className="mt-1 text-caption leading-5 text-ink-2">
                 공개 해안 관측 · 화면 구성 예시 — 건설 현장이나 등록 현장의 자료가 아니며,
                 등록·검사·분석 기록과 묶이지 않습니다.
               </p>
-              <p className="mt-1 text-[12px] leading-5 text-ink-2">{SOURCE_LINE}</p>
-              <p className="mt-1 text-[12px] leading-5 text-ink-2">
+              <p className="mt-1 text-caption leading-5 text-ink-2">{SOURCE_LINE}</p>
+              <p className="mt-1 text-caption leading-5 text-ink-2">
                 <a className="tap-target underline" href={LICENSE_HREF} target="_blank" rel="noreferrer">
                   CC BY 4.0 라이선스 보기
                 </a>
               </p>
-              <p className="mt-1 text-[11.5px] leading-5 text-ink-muted">
+              <p className="mt-1 text-caption leading-5 text-ink-muted">
                 날짜는 발행처 표기일이며 정확한 시각·측지 검증이 없습니다. 보기용 크롭은
                 화면 맞춤용 파생이며 등록 이행·검사·분석 근거가 아닙니다.
               </p>
             </section>
-            <details className="rounded-lg border border-line bg-surface p-3">
-              <summary className="tap-target cursor-pointer text-[13px] font-bold">이 화면에서 하지 않는 것</summary>
-              <ul className="mt-1 flex list-disc flex-col gap-1 pl-5 text-[12px] leading-5 text-ink-2">
+            <Disclosure label="지원 범위 상세" className="rounded-lg border border-line bg-surface p-3">
+              <ul className="mt-1 flex list-disc flex-col gap-1 pl-5 text-caption leading-5 text-ink-2">
                 <li>수치·면적·물량 계산과 높이 비교를 하지 않습니다.</li>
                 <li>두 칸의 겹쳐 맞춤·같은 색 눈금·정합 판정을 하지 않습니다.</li>
                 <li>분석 결과 레이어를 두지 않습니다.</li>
                 <li>이 예시에서는 등록·준비·검사를 만들 수 없습니다. 자료 등록은 실제 현장의 자료 화면에서 합니다.</li>
               </ul>
-            </details>
+            </Disclosure>
           </>
         }
         inspectorOpen={infoOpen}

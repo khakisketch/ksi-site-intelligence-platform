@@ -203,7 +203,7 @@ describe("site windowed pixel viewer", () => {
     expect(screen.getByText("낱창 보기 · 새 창 준비")).toBeTruthy();
     // A receipt alone is not painted pixels: no large blank frame before verified decode.
     expect(screen.queryByRole("img", { name: /이어 보기 1022 × 915 픽셀/ })).toBeNull();
-    expect(screen.getByText("표시 조건·근거").closest("details")?.parentElement?.closest("details")?.open).toBe(false);
+    expect(screen.getByText("표시 조건 상세").closest("details")?.closest("[popover]")?.getAttribute("popover")).toBe("auto");
     expect(screen.queryByText(/검증 완료/)).toBeNull();
     // 진입 시 쓰기(POST)는 나가지 않는다. 이미 준비된 창의 읽기(GET)는
     // 같은 세션 경로로만 나가며, SHA·크기 대조는 그대로 둔다.
@@ -226,7 +226,7 @@ describe("site windowed pixel viewer", () => {
     // 모듈을 동시에 처음 읽으면 테스트 러너의 모듈 모사가 갈라져
     // 디코딩이 실패한다(실제 브라우저의 모듈 등록소는 단일 인스턴스다).
     await screen.findByText(/그린 창 · 512 × 512/);
-    fireEvent.click(screen.getByText("보기 상세"));
+    fireEvent.click(screen.getByText("보기 도구"));
     fireEvent.click(screen.getAllByRole("button", { name: "이 창 보기" })[0]!);
     await screen.findByText(/실제 파일 · 준비된 창 · 2 × 2 픽셀/);
     expect(screen.getByText(/EPSG:7850 · \[0, 0, 2, 2\]/)).toBeTruthy();
@@ -252,9 +252,9 @@ describe("site windowed pixel viewer", () => {
     // 이어 보기가 끝난 뒤에 낱창을 연다(실 브라우저는 단일 인스턴스다).
     await screen.findAllByText(/받은 바이트가 Core 준비 기록과 달라 화면에 표시하지 않습니다/);
     expect(screen.queryByRole("img", {name:/이어 보기/})).toBeNull();
-    fireEvent.click(screen.getByText("보기 상세"));
+    fireEvent.click(screen.getByText("보기 도구"));
     fireEvent.click(screen.getAllByRole("button", { name: "이 창 보기" })[0]!);
-    await waitFor(() => expect(screen.getByText("보기 상세").closest("details")!.querySelector('[role="alert"]')?.textContent).toMatch(/출력 크기·파일 확인값/));
+    await waitFor(() => expect(screen.getByText("보기 도구").parentElement!.querySelector("[popover]")!.querySelector('[role="alert"]')?.textContent).toMatch(/출력 크기·파일 확인값/));
   });
 
   it("maps a foreign or expired window to one message without existence disclosure", async () => {
@@ -271,9 +271,9 @@ describe("site windowed pixel viewer", () => {
       // count is not identity, since diagnostic detail may repeat the same refusal.
       await screen.findAllByText(/다른 계정이 준비한 창은 이 화면에서 열 수 없습니다/);
       expect(screen.queryByRole("img", {name:/이어 보기/})).toBeNull();
-      fireEvent.click(screen.getByText("보기 상세"));
+      fireEvent.click(screen.getByText("보기 도구"));
       fireEvent.click(screen.getAllByRole("button", { name: "이 창 보기" })[0]!);
-      await waitFor(() => expect(screen.getByText("보기 상세").closest("details")!.querySelector('[role="alert"]')?.textContent).toMatch(/다른 계정이 준비한 창은 이 화면에서 열 수 없습니다/));
+      await waitFor(() => expect(screen.getByText("보기 도구").parentElement!.querySelector("[popover]")!.querySelector('[role="alert"]')?.textContent).toMatch(/다른 계정이 준비한 창은 이 화면에서 열 수 없습니다/));
       cleanup();
     }
   });
@@ -382,8 +382,8 @@ describe("site windowed pixel viewer", () => {
     // 차단 자리: 어두운 면 + 사유 + 사람 행동 안내. 단추·펼침 벽을 두지 않는다.
     expect(screen.getByText("준비 기록을 조회할 권한이 없습니다.")).toBeTruthy();
     expect(screen.queryByRole("button", { name: "준비 상태 다시 확인" })).toBeNull();
-    expect(screen.getByText("상세·준비")).toBeTruthy();
-    expect(screen.queryByText("보기 상세")).toBeNull();
+    expect(screen.getByText("보기 도구")).toBeTruthy();
+    expect(screen.getAllByText("보기 도구")).toHaveLength(1);
     expect(screen.queryByText("자료 범위 보기")).toBeNull();
     expect(screen.queryByText("준비 과정·상세 상태")).toBeNull();
     unmount();
@@ -391,7 +391,7 @@ describe("site windowed pixel viewer", () => {
     expect(screen.getByText("준비 기록을 불러오지 못했습니다.")).toBeTruthy();
     // 하나의 1차 회복만 둔다.
     expect(screen.getAllByRole("button", { name: "준비 상태 다시 확인" })).toHaveLength(1);
-    expect(screen.getByText("상세·준비")).toBeTruthy();
+    expect(screen.getByText("보기 도구")).toBeTruthy();
   });
 });
 

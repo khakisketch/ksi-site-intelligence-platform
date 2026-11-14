@@ -28,11 +28,11 @@ ALIASES = (
     ("ksi_core.source_media", "ksi_core.domains.artifacts.source_media"),
     ("ksi_core.checkpoint_validations", "ksi_core.domains.artifacts.checkpoint_validations"),
     ("ksi_core.processing_jobs", "ksi_core.domains.processing.processing_jobs"),
-    ("ksi_core.processing_profiles", "ksi_core.domains.processing.processing_profiles"),
-    (
-        "ksi_core.processing_resource_policy",
-        "ksi_core.domains.processing.processing_resource_policy",
-    ),
+    # Task 2 retirement: the executable processing-profile recipe/registry and
+    # the live resource-policy registry (plus their legacy aliases) are deleted.
+    # Replay-only historical facts live in
+    # ksi_core.domains.processing.historical_processing_profiles, which is
+    # intentionally NOT aliased to the old import paths.
     ("ksi_core.civil_preflight", "ksi_core.domains.processing.civil_preflight"),
     ("ksi_core.civil_readiness", "ksi_core.domains.processing.civil_readiness"),
     ("ksi_core.spatial_model", "ksi_core.domains.processing.spatial_model"),

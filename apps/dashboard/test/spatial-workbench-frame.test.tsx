@@ -33,6 +33,14 @@ describe("spatial workbench frame", () => {
     expect(html).not.toContain("선택한 것만");
   });
 
+  it("names the catalog opener consistently with the supplied catalog", () => {
+    const html = frameHtml({ catalogLabel: "자료 목록" });
+    expect(html).toContain('aria-label="자료 목록 열기"');
+    expect(html).toContain('title="자료 목록 열기"');
+    expect(html).toContain(">자료 목록</span>");
+    expect(html).not.toContain("레이어 패널");
+  });
+
   it("opens the catalog drawer without resizing the stage", () => {
     const html = frameHtml({ defaultCatalogOpen: true });
     expect(html).toContain('aria-expanded="true"');

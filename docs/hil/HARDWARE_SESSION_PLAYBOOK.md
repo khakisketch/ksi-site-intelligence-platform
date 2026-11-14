@@ -601,7 +601,7 @@ URI에 보관한다.
    내면 `BLOCKED`이며 CPU/Python fallback으로 바꾸지 않는다.
 3. 개발 PC의 Python 3.12에서
    `tools/edge/verify_tensorrt_differential.py verify`를 실행한다. 정확한 command와 corpus
-   wire 형식은 [`edge/manifold-runtime` README](../../edge/manifold-runtime/README.md#tensorrt--onnx-differential-evidence)를
+   wire 형식은 [`edge/manifold-runtime` README](../../archive/acquisition-2026/edge/manifold-runtime/README.md#tensorrt--onnx-differential-evidence)를
    따른다.
 4. canonical evidence digest를 candidate에 넣은 뒤에만 Core가 signed profile을 발행한다.
    같은 artifact를 재검사할 때는 `--require-profile-evidence-digest`를 추가한다.

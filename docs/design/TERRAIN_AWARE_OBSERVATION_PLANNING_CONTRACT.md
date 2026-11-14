@@ -121,6 +121,5 @@ feasibility, path length/time estimates and pilot edits) before it chooses accep
 A worker may investigate and prepare that record but may not choose a supplier or invent numerical
 safety/quality value.
 
-See the [successor roadmap](../goals/TERRAIN_AWARE_PLANNING_ROADMAP.md) for ownership and
-validation gates and the [acceptance matrix](../acceptance/TERRAIN_AWARE_PILOT_MVP_ACCEPTANCE.md)
+See the [acceptance matrix](../acceptance/TERRAIN_AWARE_PILOT_MVP_ACCEPTANCE.md)
 for evidence that remains NOT_RUN/NOT_VERIFIED.

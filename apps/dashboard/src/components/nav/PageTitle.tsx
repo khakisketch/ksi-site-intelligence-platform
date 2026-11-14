@@ -1,6 +1,6 @@
 "use client";
 
-import { usePathname } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 
 import { resolvePageTitle } from "./page-title";
 
@@ -13,13 +13,14 @@ import { resolvePageTitle } from "./page-title";
 // 싣지 않으면서 만료 복구만 제공한다.
 export function PageTitle({ fallback }: { fallback: string }) {
   const pathname = usePathname();
+  const search = useSearchParams();
   // usePathname 은 SSR 에서도 값을 준다 — fallback 은 그 값이 아직 없는 극히 초기 렌더용이다.
   // 이 값은 앱 셸의 위치 표시다. 문서의 유일한 h1은 layout.tsx의 main 안에 두고,
   // 상세 화면의 대상 이름은 h2로 이어 붙인다. TopBar와 본문이 각각 h1이던 구조는
   // 스크린리더 heading 탐색에서 동일 레벨 제목 두 개를 만들었다.
   return (
-    <p className="text-[17px] font-bold tracking-tight break-keep">
-      {pathname ? resolvePageTitle(pathname) : fallback}
+    <p className="text-title font-bold tracking-tight break-keep lg:text-body lg:font-medium lg:tracking-normal lg:text-ink-2">
+      {pathname ? resolvePageTitle(pathname, search) : fallback}
     </p>
   );
 }
@@ -31,7 +32,8 @@ export function PageTitle({ fallback }: { fallback: string }) {
  */
 export function MainPageTitle({ fallback }: { fallback: string }) {
   const pathname = usePathname();
-  const title = pathname ? resolvePageTitle(pathname) : fallback;
+  const search = useSearchParams();
+  const title = pathname ? resolvePageTitle(pathname, search) : fallback;
 
   return title ? <h1 className="sr-only">{title}</h1> : null;
 }

@@ -36,7 +36,7 @@ describe("sites table row action column (F08)", () => {
   });
 
   it("이름 셀은 작은 실제 미리보기를 곁들이고 이미지를 약속하지 않는다", () => {
-    expect(DENSE).toContain('<SitePreviewThumb siteId={site.siteId} size="row" />');
+    expect(DENSE).toContain('<SitePreviewThumb siteId={site.siteId} siteName={site.name} size="row" footprint={site.aoi?.vertices ?? null} />');
     expect(DENSE).not.toContain("<img");
     expect(DENSE).not.toContain("next/image");
   });

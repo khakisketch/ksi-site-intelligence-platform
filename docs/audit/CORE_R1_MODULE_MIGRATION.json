@@ -329,28 +329,13 @@
       "compatibility": "EXPLICIT_MODULE_ALIAS"
     },
     {
-      "sourceModule": "ksi_core.processing_profiles",
-      "activeCanonicalModule": "ksi_core.domains.processing.processing_profiles",
-      "activePath": "ksi_core/domains/processing/processing_profiles.py",
-      "plannedCanonicalModule": "ksi_core.domains.processing.processing_profiles",
-      "plannedPath": "ksi_core/domains/processing/processing_profiles.py",
+      "sourceModule": "ksi_core.domains.processing.historical_processing_profiles",
+      "activeCanonicalModule": "ksi_core.domains.processing.historical_processing_profiles",
+      "activePath": "ksi_core/domains/processing/historical_processing_profiles.py",
+      "plannedCanonicalModule": "ksi_core.domains.processing.historical_processing_profiles",
+      "plannedPath": "ksi_core/domains/processing/historical_processing_profiles.py",
       "ownerBoundary": "domains/processing",
-      "migrationStatus": "T2_MOVED",
-      "legacyModule": "ksi_core.processing_profiles",
-      "legacyPath": "ksi_core/processing_profiles.py",
-      "compatibility": "EXPLICIT_MODULE_ALIAS"
-    },
-    {
-      "sourceModule": "ksi_core.processing_resource_policy",
-      "activeCanonicalModule": "ksi_core.domains.processing.processing_resource_policy",
-      "activePath": "ksi_core/domains/processing/processing_resource_policy.py",
-      "plannedCanonicalModule": "ksi_core.domains.processing.processing_resource_policy",
-      "plannedPath": "ksi_core/domains/processing/processing_resource_policy.py",
-      "ownerBoundary": "domains/processing",
-      "migrationStatus": "T2_MOVED",
-      "legacyModule": "ksi_core.processing_resource_policy",
-      "legacyPath": "ksi_core/processing_resource_policy.py",
-      "compatibility": "EXPLICIT_MODULE_ALIAS"
+      "migrationStatus": "T5_NEW_MODULE"
     },
     {
       "sourceModule": "ksi_core.civil_preflight",
@@ -1141,6 +1126,15 @@
       "activePath": "ksi_core/domains/external/workflow/external_result_briefings.py",
       "plannedCanonicalModule": "ksi_core.domains.external.workflow.external_result_briefings",
       "plannedPath": "ksi_core/domains/external/workflow/external_result_briefings.py",
+      "ownerBoundary": "domains/external/workflow",
+      "migrationStatus": "T3_NEW_MODULE"
+    },
+    {
+      "sourceModule": "ksi_core.domains.external.workflow.survey_result_briefings",
+      "activeCanonicalModule": "ksi_core.domains.external.workflow.survey_result_briefings",
+      "activePath": "ksi_core/domains/external/workflow/survey_result_briefings.py",
+      "plannedCanonicalModule": "ksi_core.domains.external.workflow.survey_result_briefings",
+      "plannedPath": "ksi_core/domains/external/workflow/survey_result_briefings.py",
       "ownerBoundary": "domains/external/workflow",
       "migrationStatus": "T3_NEW_MODULE"
     },

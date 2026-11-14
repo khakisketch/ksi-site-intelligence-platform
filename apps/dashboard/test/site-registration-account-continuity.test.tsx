@@ -33,6 +33,7 @@ vi.mock("@/components/map/AoiPolygonMap", () => ({
 
 import { SiteRegistrationOnlyWizard } from "@/app/sites/new/SiteRegistrationOnlyWizard";
 import { digestSitePostPayload } from "@/lib/site-registration/shared";
+import { installFakeSessionStorage } from "./storage-fakes";
 
 function fingerprint(org: string, actor: string): string {
   return `v1-${createHash("sha256").update(JSON.stringify(["ksi-observation-continuity-v1", org, actor])).digest("hex")}`;
@@ -87,14 +88,28 @@ describe("현장 등록 요청을 보내는 중 화면을 떠날 때", () => {
       else await goToConfirmLegacy(ALICE);
       const key = "ksi-wizard-site-registration-only";
       const original = window.sessionStorage.getItem(key);
-      const write = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => { throw new Error("quota"); });
+      // jsdom 26의 sessionStorage는 전역 Storage.prototype을 공유하지 않아
+      // prototype spy가 가로채지 못한다. quota 시뮬레이션은 가짜 저장소로 한다.
+      installFakeSessionStorage({ setItem: () => { throw new Error("quota"); } });
+      fireEvent.click(screen.getByRole("button", { name: "현장 등록" }));
+      expect(await screen.findByText(/등록 요청 정보를 저장하지 못해 요청을 보내지 않았습니다/)).toBeTruthy();
+      expect(requestMock).not.toHaveBeenCalled();
+      expect(window.sessionStorage.getItem(key)).toBe(original);
+    });
+
+    it(`${kind} 오프라인이면 POST 없이 확정 차단하고 입력을 보존한다`, async () => {
+      if (kind === "mapped") await goToConfirmMapped(ALICE);
+      else await goToConfirmLegacy(ALICE);
+      Object.defineProperty(window.navigator, "onLine", { value: false, configurable: true });
+      act(() => { window.dispatchEvent(new Event("offline")); });
       try {
         fireEvent.click(screen.getByRole("button", { name: "현장 등록" }));
-        expect(await screen.findByText(/등록 요청 정보를 저장하지 못해 요청을 보내지 않았습니다/)).toBeTruthy();
+        expect(await screen.findByText(/연결이 끊겨 요청을 보내지 않았습니다/)).toBeTruthy();
         expect(requestMock).not.toHaveBeenCalled();
-        expect(window.sessionStorage.getItem(key)).toBe(original);
+        // 모름 기록이 아니다 — 보내지 않았음이 확실하므로 불명 목록에 남지 않는다.
+        expect(screen.queryByText(/이전 요청의 결과는 여전히/)).toBeNull();
       } finally {
-        write.mockRestore();
+        Object.defineProperty(window.navigator, "onLine", { value: true, configurable: true });
       }
     });
 
@@ -524,15 +539,19 @@ describe("현장 등록 계정 연속성 (사용자 이벤트)", () => {
     fireEvent.click(screen.getByRole("button", { name: "현장 등록" }));
     expect(await screen.findByText("현장이 등록되었습니다.", { selector: "p" })).toBeTruthy();
 
-    const setItem = vi.spyOn(Storage.prototype, "setItem");
-    setItem.mockImplementationOnce(() => {
-      throw new Error("quota exceeded");
+    // prototype spy는 jsdom 26 저장소에 닿지 않으므로 가짜 저장소로 1회 실패를 건다.
+    let moveWrites = 0;
+    installFakeSessionStorage({
+      setItem: (key, value, write) => {
+        moveWrites += 1;
+        if (moveWrites === 1) throw new Error("quota exceeded");
+        write(key, value);
+      },
     });
     fireEvent.click(screen.getByRole("button", { name: "현장 브리핑으로 이동" }));
     expect(await screen.findByText(/이동 전 정리를 브라우저에 저장하지 못했습니다/)).toBeTruthy();
     expect(mocked.push).not.toHaveBeenCalled();
     expect(screen.queryByText("현장이 등록되었습니다.")).toBeNull();
-    setItem.mockRestore();
   });
 
   it("legacy도 지문이 없으면 POST하지 않는다", async () => {
@@ -726,14 +745,17 @@ describe("현장 등록 계정 게이트·상세 비공개·라이브 확인", (
 
   it("저장 실패는 무변이·경고다 (제출·영수증)", async () => {
     await goToConfirmMapped(ALICE);
-    const setItem = vi.spyOn(Storage.prototype, "setItem");
-    setItem.mockImplementationOnce(() => {
-      throw new Error("quota exceeded");
+    let submitWrites = 0;
+    installFakeSessionStorage({
+      setItem: (key, value, write) => {
+        submitWrites += 1;
+        if (submitWrites === 1) throw new Error("quota exceeded");
+        write(key, value);
+      },
     });
     fireEvent.click(screen.getByRole("button", { name: "현장 등록" }));
     expect(await screen.findByText(/등록 요청 정보를 저장하지 못해/)).toBeTruthy();
     expect(requestMock).not.toHaveBeenCalled();
-    setItem.mockRestore();
 
 
     // 영수증 저장 실패는 성공을 유지하되 화면 유지를 고지한다.
@@ -741,18 +763,17 @@ describe("현장 등록 계정 게이트·상세 비공개·라이브 확인", (
     cleanup();
     window.sessionStorage.clear();
     await goToConfirmMapped(ALICE);
-    const realSetItem = window.sessionStorage.setItem.bind(window.sessionStorage);
-    const setItem3 = vi.spyOn(Storage.prototype, "setItem");
-    setItem3.mockImplementation(((key: string, value: string) => {
-      if (String(key).endsWith(":success")) throw new Error("quota exceeded");
-      return realSetItem(key as string, value as string);
-    }) as typeof Storage.prototype.setItem);
+    installFakeSessionStorage({
+      setItem: (key, value, write) => {
+        if (String(key).endsWith(":success")) throw new Error("quota exceeded");
+        write(key, value);
+      },
+    });
     const issued = "site-12345678-1234-1234-1234-123456789012";
     requestMock.mockResolvedValueOnce(jsonResponse(echoSite(issued, "현장 A"), 201));
     fireEvent.click(screen.getByRole("button", { name: "현장 등록" }));
     expect(await screen.findByText("현장이 등록되었습니다.")).toBeTruthy();
     expect(screen.getByText(/이 확인은 이 화면에서만 유지됩니다/)).toBeTruthy();
-    setItem3.mockRestore();
   });
 });
 
@@ -882,19 +903,18 @@ describe("동일 키 충돌 기록의 신원 결속 (저장→복원)", () => {
     fireEvent.click(screen.getByRole("button", { name: "다음" }));
     await screen.findByRole("button", { name: "현장 등록" });
     let atReceipt: unknown = null;
-    const original = Storage.prototype.setItem;
-    const spy = vi.spyOn(Storage.prototype, "setItem").mockImplementation(function(this: Storage, key, value) {
-      if (key === "ksi-wizard-site-registration-only:success") atReceipt = readDraft().priorUnknowns;
-      original.call(this, key, value);
-      if (key === "ksi-wizard-site-registration-only:success") view.unmount();
+    installFakeSessionStorage({
+      setItem: (key, value, write) => {
+        if (key === "ksi-wizard-site-registration-only:success") atReceipt = readDraft().priorUnknowns;
+        write(key, value);
+        if (key === "ksi-wizard-site-registration-only:success") view.unmount();
+      },
     });
-    try {
-      requestMock.mockResolvedValueOnce(jsonResponse(echoSite("site-12345678-1234-1234-1234-123456789012", "현장 A"), 201));
-      fireEvent.click(screen.getByRole("button", { name: "현장 등록" }));
-      await waitFor(() => expect(atReceipt).not.toBeNull());
-      expect(atReceipt).toEqual([expect.objectContaining({ key: COLLISION_KEY, originFingerprint: BOB })]);
-      expect(readDraft().priorUnknowns).toEqual([expect.objectContaining({ key: COLLISION_KEY, originFingerprint: BOB })]);
-    } finally { spy.mockRestore(); }
+    requestMock.mockResolvedValueOnce(jsonResponse(echoSite("site-12345678-1234-1234-1234-123456789012", "현장 A"), 201));
+    fireEvent.click(screen.getByRole("button", { name: "현장 등록" }));
+    await waitFor(() => expect(atReceipt).not.toBeNull());
+    expect(atReceipt).toEqual([expect.objectContaining({ key: COLLISION_KEY, originFingerprint: BOB })]);
+    expect(readDraft().priorUnknowns).toEqual([expect.objectContaining({ key: COLLISION_KEY, originFingerprint: BOB })]);
   });
 
   it("성공 직후 unmount와 재진입에서도 타 주체 기록만 남는다", async () => {
@@ -932,19 +952,18 @@ describe("동일 키 충돌 기록의 신원 결속 (저장→복원)", () => {
     requestMock.mockImplementationOnce(() => new Promise<Response>((r) => { resolve = r; }));
     fireEvent.click(screen.getByRole("button", { name: "현장 등록" }));
     const prepared = window.sessionStorage.getItem("ksi-wizard-site-registration-only");
-    const original = Storage.prototype.setItem;
-    const originalGet = Storage.prototype.getItem;
     let receiptWritten = false;
-    const spy = vi.spyOn(Storage.prototype, "setItem").mockImplementation(function(this: Storage, key, value) {
-      if ((failure === "draft" && key === "ksi-wizard-site-registration-only") || (failure === "receipt" && key === "ksi-wizard-site-registration-only:success")) throw new DOMException("quota", "QuotaExceededError");
-      original.call(this, key, value);
-      if (key === "ksi-wizard-site-registration-only:success") receiptWritten = true;
+    installFakeSessionStorage({
+      setItem: (key, value, write) => {
+        if ((failure === "draft" && key === "ksi-wizard-site-registration-only") || (failure === "receipt" && key === "ksi-wizard-site-registration-only:success")) throw new DOMException("quota", "QuotaExceededError");
+        write(key, value);
+        if (key === "ksi-wizard-site-registration-only:success") receiptWritten = true;
+      },
+      getItem: (key, read) => {
+        if (failure === "receipt-readback" && receiptWritten && key === "ksi-wizard-site-registration-only:success") return "mismatch";
+        return read(key);
+      },
     });
-    const get = vi.spyOn(Storage.prototype, "getItem").mockImplementation(function(this: Storage, key) {
-      if (failure === "receipt-readback" && receiptWritten && key === "ksi-wizard-site-registration-only:success") return "mismatch";
-      return originalGet.call(this, key);
-    });
-    try {
       await act(async () => resolve(jsonResponse(echoSite("site-12345678-1234-1234-1234-123456789012", "현장 A"), 201)));
       expect(await screen.findByText("현장이 등록되었습니다.")).toBeTruthy();
       expect(screen.getByText(/초안 또는 영수증 저장·정리를 확인하지 못했습니다/)).toBeTruthy();
@@ -958,7 +977,6 @@ describe("동일 키 충돌 기록의 신원 결속 (저장→복원)", () => {
       fireEvent.click(screen.getByRole("button", { name: "이전" }));
       expect(requestMock).toHaveBeenCalledTimes(1);
       cleanup();
-    } finally { spy.mockRestore(); get.mockRestore(); }
     render(<SiteRegistrationOnlyWizard mode="MAPPED_BOOTSTRAP" accountFingerprint={ALICE} />);
     expect(await screen.findByRole("heading", { name: "지도 입력을 안전하게 복구할 수 없습니다" })).toBeTruthy();
     expect(window.sessionStorage.getItem("ksi-wizard-site-registration-only:success-draft-backup")).toBe(prepared);

@@ -10,6 +10,7 @@ const mockedSession = vi.hoisted(() => ({
 
 vi.mock("next/navigation", () => ({
   usePathname: () => "/sites/site-1/observations/new",
+  useSearchParams: () => new URLSearchParams(),
   useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }),
 }));
 vi.mock("@/app/field/resolve-session", () => ({

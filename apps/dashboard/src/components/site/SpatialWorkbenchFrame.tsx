@@ -1,10 +1,7 @@
 "use client";
 
-import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type MouseEvent, type ReactNode } from "react";
 
-import { ViewerSiteLabel } from "@/components/nav/ViewerSiteLabel";
-import { ViewerSiteNav } from "@/components/nav/ViewerSiteNav";
-import { useDesktopNavCollapsed } from "@/components/nav/desktop-nav-preference";
 
 /**
  * 공간 작업환경 공유 오버레이 셸 — 실제 등록 자료 화면과
@@ -94,7 +91,6 @@ export function SpatialWorkbenchFrame({
   viewerInspectorDefaultOpen?: boolean;
 }) {
   const showInspector = inspectorOpen && inspector !== null;
-  const navCollapsed = useDesktopNavCollapsed();
   const [catalogOpen, setCatalogOpen] = useState(defaultCatalogOpen);
   const rootRef = useRef<HTMLDivElement>(null);
   const catalogToggleRef = useRef<HTMLButtonElement>(null);
@@ -139,7 +135,7 @@ export function SpatialWorkbenchFrame({
     };
   }, [viewerMode]);
   const viewerDesktopMode = viewerMode && viewerDesktop;
-  const [viewerInspectorOpen, setViewerInspectorOpen] = useState(false);
+  const [viewerInspectorOpen, setViewerInspectorOpen] = useState(viewerInspectorDefaultOpen);
   const viewerInspectorInitialized = useRef(false);
   const catalogFocusRequested = useRef(false);
   const catalogFocusReturn = useRef(false);
@@ -255,6 +251,11 @@ export function SpatialWorkbenchFrame({
     setViewerInspectorOpen(true);
   };
 
+  const dismissCatalogForSelection = (event: MouseEvent<HTMLElement>) => {
+    if (event.defaultPrevented || event.button !== 0 || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+    if (event.target instanceof Element && event.target.closest("[data-workbench-catalog-select]")) closeCatalog();
+  };
+
   const onCatalogKeyDown = (event: KeyboardEvent<HTMLElement>) => {
     // 넓은 화면의 상시 열(일반 셸)에는 닫을 드로어가 없다. Viewer의 떠 있는
     // 패널은 넓은 화면에서도 닫을 수 있다.
@@ -290,7 +291,7 @@ export function SpatialWorkbenchFrame({
         <div
           ref={contextRef}
           data-workbench-context-bar
-          className="relative z-40 mx-3 mt-3 flex min-w-0 shrink-0 flex-wrap items-center gap-x-2 gap-y-1.5 rounded-xl border border-line bg-surface/95 px-2.5 py-1.5 shadow-lg backdrop-blur"
+          className="relative z-40 flex min-h-12 min-w-0 shrink-0 flex-wrap items-center gap-x-2 gap-y-1.5 rounded-lg border border-line bg-surface px-2 py-1.5"
         >
           {!catalogOpen && (
             <button
@@ -299,15 +300,15 @@ export function SpatialWorkbenchFrame({
               aria-expanded={false}
               aria-controls="workbench-catalog"
               onClick={openCatalog}
-              aria-label="레이어 패널 열기"
-              title="레이어 패널 열기"
-              className="tap-target inline-flex h-9 shrink-0 items-center gap-2 rounded-md border border-line bg-surface px-2 text-ink-2 hover:bg-sunk"
+              aria-label={`${catalogLabel} 열기`}
+              title={`${catalogLabel} 열기`}
+              className="tap-target inline-flex h-9 shrink-0 items-center gap-2 rounded-md px-2 text-ink-2 hover:bg-sunk"
             >
               <svg aria-hidden="true" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7">
                 <path d="m12 3 9 5-9 5-9-5Z" />
                 <path d="m3 12 9 5 9-5M3 16l9 5 9-5" />
               </svg>
-              <ViewerSiteLabel />
+              <span className="text-caption font-semibold">{catalogLabel}</span>
             </button>
           )}
           <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-1.5">{contextBar}</div>
@@ -318,7 +319,7 @@ export function SpatialWorkbenchFrame({
               aria-expanded={viewerInspectorOpen}
               aria-controls={inspectorId}
               onClick={toggleViewerInspector}
-              className={`tap-target inline-flex min-h-9 shrink-0 items-center rounded-md border px-2.5 text-[11.5px] font-semibold transition-colors ${
+              className={`tap-target inline-flex min-h-9 shrink-0 items-center rounded-md border px-2.5 text-caption font-semibold transition-colors ${
                 viewerInspectorOpen
                   ? "border-line-strong bg-sunk text-ink-1"
                   : "border-line bg-surface text-ink-2 hover:bg-sunk"
@@ -329,8 +330,8 @@ export function SpatialWorkbenchFrame({
           )}
         </div>
 
-        <div data-viewer-columns className="mx-3 mt-2 mb-3 grid min-h-0 flex-1 gap-2">
-          <div ref={stageRef} data-viewer-stage className="relative min-w-0 min-h-0 overflow-hidden">
+        <div data-viewer-columns className="mt-2 grid min-h-0 flex-1 gap-2">
+          <div ref={stageRef} data-viewer-stage className="relative min-w-0 min-h-0 overflow-x-hidden overflow-y-auto">
             {stage}
           </div>
 
@@ -344,16 +345,15 @@ export function SpatialWorkbenchFrame({
               data-viewer-panel="catalog"
               className="flex min-w-0 min-h-0 flex-col overflow-hidden rounded-lg border border-line bg-surface"
             >
-              {navCollapsed && <ViewerSiteNav />}
               <div className="flex items-center justify-between gap-2 border-b border-line px-3 py-2">
                 <div className="min-w-0">
-                  <h3 className="truncate text-[12.5px] font-bold">{catalogLabel}</h3>
+                  <h3 className="truncate text-body font-bold">{catalogLabel}</h3>
                 </div>
                 <button
                   type="button"
                   onClick={closeCatalog}
                   aria-label={`${catalogLabel} 닫기`}
-                  className="tap-target grid size-8 flex-none place-items-center rounded-md text-[15px] text-ink-muted hover:bg-sunk hover:text-ink-1"
+                  className="tap-target grid size-8 flex-none place-items-center rounded-md text-lead text-ink-muted hover:bg-sunk hover:text-ink-1"
                 >
                   ×
                 </button>
@@ -363,7 +363,7 @@ export function SpatialWorkbenchFrame({
                 <div className="shrink-0 border-t border-line bg-surface px-3 py-2">
                   {catalogFooter}
                   {catalogDismissLabel && (
-                    <button type="button" onClick={closeCatalog} className="btn btn-primary mt-2 min-h-10 w-full text-[12px]">
+                    <button type="button" onClick={closeCatalog} className="btn btn-primary mt-2 min-h-10 w-full text-caption">
                       {catalogDismissLabel}
                     </button>
                   )}
@@ -384,17 +384,17 @@ export function SpatialWorkbenchFrame({
               className="flex min-w-0 min-h-0 flex-col overflow-hidden rounded-lg border border-line bg-surface"
             >
               <div className="flex shrink-0 items-center justify-between gap-2 border-b border-line px-3 py-1.5">
-                <span className="text-[12px] font-semibold">{inspectorLabel}</span>
+                <span className="text-caption font-semibold">{inspectorLabel}</span>
                 <button
                   type="button"
                   onClick={closeViewerInspector}
                   aria-label={`${inspectorLabel} 닫기`}
-                  className="tap-target grid size-8 place-items-center rounded-md text-[15px] text-ink-muted hover:bg-sunk hover:text-ink-1"
+                  className="tap-target grid size-8 place-items-center rounded-md text-lead text-ink-muted hover:bg-sunk hover:text-ink-1"
                 >
                   ×
                 </button>
               </div>
-              <div className="min-h-0 overflow-y-auto overscroll-contain p-3 text-[12px] leading-5 text-ink-2">
+              <div className="min-h-0 overflow-y-auto overscroll-contain p-3 text-caption leading-5 text-ink-2">
                 {showInspectorPanel ? inspector : null}
                 {detailsHostId ? <div id={detailsHostId} className="flex min-w-0 flex-col gap-3" /> : null}
               </div>
@@ -415,13 +415,15 @@ export function SpatialWorkbenchFrame({
             type="button"
             aria-expanded={catalogOpen}
             aria-controls="workbench-catalog"
+            aria-label={catalogOpen ? `${catalogLabel} 닫기` : `${catalogLabel} 열기`}
+            title={catalogOpen ? `${catalogLabel} 닫기` : `${catalogLabel} 열기`}
             onClick={() => (catalogOpen ? closeCatalog() : openCatalog())}
-            className="tap-target inline-flex shrink-0 items-center gap-1.5 rounded-md border border-line bg-surface px-2.5 py-1.5 text-[12.5px] font-semibold text-ink-2"
+            className="tap-target inline-flex shrink-0 items-center gap-1.5 rounded-md border border-line bg-surface px-2.5 py-1.5 text-body font-semibold text-ink-2"
           >
             <svg aria-hidden="true" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.7" className="flex-none">
               <path d="M3 4h10M3 8h10M3 12h10" />
             </svg>
-            <span className="max-sm:sr-only">목록</span>
+            <span>{catalogLabel === "자료 패널" ? "자료" : catalogLabel}</span>
           </button>
         )}
         {contextBar}
@@ -456,18 +458,19 @@ export function SpatialWorkbenchFrame({
               onKeyDown={onCatalogKeyDown}
               style={{ top: drawerTop }}
               data-mobile-sheet="catalog"
+              onClickCapture={dismissCatalogForSelection}
               className="fixed inset-x-2 bottom-[calc(var(--mobile-bottom-nav-clearance)+8px)] z-50 flex w-auto flex-col gap-2 overflow-y-auto overscroll-contain rounded-2xl border border-line bg-surface p-3 shadow-xl sm:left-2 sm:right-auto sm:w-[min(380px,calc(100%-16px))] lg:absolute lg:bottom-2 lg:z-30 lg:w-[min(320px,88%)] lg:rounded-lg lg:p-2"
             >
               <div className="sticky -top-3 z-10 -mx-3 -mt-3 flex min-w-0 shrink-0 items-center justify-between gap-2 border-b border-line bg-surface px-3 py-3 sm:-top-3 sm:-mx-3 sm:-mt-3 lg:-top-2 lg:-mx-2 lg:-mt-2 lg:px-2 lg:py-2">
                 <div className="min-w-0">
                   <span aria-hidden="true" className="mx-auto mb-2 block h-1 w-10 rounded-full bg-line-strong sm:hidden" />
-                  <h3 className="min-w-0 break-words text-[15px] font-bold lg:text-[13px]">{catalogLabel}</h3>
+                  <h3 className="min-w-0 break-words text-lead font-bold lg:text-body">{catalogLabel}</h3>
                 </div>
                 <button
                   type="button"
                   onClick={closeCatalog}
-                  aria-label="자료 목록 닫기"
-                  className="tap-target inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-md border border-line bg-surface px-3 text-[12px] font-semibold text-ink-2 lg:border-0 lg:px-1.5 lg:underline"
+                  aria-label={`${catalogLabel} 닫기`}
+                  className="tap-target inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-md border border-line bg-surface px-3 text-caption font-semibold text-ink-2 lg:border-0 lg:px-1.5 lg:underline"
                 >
                   닫기
                 </button>
@@ -501,7 +504,7 @@ export function SpatialWorkbenchFrame({
           onKeyDown={onInspectorKeyDown}
           style={{ top: drawerTop, display: showInspectorPanel ? undefined : "none" }}
           data-mobile-sheet="inspector"
-          className={`fixed inset-x-2 bottom-[calc(var(--mobile-bottom-nav-clearance)+8px)] z-50 w-auto flex-col gap-3 overflow-y-auto overscroll-contain rounded-2xl border border-line bg-surface p-4 text-[12px] leading-5 text-ink-2 shadow-xl sm:left-auto sm:right-2 sm:w-[min(380px,92%)] lg:absolute lg:bottom-2 lg:z-30 xl:static xl:right-auto xl:bottom-auto xl:z-auto xl:max-h-none xl:w-[320px] xl:flex-none xl:self-stretch xl:rounded-xl xl:p-3 xl:shadow-none ${showInspector ? "flex" : "hidden xl:flex"}`}
+          className={`fixed inset-x-2 bottom-[calc(var(--mobile-bottom-nav-clearance)+8px)] z-50 w-auto flex-col gap-3 overflow-y-auto overscroll-contain rounded-2xl border border-line bg-surface p-4 text-caption leading-5 text-ink-2 shadow-xl sm:left-auto sm:right-2 sm:w-[min(380px,92%)] lg:absolute lg:bottom-2 lg:z-30 xl:static xl:right-auto xl:bottom-auto xl:z-auto xl:max-h-none xl:w-[320px] xl:flex-none xl:self-stretch xl:rounded-xl xl:p-3 xl:shadow-none ${showInspector ? "flex" : "hidden xl:flex"}`}
         >
           {showInspectorPanel ? inspector : null}
           {detailsHostId ? <div id={detailsHostId} className="flex min-w-0 flex-col gap-3" /> : null}

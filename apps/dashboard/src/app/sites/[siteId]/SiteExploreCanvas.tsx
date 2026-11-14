@@ -1,3 +1,4 @@
+import { Disclosure } from "@/components/ui/Disclosure";
 import type { WorkArea } from "@/lib/core-api/types";
 import Link from "next/link";
 import { SiteLayerDisclosure } from "./SiteLayerDisclosure";
@@ -73,12 +74,12 @@ export function SiteExploreCanvas({
           <SiteSelectionForm action={sitePath} className="flex w-full min-w-0 flex-col gap-2">
             {mode !== "explore" && <input type="hidden" name="mode" value={mode} />}
             <div className="min-w-0 flex-1">
-              <label htmlFor="explore-canvas-area" className="block text-[12px] font-semibold">작업구역</label>
+              <label htmlFor="explore-canvas-area" className="block text-caption font-semibold">작업구역</label>
               <select
                 id="explore-canvas-area"
                 name="workAreaId"
                 defaultValue={selected?.workAreaId ?? ""}
-                className="tap-target mt-1 w-full rounded-md border border-line bg-surface px-2 text-[13px]"
+                className="tap-target mt-1 w-full rounded-md border border-line bg-surface px-2 text-body"
               >
                 {areas.map((area) => {
                   const naming = names.get(area.workAreaId) ?? { label: area.name || area.workAreaId, disambiguated: false };
@@ -89,39 +90,38 @@ export function SiteExploreCanvas({
               </select>
             </div>
             {activeCount === 0 && (
-              <p className="w-full text-[12px] text-ink-2">고를 수 있는(사용 중) 구역이 없습니다. 보관된 구역의 기록은 그대로 둡니다.</p>
+              <p className="w-full text-caption text-ink-2">고를 수 있는(사용 중) 구역이 없습니다. 보관된 구역의 기록은 그대로 둡니다.</p>
             )}
           </SiteSelectionForm>
         ) : selected && selectedName ? (
           <div className="min-w-0 flex-1">
-            <p className={`${showFullName ? "line-clamp-2 " : ""}break-words text-[13px] font-semibold`}>
+            <p className={`${showFullName ? "line-clamp-2 " : ""}break-words text-body font-semibold`}>
               작업구역 · {selectedName}
               {selected.status === "ARCHIVED" ? " (보관됨)" : ""}
             </p>
             {showFullName && (
-              <details className="text-[12px] text-ink-2">
-                <summary className="tap-target cursor-pointer underline decoration-dotted">구역 전체 이름 확인</summary>
+              <Disclosure label="구역 이름 상세" className="text-caption text-ink-2">
                 <p className="mt-1 break-words">{selectedName}</p>
-              </details>
+              </Disclosure>
             )}
           </div>
         ) : (
-          <p className="text-[12.5px] text-ink-2" role="status">작업구역을 확인할 수 없습니다. 아래 상세에서 목록을 확인하세요.</p>
+          <p className="text-body text-ink-2" role="status">작업구역을 확인할 수 없습니다. 아래 상세에서 목록을 확인하세요.</p>
         )}
-        <Link href={`${sitePath}/work-areas${selected ? `?workAreaId=${encodeURIComponent(selected.workAreaId)}` : ""}`} className="tap-target w-fit shrink-0 text-[12px] underline">작업구역 관리</Link>
+        <Link href={`${sitePath}/work-areas${selected ? `?workAreaId=${encodeURIComponent(selected.workAreaId)}` : ""}`} className="tap-target w-fit shrink-0 text-caption underline">작업구역 관리</Link>
       </div>
       <div className="flex min-w-0 flex-col gap-2">
         {observationControls ?? (mode === "explore" && captureOptions.length > 0 && selected ? (
           <SiteSelectionForm key={selectedOption?.assetRef ?? "unselected"} action={sitePath} className="flex w-full min-w-0 flex-col gap-2">
             <input type="hidden" name="workAreaId" value={selected.workAreaId} />
             <div className="min-w-0 flex-1">
-              <label htmlFor="explore-canvas-capture" className="block text-[12px] font-semibold">관측 시점</label>
+              <label htmlFor="explore-canvas-capture" className="block text-caption font-semibold">관측 시점</label>
               <select
                 id="explore-canvas-capture"
                 name="assetRef"
                 defaultValue={selectedOption?.assetRef ?? ""}
                 aria-describedby="explore-selection-help"
-                className="tap-target mt-1 w-full rounded-md border border-line bg-surface px-2 text-[13px]"
+                className="tap-target mt-1 w-full rounded-md border border-line bg-surface px-2 text-body"
               >
                 {selectedOption === null && <option value="">관측 시점 선택</option>}
                 {captureOptions.map((option) => (
@@ -132,15 +132,15 @@ export function SiteExploreCanvas({
               </select>
             </div>
           </SiteSelectionForm>
-        ) : <div className="text-[12px] text-ink-2"><p className="font-semibold">관측 시점</p><p className="mt-1">{mode === "compare" ? "비교할 관측 목록을 확인하세요." : mode === "results" ? "결과에 연결된 관측과 근거를 확인하세요." : "선택할 관측은 자료·범위 상세에서 확인하세요."}</p></div>)}
+        ) : <div className="text-caption text-ink-2"><p className="font-semibold">관측 시점</p><p className="mt-1">{mode === "compare" ? "비교할 관측 목록을 확인하세요." : mode === "results" ? "결과에 연결된 관측과 근거를 확인하세요." : "선택할 관측은 자료·범위 상세에서 확인하세요."}</p></div>)}
       {mode === "explore" && captureOptions.length > 0 && <p id="explore-selection-help" className="sr-only">관측을 선택하면 표시가 바뀝니다.</p>}
       {selectedCaption && (
-        <p className="break-words text-[12px] leading-5 text-ink-2">선택 중 · {selectedCaption}</p>
+        <p className="break-words text-caption leading-5 text-ink-2">선택 중 · {selectedCaption}</p>
       )}
       {/* 두 시점 보기는 이 화면의 모드 탭에만 있다. 자료를 보다가 "이전
           촬영과 비교"를 직접 찾게 하지 않고, 자료 자리 옆에 둔다. */}
       {compareHref && !toolbar && (
-        <p className="hidden text-[12px] lg:block">
+        <p className="hidden text-caption lg:block">
           <Link href={compareHref} className="tap-target underline">이전 촬영과 비교</Link>
           <span className="sr-only text-ink-muted lg:not-sr-only"> · 같은 구역의 두 시점을 나란히 봅니다</span>
         </p>
@@ -155,8 +155,8 @@ export function SiteExploreCanvas({
       */}
       {layers === undefined || layers === null ? (
         <div className="min-w-0">
-          <h3 className="mb-2 text-[12px] font-semibold">표시 레이어</h3>
-          <p className="text-[12px] leading-5 text-ink-2">{mode === "compare" ? "두 관측의 레이어는 각 보기에서 확인합니다." : mode === "results" ? "선택한 분석 결과와 연결 자료를 표시합니다." : "표시할 레이어를 확인하지 못했습니다."}</p>
+          <h3 className="mb-2 text-caption font-semibold">표시 레이어</h3>
+          <p className="text-caption leading-5 text-ink-2">{mode === "compare" ? "두 관측의 레이어는 각 보기에서 확인합니다." : mode === "results" ? "선택한 분석 결과와 연결 자료를 표시합니다." : "표시할 레이어를 확인하지 못했습니다."}</p>
         </div>
       ) : (
         <SiteLayerDisclosure>{layers}</SiteLayerDisclosure>
@@ -169,12 +169,11 @@ export function SiteExploreCanvas({
           큰 빈 화면 높이를 강제하지 않는다. */}
       <div className="flex min-w-0 flex-col gap-3 p-3">{children}</div>
     {coverageNote && (
-      <p className="border-t border-line px-3 py-2 text-[12px] leading-5 text-ink-2">{coverageNote}</p>
+      <p className="border-t border-line px-3 py-2 text-caption leading-5 text-ink-2">{coverageNote}</p>
     )}
     </div>
-    {detail && <details data-workspace-detail className="min-w-0 rounded-lg border border-line bg-surface p-2 lg:col-start-2 xl:z-10 xl:row-start-1 xl:mx-2 xl:my-2 xl:justify-self-end xl:open:sticky xl:open:top-3 xl:open:col-start-3 xl:open:mx-0 xl:open:my-0 xl:open:w-full xl:open:p-3">
-      <summary className="tap-target cursor-pointer text-[13px] font-semibold">선택 자료 정보</summary>
-      <div className="mt-3 flex min-w-0 flex-col gap-3 text-[12px] leading-5 text-ink-2">{detail}</div>
-    </details>}
+    {detail && <Disclosure label="선택 자료 상세" data-workspace-detail className="min-w-0 rounded-lg border border-line bg-surface p-2 lg:col-start-2 xl:z-10 xl:row-start-1 xl:mx-2 xl:my-2 xl:justify-self-end xl:open:sticky xl:open:top-3 xl:open:col-start-3 xl:open:mx-0 xl:open:my-0 xl:open:w-full xl:open:p-3">
+      <div className="mt-3 flex min-w-0 flex-col gap-3 text-caption leading-5 text-ink-2">{detail}</div>
+    </Disclosure>}
   </section>;
 }

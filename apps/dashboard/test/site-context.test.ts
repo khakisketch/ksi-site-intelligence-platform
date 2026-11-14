@@ -22,30 +22,26 @@ describe("site context path resolution", () => {
     expect(resolveSiteId("/")).toBeNull();
   });
 
-  it("maps the top-level site routes to their sections", () => {
-    expect(resolveSiteSection("/sites/site-1", query())).toBe("workspace");
-    expect(resolveSiteSection("/sites/site-1/", query())).toBe("workspace");
-    expect(resolveSiteSection("/sites/site-1", query("work-orders"))).toBe("work-orders");
+  it("maps the canonical and legacy site routes to their sections", () => {
+    expect(resolveSiteSection("/sites/site-1", query())).toBe("space");
+    expect(resolveSiteSection("/sites/site-1/", query())).toBe("space");
+    expect(resolveSiteSection("/sites/site-1", query("work-orders"))).toBe("space");
     expect(resolveSiteSection("/sites/site-1", query("manage"))).toBeNull();
-    expect(resolveSiteSection("/sites/site-1/spatial-assets", query())).toBe("materials");
-    expect(resolveSiteSection("/sites/site-1/spatial-data-requests", query())).toBe("materials");
-    expect(resolveSiteSection("/sites/site-1/analysis", query())).toBe("results");
-  });
-
-  it("does not light up a top-level tab for subpages that do not belong to one", () => {
-    expect(resolveSiteSection("/sites/site-1/work-areas", query())).toBeNull();
-    expect(resolveSiteSection("/sites/site-1/observations", query())).toBeNull();
+    expect(resolveSiteSection("/sites/site-1/spatial-assets", query())).toBe("space");
+    expect(resolveSiteSection("/sites/site-1/spatial-data-requests", query())).toBe("space");
+    expect(resolveSiteSection("/sites/site-1/work-areas", query())).toBe("space");
+    expect(resolveSiteSection("/sites/site-1/analysis", query())).toBe("analysis");
+    expect(resolveSiteSection("/sites/site-1/observations/new", query())).toBe("analysis");
+    expect(resolveSiteSection("/sites/site-1", new URLSearchParams("mode=results"))).toBe("analysis");
     expect(resolveSiteSection("/", query())).toBeNull();
   });
 
   it("builds only existing site routes without carrying another site's scope", () => {
-    expect(siteSectionHref("site-1", "workspace")).toBe("/sites/site-1");
-    expect(siteSectionHref("site-1", "materials")).toBe("/sites/site-1/spatial-assets");
-    expect(siteSectionHref("site-1", "work-orders")).toBe("/sites/site-1?section=work-orders");
-    expect(siteSectionHref("site-1", "results")).toBe("/sites/site-1/analysis");
-    expect(siteSectionHref("site 1", "materials")).toBe("/sites/site%201/spatial-assets");
+    expect(siteSectionHref("site-1", "space")).toBe("/sites/site-1");
+    expect(siteSectionHref("site-1", "analysis")).toBe("/sites/site-1/analysis");
+    expect(siteSectionHref("site 1", "space")).toBe("/sites/site%201");
     expect(siteSwitchHref("site-2", null)).toBe("/sites/site-2");
-    expect(siteSwitchHref("site-2", "results")).toBe("/sites/site-2/analysis");
+    expect(siteSwitchHref("site-2", "analysis")).toBe("/sites/site-2/analysis");
   });
 
   it("uses one readable mark per site name without inventing an image", () => {

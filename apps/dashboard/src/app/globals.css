@@ -13,6 +13,15 @@
   flex-direction: column;
   gap: 24px;
 }
+.console-page-dense {
+  max-width: none;
+}
+.console-page-section {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 8px;
+}
 .console-page-heading {
   display: flex;
   align-items: flex-end;
@@ -79,9 +88,83 @@
   padding: 48px 24px;
   text-align: center;
 }
+
+/*
+ * 작업 화면 레이아웃층. 목록·양식용 .console-page(최대 1440px, 여백 24px)와
+ * 달리 작업공간·분석·자료 화면은 전체 너비를 쓰는 작업대다. 이 층은 세 가지만
+ * 고정한다: 바깥 여백, 구역 간격, 스테이지 최소 높이. 나머지는 각 화면에 둔다.
+ */
+.console-work {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+}
+.console-work-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+/*
+ * 보는 곳(stage). 지도·비교·결과가 들어가는 자리로, 내용이 비어도 같은
+ * 높이를 유지해 화면이 접히지 않게 한다. 빈 상태는 이 안에서 가운데에 둔다.
+ */
+.console-stage {
+  display: flex;
+  flex-direction: column;
+  min-height: 420px;
+}
+.console-stage-empty {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 1px dashed var(--line-strong);
+  border-radius: 12px;
+  background: var(--surface);
+  padding: 40px 24px;
+  text-align: center;
+}
+/*
+ * 뷰어 무대의 빈 상태. 자료가 있을 때의 무대(등록 범위 도식·픽셀 보기)가 어두운
+ * 계측 면이므로, 비어 있을 때도 같은 면을 유지한다 — 흰 점선 상자는 "뷰어가
+ * 없는 화면"으로 읽힌다. 격자는 장식 지도가 아니라 빈 캔버스의 눈금이고,
+ * 안내와 행동은 그 위의 밝은 패널 하나에만 둔다.
+ */
+.viewer-canvas-empty {
+  border: 0;
+  border-radius: 8px;
+  background-color: var(--stage);
+  background-image:
+    linear-gradient(var(--stage-grid) 1px, transparent 1px),
+    linear-gradient(90deg, var(--stage-grid) 1px, transparent 1px);
+  background-size: 36px 36px;
+  background-position: center;
+  padding: 24px 16px;
+}
+.viewer-canvas-card {
+  display: flex;
+  width: 100%;
+  max-width: 440px;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  border-radius: 10px;
+  background: var(--surface);
+  padding: 28px 24px 24px;
+  text-align: center;
+  box-shadow: 0 16px 40px -16px rgb(0 0 0 / 0.55);
+}
 @media (max-width: 639px) {
   .console-page { padding: 16px; gap: 20px; }
   .console-page-title { font-size: 22px; }
+  .console-work { padding: 12px; gap: 10px; }
+  .console-stage { min-height: 320px; }
+  .viewer-canvas-empty { min-height: 420px; padding: 20px 12px; }
+  .viewer-canvas-card { padding: 22px 16px 18px; }
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -123,6 +206,11 @@
      "의미 없는 곳에 색을 쓰지 않는다"는 규칙의 유일한 예외. 미정의 시 액센트로 떨어진다. */
   --brand: var(--accent);
   --brand-on: var(--accent-on);
+
+  /* — 뷰어 무대 — 지도·영상·등록 범위 도식이 놓이는 어두운 계측 면.
+     테마와 무관하게 고정한다(등록 범위 도식 SVG와 같은 값). */
+  --stage: #121718;
+  --stage-grid: #1d2829;
 
   /* — 서피스 — */
   --page: #f6f7f8;
@@ -273,6 +361,26 @@
 
   --color-background: var(--background);
   --color-foreground: var(--foreground);
+
+  /* — 타입 스케일 — 화면마다 `text-[Npx]`를 새로 고르지 않도록 여섯 단으로 고정한다.
+     계측 도구라 본문이 13px이고, 단 사이 비율은 1.08~1.3으로 좁다(표·패널에 글자
+     종류가 많아 큰 대비는 소음이 된다). 새 코드와 손대는 코드부터 이 이름을 쓴다. */
+  --text-micro: 11px;
+  --text-micro--line-height: 16px;
+  --text-caption: 12px;
+  --text-caption--line-height: 18px;
+  --text-body: 13px;
+  --text-body--line-height: 20px;
+  --text-lead: 14px;
+  --text-lead--line-height: 22px;
+  --text-title: 17px;
+  --text-title--line-height: 24px;
+  --text-display: 22px;
+  --text-display--line-height: 30px;
+
+  /* — 높이(그림자) — 두 단만 둔다. 1은 면에서 살짝 뜬 패널, 2는 팝오버·시트. */
+  --shadow-elev-1: 0 1px 2px rgb(16 20 24 / 0.06), 0 2px 8px -2px rgb(16 20 24 / 0.08);
+  --shadow-elev-2: 0 4px 12px -2px rgb(16 20 24 / 0.12), 0 16px 40px -12px rgb(16 20 24 / 0.22);
 
   /* 한글이 1급 시민이다. Pretendard 가 있으면 한·영을 한 얼굴로 쓰고, 없으면
      라틴은 Geist·한글은 OS 기본으로 떨어진다(둘 다 x-height 가 비슷해 큰 어긋남 없음). */
@@ -448,6 +556,28 @@ body {
     border-color: var(--accent-hover);
   }
 
+  /* 도구 막대·목록 행 안의 보조 행동. 테두리가 없어 주 행동과 경쟁하지 않는다. */
+  .btn-quiet {
+    border-color: transparent;
+    background: transparent;
+    color: var(--ink-2);
+  }
+  .btn-quiet:hover:not(:disabled) {
+    background: var(--sunk);
+    color: var(--ink-1);
+  }
+  /* 조밀한 자리(표 행·패널 머리)용. 손가락 환경에서는 `.btn`의 44px가 그대로 이긴다. */
+  .btn-sm {
+    min-height: 32px;
+    padding: 0 10px;
+    font-size: 12.5px;
+  }
+  @media (pointer: coarse) {
+    .btn-sm {
+      min-height: 44px;
+    }
+  }
+
   /* `.tap-target` 은 이 레이어 밖에 정의돼 있어 여기서 덮이지 않는다 — 그 짝은
      파일 위쪽 `.tap-target` 정의 옆에 있다. */
 
@@ -494,6 +624,29 @@ body {
   /* 검증 실패는 색만으로 알리지 않는다 — 호출부가 문구를 함께 붙이는 걸 전제한다. */
   .input[aria-invalid="true"] {
     border-color: var(--crit);
+  }
+}
+
+/*
+ * 넓은 화면의 마우스 환경에서는 단추·입력 높이를 38px로 맞춘다.
+ *
+ * 호출부 90여 곳이 `btn min-h-11`로 44px를 강제하는데, 그 목적은 손가락이다.
+ * 마우스 화면에서는 같은 줄의 `.btn`(38px)과 `.btn.min-h-11`(44px)이 섞여 단추
+ * 크기가 화면마다 달라 보인다. 레이어 밖 규칙이라 유틸리티보다 우선하며,
+ * 좁은 화면(≤1023px)과 손가락 입력에서는 44px가 그대로 남는다.
+ */
+@media (min-width: 1024px) and (pointer: fine) {
+  .btn.min-h-11,
+  .btn.min-h-10,
+  .input.min-h-11 {
+    min-height: 38px;
+  }
+}
+/* 좁은 화면은 입력장치를 판별할 수 없어도 손가락 기준을 지킨다(`.tap-target`과 같은 근거). */
+@media (max-width: 1023px) {
+  .btn,
+  .input {
+    min-height: 44px;
   }
 }
 
@@ -592,7 +745,7 @@ body {
    탭·내보내기 버튼 각각에 개별로 건다 — 여기서 셀렉터로 다시 감추지 않는다.
    ═══════════════════════════════════════════════════════════════════════════ */
 /* ═══════════════════════════════════════════════════════════════════════════
-   Viewer-first shell — site 공간/자료 only (2026-10-26 decision A)
+   Viewer shell — 공간 (ADR-KSI-042)
 
    The labelled 176/232px rail is the default on every route. Only an explicit
    user choice switches it to a 56px icon rail. On viewer paths the main stops
@@ -698,5 +851,40 @@ body {
      대화상자에서 사용자가 뒤집을 수 있는 값이라 강제가 아니라 권고다. */
   @page {
     size: landscape;
+  }
+}
+
+@layer components {
+  .disclosure-summary {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    min-height: 2.25rem;
+    cursor: pointer;
+    list-style: none;
+    font-size: var(--text-caption);
+    line-height: var(--text-caption--line-height);
+    font-weight: 600;
+  }
+  .disclosure-summary::-webkit-details-marker {
+    display: none;
+  }
+  .disclosure[open] > .disclosure-summary > .disclosure-chevron {
+    transform: rotate(180deg);
+  }
+  .action-menu-panel {
+    inset: auto;
+    top: anchor(bottom);
+    right: anchor(right);
+    margin: 0.25rem 0 0;
+    max-width: calc(100vw - 2rem);
+    overflow: auto;
+    position-try-fallbacks: flip-block, flip-inline, flip-block flip-inline;
+    border: 1px solid var(--color-line);
+    border-radius: var(--radius-lg);
+    background: var(--color-surface);
+    color: var(--color-ink-1);
+    padding: 0.5rem;
+    box-shadow: var(--shadow-elev-2);
   }
 }

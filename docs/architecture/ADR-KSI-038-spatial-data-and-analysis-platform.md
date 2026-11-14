@@ -3,7 +3,7 @@
 - Status: ACCEPTED — product direction and staged planning only
 - Date: 2026-09-30
 - Human decision: 현장 공간데이터를 외부 에이전트·산업용 소프트웨어가 재사용하는 데이터·분석 기반으로 제품을 정의하고, 문서·방향·장기 계획에 반영한다. 이번 지시는 개발 진행을 제외한다.
-- Follow-up authority (2026-09-30): 사용자가 이후 개발 전반을 재개하도록 지시했다. 위 Human decision은 최초 문서화 지시의 역사이며 현재 개발 보류를 뜻하지 않는다. 첫 구현 과제는 [SDP-CATALOG-20260930](../superpowers/plans/2026-09-30-spatial-asset-catalog-v1.md)에서 추적한다.
+- Follow-up authority (2026-09-30): 사용자가 이후 개발 전반을 재개하도록 지시했다. 위 Human decision은 최초 문서화 지시의 역사이며 현재 개발 보류를 뜻하지 않는다. 현재 수락 기준은 아래 플랫폼 기준을 따른다.
 - Requirements: Master PRD §1.1.2 `SDP-REQ-01..08` (product targets; no wire schema assigned).
 - Planning ledger: [SDP-20260930](../superpowers/plans/2026-09-30-spatial-data-platform-roadmap.md).
 - Supersession: ADR-KSI-037 D1/D2의 제품 전체 범위·고객·첫 MVP 해석을 아래와 같이 확장한다. D3 이후의 분석 의미·권위·정확도·반복 수용 계약은 유지한다. ADR-KSI-036의 고객 소유 재구성·원본 보관·용도별 적합성 경계를 유지한다.

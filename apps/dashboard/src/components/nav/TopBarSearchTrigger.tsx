@@ -15,7 +15,7 @@ export function TopBarSearchTrigger() {
         type="button"
         onClick={() => window.dispatchEvent(new CustomEvent(PALETTE_OPEN_EVENT))}
         aria-label="검색 · 이동"
-        className="tap-target flex min-h-11 min-w-11 items-center justify-center gap-1.5 rounded-md border border-line-strong px-2.5 text-[13px] font-semibold text-ink-2 hover:bg-sunk"
+        className="tap-target flex min-h-11 min-w-11 items-center justify-center gap-1.5 rounded-md border border-line-strong px-2.5 text-body font-semibold text-ink-2 hover:bg-sunk"
       >
         <svg
           aria-hidden="true"

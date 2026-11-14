@@ -3,7 +3,7 @@ import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 const mocked = vi.hoisted(() => ({
-  session: vi.fn(), site: vi.fn(), areas: vi.fn(), history: vi.fn(),
+  session: vi.fn(), site: vi.fn(), areas: vi.fn(), history: vi.fn(), orders: vi.fn(),
 }));
 vi.mock("server-only", () => ({}));
 vi.mock("@/lib/core-api/session", () => ({ getSessionToken: vi.fn() }));
@@ -11,6 +11,7 @@ vi.mock("@/app/field/resolve-session", () => ({ resolveFieldSession: mocked.sess
 vi.mock("@/lib/core-api/sites", () => ({ getSite: mocked.site }));
 vi.mock("@/lib/core-api/workAreas", () => ({ listWorkAreas: mocked.areas }));
 vi.mock("@/lib/core-api/external-result-workflow", () => ({ listSiteExternalVolumeHistory: mocked.history }));
+vi.mock("@/lib/core-api/observation-work-orders", () => ({ listObservationWorkOrders: mocked.orders }));
 vi.mock("next/navigation", () => ({
   notFound: () => { throw new Error("NEXT_NOT_FOUND"); },
   useRouter: () => ({ refresh: vi.fn() }),
@@ -19,9 +20,9 @@ vi.mock("next/navigation", () => ({
 import SiteObservationHistoryPage from "@/app/sites/[siteId]/observations/page";
 import { CoreApiError } from "@/lib/core-api/client";
 
-const callPage = (after?: string) => SiteObservationHistoryPage({
+const callPage = (after?: string, register?: string) => SiteObservationHistoryPage({
   params: Promise.resolve({ siteId: "site-1" }),
-  searchParams: Promise.resolve({ after }),
+  searchParams: Promise.resolve({ after, register }),
 });
 
 beforeEach(() => {
@@ -33,20 +34,20 @@ beforeEach(() => {
   mocked.site.mockResolvedValue({ siteId: "site-1", name: "권한 확인된 현장", status: "BASELINE_MAPPING", aoi: null, resumeTarget: null, siteFrame: { crs: "EPSG:5186", transformVersion: "v1" }, registeredAt: "2026-10-01T00:00:00Z", updatedAt: "2026-10-01T00:00:00Z" });
   mocked.areas.mockResolvedValue({ workAreas: [] });
   mocked.history.mockResolvedValue({ items: [], nextCursor: null });
+  mocked.orders.mockResolvedValue([]);
 });
 afterEach(cleanup);
 
 function expectKnownContext() {
   expect(screen.getAllByText("권한 확인된 현장").length).toBeGreaterThan(0);
-  expect(screen.getByRole("heading", { name: "외부 비교 기록" })).toBeTruthy();
-  // 공통 현장 틀 유지 — 세 영역을 펼침 없이 바로 보인다. 결과 안의 하위
-  // 목록에서도 현장 업무 메뉴와 구역 범위를 잃지 않는다.
-  const menu = screen.getByRole("navigation", { name: "현장 업무 메뉴" });
+  expect(screen.getByRole("heading", { name: "분석" })).toBeTruthy();
+  expect(screen.getByRole("heading", { name: "외부 비교 이력" })).toBeTruthy();
+  expect(screen.getByRole("link", { name: "외부 비교" }).getAttribute("aria-current")).toBe("page");
+  const menu = screen.getByRole("navigation", { name: "현장 영역 메뉴" });
   expect(menu).toBeTruthy();
   for (const [label, href] of [
-    ["작업공간", "/sites/site-1"],
-    ["결과", "/sites/site-1/analysis"],
-    ["자료", "/sites/site-1/spatial-assets"],
+    ["공간", "/sites/site-1"],
+    ["분석", "/sites/site-1/analysis"],
   ] as const) {
     const links = screen.getAllByRole("link", { name: label });
     expect(links.length).toBeGreaterThan(0);
@@ -87,7 +88,25 @@ it("keeps history visible with a notice when only area names fail", async () => 
 it("hides observation creation from history without write permission", async () => {
   render(await callPage());
   // 읽기 전용 고정(권한 SITES_READ)이라 등록 단추는 없다.
-  expect(screen.queryByRole("link", { name: "관측 자료 등록" })).toBeNull();
+  expect(screen.queryByRole("link", { name: "외부 비교 등록" })).toBeNull();
+});
+
+it("opens the existing comparison workflow for a scoped external work order", async () => {
+  mocked.session.mockResolvedValue({ kind: "ready", principal: { organizationId: "org-1", permissions: ["SITES_WRITE"] } });
+  const order = { workOrderId: "current-order", name: "이번 관측", siteId: "site-1", organizationId: "org-1", executionMode: "EXTERNAL_RECONSTRUCTION" };
+  mocked.orders.mockResolvedValue([order, { ...order, workOrderId: "other-order", organizationId: "other", name: "다른 조직" }]);
+  render(await callPage(undefined, "1"));
+  expect(screen.getByRole("link", { name: "작업에서 비교 조건 확인" }).getAttribute("href")).toBe("/field/work-orders/current-order#external-evidence");
+  expect(screen.queryByText("다른 조직")).toBeNull();
+  expect(mocked.history).not.toHaveBeenCalled();
+});
+
+it("keeps legacy external comparison registration closed for registry-scoped accounts", async () => {
+  mocked.session.mockResolvedValue({ kind: "ready", principal: { organizationId: "org-1", permissions: ["SITES_WRITE"], registryScoped: true } });
+  render(await callPage(undefined, "1"));
+  expectKnownContext();
+  expect(screen.queryByRole("link", { name: "외부 비교 등록" })).toBeNull();
+  expect(mocked.orders).not.toHaveBeenCalled();
 });
 
 it("preserves known context and retry for a transient history failure", async () => {

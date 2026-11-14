@@ -1,3 +1,4 @@
+import { Disclosure } from "@/components/ui/Disclosure";
 import { computePlaneBounds, formatPlaneValue, type PlaneUnit } from "./site-spatial";
 
 /**
@@ -101,11 +102,10 @@ export function SiteNativeExtentSvg({
         </g>;
       })()}
     </svg>
-    <figcaption className="border-t border-line px-3 py-2 text-[11.5px] leading-5 text-ink-2">
+    <figcaption className="border-t border-line px-3 py-2 text-caption leading-5 text-ink-2">
       <p>실선은 작업구역{footprint ? (coincident ? "이며, 선택 자료의 포함 범위와 겹칩니다" : "이며, 점선은 선택 자료가 포함하는 범위입니다") : "의 경계입니다"}.
       {planeUnit === "unknown" && " 좌표 단위를 확인하지 못했습니다."} 사진이 아닌 범위 표시이며 정확도를 보증하지 않습니다.</p>
-      <details className="mt-1">
-        <summary className="tap-target cursor-pointer">좌표 정보 확인</summary>
+      <Disclosure label="좌표 상세" className="mt-1">
         <dl className="mt-1 grid gap-1">
           <div><dt className="font-semibold">좌표계·단위</dt><dd>{crsLabel} · {unitNote}</dd></div>
           <div><dt className="font-semibold">경계 꼭짓점</dt><dd>{vertexCount}개</dd></div>
@@ -114,7 +114,7 @@ export function SiteNativeExtentSvg({
           {footprintLabel && <div><dt className="font-semibold">함께 표시한 자료</dt><dd className="break-words">{footprintLabel}</dd></div>}
         </dl>
         <p className="mt-1">지도 표시를 위한 좌표 변환은 원본 자료를 변경하지 않습니다.</p>
-      </details>
+      </Disclosure>
     </figcaption>
   </figure>;
 }

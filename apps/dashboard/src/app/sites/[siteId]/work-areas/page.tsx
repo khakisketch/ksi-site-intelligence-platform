@@ -1,3 +1,5 @@
+import Link from "next/link";
+import { PageHeader } from "@/components/ui/PageHeader";
 import { notFound } from "next/navigation";
 import { parseScopeId } from "../site-spatial";
 
@@ -90,10 +92,9 @@ export default async function SiteWorkAreasPage({
   // 계정 연속성 확인값도 함께 읽는다 — 서버에서 확인한 두 식별자의 비교값일 뿐
   // 자격 증명이나 인가가 아니다. 페이지와 현재 계정을 확인하지 못하면
   // 패널은 목록과 원문을 숨기고 재확인을 안내한다. 쓰기 요청은 별도 BFF 가드도 쓴다.
-  const [workAreasResult, canWriteResult, canCreateWorkOrderResult, identityResult] = await Promise.allSettled([
+  const [workAreasResult, canWriteResult, identityResult] = await Promise.allSettled([
     listWorkAreas(site.siteId, { includeArchived: true }),
     hasAllPermissions("SITES_WRITE"),
-    hasAllPermissions("WORK_ORDERS_WRITE"),
     whoAmI().catch(() => null),
   ]);
   const workAreas: WorkArea[] =
@@ -101,7 +102,6 @@ export default async function SiteWorkAreasPage({
   const workAreaError =
     workAreasResult.status === "rejected" ? workAreaListFailure(workAreasResult.reason) : null;
   const canWrite = canWriteResult.status === "fulfilled" && canWriteResult.value;
-  const canCreateWorkOrder = canCreateWorkOrderResult.status === "fulfilled" && canCreateWorkOrderResult.value;
   const identity = identityResult.status === "fulfilled" ? identityResult.value : null;
   // Core가 principal에 경로 안전 형식을 강제하지 않으므로, 서버에서 정확한 두
   // 식별자의 ASCII 비교값을 만들고 원문 식별자는 클라이언트에 내보내지 않는다.
@@ -119,22 +119,16 @@ export default async function SiteWorkAreasPage({
       <SiteHeader
         site={site}
         selectedEpochId={null}
-        tab="manage"
+        tab="space"
         scopedWorkAreaId={workAreas.some((area) => area.workAreaId === requestedArea) ? requestedArea : null}
-        canCreateWorkOrder={canCreateWorkOrder}
-        canEditAoi={canWrite}
       />
       <div className="flex flex-col gap-5 p-4 sm:p-5">
-      <div className="flex flex-col gap-1">
-        <h2 className="break-keep text-[19px] font-bold tracking-tight">작업구역</h2>
-        <p className="max-w-2xl text-[12.5px] break-keep text-ink-2">
-          비교할 범위를 이름과 함께 등록합니다. 이후 관측 자료를 같은 구역에 연결해 변화를 확인할 수 있습니다.
-        </p>
-        <p className="max-w-2xl text-[12.5px] break-keep text-ink-muted">
-          등록한 경계는 그대로 보존합니다. 범위를 바꾸려면 새 구역으로 대체하며, 기존 결과는 이전 구역을 계속 참조합니다.
-          구역 등록만으로 정확도나 분석 가능 여부가 확인되지는 않습니다.
-        </p>
-      </div>
+      <PageHeader
+        title="작업구역"
+        headingLevel={2}
+        description="자료를 연결하고 비교할 범위를 등록합니다. 범위를 바꾸려면 새 구역으로 대체하며 기존 결과는 이전 구역을 계속 참조합니다."
+        actions={<Link href={`/sites/${encodeURIComponent(site.siteId)}`} className="btn btn-quiet">공간으로 돌아가기</Link>}
+      />
 
       <WorkAreaPanel
         siteId={site.siteId}

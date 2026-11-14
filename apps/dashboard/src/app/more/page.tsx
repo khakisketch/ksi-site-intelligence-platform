@@ -1,5 +1,8 @@
 import Link from "next/link";
 
+import { Disclosure } from "@/components/ui/Disclosure";
+import { InlineNotice } from "@/components/ui/InlineNotice";
+import { PageHeader } from "@/components/ui/PageHeader";
 import { logout } from "@/app/login/actions";
 import { whoAmI } from "@/lib/core-api/auth";
 import { CoreApiError } from "@/lib/core-api/client";
@@ -27,20 +30,22 @@ export default async function MorePage() {
 
   return (
     <div className="console-page">
-      <header className="console-page-heading"><div><h2 className="console-page-title">내 계정</h2><p className="console-page-description">현재 로그인한 계정과 역할을 확인합니다.</p></div></header>
+      <PageHeader title="내 계정" headingLevel={2} />
       <section aria-label="계정" className="flex w-full max-w-2xl flex-col gap-5 rounded-lg border border-line bg-surface p-5 sm:p-6">
         {principal ? (
           <div className="flex flex-wrap items-center gap-3">
             <span
               aria-hidden="true"
-              className="grid size-12 flex-none place-items-center rounded-full bg-sunk text-[18px] font-semibold"
+              className="grid size-12 flex-none place-items-center rounded-full bg-sunk text-title font-semibold"
             >
-              {principal.principalId.trim().charAt(0).toUpperCase() || "?"}
+              {roleLabel?.charAt(0) || "?"}
             </span>
-            <span className="min-w-0 flex-1">
-              <span className="block break-words text-[16px] font-semibold">{principal.principalId}</span>
-              <span className="mt-0.5 block text-[12px] text-ink-2">{roleLabel}</span>
-            </span>
+            <div className="min-w-0 flex-1">
+              <p className="text-title font-semibold">{roleLabel}</p>
+              <Disclosure label="계정 식별 상세">
+                <p className="break-all text-caption text-ink-2">{principal.principalId}</p>
+              </Disclosure>
+            </div>
             <form action={logout} className="flex-none">
               <button type="submit" className="btn tap-target min-h-11">
                 로그아웃
@@ -49,11 +54,11 @@ export default async function MorePage() {
           </div>
         ) : (
           <div className="flex flex-col gap-2">
-            <p className="text-[13px] leading-5 text-ink-2" role="status">
+            <InlineNotice>
               {loginRequired
                 ? "로그인이 필요합니다. 로그인하면 현재 계정과 로그아웃을 여기서 확인할 수 있습니다."
                 : "계정 정보를 확인할 수 없습니다. 서버 연결을 확인한 뒤 다시 시도하세요. 아래 로그아웃으로 세션을 정리할 수 있습니다."}
-            </p>
+            </InlineNotice>
             <div className="flex flex-wrap gap-2">
               <Link href="/login" className="btn tap-target min-h-11">
                 로그인
@@ -68,7 +73,7 @@ export default async function MorePage() {
         )}
       </section>
 
-      <Link href="/help" className="tap-target flex w-full max-w-2xl items-center justify-between gap-4 border-t border-line py-4 text-[13px] font-semibold hover:underline">도움말·작업 안내<svg aria-hidden="true" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" className="size-4"><path d="m7 4 6 6-6 6" /></svg></Link>
+      <Link href="/help" className="tap-target flex w-full max-w-2xl items-center justify-between gap-4 border-t border-line py-4 text-body font-semibold hover:underline">도움말·작업 안내<svg aria-hidden="true" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" className="size-4"><path d="m7 4 6 6-6 6" /></svg></Link>
     </div>
   );
 }

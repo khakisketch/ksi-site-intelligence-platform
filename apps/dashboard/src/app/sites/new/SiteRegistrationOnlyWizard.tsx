@@ -17,6 +17,8 @@ import { SiteRegistrationStorageGate } from "./SiteRegistrationStorageGate";
 import { SiteRegistrationRecoveryGuidance } from "./SiteRegistrationRecoveryGuidance";
 import { buildDataResidencyInput, type EgressChoice } from "@/lib/data-residency";
 import { isConvexPolygon } from "@/lib/geometry";
+import { isAccountContinuityMismatch } from "@/lib/account-continuity-mismatch";
+import { useOnlineStatus } from "@/hooks/useOnlineStatus";
 import type { SiteRegistrationMode } from "@/lib/core-api/permissions";
 import {
   buildSitePostAttempt,
@@ -331,6 +333,7 @@ export function SiteRegistrationOnlyWizard({
 }) {
   const router = useRouter();
   const refreshShellSites = useSiteListRefresh();
+  const online = useOnlineStatus();
   const [form, setForm, , storageStatus] = useDraftState<FormState>(
     DRAFT_STORAGE_KEY,
     INITIAL_FORM,
@@ -805,6 +808,15 @@ export function SiteRegistrationOnlyWizard({
       setSubmitPhase("error");
     }
 
+    // 오프라인이면 POST를 시도조차 하지 않는다 — 네트워크 예외의 "모름"과 달리
+    // 서버에 닿지 않았음이 확실하므로 불명 기록을 남기지 않고 확정 차단한다.
+    if (!online) {
+      failDefinite(
+        "연결이 끊겨 요청을 보내지 않았습니다. 입력과 요청 키는 그대로 있습니다. 연결이 돌아오면 같은 화면에서 다시 시도하세요.",
+      );
+      return;
+    }
+
     let res: Response;
     try {
       res = await fetch("/api/sites", {
@@ -835,7 +847,7 @@ export function SiteRegistrationOnlyWizard({
         return;
       }
       if (res.status === 409) {
-        if (body.code === "ACCOUNT_CONTINUITY_MISMATCH") {
+        if (isAccountContinuityMismatch(res.status, body)) {
           // 다른 계정 차단 — BFF가 Core POST 없이 끊은 상태다. 입력·요청 키는
           // 그대로 두고, 원래 계정 복귀 또는 명시적 현재-계정 재시작만 받는다.
           setContinuityBlocked(true);
@@ -1082,6 +1094,14 @@ export function SiteRegistrationOnlyWizard({
       // 서버는 등록했을 수 있다. 다만 그 "모른다"를 소유권 근거로 쓰지 않는다:
       // 다음 409가 타인의 ID를 가렸을 수도 있어 DUPLICATE 하나만으로는 확정할 수 없고,
       // 계정 일치도 확인할 수 없으므로 관측 성공 뒤의 409도 수동 확인으로만 푼다.
+      // 오프라인이면 POST를 시도조차 하지 않는다 — mapped 흐름과 같은 이유다.
+      if (!online) {
+        fail(
+          "연결이 끊겨 요청을 보내지 않았습니다. 입력은 그대로 있습니다. 연결이 돌아오면 같은 화면에서 다시 시도하세요.",
+          null,
+        );
+        return;
+      }
       const previousAttempt = postAttemptRef.current;
       postAttemptRef.current = buildSitePostAttempt(siteId, payloadInput, false);
       const dataResidency = buildDataResidencyInput(form.egressChoice, form.jurisdiction);
@@ -1173,7 +1193,7 @@ export function SiteRegistrationOnlyWizard({
         return;
       }
       const body = await parseJsonSafe(res);
-      if (res.status === 409 && body.code === "ACCOUNT_CONTINUITY_MISMATCH") {
+      if (isAccountContinuityMismatch(res.status, body)) {
         // 다른 계정 차단 — BFF가 Core POST 없이 끊은 상태다. legacy는 siteId가
         // 전역 유일이라 별도 현장이 생기지 않지만, 같은 이유로 재시도하지 않는다.
         postAttemptRef.current = previousAttempt;

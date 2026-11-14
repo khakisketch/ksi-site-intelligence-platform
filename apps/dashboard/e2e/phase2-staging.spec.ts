@@ -45,7 +45,7 @@ test.beforeEach(async ({ page }) => {
 
 test("TLS·OIDC·합성 운영 원장이 네 핵심 화면에서 유지된다", async ({ page }) => {
   expect(new URL(page.url()).protocol).toBe("https:");
-  await expect(page.getByRole("region", { name: "확인 필요 현장 캐러셀" })).toBeVisible();
+  await expect(page.getByRole("region", { name: "확인 필요 현장 목록" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "E2E 작업 범위 승인" })).toBeVisible();
   for (const path of ["/", "/sites", "/field", "/events", `/sites/${workspaceSite}`]) {
     await page.goto(path);

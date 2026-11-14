@@ -137,4 +137,4 @@ topology evidence and exact entry conditions are in
 
 The production observation lifecycle and separately provisioned peer receiver
 added after this companion stage are documented in
-`docs/hil/HIL_1P_PSDK_PRODUCTION_ROUTE.md`.
+the [archived PSDK app entry](../../archive/acquisition-2026/edge/psdk-app/README.md).

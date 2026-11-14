@@ -320,12 +320,12 @@ describe("usability-first explore", () => {
     await renderOverview({});
     const canvas = screen.getByRole("region", { name: "선택 관측 보기" });
     // 무대에는 펼침을 두지 않는다 — 기술 상세가 정보 서랍 자리로 옮겨갔다.
-    expect(within(canvas).queryByText("보기·준비 상세")).toBeNull();
+    expect(within(canvas).queryByText("표시 조건 상세")).toBeNull();
     expect(within(canvas).queryByText("이어 보기 상세")).toBeNull();
     expect(within(canvas).queryByText("상세·준비")).toBeNull();
     // 서랍 자리에 접힌 상세가 살아 있다.
     const host = document.getElementById("workspace-inspector-details")!;
-    expect(within(host).getAllByText("보기·준비 상세")).toHaveLength(1);
+    expect(within(host).getAllByText("표시 조건 상세")).toHaveLength(1);
     // 이어 보기(모자이크) 상세가 있으면 같은 자리에서 접힌 채 둔다.
     for (const match of within(host).queryAllByText("이어 보기 상세")) {
       expect(match.closest("details")).toBeTruthy();
@@ -338,7 +338,7 @@ describe("usability-first explore", () => {
       : text.includes("준비된 일부 범위")
         ? text.indexOf("준비된 일부 범위")
         : text.indexOf("일부 범위");
-    const conditions = text.indexOf("표시 조건·근거");
+    const conditions = text.indexOf("표시 조건 상세");
     expect(mosaic).toBeGreaterThanOrEqual(0);
     expect(conditions).toBeGreaterThan(mosaic);
   });
@@ -363,13 +363,13 @@ describe("usability-first explore", () => {
     expect(screen.getAllByRole("heading", { name: "현장 하나" })).toHaveLength(1);
     expect(screen.queryByText("현장명")).toBeNull();
     // 집중 모드 한 줄 머리 — 기본 머리의 펼침 대신 설정 메뉴를 둔다.
-    expect(screen.getByText("설정·정보")).toBeTruthy();
+    expect(screen.getByRole("link", { name: "현장 설정" })).toBeTruthy();
     expect(screen.queryByText("현장 정보·범위")).toBeNull();
   });
 });
 
 describe("usability-first results", () => {
-  it("leads with the latest record and folds older ones into history", async () => {
+  it("leads with the latest record and keeps other records readable", async () => {
     mocked.analyses.mockResolvedValue({
       siteId: "site-1",
       items: [
@@ -383,7 +383,7 @@ describe("usability-first results", () => {
     const filled = screen.getAllByText("성토")[0]!.closest("div");
     expect(filled?.textContent).toContain("800 m³");
     expect(screen.getAllByText(/정확도 평가는 아직 확인되지 않았습니다/)[0]).toBeTruthy();
-    expect(screen.getByText("이전 기록 2건")).toBeTruthy();
+    expect(screen.getAllByRole("link", { name: "자료·근거와 검토 보기" })).toHaveLength(3);
     // 최신 기록의 근거 링크는 원래 선택자 그대로다.
     expect(screen.getAllByRole("link", { name: "자료·근거와 검토 보기" })[0]!.getAttribute("href")).toBe(
       "/sites/site-1/analysis?workAreaId=tiny-1&analysisId=a3",

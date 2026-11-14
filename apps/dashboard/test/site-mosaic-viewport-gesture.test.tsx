@@ -426,7 +426,7 @@ describe("mosaic direct manipulation keeps verified buffers", () => {
     renderMosaic(jobs);
     await waitFor(() => expect(gets).toHaveLength(jobs.length));
 
-    await waitFor(() => expect(screen.getByText(/준비 과정·상세 상태/).closest("details")?.textContent).toContain("받은 바이트가 Core 준비 기록과 달라 화면에 표시하지 않습니다."));
+    await waitFor(() => expect(screen.getByText(/준비 상태 상세/).closest("details")?.textContent).toContain("받은 바이트가 Core 준비 기록과 달라 화면에 표시하지 않습니다."));
     const view = await screen.findByRole("group", { name: /직접 끌어서 보고/ });
     expect(view.textContent).not.toContain("그리지 않음");
     view.focus();
@@ -452,7 +452,7 @@ describe("mosaic direct manipulation keeps verified buffers", () => {
     await screen.findByRole("img", { name: /이어 보기/ });
     expect(screen.getByText(new RegExp(`그린 창 1 / 전체 ${plans.length}`))).toBeTruthy();
     expect(screen.queryByText(/전체 완료/)).toBeNull();
-    expect(screen.getByText(/준비 과정·상세 상태/).closest("details")?.textContent).toContain("표시 준비 필요");
+    expect(screen.getByText(/준비 상태 상세/).closest("details")?.textContent).toContain("표시 준비 필요");
     expect(posts).toHaveLength(0);
   });
 
@@ -465,7 +465,7 @@ describe("mosaic direct manipulation keeps verified buffers", () => {
     renderMosaic([jobForWindow(first, 0)]);
 
     // 준비되지 않은 창의 이유는 상세에만 둔다 — 지도에 문구·가짜 픽셀 없음.
-    expect(screen.getByText(/준비 과정·상세 상태/).closest("details")?.textContent).toContain("표시 준비 필요");
+    expect(screen.getByText(/준비 상태 상세/).closest("details")?.textContent).toContain("표시 준비 필요");
     expect((await screen.findByRole("group", { name: /직접 끌어서 보고/ })).textContent).not.toContain("표시 준비 필요");
     expect(posts).toHaveLength(0);
   });

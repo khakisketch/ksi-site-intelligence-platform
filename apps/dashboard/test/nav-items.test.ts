@@ -66,7 +66,7 @@ describe("MOBILE_TAB_ITEMS", () => {
     expect(MOBILE_TAB_ITEMS.map((i) => i.label)).toEqual([
       "홈",
       "현장",
-      "업무",
+      "작업",
       "계정",
     ]);
   });
@@ -77,7 +77,7 @@ describe("MOBILE_TAB_ITEMS", () => {
     expect(MOBILE_TAB_ITEMS.some((i) => i.href === "/more")).toBe(true);
   });
 
-  it("모바일 작업 탭은 기존 /field 작업 큐로 연결한다", () => {
+  it("모바일 작업 탭은 기존 /field 작업 목록로 연결한다", () => {
     expect(MOBILE_TAB_ITEMS.find((item) => item.key === "work")?.href).toBe("/field");
   });
 

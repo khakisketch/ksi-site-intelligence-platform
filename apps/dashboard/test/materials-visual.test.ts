@@ -2,16 +2,14 @@ import { describe, expect, it } from "vitest";
 
 import {
   applyCatalogFilters,
-  catalogCounts,
   groupAssetsByObservation,
   isViewableRasterKind,
   materialsHref,
   needsCatalogAttention,
   normalizeCatalogFilters,
   observationGroupDateLine,
-  resolveVisualSelection,
   shortKindLabel,
-} from "@/app/sites/[siteId]/spatial-assets/materials-visual";
+} from "@/app/sites/[siteId]/materials/materials-visual";
 import type { SpatialAssetCatalogItem } from "@/lib/core-api/spatial-assets";
 
 const ref = (letter: string) => `ksa-v1-${letter.repeat(64)}`;
@@ -62,98 +60,6 @@ function item(
   } as unknown as SpatialAssetCatalogItem;
 }
 
-describe("materials visual selection", () => {
-  const first = item(ref("a"));
-  const second = item(ref("c"), { kind: "ortho" });
-
-  it("defaults to the deterministic first catalog entry without preselecting B", () => {
-    const selection = resolveVisualSelection({ pool: [first, second], visualARaw: undefined, visualBRaw: undefined });
-    expect(selection.sideA?.assetRef).toBe(first.assetRef);
-    expect(selection.sideB).toBeNull();
-    expect(selection.mode).toBe("single");
-    expect(selection.defaultedA).toBe(true);
-  });
-
-  it("reads the legacy assetRef as an explicit A without claiming a default", () => {
-    const selection = resolveVisualSelection({
-      pool: [first, second],
-      visualARaw: undefined,
-      visualBRaw: undefined,
-      legacyRef: second.assetRef,
-    });
-    expect(selection.sideA?.assetRef).toBe(second.assetRef);
-    expect(selection.legacyMapped).toBe(true);
-    expect(selection.defaultedA).toBe(false);
-  });
-
-  it("resolves an exact A/B pair into independent compare mode", () => {
-    const selection = resolveVisualSelection({
-      pool: [first, second],
-      visualARaw: first.assetRef,
-      visualBRaw: second.assetRef,
-    });
-    expect(selection.mode).toBe("compare");
-    expect(selection.sideA?.assetRef).toBe(first.assetRef);
-    expect(selection.sideB?.assetRef).toBe(second.assetRef);
-  });
-
-  it("fails a malformed A closed without substituting another asset", () => {
-    const selection = resolveVisualSelection({
-      pool: [first, second],
-      visualARaw: "not-a-ref",
-      visualBRaw: undefined,
-    });
-    expect(selection.sideA).toBeNull();
-    expect(selection.notices.invalidA).toBe(true);
-    expect(selection.defaultedA).toBe(false);
-  });
-
-  it("fails a foreign B closed and keeps the valid A single", () => {
-    const selection = resolveVisualSelection({
-      pool: [first, second],
-      visualARaw: first.assetRef,
-      visualBRaw: ref("f"),
-    });
-    expect(selection.mode).toBe("single");
-    expect(selection.sideA?.assetRef).toBe(first.assetRef);
-    expect(selection.sideB).toBeNull();
-    expect(selection.notices.foreignB).toBe(true);
-  });
-
-  it("fails a foreign legacy ref closed instead of defaulting silently", () => {
-    const selection = resolveVisualSelection({
-      pool: [first, second],
-      visualARaw: undefined,
-      visualBRaw: undefined,
-      legacyRef: ref("f"),
-    });
-    expect(selection.sideA).toBeNull();
-    expect(selection.notices.foreignA).toBe(true);
-    expect(selection.defaultedA).toBe(false);
-  });
-
-  it("collapses an identical A/B pair to single with a notice", () => {
-    const selection = resolveVisualSelection({
-      pool: [first, second],
-      visualARaw: first.assetRef,
-      visualBRaw: first.assetRef,
-    });
-    expect(selection.mode).toBe("single");
-    expect(selection.sideB).toBeNull();
-    expect(selection.notices.samePair).toBe(true);
-  });
-
-  it("treats repeated query values as malformed, not as the first value", () => {
-    const selection = resolveVisualSelection({
-      pool: [first, second],
-      visualARaw: [first.assetRef, second.assetRef],
-      visualBRaw: undefined,
-    });
-    expect(selection.sideA).toBeNull();
-    expect(selection.notices.invalidA).toBe(true);
-  });
-});
-
 describe("materials href scope", () => {
   it("keeps work area, pair, legacy ref, filters and cursor in one key set", () => {
     const href = materialsHref("site-1", "area-1", {
@@ -175,7 +81,7 @@ describe("materials href scope", () => {
   });
 
   it("drops empty scopes instead of writing blank keys", () => {
-    expect(materialsHref("site-1", "area-1")).toBe("/sites/site-1/spatial-assets?workAreaId=area-1");
+    expect(materialsHref("site-1", "area-1")).toBe("/sites/site-1?panel=materials&workAreaId=area-1");
   });
 });
 
@@ -254,8 +160,4 @@ describe("materials catalog filtering", () => {
     expect(applyCatalogFilters([dsm, failed, pending], normalizeCatalogFilters({ state: "attention" }))).toEqual([failed, pending]);
   });
 
-  it("counts the loaded page independent of the active filter", () => {
-    expect(catalogCounts([dsm, ortho, failed])).toEqual({ total: 3, inspected: 2, attention: 1 });
-    expect(catalogCounts([])).toEqual({ total: 0, inspected: 0, attention: 0 });
-  });
 });

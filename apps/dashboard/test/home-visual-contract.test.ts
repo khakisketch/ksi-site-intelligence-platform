@@ -17,7 +17,7 @@ function repositorySource(relativePath: string): string {
  * 사실 우선순위·D1/D2/D3/D4 유지를 고정한다 — 승인 없이 거대 장식 커버로
  * 돌아가지 못하게 한다. Core·projection 로직 변경의 구실이 아니다.
  */
-describe("승인된 Home 표시 계약(D7)", () => {
+describe("승인된 Home 표시 계약(D7·D8)", () => {
   it("제품 정본이 D7 개정과 유지되는 책임·우선순위를 고정한다", () => {
     const adr = repositorySource("docs/architecture/ADR-KSI-025-evidence-first-portfolio-home.md");
 
@@ -28,22 +28,26 @@ describe("승인된 Home 표시 계약(D7)", () => {
     expect(adr).toContain("D1의 안건 선정·현장별 중복 방지와 D4의 최근 업데이트 의미·중복 제외를 유지한다");
     // D2 모바일 수동 탐색·키보드·현재 위치·reduced-motion 유지.
     expect(adr).toContain("D2의 모바일 수동 탐색·키보드·현재 위치·reduced-motion 원칙을 유지한다");
+    // D8이 D2의 캐러셀 방식을 세로 목록으로 대체한다.
+    expect(adr).toContain("D8 — 2026-11-14 Home 확인 목록은 캐러셀 대신 세로 목록으로 둔다");
+    // D9가 미리보기 없는 표지를 등록 경계 도형으로 정한다(장식 표지가 아니라 등록 사실).
+    expect(adr).toContain("D9 — 2026-11-14 미리보기가 없는 현장 표지는 등록 경계 도형으로 둔다");
     // D3 이미지 권리/출처 제한 유지.
     expect(adr).toContain("D3의 이미지 권리/출처 제한은 유지한다");
   });
 
   it("구현이 큰 장식 커버 없이 책임·순서를 유지한다", () => {
     const home = repositorySource("apps/dashboard/src/app/page.tsx");
-    const carousel = repositorySource("apps/dashboard/src/app/HomeAttentionCarousel.tsx");
+    const carousel = repositorySource("apps/dashboard/src/app/HomeAttentionList.tsx");
 
     // D1: 포트폴리오 요약 → 확인할 현장 → 초기 설정 → 최근 업데이트.
     expect(home).toContain("attentionItems.length > 0");
     expect(home).toContain("recentSiteItems.length > 0");
-    expect(home).toContain('regionLabel="최근 현장 캐러셀"');
+    expect(home).toContain('regionLabel="최근 현장 목록"');
     expect(home).toContain("초기 설정이 필요한 현장");
     expect(home).toContain("현장 전체를 열어 직접 확인하세요.");
     expect(home).toContain('<Link href="/sites"');
-    expect(home.indexOf("<HomeAttentionCarousel")).toBeLessThan(home.indexOf("<HomeSituationList"));
+    expect(home.indexOf("<HomeAttentionList")).toBeLessThan(home.indexOf("<HomeSituationList"));
     // D7: 고정 큰 시각·거대 장식 커버 금지 — 높이는 내용이 정한다.
     for (const source of [home, carousel]) {
       expect(source).not.toContain("min-h-[208px]");
@@ -64,12 +68,12 @@ describe("승인된 Home 표시 계약(D7)", () => {
     for (const label of ['timeLabel: "결과 보고"', 'timeLabel: "분석 생성"', 'timeLabel: "작업 갱신"', 'timeLabel: "현장 갱신"']) {
       expect(home).toContain(label);
     }
-    // D2: 모바일 수동 탐색·현재 위치·reduced-motion 유지, 데스크톱은 전부 펼친다.
-    expect(carousel).toContain("이전 현장");
-    expect(carousel).toContain("다음 현장");
-    expect(carousel).toContain("prefers-reduced-motion");
-    expect(carousel).toContain("lg:grid");
-    expect(carousel).toContain("lg:hidden");
+    // D8: 가로로 넘기는 캐러셀 없이 모든 폭에서 세로 목록으로 읽는다.
+    expect(carousel).not.toContain("이전 현장");
+    expect(carousel).not.toContain("다음 현장");
+    expect(carousel).not.toContain("snap-x");
+    expect(carousel).not.toContain("overflow-x-auto");
+    expect(carousel).not.toContain("scrollTo");
   });
 
   it("4개 viewport 기준 이미지가 D7 변경 전 증거로 보존된다", () => {

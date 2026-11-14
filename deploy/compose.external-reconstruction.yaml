@@ -157,6 +157,7 @@ services:
       KSI_CORE_OIDC_JWKS_URL: http://identity:8080/jwks.json
       KSI_CORE_OIDC_ALLOWED_ALGORITHMS: RS256
       KSI_CORE_OIDC_JWKS_TTL_SECONDS: "60"
+      KSI_CORE_OIDC_SUBJECT_REGISTRY_FILE: /run/ksi-operator/oidc-subject-registry.json
       KSI_CORE_EXTERNAL_RESULT_WORKFLOW_CONFIG: /run/ksi-operator/workflow.json
       KSI_CORE_EXTERNAL_AUTHORITY_PROVIDER_CONFIG: /run/ksi-operator/provider.json
     volumes:

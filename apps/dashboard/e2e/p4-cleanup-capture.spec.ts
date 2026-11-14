@@ -1,10 +1,7 @@
-import { mkdir } from "node:fs/promises";
-import { join } from "node:path";
-
 import { expect, test, type Page } from "@playwright/test";
 
 const siteId = "e2e-site-workspace";
-const evidenceDirectory = join(process.cwd(), "p4-cleanup-evidence", process.env.P4_CAPTURE_PHASE ?? "before");
+const capturePhase = process.env.P4_CAPTURE_PHASE;
 
 async function login(page: Page) {
   await page.goto("/");
@@ -19,10 +16,10 @@ async function login(page: Page) {
 }
 
 test("P4 surfaces render at the target viewport", async ({ page }, testInfo) => {
+  test.skip(capturePhase !== "before" && capturePhase !== "after", "Historical P4 capture requires an explicit phase.");
   const width = page.viewportSize()?.width;
   test.skip(![390, 768, 1440].includes(width ?? 0), "P4 capture uses only approved target widths.");
   await login(page);
-  await mkdir(evidenceDirectory, { recursive: true });
 
   const paths = [
     ["home", "/"],
@@ -84,7 +81,7 @@ test("P4 surfaces render at the target viewport", async ({ page }, testInfo) => 
     }
     await expect(page.locator("body")).toBeVisible();
     await page.screenshot({
-      path: join(evidenceDirectory, `${name}-${width}.png`),
+      path: testInfo.outputPath(`p4-${capturePhase}`, `${name}-${width}.png`),
       fullPage: true,
       animations: "disabled",
     });

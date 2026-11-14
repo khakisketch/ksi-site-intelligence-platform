@@ -26,7 +26,7 @@ export default async function LoginPage({
         <div className="mb-5 flex justify-center">
           <span
             aria-hidden="true"
-            className="grid size-9 place-items-center rounded-md bg-accent text-[13px] font-extrabold tracking-tight text-accent-on"
+            className="grid size-9 place-items-center rounded-md bg-accent text-body font-extrabold tracking-tight text-accent-on"
           >
             KSI
           </span>
@@ -45,7 +45,7 @@ export default async function LoginPage({
             <p
               role="status"
               className={`mb-4 rounded-md px-3 py-2 text-sm ${
-                localIdentity ? "bg-low-bg text-low-ink" : "bg-high-bg text-high-ink"
+                localIdentity ? "bg-sunk text-ink-1" : "bg-high-bg text-high-ink"
               }`}
             >
               {noticeText}
@@ -61,21 +61,11 @@ export default async function LoginPage({
             </form>
           )}
           {runtime.oidc && localIdentity && (
-            <details className="mt-5 border-t border-line pt-4 text-sm">
-              <summary className="tap-target cursor-pointer content-center font-medium text-ink-muted">
-                권한별 화면 테스트
-              </summary>
-              <p className="mt-2 break-keep text-sm text-ink-muted">
-                RBAC와 읽기 전용 화면을 확인할 때만 다른 합성 개발 계정을 선택하세요.
-              </p>
-              <form action={oidcLogin} className="mt-3">
-                <input type="hidden" name="next" value={next ?? "/"} />
-                <input type="hidden" name="intent" value="role-test" />
-                <button type="submit" className="btn w-full">
-                  다른 개발 계정 선택
-                </button>
-              </form>
-            </details>
+            <form action={oidcLogin} className="mt-4">
+              <input type="hidden" name="next" value={next ?? "/"} />
+              <input type="hidden" name="intent" value="role-test" />
+              <button type="submit" className="btn btn-quiet w-full">다른 개발 계정 선택</button>
+            </form>
           )}
           {runtime.oidc && runtime.manualOpaqueLoginEnabled && (
             <div className="my-5 flex items-center gap-3 text-xs text-ink-muted" aria-hidden="true">
@@ -84,7 +74,7 @@ export default async function LoginPage({
           )}
           {runtime.manualOpaqueLoginEnabled && <LoginForm next={next ?? "/"} />}
           {runtime.localOidcStackRequired && (
-            <p role="status" className="rounded-md bg-low-bg px-3 py-2 text-sm text-low-ink">
+            <p role="status" className="rounded-md bg-sunk px-3 py-2 text-sm text-ink-1">
               로컬 개발은 OIDC 로그인 흐름으로 실행합니다. Dashboard 폴더에서 <code>npm run dev</code>
               를 실행하세요.
             </p>

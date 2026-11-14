@@ -27,8 +27,8 @@ function captureRange(from: string, to: string): string {
 function Metric({ label, value }: { label: string; value: string }) {
   return (
     <div className="min-w-0">
-      <dt className="text-[12px] font-semibold text-ink-muted">{label}</dt>
-      <dd className="num mt-1 text-[18px] font-bold tracking-tight text-ink-1">{value}</dd>
+      <dt className="text-caption font-semibold text-ink-muted">{label}</dt>
+      <dd className="num mt-1 text-title font-bold tracking-tight text-ink-1">{value}</dd>
     </div>
   );
 }
@@ -71,9 +71,9 @@ export function SingleVolumeResult({
             : `${formatNumber(boundaryValidFraction * 100, 1)}%`}
         />
       </dl>
-      {uncertaintyNote && <p className="text-[11.5px] leading-4 text-ink-muted">{uncertaintyNote}</p>}
+      {uncertaintyNote && <p className="text-caption leading-4 text-ink-muted">{uncertaintyNote}</p>}
       {capturedFrom !== undefined && capturedTo !== undefined && (
-        <p className="text-[12.5px] leading-5 text-ink-2">촬영 {captureRange(capturedFrom, capturedTo)}</p>
+        <p className="text-body leading-5 text-ink-2">촬영 {captureRange(capturedFrom, capturedTo)}</p>
       )}
     </div>
   );

@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { WorkAreaPanel } from "@/app/sites/[siteId]/work-areas/WorkAreaPanel";
 import type { WorkArea } from "@/lib/core-api/types";
+import { installFakeSessionStorage } from "./storage-fakes";
 
 const notifyMock = vi.hoisted(() => vi.fn());
 vi.mock("@/components/ui/ToastProvider", () => ({ useToast: () => ({ notify: notifyMock }) }));
@@ -434,11 +435,12 @@ describe("WorkAreaPanel archive confirmation", () => {
   it("does not POST when archive write-ahead storage fails", async () => {
     const fetchMock = vi.fn(async () => identityOk());
     vi.stubGlobal("fetch", fetchMock);
-    const set = vi.spyOn(Storage.prototype, "setItem");
-    const actual = set.getMockImplementation();
-    set.mockImplementation(function(this: Storage, key: string, value: string) {
-      if (key.startsWith("ksi.work-area.archive.v1:")) throw new Error("quota");
-      return actual?.call(this,key,value);
+    // prototype spy는 jsdom 26 저장소에 닿지 않으므로 가짜 저장소로 quota를 건다.
+    installFakeSessionStorage({
+      setItem: (key, value, write) => {
+        if (key.startsWith("ksi.work-area.archive.v1:")) throw new Error("quota");
+        write(key, value);
+      },
     });
     render(<WorkAreaPanel siteId="site-1" siteCrs="EPSG:4326" canWrite initialWorkAreas={[activeArea()]} workAreaListError={null} accountIdentity={{fingerprint: FP_A}} />);
     await awaitReady();
@@ -446,7 +448,6 @@ describe("WorkAreaPanel archive confirmation", () => {
     fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", {name:"구역 보관"}));
     await screen.findByText(/기록을 안전하게 저장하지 못해 이번 요청을 보내지 않았습니다/);
     expect(postCalls(fetchMock)).toHaveLength(0);
-    set.mockRestore();
   });
 
   it("does not overwrite an unsupported archive record", async () => {
@@ -482,9 +483,11 @@ describe("WorkAreaPanel archive confirmation", () => {
 
   it("keeps a partial archive write and sends no POST on either attempt", async () => {
     const fetchMock = vi.fn(async () => identityOk()); vi.stubGlobal("fetch", fetchMock);
-    const realSet = Storage.prototype.setItem;
-    const set = vi.spyOn(Storage.prototype,"setItem").mockImplementation(function(this: Storage,key:string,value:string) {
-      return realSet.call(this,key,key.startsWith("ksi.work-area.archive.v1:") ? "{" : value);
+    // 아카이브 키 쓰기를 "{"로 훼손해 부분 기록을 만든다.
+    installFakeSessionStorage({
+      setItem: (key, value, write) => {
+        write(key, key.startsWith("ksi.work-area.archive.v1:") ? "{" : value);
+      },
     });
     render(<WorkAreaPanel siteId="site-1" siteCrs="EPSG:4326" canWrite initialWorkAreas={[activeArea()]} workAreaListError={null} accountIdentity={{fingerprint:FP_A}} />);
     await awaitReady();
@@ -495,7 +498,6 @@ describe("WorkAreaPanel archive confirmation", () => {
     fireEvent.click(within(screen.getByRole("dialog")).getByRole("button",{name:"구역 보관"}));
     expect(postCalls(fetchMock)).toHaveLength(0);
     expect(Object.keys(window.sessionStorage).some(key => key.startsWith("ksi.work-area.archive.v1:") && window.sessionStorage.getItem(key) === "{")).toBe(true);
-    set.mockRestore();
   });
 
   it.each(["success", "rejected"])("warns when the %s receipt cannot be stored while keeping an earlier unknown", async (outcome) => {
@@ -517,10 +519,12 @@ describe("WorkAreaPanel archive confirmation", () => {
     fireEvent.click(screen.getByRole("button",{name:"구역 보관"}));
     fireEvent.click(within(screen.getByRole("dialog")).getByRole("button",{name:"구역 보관"}));
     await screen.findByText(/보관 결과를 확인하지 못했습니다/);
-    const original = Storage.prototype.setItem;
-    const spy = vi.spyOn(Storage.prototype,"setItem").mockImplementation(function(this: Storage, key:string, value:string) {
-      if (key.startsWith("ksi.work-area.archive.v1:") && key.endsWith(":result")) throw new Error("quota");
-      return original.call(this,key,value);
+    // 이후 :result 쓰기만 quota로 실패시킨다. 기존 기록은 시드로 승계된다.
+    installFakeSessionStorage({
+      setItem: (key, value, write) => {
+        if (key.startsWith("ksi.work-area.archive.v1:") && key.endsWith(":result")) throw new Error("quota");
+        write(key, value);
+      },
     });
     fireEvent.click(screen.getByRole("button",{name:"보관 다시 시도"}));
     fireEvent.click(within(screen.getByRole("dialog")).getByRole("button",{name:"구역 보관"}));
@@ -529,7 +533,7 @@ describe("WorkAreaPanel archive confirmation", () => {
     expect(warning.textContent).toContain("탭을 닫으면 사라질 수 있습니다");
     expect(screen.getByText(/시도 1: 동측 절토면.*결과 미확인/)).toBeTruthy();
     expect(postCalls(fetchMock)).toHaveLength(2);
-    view.unmount(); spy.mockRestore();
+    view.unmount();
     render(<WorkAreaPanel {...props} initialWorkAreas={[]} />); await awaitReady();
     expect(screen.getByText(/시도 1: 동측 절토면.*결과 미확인/)).toBeTruthy();
     expect(screen.getByText(/시도 2: 동측 절토면.*결과 미확인/)).toBeTruthy();
@@ -546,14 +550,17 @@ describe("WorkAreaPanel archive confirmation", () => {
     vi.stubGlobal("fetch",fetchMock);
     const props={siteId:"site-1",siteCrs:"EPSG:4326",canWrite:true,initialWorkAreas:[activeArea()],workAreaListError:null,accountIdentity:{fingerprint:FP_A}};
     const view=render(<WorkAreaPanel {...props} />); await awaitReady();
-    const originalSet = Storage.prototype.setItem, originalGet = Storage.prototype.getItem;
+    // :result 기록 직후 1회만 읽기 유실(readback 불일치)을 재현한다.
     let pendingKey = "";
-    const set = vi.spyOn(Storage.prototype,"setItem").mockImplementation(function(this: Storage,key:string,value:string) {
-      originalSet.call(this,key,value); if (key.startsWith("ksi.work-area.archive.v1:") && key.endsWith(":result")) pendingKey=key;
-    });
-    const get = vi.spyOn(Storage.prototype,"getItem").mockImplementation(function(this: Storage,key:string) {
-      if (pendingKey === key) { pendingKey=""; return null; }
-      return originalGet.call(this,key);
+    installFakeSessionStorage({
+      setItem: (key, value, write) => {
+        write(key, value);
+        if (key.startsWith("ksi.work-area.archive.v1:") && key.endsWith(":result")) pendingKey = key;
+      },
+      getItem: (key, read) => {
+        if (pendingKey === key) { pendingKey = ""; return null; }
+        return read(key);
+      },
     });
     fireEvent.click(screen.getByRole("button",{name:"구역 보관"}));
     fireEvent.click(within(screen.getByRole("dialog")).getByRole("button",{name:"구역 보관"}));
@@ -561,7 +568,7 @@ describe("WorkAreaPanel archive confirmation", () => {
     expect(warning.textContent).toContain(outcome === "success" ? "보관 성공 응답을 확인했습니다" : "요청 거부 응답을 확인했습니다");
     expect(warning.textContent).toContain("결과 미확인으로 표시될 수 있습니다");
     expect(warning.textContent).toContain("탭을 닫으면 사라질 수 있습니다");
-    expect(calls).toBe(1); view.unmount(); set.mockRestore(); get.mockRestore();
+    expect(calls).toBe(1); view.unmount();
     render(<WorkAreaPanel {...props} />); await awaitReady();
     const resultKey = Object.keys(window.sessionStorage).find(key => key.startsWith("ksi.work-area.archive.v1:") && key.endsWith(":result"));
     expect(resultKey).toBeTruthy();

@@ -51,10 +51,10 @@ export function SiteCard({
     >
       <div className="flex flex-wrap items-start justify-between gap-2">
         <span className="min-w-0">
-          <span className="block text-[14.5px] font-bold tracking-tight break-keep">
+          <span className="block text-lead font-bold tracking-tight break-keep">
             {site.name}
           </span>
-          <span className="num mt-0.5 block text-[11.5px] break-token text-ink-muted">
+          <span className="num mt-0.5 block text-caption break-token text-ink-muted">
             {site.siteId}
           </span>
         </span>
@@ -65,16 +65,16 @@ export function SiteCard({
       </div>
 
       {todoMessage && (
-        <p className="text-[12.5px] break-keep text-ink-2">{todoMessage}</p>
+        <p className="text-body break-keep text-ink-2">{todoMessage}</p>
       )}
 
       {facts.length > 0 && (
         <div className="mt-auto flex flex-wrap gap-x-4 gap-y-2 border-t border-line pt-2.5">
           {facts.map((fact) => (
             <span key={fact.key} className="flex flex-col gap-px">
-              <span className="text-[10.5px] text-ink-muted">{fact.key}</span>
+              <span className="text-micro text-ink-muted">{fact.key}</span>
               <span
-                className={`text-[13px] font-semibold break-keep ${fact.numeric ? "num" : ""} ${
+                className={`text-body font-semibold break-keep ${fact.numeric ? "num" : ""} ${
                   fact.emphasis ? "text-accent-text" : ""
                 }`}
               >

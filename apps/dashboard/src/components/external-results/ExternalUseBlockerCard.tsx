@@ -1,3 +1,4 @@
+import { Disclosure } from "@/components/ui/Disclosure";
 import { BLOCKER_TARGET_ANCHOR, explainExternalUseDecision } from "@/lib/external-use-blockers";
 
 /**
@@ -17,23 +18,22 @@ export function ExternalUseBlockerCard({
   return (
     <div
       role="alert"
-      className="flex flex-col gap-2 rounded-lg border border-high/30 bg-high-bg p-3 text-[13px] text-high-ink"
+      className="flex flex-col gap-2 rounded-lg border border-high/30 bg-high-bg p-3 text-body text-high-ink"
     >
       {intro && <p className="text-ink-2">{intro}</p>}
-      <p className="text-[14px] font-bold break-keep">{guide.title}</p>
+      <p className="text-lead font-bold break-keep">{guide.title}</p>
       <p className="break-keep">{guide.explanation}</p>
       <div className="rounded-md bg-surface/70 px-3 py-2">
-        <p className="text-[11.5px] font-bold text-ink-muted">지금 할 일</p>
+        <p className="text-caption font-bold text-ink-muted">지금 할 일</p>
         <p className="mt-1 break-keep">{guide.step}</p>
-        <p className="mt-1 text-[12px] text-ink-2">담당: {guide.ownerLabel}</p>
+        <p className="mt-1 text-caption text-ink-2">담당: {guide.ownerLabel}</p>
       </div>
-      <a className="w-fit text-[12.5px] font-semibold underline" href={`#${BLOCKER_TARGET_ANCHOR[guide.target]}`}>
+      <a className="w-fit text-body font-semibold underline" href={`#${BLOCKER_TARGET_ANCHOR[guide.target]}`}>
         관련 화면으로 이동
       </a>
-      <details className="text-[12px] text-ink-2">
-        <summary>전문가 정보</summary>
+      <Disclosure label="식별 상세" className="text-caption text-ink-2">
         <p className="mt-1 font-mono">{guide.codes.join(", ")}</p>
-      </details>
+      </Disclosure>
     </div>
   );
 }

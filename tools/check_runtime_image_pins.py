@@ -75,15 +75,25 @@ _VERIFIED_CANDIDATE_IMAGE_ID_SUBSTITUTIONS = {
         }
     )
 }
-_DIGEST_ONLY_EXCEPTIONS = frozenset(
-    {
-        # NodeODM's approved multi-arch manifest has no matching immutable upstream
-        # release tag.  Its NodeODM/ODM versions are independently checked through
-        # the processing profile and /info contract; accepting a made-up tag here
-        # would weaken, rather than strengthen, provenance.
-        "opendronemap/nodeodm@sha256:cb07d06e21fd6189cfad287c6fedfa0b72568100355635cd9035cb86eed42ee2"
-    }
+# Task 3 closed the former NodeODM digest-only exception: the retired managed
+# reconstruction chain must not run again, so the pin gate — which defines
+# what may run now — rejects NodeODM/ODM images outright.  Already-signed
+# historical evidence still parses against the release-evidence/host-binding
+# schemas (byte-identical readability there is unchanged); that readability
+# is never promoted to a current execution permission here.
+# Both the historical digest-only form and a normal tag+digest form are
+# rejected: a made-up tag must not become a new-run admission path.
+_RETIRED_ODM_IMAGE = re.compile(
+    r"(?:^|/)nodeodm(?=[:/@]|$)|(?:^|/)odm(?=[:/@]|$)|opendronemap/",
+    re.IGNORECASE,
 )
+
+
+def _is_retired_odm_image_reference(reference: str) -> bool:
+    """True for any NodeODM/ODM image reference, tagged or digest-only."""
+    return _RETIRED_ODM_IMAGE.search(reference) is not None
+
+
 _DIGEST = re.compile(r"sha256:[0-9a-f]{64}\Z")
 _FROM = re.compile(
     r"^\s*FROM(?:\s+--[^\s]+)*\s+(?P<reference>[^\s]+)(?:\s+AS\s+(?P<stage>[^\s]+))?\s*$",
@@ -158,6 +168,14 @@ def _validate_reference(reference: str, *, path: Path, line: int) -> list[Violat
         return []
     if reference in _VERIFIED_CANDIDATE_IMAGE_ID_SUBSTITUTIONS.get(path, frozenset()):
         return []
+    if _is_retired_odm_image_reference(reference):
+        return [
+            Violation(
+                path,
+                line,
+                f"retired NodeODM/ODM runtime image is not admitted for new runs: {reference}",
+            )
+        ]
     if "$" in reference or "${" in reference:
         return [
             Violation(
@@ -173,8 +191,6 @@ def _validate_reference(reference: str, *, path: Path, line: int) -> list[Violat
         return [Violation(path, line, f"runtime image has no OCI digest: {reference}")]
     if not _DIGEST.fullmatch(digest):
         return [Violation(path, line, f"runtime image has invalid sha256 digest: {reference}")]
-    if reference in _DIGEST_ONLY_EXCEPTIONS:
-        return []
 
     image_name = base.rsplit("/", 1)[-1]
     tag_separator = image_name.rfind(":")

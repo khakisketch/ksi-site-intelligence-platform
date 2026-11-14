@@ -10,7 +10,7 @@ import type { SiteRegistrationAvailability } from "@/lib/core-api/permissions";
  */
 
 const TILE_FRAME =
-  "flex min-h-[160px] w-full flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-line-strong bg-surface p-4 text-center text-[13px] font-semibold text-ink-1 transition-colors hover:border-ink-muted";
+  "flex min-h-[160px] w-full flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-line-strong bg-surface p-4 text-center text-body font-semibold text-ink-1 transition-colors hover:border-ink-muted";
 
 function PlusMark() {
   return (

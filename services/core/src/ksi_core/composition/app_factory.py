@@ -206,11 +206,14 @@ def create_app(
             유무를 따른다(source_media 와 같은 관습) — 업로드·다운로드 URL 을
             낼 스토리지가 없으면 등록해도 파일을 올릴 곳이 없고, 워커가 바이트를
             읽을 수 없어 VERIFIED 게이트가 영구히 닫힌 조립이 된다.
-        processing_job_store: 3D 재구성 처리 작업(ADR-KSI-012) 발급·상태전이
-            저장소. ``source_media_store`` 와 ``site_store`` 가 모두 필수다 —
-            입력은 봉인된 번들에서, 반출 허용 여부는 현장에서 읽는다(INV-050).
-            둘 중 하나라도 없으면 요청이 그 값들을 스스로 주장하는 구성이 되므로
-            조립에서 거부한다.
+        processing_job_store: 3D 재구성 처리 작업 역사
+            replay/read-projection 저장소(ADR-KSI-012, Task 2 retirement).
+            발급·전이·lease·산출물 등록은 제거됐고, 권한 있는 역사 조회
+            GET(임무별·현장별 목록·단건 상세·산출물 다운로드)만 장착된다.
+            ``source_media_store`` 와 ``site_store`` 가 모두 필수다 —
+            조회 가시성과 입력 검증 대조가 그 두 원장을 읽기 때문이다.
+            ``evidence_storage`` 도 필수다 — 산출물 다운로드 URL 을 낼
+            스토리지가 없으면 다운로드 표면 자체를 장착하지 않는다.
         civil_readiness_projector: 현장별 토목 준비도 읽기 모델. ``site_store``·
             ``processing_job_store``·``design_surface_store`` 가 모두 있어야
             장착된다. 이 모델은 기존 ``preflight_epoch_pair`` 결과와 설계면
@@ -487,7 +490,6 @@ def create_app(
         processing_job_store=processing_job_store,
         evidence_storage=evidence_storage,
         site_lifecycle=site_lifecycle,
-        auth_registry=auth_registry,
         checkpoint_validation_store=checkpoint_validation_store,
         checkpoint_validation_registration_enabled=checkpoint_validation_registration_enabled,
         site_store=site_store,

@@ -16,15 +16,15 @@ export function SiteOnboarding({
   availability: SiteRegistrationAvailability;
 }) {
   return (
-    <section className="mx-auto flex w-full max-w-3xl flex-col items-center gap-5 py-10 text-center">
+    <section className="mx-auto flex min-h-[50vh] w-full max-w-3xl flex-col items-center justify-center gap-5 py-10 text-center">
       <div className="flex flex-col items-center gap-1.5">
-        <h2 className="text-[22px] font-bold tracking-tight break-keep">
+        <h2 className="text-display font-bold tracking-tight break-keep">
           현재 계정에서 볼 수 있는 현장이 없습니다
         </h2>
-        <p className="max-w-xl text-[13px] break-keep text-ink-2">
+        <p className="max-w-xl text-body break-keep text-ink-2">
           찾는 현장이 이미 있다면 관리자에게 이 계정의 현장 접근 권한을 확인해 주세요.
         </p>
-        <p className="max-w-xl text-[13px] break-keep text-ink-2">
+        <p className="max-w-xl text-body break-keep text-ink-2">
           새 현장이 필요하면 현장을 등록한 뒤 작업구역과 관측 자료를 확인할 수 있습니다.
         </p>
       </div>

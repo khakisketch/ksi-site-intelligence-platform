@@ -176,13 +176,13 @@ export function ToastProvider({ children }: { children: ReactNode }) {
         {toast !== null && (
           <div
             key={toast.id}
-            className="pointer-events-auto flex items-center gap-3 rounded-lg border border-line-strong bg-surface px-3.5 py-2.5 text-[13px] break-keep shadow-md"
+            className="pointer-events-auto flex items-center gap-3 rounded-lg border border-line-strong bg-surface px-3.5 py-2.5 text-body break-keep shadow-md"
           >
             <p className="text-ink-1">{toast.message}</p>
             <button
               type="button"
               onClick={dismiss}
-              className="btn tap-target h-8 shrink-0 px-2.5 text-[12px]"
+              className="btn tap-target h-8 shrink-0 px-2.5 text-caption"
             >
               알림 닫기
             </button>

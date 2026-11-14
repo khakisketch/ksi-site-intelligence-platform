@@ -16,7 +16,7 @@ const name = "Local Analysis API fixture site";
 const sites = [{siteId:"site-1", name, status:"UNMAPPED" as const}, {siteId:"site-2", name:"다른 현장", status:"UNMAPPED" as const}];
 const site = {siteId:"site-1",name,status:"UNMAPPED",resumeTarget:null,aoi:null} as never;
 const response = (fingerprint:string) => new Response(JSON.stringify({fingerprint}), {status:200});
-function Shell() { return <AccountDisplayBoundary fingerprint={A}><SiteListProvider sites={sites}><DesktopSidebar sites={sites} /><MobileBottomNav /><SiteHeader site={site} selectedEpochId={null} tab="manage" canCreateWorkOrder={false} canEditAoi={false}/><input aria-label="원문" defaultValue="original"/><CommandPalette items={[{key:"site",label:name,group:"현장",href:"/sites/site-1"}]}/></SiteListProvider></AccountDisplayBoundary>; }
+function Shell() { return <AccountDisplayBoundary fingerprint={A}><SiteListProvider sites={sites}><DesktopSidebar sites={sites} /><MobileBottomNav /><SiteHeader site={site} selectedEpochId={null} tab="manage"/><input aria-label="원문" defaultValue="original"/><CommandPalette items={[{key:"site",label:name,group:"현장",href:"/sites/site-1"}]}/></SiteListProvider></AccountDisplayBoundary>; }
 const root = () => document.querySelector<HTMLElement>("[data-account-display-root]")!;
 beforeEach(() => { vi.spyOn(document, "hasFocus").mockReturnValue(true); HTMLElement.prototype.scrollIntoView = vi.fn(); vi.stubGlobal("fetch", vi.fn().mockImplementation(async () => response(A))); });
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });

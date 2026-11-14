@@ -6,6 +6,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ResponsiveActionBoundary } from "@/components/responsive/ResponsiveActionBoundary";
 import { FilePickerField } from "@/components/ui/FilePickerField";
 import { putExternalEvidenceFile } from "@/lib/external-evidence-upload";
+import { isAccountContinuityMismatch } from "@/lib/account-continuity-mismatch";
 import { formatKoreanDateTime } from "@/lib/datetime";
 import {
   describeArtifactKinds,
@@ -737,7 +738,7 @@ export function ExternalEvidencePanel({
       // 계정이 바뀐 같은 키 재시도는 BFF가 Core 선언 없이 끊는다. 원래 키·내용을
       // 버리면 중복 기록으로 이어지므로 동결을 유지한다. 이는 중복 방지 가드이며
       // Core 권한·범위 판단을 대신하지 않는다.
-      if (declaredResponse.status === 409 && declaredCode === "ACCOUNT_CONTINUITY_MISMATCH") {
+      if (isAccountContinuityMismatch(declaredResponse.status, declaredValue)) {
         if (generation.current === scope && active.current === controller) {
           say("계정이 바뀌어 같은 증거 요청을 다시 보내지 않았습니다. 이전 요청이 처리되었는지는 알 수 없습니다. 입력과 요청은 이 화면에 그대로 있습니다. 다른 탭에서 원래 계정으로 다시 로그인한 뒤 이 화면에서 같은 파일과 선언으로 다시 시도하세요. 먼저 기록에서 원래 요청의 증거가 이미 있는지 확인하세요. 새로고침하면 입력과 요청이 사라집니다.", true);
         }
@@ -823,7 +824,7 @@ export function ExternalEvidencePanel({
         if (status >= 200 && status < 300) return false;
         if (!mounted.current || generation.current !== scope || active.current !== controller) return true;
         const stepLabel = step === "grant" ? "파일 업로드 승인" : "파일 제출 마무리";
-        if (status === 409 && code === "ACCOUNT_CONTINUITY_MISMATCH") {
+        if (isAccountContinuityMismatch(status, { code })) {
           say(`계정이 바뀌어 같은 증거 요청을 다시 보내지 않았습니다. 이전 요청이 처리되었는지는 알 수 없습니다. 입력과 요청은 이 화면에 그대로 있습니다. 다른 탭에서 원래 계정으로 다시 로그인한 뒤 이 화면에서 같은 파일과 선언으로 다시 시도하세요. 먼저 기록에서 원래 요청의 증거가 이미 있는지 확인하세요. 새로고침하면 입력과 요청이 사라집니다. (${stepLabel} 단계)`, true);
           return true;
         }
@@ -1087,7 +1088,7 @@ export function ExternalEvidencePanel({
       // 계정이 바뀐 같은 키 재시도는 BFF가 Core 결정 없이 끊는다. 원래 키·내용을
       // 버리면 중복 기록으로 이어지므로 동결을 유지한다. 이는 중복 방지 가드이며
       // Core 권한·범위 판단을 대신하지 않는다.
-      if (response.status === 409 && responseCode === "ACCOUNT_CONTINUITY_MISMATCH") {
+      if (isAccountContinuityMismatch(response.status, value)) {
         if (mounted.current && generation.current === scope && active.current === controller) {
           setDecisions((previous) => ({ ...previous, [intent]: { phase: "error" } }));
           sayForUse(use, "계정이 바뀌어 같은 확인 요청을 다시 보내지 않았습니다. 이전 요청이 처리되었는지는 알 수 없습니다. 입력과 요청은 이 화면에 그대로 있습니다. 다른 탭에서 원래 계정으로 다시 로그인한 뒤 이 화면에서 같은 요청으로 다시 시도하세요. 먼저 기록에서 원래 요청의 판정이 이미 있는지 확인하세요. 새로고침하면 입력과 요청이 사라집니다.", true);

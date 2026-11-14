@@ -77,7 +77,7 @@ The former acquisition topology is retained transitional implementation under
 not long-term product responsibility and not an automatic flight or robot-execution prerequisite
 for the weekly two-epoch MVP. P3 relocated that source to `archive/acquisition-2026/`;
 P4 removed its Console routes. Original move records and P5's two post-move hash discrepancies are
-in the [integrated audit](docs/audit/PHYSICAL_SITE_REBASELINE_INTEGRATED_VERIFICATION.md).
+in the integrated audit (historical).
 
 In historical acquisition contracts PSDK Liveview stays on the Manifold acquisition/perception path. `EDGE_UPLINK` carries bounded
 observations/telemetry/events. For the ADR-KSI-036 D6 external first-release route, a customer field
@@ -98,7 +98,7 @@ The approved terrain-aware Pilot-default design is routed by
 [`ADR-KSI-035`](docs/architecture/ADR-KSI-035-terrain-aware-planning-and-pilot-execution.md), its
 [design contract](docs/design/TERRAIN_AWARE_OBSERVATION_PLANNING_CONTRACT.md),
 [acceptance](docs/acceptance/TERRAIN_AWARE_PILOT_MVP_ACCEPTANCE.md), and
-[successor roadmap](docs/goals/TERRAIN_AWARE_PLANNING_ROADMAP.md). These documents define future
+successor roadmap (historical). These documents define future
 ownership and evidence boundaries only; they do not create a runtime module, alter existing wire
 contracts, establish Pilot/device support, or change the `NOT_VERIFIED` HIL/field state.
 

@@ -221,7 +221,7 @@ describe("compare selection rail (viewer-first compact)", () => {
     expect(selectA.textContent).toContain("날짜만 확인");
   });
 
-  it("lays the rail out without stretching: area full row, controls in DOM order, layers closed", () => {
+  it("lays the rail out without stretching: area full row, controls in DOM order, layers reachable", () => {
     const { container } = render(<SiteExploreCanvas sitePath="/sites/site-1" areas={visualAreas as never} selectedWorkAreaId="area-1"
       captureOptions={[]} selectedCaption={null} coverageNote={null} mode="compare"
       observationControls={compareControls()} layers={compareRailLayers()}>
@@ -240,14 +240,13 @@ describe("compare selection rail (viewer-first compact)", () => {
     const selectA = within(rail).getByLabelText("관측 A");
     const selectB = within(rail).getByLabelText("관측 B");
     const apply = within(rail).getByRole("button", { name: "독립 보기로 나란히 두기" });
-    const layerSummary = within(rail).getByText("표시 레이어");
+    const layerHeading = within(rail).getByText("표시 레이어");
     expect(inOrder(areaRow, selectA)).toBe(true);
     expect(inOrder(selectA, selectB)).toBe(true);
     expect(inOrder(selectB, apply)).toBe(true);
-    expect(inOrder(apply, layerSummary)).toBe(true);
-    // 레이어 그룹은 기본 닫힘 펼침 하나이며, 포털 자리는 중복 없이 그대로 있다.
-    const disclosure = layerSummary.closest("details")!;
-    expect(disclosure.hasAttribute("open")).toBe(false);
+    expect(inOrder(apply, layerHeading)).toBe(true);
+    // 레이어 조작은 발견 가능한 상태로 두고 포털을 한 번만 둔다.
+    expect(layerHeading.closest("details")).toBeNull();
     expect(container.querySelectorAll("#workspace-visual-a-layer-controls")).toHaveLength(1);
     expect(container.querySelectorAll("#workspace-visual-b-layer-controls")).toHaveLength(1);
   });

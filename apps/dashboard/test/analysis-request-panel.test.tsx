@@ -180,10 +180,9 @@ describe("analysis V2 panel", () => {
     renderPanel({ initialPage: listPage(Array.from({ length: 20 }, (_, i) => `analysis-${i + 1}`)), initialAnalysisId, canCreate: true });
     const notice = await screen.findByRole("region", { name: "보류 요청 안내" });
     const history = screen.getByRole("region", { name: "변화 분석 이력" });
-    const request = screen.getByRole("region", { name: "새 변화 분석 요청" });
     expect(notice.compareDocumentPosition(history) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(history.compareDocumentPosition(request) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(within(notice).getByRole("link", { name: "보류 요청 이어가기" }).getAttribute("href")).toBe("#new-analysis-request");
+    fireEvent.click(within(notice).getByRole("button", { name: "보류 요청 이어가기" }));
+    expect(screen.queryByRole("region", { name: "변화 분석 이력" })).toBeNull();
     expect((screen.getByLabelText("기준 관측") as HTMLSelectElement).value).toBe("0");
     expect((screen.getByLabelText("현재 관측") as HTMLSelectElement).value).toBe("1");
     fireEvent.click(screen.getByRole("button", { name: "다시 시도" }));
@@ -197,24 +196,22 @@ describe("analysis V2 panel", () => {
     let resolvePost!: (response: Response) => void;
     const post = new Promise<Response>((resolve) => { resolvePost = resolve; });
     vi.stubGlobal("fetch", vi.fn((_input, init) => init?.method === "POST" ? post : Promise.resolve(json(detail()))));
-    renderPanel({ initialPage: listPage(Array.from({ length: count }, (_, i) => `analysis-${i + 1}`)), initialSelectedDetail: count ? detail() : null, initialAnalysisId: null, canCreate: true });
+    renderPanel({ openRequestOnEntry: true, initialPage: listPage(Array.from({ length: count }, (_, i) => `analysis-${i + 1}`)), initialSelectedDetail: count ? detail() : null, initialAnalysisId: null, canCreate: true });
     fireEvent.change(screen.getByLabelText("작업구역"), { target: { value: "area-1" } });
     fireEvent.change(screen.getByLabelText("기준 관측"), { target: { value: "0" } });
     fireEvent.change(screen.getByLabelText("현재 관측"), { target: { value: "1" } });
-    const request = screen.getByRole("region", { name: "새 변화 분석 요청" });
-    const summary = within(request).getByText("선택지 표시 방법");
-    if (count) expect(screen.getByRole("region", { name: "변화 분석 이력" }).compareDocumentPosition(request) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    const request = screen.getByRole("region", { name: "새 분석 요청" });
+    const summary = within(request).getByText("선택지 상세").closest("summary")!;
+    expect(screen.queryByRole("region", { name: "변화 분석 이력" })).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "변화 분석 요청" }));
     summary.focus();
     expect(document.activeElement).toBe(summary);
     const created = detail("analysis-created", "QUEUED");
     resolvePost(json(created, 202));
     await screen.findByText(/요청이 접수됐습니다/);
-    expect(screen.getByRole("region", { name: "새 변화 분석 요청" })).toBe(request);
-    expect(document.activeElement).toBe(summary);
-    expect(screen.getByRole("region", { name: "변화 분석 이력" }).compareDocumentPosition(request) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect((screen.getByLabelText("기준 관측") as HTMLSelectElement).value).toBe("0");
-    expect((screen.getByLabelText("현재 관측") as HTMLSelectElement).value).toBe("1");
+    expect(screen.queryByRole("region", { name: "새 분석 요청" })).toBeNull();
+    expect(document.activeElement).toBe(screen.getByRole("heading", { name: "변화 분석 이력" }));
+    expect(screen.getByRole("region", { name: "변화 분석 이력" })).toBeTruthy();
   });
 
   it("names a confirmed blocked suitability separately from an unknown state", () => {
@@ -238,9 +235,8 @@ describe("analysis V2 panel", () => {
     vi.stubGlobal("fetch", vi.fn());
     renderPanel({ canCreate: true });
     const history = screen.getByRole("region", { name: "변화 분석 이력" });
-    const request = screen.getByRole("region", { name: "새 변화 분석 요청" });
-    expect(history.compareDocumentPosition(request) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(screen.getByRole("link", { name: "새 변화 분석 요청으로 이동" }).getAttribute("href")).toBe("#new-analysis-request");
+    expect(screen.queryByRole("region", { name: "새 분석 요청" })).toBeNull();
+    expect(screen.getByRole("button", { name: "새 분석 요청" })).toBeTruthy();
     const resultRegion = within(history).getByRole("region", { name: /계산 결과/ });
     expect(within(resultRegion).getByText(/독립 정확도 평가는 아직 확인되지 않았습니다/)).toBeTruthy();
     expect(within(resultRegion).getByText("절토")).toBeTruthy();
@@ -251,7 +247,7 @@ describe("analysis V2 panel", () => {
     vi.stubGlobal("fetch", vi.fn());
     const context = { workAreaId: "area-1", visualAAssetRef: `ksa-v1-${"a".repeat(64)}`, visualBAssetRef: `ksa-v1-${"b".repeat(64)}` };
     renderPanel({ visualContext: context });
-    const bridge = screen.getByRole("link", { name: "작업공간에서 결과 보기" });
+    const bridge = screen.getByRole("link", { name: "분석 결과 보기" });
     const href = bridge.getAttribute("href")!;
     // frozen 기록 신원 그대로 — 최신 추론·다른 기록 대체 없음.
     expect(href).toContain("/sites/site-1?mode=results");
@@ -266,20 +262,18 @@ describe("analysis V2 panel", () => {
   it("drops a foreign-area visual context from the workspace bridge", () => {
     vi.stubGlobal("fetch", vi.fn());
     renderPanel({ visualContext: { workAreaId: "other-area", visualAAssetRef: `ksa-v1-${"a".repeat(64)}`, visualBAssetRef: `ksa-v1-${"b".repeat(64)}` } });
-    const href = screen.getByRole("link", { name: "작업공간에서 결과 보기" }).getAttribute("href")!;
+    const href = screen.getByRole("link", { name: "분석 결과 보기" }).getAttribute("href")!;
     expect(href).not.toContain("visualAAssetRef");
     expect(href).not.toContain("visualBAssetRef");
     expect(href).toContain("analysisId=analysis-1");
   });
   it.each([null, "analysis-1"])("orders the exact draft before history, but keeps a fixed result first (%s)", (initialAnalysisId) => {
     renderPanel({canCreate:true,initialAnalysisId,initialWorkAreaId:"area-1",initialBaselineSelector:observations[0]!.selector,initialCurrentSelector:observations[1]!.selector});
-    const request = document.getElementById("new-analysis-request")!;
-    const history = document.getElementById("analysis-history")!;
-    expect(Boolean(request.compareDocumentPosition(history) & Node.DOCUMENT_POSITION_FOLLOWING)).toBe(initialAnalysisId === null);
-    expect(document.querySelectorAll('#new-analysis-request')).toHaveLength(1);
+    expect(Boolean(document.getElementById("new-analysis-request"))).toBe(initialAnalysisId === null);
+    expect(Boolean(document.getElementById("analysis-history"))).toBe(initialAnalysisId !== null);
   });
 
-  it("makes only the latest record's view button primary and keeps one browse return", () => {
+  it("makes the request the only primary action and keeps one browse return", () => {
     vi.stubGlobal("fetch", vi.fn());
     renderPanel({
       canCreate: true,
@@ -289,15 +283,16 @@ describe("analysis V2 panel", () => {
       visualContext: { workAreaId: "area-1", visualAAssetRef: `ksa-v1-${"a".repeat(64)}`, visualBAssetRef: `ksa-v1-${"b".repeat(64)}` },
       visualReturnHref: "/sites/site-1?mode=compare&workAreaId=area-1",
     });
-    // 최신 기록 카드의 보기 단추만 1차 동작이다.
+    // 요청 시작을 화면의 주 동작으로 둔다.
     const viewButtons = screen.getAllByRole("button", { name: "이 변화 분석 보기" });
     expect(viewButtons).toHaveLength(2);
-    expect(viewButtons[0]!.className).toContain("btn-primary");
+    expect(screen.getByRole("button", { name: "새 분석 요청" }).className).toContain("btn-primary");
+    expect(viewButtons[0]!.className).not.toContain("btn-primary");
     expect(viewButtons[1]!.className).not.toContain("btn-primary");
     // 탐색 복귀는 맨 위 맥락 띠 하나뿐이다.
     expect(screen.getAllByRole("link", { name: "독립 보기로 돌아가기" })).toHaveLength(1);
     // 나머지는 조용한 링크 행에 있다.
-    expect(screen.getByRole("link", { name: "작업공간에서 결과 보기" })).toBeTruthy();
+    expect(screen.getByRole("link", { name: "분석 결과 보기" })).toBeTruthy();
     expect(screen.getByRole("button", { name: /근거 확인/ })).toBeTruthy();
   });
 
@@ -327,10 +322,8 @@ describe("analysis V2 panel", () => {
     renderPanel({ canCreate: true, initialAnalysisId: null,
       initialPage: listPage([recorded.analysisId]), initialSelectedDetail: recorded,
       visualContext: context, visualReturnHref: "/sites/site-1?mode=compare&workAreaId=area-1" });
-    // 기록이 있으면 이력이 요청보다 먼저 보인다.
-    const request = document.getElementById("new-analysis-request")!;
-    const history = document.getElementById("analysis-history")!;
-    expect(Boolean(history.compareDocumentPosition(request) & Node.DOCUMENT_POSITION_FOLLOWING)).toBe(true);
+    expect(document.getElementById("analysis-history")).toBeTruthy();
+    expect(document.getElementById("new-analysis-request")).toBeNull();
     // 복귀 다리는 기록보다 먼저 둔다.
     expect(screen.getAllByRole("link", { name: "독립 보기로 돌아가기" }).length).toBeGreaterThan(0);
     expect(screen.queryByText("요청한 관측이 분석 후보와 정확히 맞지 않아")).toBeNull();
@@ -433,7 +426,7 @@ describe("analysis V2 panel", () => {
     renderPanel({ initialPage: listPage([]), initialSelectedDetail: null, initialAnalysisId: null, canCreate: true,
       observations: [], siteObservations: [] });
     expect(screen.getByText(/이 현장에는 아직 변화 분석 요청이 없습니다/)).toBeTruthy();
-    expect(screen.getByText(/실제 작업구역과 관측 후보를 확인/)).toBeTruthy();
+    expect(screen.getByRole("button", { name: "새 분석 요청" })).toBeTruthy();
 
     cleanup();
     let finishRequest: ((value: Response) => void) | undefined;
@@ -451,7 +444,7 @@ describe("analysis V2 panel", () => {
   });
 
   it("names the real work with capture interval and submission version, keeping exact selectors inspectable", () => {
-    renderPanel({ initialPage: listPage([]), initialSelectedDetail: null, initialAnalysisId: null, canCreate: true, workOrderNames: { "work-baseline": "기준 작업", "work-current": "현재 작업" } });
+    renderPanel({ openRequestOnEntry: true, initialPage: listPage([]), initialSelectedDetail: null, initialAnalysisId: null, canCreate: true, workOrderNames: { "work-baseline": "기준 작업", "work-current": "현재 작업" } });
 
     const baseline = screen.getByLabelText("기준 관측") as HTMLSelectElement;
     const current = screen.getByLabelText("현재 관측") as HTMLSelectElement;
@@ -475,9 +468,9 @@ describe("analysis V2 panel", () => {
     expect(confirmation.textContent).toContain("현재");
     expect(confirmation.textContent).toContain("현재 작업");
 
-    const selectorDetails = screen.getByText("요청 선택 정보 전체 확인").closest("details");
+    const selectorDetails = screen.getByText("요청 식별 상세").closest("details");
     expect(selectorDetails?.hasAttribute("open")).toBe(false);
-    fireEvent.click(screen.getByText("요청 선택 정보 전체 확인"));
+    fireEvent.click(screen.getByText("요청 식별 상세"));
     expect(selectorDetails?.textContent).toContain(observations[0]!.selector.submissionRef);
     expect(selectorDetails?.textContent).toContain("work-baseline");
     expect(selectorDetails?.textContent).toContain("관측 기록 ID · epoch-baseline");
@@ -485,7 +478,7 @@ describe("analysis V2 panel", () => {
   });
 
   it("stays honest about missing work names and only falls back to epoch IDs on collision", () => {
-    renderPanel({ initialPage: listPage([]), initialSelectedDetail: null, initialAnalysisId: null, canCreate: true });
+    renderPanel({ openRequestOnEntry: true, initialPage: listPage([]), initialSelectedDetail: null, initialAnalysisId: null, canCreate: true });
 
     fireEvent.change(screen.getByLabelText("작업구역"), { target: { value: "area-1" } });
     const baseline = screen.getByLabelText("기준 관측") as HTMLSelectElement;
@@ -499,7 +492,7 @@ describe("analysis V2 panel", () => {
       { ...observations[0]!, observationEpochId: "epoch-collide-first" },
       { ...observations[0]!, observationEpochId: "epoch-collide-second" },
     ];
-    renderPanel({ observations: colliding, initialPage: listPage([]), initialSelectedDetail: null, initialAnalysisId: null, canCreate: true });
+    renderPanel({ openRequestOnEntry: true, observations: colliding, initialPage: listPage([]), initialSelectedDetail: null, initialAnalysisId: null, canCreate: true });
     fireEvent.change(screen.getByLabelText("작업구역"), { target: { value: "area-1" } });
     const collided = screen.getByLabelText("기준 관측") as HTMLSelectElement;
     expect(collided.options[1]?.textContent).toContain("관측 기록 epoch-collide-first");
@@ -514,7 +507,7 @@ describe("analysis V2 panel", () => {
       { ...observations[0]!, selector: selector("work-t2", "c"), observationEpochId: "epoch-t2", captureStartedAt: "2026-09-15T00:00:00Z", captureEndedAt: "2026-09-15T00:30:00Z" },
       { ...observations[0]!, selector: selector("other-area", "d"), observationEpochId: "epoch-other-area", captureStartedAt: "2026-09-15T00:00:00Z", captureEndedAt: "2026-09-15T00:30:00Z", workAreaIds: ["area-2"] },
     ];
-    renderPanel({ observations: scoped, workAreas: [{ workAreaId: "area-1", name: "1구역" }, { workAreaId: "area-2", name: "2구역" }], initialPage: listPage([]), initialSelectedDetail: null, initialAnalysisId: null, canCreate: true, unattributedObservationCount: 1 });
+    renderPanel({ openRequestOnEntry: true, observations: scoped, workAreas: [{ workAreaId: "area-1", name: "1구역" }, { workAreaId: "area-2", name: "2구역" }], initialPage: listPage([]), initialSelectedDetail: null, initialAnalysisId: null, canCreate: true, unattributedObservationCount: 1 });
 
     fireEvent.change(screen.getByLabelText("작업구역"), { target: { value: "area-1" } });
     const baseline = screen.getByLabelText("기준 관측") as HTMLSelectElement;
@@ -537,7 +530,7 @@ describe("analysis V2 panel", () => {
       { ...observations[0]!, selector: selector("work-tie-2", "d"), observationEpochId: "epoch-tie-2", captureStartedAt: "2026-09-09T00:00:00Z", captureEndedAt: "2026-09-09T00:30:00Z" },
       { ...observations[0]!, selector: selector("work-current-later", "e"), observationEpochId: "epoch-current-later", captureStartedAt: "2026-09-11T00:00:00Z", captureEndedAt: "2026-09-11T00:30:00Z" },
     ];
-    renderPanel({ observations: overlapping, initialPage: listPage([]), initialSelectedDetail: null, initialAnalysisId: null, canCreate: true });
+    renderPanel({ openRequestOnEntry: true, observations: overlapping, initialPage: listPage([]), initialSelectedDetail: null, initialAnalysisId: null, canCreate: true });
 
     fireEvent.change(screen.getByLabelText("작업구역"), { target: { value: "area-1" } });
     fireEvent.change(screen.getByLabelText("현재 관측"), { target: { value: "4" } });
@@ -559,10 +552,10 @@ describe("analysis V2 panel", () => {
 
     expect(selected.getByText("높이 기준이 서로 다름 · 현재 관측")).toBeTruthy();
     expect(selected.getByText(/수직 기준과 단위를 담당자가 확인해야 합니다/)).toBeTruthy();
-    expect(selected.getByRole("link", { name: "공간 자산 기록 확인" }).getAttribute("href")).toBe("/sites/site-1/spatial-assets?workAreaId=area-1");
-    const technical = selected.getByText("원문 코드·설명 보기").closest("details");
+    expect(selected.getByRole("link", { name: "공간 자산 기록 확인" }).getAttribute("href")).toBe("/sites/site-1?panel=materials&workAreaId=area-1");
+    const technical = selected.getByText("원문 코드 상세").closest("details");
     expect(technical?.hasAttribute("open")).toBe(false);
-    fireEvent.click(selected.getByText("원문 코드·설명 보기"));
+    fireEvent.click(selected.getByText("원문 코드 상세"));
     expect(technical?.textContent).toContain("VERTICAL_REFERENCE_MISMATCH");
     expect(technical?.textContent).toContain("height datum differs");
     expect(technical?.textContent).toContain("checkpoint-ref-1");
@@ -612,7 +605,7 @@ describe("analysis V2 panel", () => {
     expect(selected.getByText("세부 원인 확인 필요")).toBeTruthy();
     expect(selected.getByText(/이 사유에 대한 화면 안내가 없습니다/)).toBeTruthy();
     expect(selected.getByText(/반복 요청하지 마세요/)).toBeTruthy();
-    expect(selected.getByText("원문 코드·설명 보기").closest("details")?.hasAttribute("open")).toBe(false);
+    expect(selected.getByText("원문 코드 상세").closest("details")?.hasAttribute("open")).toBe(false);
   });
 
   it("explains a completed execution with reassessment required without exposing the raw state code", () => {
@@ -632,7 +625,7 @@ describe("analysis V2 panel", () => {
     expect(selected.getByText("재평가 필요")).toBeTruthy();
     expect(selected.getByText("계산은 완료됐습니다. 현장 적합성은 재평가가 필요합니다.")).toBeTruthy();
     expect(selected.getByText("현장 적합성 재평가 필요")).toBeTruthy();
-    expect(selected.getByText("원문 코드·설명 보기").closest("details")?.hasAttribute("open")).toBe(false);
+    expect(selected.getByText("원문 코드 상세").closest("details")?.hasAttribute("open")).toBe(false);
   });
 
   it("retires cached numeric detail when reselecting a completed analysis before refreshed I/O", async () => {
@@ -743,7 +736,7 @@ describe("analysis V2 panel", () => {
 
     expect(await screen.findByText("확인됨")).toBeTruthy();
     expect(screen.getByText(/최근 검토 · operator-reviewer-1/)).toBeTruthy();
-    const summary = screen.getByText("검토 기록");
+    const summary = screen.getByText("검토 식별 상세");
     const audit = summary.closest("details");
     expect(audit?.hasAttribute("open")).toBe(false);
     fireEvent.click(summary);
@@ -852,7 +845,7 @@ describe("analysis V2 panel", () => {
       .mockResolvedValueOnce(json({ error: "temporary" }, 503))
       .mockResolvedValueOnce(json(created, 202));
     vi.stubGlobal("fetch", fetchMock);
-    renderPanel({ initialPage: listPage([]), initialSelectedDetail: null, initialAnalysisId: null, canCreate: true });
+    renderPanel({ openRequestOnEntry: true, initialPage: listPage([]), initialSelectedDetail: null, initialAnalysisId: null, canCreate: true });
 
     fireEvent.change(screen.getByLabelText("작업구역"), { target: { value: "area-1" } });
     fireEvent.change(screen.getByLabelText("기준 관측"), { target: { value: "0" } });
@@ -876,7 +869,7 @@ describe("analysis V2 panel", () => {
       .mockResolvedValueOnce(json({ code }, 503))
       .mockResolvedValueOnce(json({ code }, 503));
     vi.stubGlobal("fetch", fetchMock);
-    renderPanel({ initialPage: listPage([]), initialSelectedDetail: null, initialAnalysisId: null, canCreate: true });
+    renderPanel({ openRequestOnEntry: true, initialPage: listPage([]), initialSelectedDetail: null, initialAnalysisId: null, canCreate: true });
 
     fireEvent.change(screen.getByLabelText("작업구역"), { target: { value: "area-1" } });
     fireEvent.change(screen.getByLabelText("기준 관측"), { target: { value: "0" } });
@@ -898,7 +891,7 @@ describe("analysis V2 panel", () => {
   it("restores the activation gate message and error after a refresh", async () => {
     const code = "ANALYSIS_ACTIVATION_UNAVAILABLE";
     vi.stubGlobal("fetch", vi.fn().mockResolvedValueOnce(json({ code }, 503)));
-    const props = { initialPage: listPage([]), initialSelectedDetail: null, initialAnalysisId: null, canCreate: true };
+    const props = { openRequestOnEntry: true, initialPage: listPage([]), initialSelectedDetail: null, initialAnalysisId: null, canCreate: true };
     const firstRender = renderPanel(props);
 
     fireEvent.change(screen.getByLabelText("작업구역"), { target: { value: "area-1" } });
@@ -921,7 +914,7 @@ describe("analysis V2 panel", () => {
 
   it("keeps the generic pending notice after refresh when the failure was not an activation gate", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValueOnce(json({ error: "temporary" }, 503)));
-    const props = { initialPage: listPage([]), initialSelectedDetail: null, initialAnalysisId: null, canCreate: true };
+    const props = { openRequestOnEntry: true, initialPage: listPage([]), initialSelectedDetail: null, initialAnalysisId: null, canCreate: true };
     const firstRender = renderPanel(props);
 
     fireEvent.change(screen.getByLabelText("작업구역"), { target: { value: "area-1" } });
@@ -952,7 +945,7 @@ describe("analysis V2 panel", () => {
       .mockResolvedValueOnce(json({ code: "FORBIDDEN_BY_POLICY", detail: "internal-only" }, status))
       .mockResolvedValueOnce(json(created, 202));
     vi.stubGlobal("fetch", fetchMock);
-    renderPanel({ initialPage: listPage([]), initialSelectedDetail: null, initialAnalysisId: null, canCreate: true });
+    renderPanel({ openRequestOnEntry: true, initialPage: listPage([]), initialSelectedDetail: null, initialAnalysisId: null, canCreate: true });
 
     fireEvent.change(screen.getByLabelText("작업구역"), { target: { value: "area-1" } });
     fireEvent.change(screen.getByLabelText("기준 관측"), { target: { value: "0" } });
@@ -979,7 +972,7 @@ describe("analysis V2 panel", () => {
   });
 
   it("blocks new picks while candidate lists are unavailable without claiming an empty area", () => {
-    renderPanel({
+    renderPanel({ openRequestOnEntry: true,
       canCreate: true,
       initialPage: listPage([]),
       initialSelectedDetail: null,
@@ -988,7 +981,7 @@ describe("analysis V2 panel", () => {
       listsState: { workAreas: "ready", observations: "unavailable", workOrders: "ready", history: "ready" },
     });
 
-    expect(screen.getByText("목록을 확인할 수 없습니다")).toBeTruthy();
+    expect(screen.getByText(/관측 목록을 (?:불러오지 못했습니다|확인할 수 없습니다)/)).toBeTruthy();
     expect(screen.queryByText("이 구역의 분석 후보가 없습니다")).toBeNull();
     // 선택 폼 대신 목록 상태 블록이 그 자리를 대신한다 — 고를 것이 없으니
     // 선택지 자체를 두지 않는다.
@@ -998,7 +991,7 @@ describe("analysis V2 panel", () => {
     expect(screen.getByRole("button", { name: "목록 다시 불러오기" })).toBeTruthy();
 
     cleanup();
-    renderPanel({
+    renderPanel({ openRequestOnEntry: true,
       canCreate: true,
       initialPage: listPage([]),
       initialSelectedDetail: null,
@@ -1006,43 +999,64 @@ describe("analysis V2 panel", () => {
       listsState: { workAreas: "ready", observations: "unavailable", workOrders: "ready", history: "ready" },
     });
     // 구역을 고르기 전에는 폼이 보이지만 고를 수 없고, 같은 상태 안내가 있다.
-    expect(screen.getByText("목록을 확인할 수 없습니다")).toBeTruthy();
+    expect(screen.getByText(/관측 목록을 (?:불러오지 못했습니다|확인할 수 없습니다)/)).toBeTruthy();
     expect((screen.getByLabelText("작업구역") as HTMLSelectElement).disabled).toBe(false);
     expect((screen.getByLabelText("기준 관측") as HTMLSelectElement).disabled).toBe(true);
     expect((screen.getByRole("button", { name: "변화 분석 요청" }) as HTMLButtonElement).disabled).toBe(true);
   });
 
   it.each(["denied", "unconfirmed", "unavailable"] as const)("explains %s candidate lists and preserves scoped recovery", (state) => {
-    renderPanel({ canCreate: true, initialPage: listPage([]), initialSelectedDetail: null, initialAnalysisId: null,
+    renderPanel({ openRequestOnEntry: true, canCreate: true, initialPage: listPage([]), initialSelectedDetail: null, initialAnalysisId: null,
       initialWorkAreaId: "area-1", listsState: { workAreas: "ready", observations: state, workOrders: "ready", history: "ready" } });
     expect(screen.getByText(state === "denied" ? /관측 목록을 조회할 권한이 없습니다/ : state === "unconfirmed" ? /관측 목록을 확인할 수 없습니다/ : /관측 목록을 불러오지 못했습니다/)).toBeTruthy();
     expect(screen.queryByText("이 구역의 분석 후보가 없습니다")).toBeNull();
     expect(screen.queryByRole("button", { name: "변화 분석 요청" })).toBeNull();
-    expect(screen.getByRole("link", { name: "등록 자료와 검사 상태 확인" }).getAttribute("href")).toBe("/sites/site-1/spatial-assets?workAreaId=area-1");
-    expect(screen.getByRole("link", { name: "작업공간으로 돌아가기" }).getAttribute("href")).toBe("/sites/site-1?workAreaId=area-1");
+    expect(screen.getByRole("link", { name: "등록 자료와 검사 상태 확인" }).getAttribute("href")).toBe("/sites/site-1?panel=materials&workAreaId=area-1");
+    expect(screen.getByRole("link", { name: "공간으로 돌아가기" }).getAttribute("href")).toBe("/sites/site-1?workAreaId=area-1");
     fireEvent.click(screen.getByRole("button", { name: "목록 다시 불러오기" }));
     expect(router.refresh).toHaveBeenCalled();
   });
 
-  it("offers scopeless returns when candidate lists fail before area selection", () => {
-    renderPanel({ canCreate: true, initialPage: listPage([]), initialSelectedDetail: null, initialAnalysisId: null,
-      initialWorkAreaId: "", listsState: { workAreas: "denied", observations: "ready", workOrders: "ready", history: "ready" } });
-    expect(screen.getByText(/작업구역 목록을 조회할 권한이 없습니다/)).toBeTruthy();
-    expect(screen.getByRole("link", { name: "등록 자료 보기" }).getAttribute("href")).toBe("/sites/site-1/spatial-assets");
-    expect(screen.getByRole("link", { name: "현장 현황 보기" }).getAttribute("href")).toBe("/sites/site-1");
+  it("shares scope recovery links when candidate and history reads are both unconfirmed", () => {
+    renderPanel({ canCreate: false, initialPage: listPage([]), initialSelectedDetail: null, initialAnalysisId: null,
+      initialWorkAreaId: "area-1", listsState: { workAreas: "unconfirmed", observations: "unconfirmed", workOrders: "ready", history: "unconfirmed", historyMessage: "현장 변화 분석 이력을 확인할 수 없습니다." } });
+    expect(screen.queryByText(/관측 목록을 (?:불러오지 못했습니다|확인할 수 없습니다)/)).toBeNull();
+    expect(screen.getByText("분석 이력을 확인할 수 없습니다")).toBeTruthy();
+    expect(screen.getAllByRole("button", { name: "이력 다시 불러오기" })).toHaveLength(1);
+    const recovery = screen.getByRole("navigation", { name: "공통 범위 복구" });
+    expect(within(recovery).getByRole("link", { name: "등록 자료 보기" }).getAttribute("href"))
+      .toBe("/sites/site-1?panel=materials&workAreaId=area-1");
+    expect(within(recovery).getByRole("link", { name: "공간으로 돌아가기" }).getAttribute("href"))
+      .toBe("/sites/site-1?workAreaId=area-1");
+    expect(screen.getAllByRole("link", { name: "등록 자료 보기" })).toHaveLength(1);
+    expect(screen.getAllByRole("link", { name: "공간으로 돌아가기" })).toHaveLength(1);
+    fireEvent.click(screen.getByRole("button", { name: "분석 조건 확인" }));
+    expect(screen.getByText(/관측 목록을 (?:불러오지 못했습니다|확인할 수 없습니다)/)).toBeTruthy();
+    expect(screen.queryByText("분석 이력을 확인할 수 없습니다")).toBeNull();
   });
 
-  it("offers scoped exits when history is unconfirmed without asserting empty history", () => {
+  it("offers scopeless returns when candidate lists fail before area selection", () => {
+    renderPanel({ openRequestOnEntry: true, canCreate: true, initialPage: listPage([]), initialSelectedDetail: null, initialAnalysisId: null,
+      initialWorkAreaId: "", listsState: { workAreas: "denied", observations: "ready", workOrders: "ready", history: "ready" } });
+    expect(screen.getByText(/작업구역 목록을 조회할 권한이 없습니다/)).toBeTruthy();
+    expect(screen.getByRole("link", { name: "등록 자료 보기" }).getAttribute("href")).toBe("/sites/site-1?panel=materials");
+    expect(screen.getByRole("link", { name: "공간 보기" }).getAttribute("href")).toBe("/sites/site-1");
+  });
+
+  it("offers one history-specific scoped exit when candidate lists are available", () => {
     renderPanel({ canCreate: false, initialPage: listPage([]), initialSelectedDetail: null, initialAnalysisId: null,
       initialWorkAreaId: "area-1", listsState: { workAreas: "ready", observations: "ready", workOrders: "ready", history: "unconfirmed", historyMessage: "현장 변화 분석 이력을 확인할 수 없습니다. 현장 범위를 확인하거나 다시 불러오세요. 이 안내는 등록 자료의 상태를 판단하지 않습니다." } });
     expect(screen.getByRole("alert").textContent).toContain("등록 자료의 상태를 판단하지 않습니다");
     expect(screen.queryByText(/아직 변화 분석 요청이 없습니다/)).toBeNull();
-    expect(screen.getByRole("link", { name: "등록 자료 보기" }).getAttribute("href")).toBe("/sites/site-1/spatial-assets?workAreaId=area-1");
-    expect(screen.getByRole("link", { name: "현장 현황 보기" }).getAttribute("href")).toBe("/sites/site-1?workAreaId=area-1");
+    const recovery = within(screen.getByRole("navigation", { name: "이력 범위 복구" }));
+    expect(recovery.getByRole("link", { name: "등록 자료 보기" }).getAttribute("href")).toBe("/sites/site-1?panel=materials&workAreaId=area-1");
+    expect(recovery.getByRole("link", { name: "공간 보기" }).getAttribute("href")).toBe("/sites/site-1?workAreaId=area-1");
+    expect(screen.getAllByRole("link", { name: "등록 자료 보기" })).toHaveLength(1);
+    expect(screen.getAllByRole("link", { name: "공간 보기" })).toHaveLength(1);
   });
 
   it("names the broken attribution link instead of claiming an empty area", () => {
-    renderPanel({
+    renderPanel({ openRequestOnEntry: true,
       canCreate: true,
       initialPage: listPage([]),
       initialSelectedDetail: null,
@@ -1054,14 +1068,14 @@ describe("analysis V2 panel", () => {
     });
 
     // 귀속 끊김은 후보 없음이 아니다 — 어느 연결이 끊겼는지를 밝힌다.
-    expect(screen.getByText(/연결 정보를 확인할 수 없어/)).toBeTruthy();
+    expect(screen.getByText(/연결 정보를 불러오지 못했습니다/)).toBeTruthy();
     expect(screen.queryByText("이 구역의 분석 후보가 없습니다")).toBeNull();
     expect(screen.queryByRole("button", { name: "변화 분석 요청" })).toBeNull();
     expect(screen.getByRole("button", { name: "목록 다시 불러오기" })).toBeTruthy();
   });
 
   it("disables candidate picks with a truthful notice when only attribution is unavailable", () => {
-    renderPanel({
+    renderPanel({ openRequestOnEntry: true,
       canCreate: true,
       initialPage: listPage([]),
       initialSelectedDetail: null,
@@ -1182,7 +1196,7 @@ describe("analysis V2 panel", () => {
         body: { baseline: observations[0]!.selector, current: observations[1]!.selector },
       },
     }));
-    renderPanel({ initialPage: listPage([]), initialSelectedDetail: null, initialAnalysisId: null, canCreate: true });
+    renderPanel({ openRequestOnEntry: true, initialPage: listPage([]), initialSelectedDetail: null, initialAnalysisId: null, canCreate: true });
 
     expect(await screen.findByText("중단된 요청이 있습니다. 다시 시도하면 같은 요청 식별자로 Core에 확인합니다.")).toBeTruthy();
     expect(screen.getByRole("button", { name: "다시 시도" })).toBeTruthy();
@@ -1277,7 +1291,7 @@ describe("analysis V2 panel", () => {
     fireEvent.click(screen.getByRole("button", { name: "다음 근거 보기" }));
     await waitFor(() => expect(screen.getByLabelText("근거").textContent).toContain("LIMIT-B"));
     expect(fetchMock.mock.calls[2]![0]).toBe("/api/sites/site-1/analyses/analysis-1/evidence?limit=32&cursor=evidence-cursor");
-    expect(screen.getByLabelText("근거").textContent).toContain("현재 불러온 근거 2개");
+    expect(screen.getByLabelText("근거").textContent).toContain("불러온 근거 2개");
 
     fireEvent.click(screen.getByRole("button", { name: "다음 근거 보기" }));
     await screen.findByRole("alert");
@@ -1299,10 +1313,10 @@ describe("analysis V2 panel", () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(json(detail())));
     const first = renderPanel({ canCreate: false });
     expect(screen.queryByText("변화 분석 기록을 조회할 수 있습니다.")).toBeNull();
-    const blocked = screen.getByRole("button", { name: "새 변화 분석 요청" });
+    const blocked = screen.getByRole("button", { name: "분석 조건 확인" });
     expect(blocked.hasAttribute("disabled")).toBe(false);
     fireEvent.click(blocked);
-    expect(screen.getByText(/새 변화 분석 요청은 권한 있는 현장 담당자가 진행해야 합니다/)).toBeTruthy();
+    expect(screen.getByText(/변화 분석 요청 제출은 현장 쓰기 권한이 있는 담당자에게 요청하세요/)).toBeTruthy();
     expect(document.body.textContent).not.toContain("SITES_WRITE");
     first.unmount();
 
@@ -1337,9 +1351,8 @@ describe("analysis V2 panel", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "근거 확인" }));
     const notice = await screen.findByText("이 근거의 제한 · 독립성이 확인되지 않은 검사점 근거");
-    const summary = notice.closest("summary");
-    expect(summary).not.toBeNull();
-    expect(summary!.closest("details")?.hasAttribute("open")).toBe(false);
+    expect(notice.closest("details")).toBeNull();
+    expect(screen.getByText("근거 식별 상세").closest("details")?.hasAttribute("open")).toBe(false);
   });
 });
 
@@ -1466,7 +1479,7 @@ describe("newer observation notice", () => {
 
   it("shows no empty required selects when the area has zero candidates", () => {
     vi.stubGlobal("fetch", vi.fn());
-    renderPanel({ canCreate: true, initialAnalysisId: null, initialSelectedDetail: null,
+    renderPanel({ openRequestOnEntry: true, canCreate: true, initialAnalysisId: null, initialSelectedDetail: null,
       initialPage: listPage([]), observations: [], siteObservations: [], initialWorkAreaId: "area-1" });
     // 빈 선택지를 요구 조건처럼 두지 않는다.
     expect(screen.getByText("이 구역의 분석 후보가 없습니다")).toBeTruthy();
@@ -1475,8 +1488,8 @@ describe("newer observation notice", () => {
     expect(screen.queryByRole("button", { name: "변화 분석 요청" })).toBeNull();
     // 실제 다음 행동을 둔다.
     expect(screen.getByRole("link", { name: "등록 자료와 검사 상태 확인" }).getAttribute("href"))
-      .toBe("/sites/site-1/spatial-assets?workAreaId=area-1");
-    expect(screen.getByRole("link", { name: "작업공간으로 돌아가기" }).getAttribute("href"))
+      .toBe("/sites/site-1?panel=materials&workAreaId=area-1");
+    expect(screen.getByRole("link", { name: "공간으로 돌아가기" }).getAttribute("href"))
       .toBe("/sites/site-1?workAreaId=area-1");
   });
 
@@ -1497,7 +1510,7 @@ describe("newer observation notice", () => {
 
   it("states an exact-selector miss instead of a suitability verdict when candidates are empty", () => {
     vi.stubGlobal("fetch", vi.fn());
-    renderPanel({ canCreate: true, initialAnalysisId: null, initialSelectedDetail: null,
+    renderPanel({ openRequestOnEntry: true, canCreate: true, initialAnalysisId: null, initialSelectedDetail: null,
       initialPage: listPage([]), observations: [], siteObservations: [], initialWorkAreaId: "area-1" });
     expect(screen.getByText(/요청 입력과 정확히 맞는 분석 후보가 없습니다/)).toBeTruthy();
     // 후보 목록의 선택자 일치 여부만 말하며, 관측의 적합성을 판정하지 않는다.
@@ -1520,7 +1533,7 @@ describe("newer observation notice", () => {
     expect(screen.getByText(/현재 작업 · 버전 1/)).toBeTruthy();
     expect(screen.getByText(/작업명 확인 불가 · 버전 1/)).toBeTruthy();
     // 원문 식별자는 1차 표시가 아니라 펼침에만 둔다.
-    const disclosures = screen.getAllByText("가져온 값(검증되지 않음) 확인");
+    const disclosures = screen.getAllByText("가져온 값 상세");
     expect(disclosures).toHaveLength(2);
     expect(disclosures[0]!.closest("details")?.hasAttribute("open")).toBe(false);
     expect(screen.queryByText("work-foreign")).toBeNull();
@@ -1562,7 +1575,7 @@ describe("analysis readiness check", () => {
   }
 
   function renderReadyToCheck() {
-    renderPanel({ canCreate: true, initialAnalysisId: null, initialSelectedDetail: null,
+    renderPanel({ openRequestOnEntry: true, canCreate: true, initialAnalysisId: null, initialSelectedDetail: null,
       initialPage: listPage([]), initialWorkAreaId: "area-1" });
     fireEvent.change(screen.getByLabelText("기준 관측"), { target: { value: "0" } });
     fireEvent.change(screen.getByLabelText("현재 관측"), { target: { value: "1" } });
@@ -1596,9 +1609,9 @@ describe("analysis readiness check", () => {
     expect(screen.getByText(/공통 유효 범위는 계산 과정에서 확인합니다/)).toBeTruthy();
     expect(screen.getByText(/이 확인은 요청 권한을 주지 않습니다/)).toBeTruthy();
     // 계산 식별 확인값은 펼침에만 둔다.
-    const recordValues = screen.getByText("확인 기록 값 보기").closest("details")!;
+    const recordValues = screen.getByText("확인 기록 상세").closest("details")!;
     expect(recordValues.hasAttribute("open")).toBe(false);
-    fireEvent.click(screen.getByText("확인 기록 값 보기"));
+    fireEvent.click(screen.getByText("확인 기록 상세"));
     expect(recordValues.textContent).toContain(digest);
     expect(readinessCalls(stubbed)).toHaveLength(1);
     // 쌍이 바뀌면 확인 결과를 버리고 진행 중 확인을 취소한다.
@@ -1683,7 +1696,7 @@ describe("analysis readiness check", () => {
       }
       return Promise.resolve(json(detail()));
     }));
-    renderPanel({ canCreate: true, initialAnalysisId: null, initialSelectedDetail: null,
+    renderPanel({ openRequestOnEntry: true, canCreate: true, initialAnalysisId: null, initialSelectedDetail: null,
       initialPage: listPage([]), observations: [], siteObservations: [], initialWorkAreaId: "area-1",
       catalogPair: pair,
       visualContext: { workAreaId: "area-1", visualAAssetRef: pair.a.assetRef, visualBAssetRef: pair.b.assetRef },
@@ -1708,7 +1721,7 @@ describe("analysis readiness check", () => {
       captureStartedAt: "2026-09-01T00:00:00Z", captureEndedAt: "2026-09-01T00:30:00Z", captureDate: null,
       revision: 1, declaredFileName: "a.tif", verticalIdentifier: null, verticalBasis: null, inspectionOutcome: "MEASURED" };
     vi.stubGlobal("fetch", vi.fn());
-    renderPanel({ canCreate: true, initialAnalysisId: null, initialSelectedDetail: null,
+    renderPanel({ openRequestOnEntry: true, canCreate: true, initialAnalysisId: null, initialSelectedDetail: null,
       initialPage: listPage([]), observations: [], siteObservations: [], initialWorkAreaId: "area-1",
       catalogPair: { workAreaId: "area-1", a: side, b: { ...side, assetRef: `ksa-v1-${"b".repeat(64)}`, declaredFileName: "b.tif" } },
       visualContext: { workAreaId: "area-1", visualAAssetRef: side.assetRef, visualBAssetRef: `ksa-v1-${"b".repeat(64)}` },
@@ -1777,7 +1790,7 @@ describe("analysis readiness check", () => {
       return Promise.resolve(json(detail()));
     });
     vi.stubGlobal("fetch", fetchMock);
-    renderPanel({ canCreate: false, initialAnalysisId: null, initialSelectedDetail: null,
+    renderPanel({ openRequestOnEntry: true, canCreate: false, initialAnalysisId: null, initialSelectedDetail: null,
       initialPage: listPage([]), initialWorkAreaId: "area-1" });
     // 읽기 권한의 선택·조건 확인은 열려 있다.
     fireEvent.change(screen.getByLabelText("기준 관측"), { target: { value: "0" } });
@@ -1790,7 +1803,7 @@ describe("analysis readiness check", () => {
     expect(screen.queryByRole("button", { name: "다시 시도" })).toBeNull();
     expect(screen.queryByRole("button", { name: "보류 요청 취소" })).toBeNull();
     expect(screen.getByText(/변화 분석 요청 제출은 현장 쓰기 권한이 있는 담당자에게 요청하세요/)).toBeTruthy();
-    expect(screen.getByRole("button", { name: "새 변화 분석 요청" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "분석 이력으로 돌아가기" })).toBeTruthy();
     expect(posted.filter(({ url, method }) => method === "POST" && /\/analyses$/.test(url))).toHaveLength(0);
   });
 
@@ -1817,7 +1830,7 @@ describe("analysis readiness check", () => {
       }
       return Promise.resolve(json(detail()));
     }));
-    renderPanel({ canCreate: true, initialAnalysisId: null, initialSelectedDetail: null,
+    renderPanel({ openRequestOnEntry: true, canCreate: true, initialAnalysisId: null, initialSelectedDetail: null,
       initialPage: listPage([]), initialWorkAreaId: "area-1",
       catalogPair: dateOnlyPair,
       visualContext: { workAreaId: "area-1", visualAAssetRef: dateOnlyPair.a.assetRef, visualBAssetRef: dateOnlyPair.b.assetRef },
@@ -1848,7 +1861,7 @@ describe("analysis readiness check", () => {
         revision: 1, declaredFileName: "b.tif", verticalIdentifier: null, verticalBasis: null, inspectionOutcome: "MEASURED" },
     };
     vi.stubGlobal("fetch", vi.fn());
-    renderPanel({ canCreate: true, initialAnalysisId: null, initialSelectedDetail: null,
+    renderPanel({ openRequestOnEntry: true, canCreate: true, initialAnalysisId: null, initialSelectedDetail: null,
       initialPage: listPage([]), initialWorkAreaId: "area-1",
       catalogPair: matched,
       visualContext: { workAreaId: "area-1", visualAAssetRef: matched.a.assetRef, visualBAssetRef: matched.b.assetRef },
@@ -1870,7 +1883,7 @@ describe("analysis readiness check", () => {
         revision: 1, declaredFileName: "b.tif", verticalIdentifier: null, verticalBasis: null, inspectionOutcome: "MEASURED" },
     };
     vi.stubGlobal("fetch", vi.fn());
-    renderPanel({ canCreate: true, initialAnalysisId: null, initialSelectedDetail: null,
+    renderPanel({ openRequestOnEntry: true, canCreate: true, initialAnalysisId: null, initialSelectedDetail: null,
       initialPage: listPage([]), observations: [], siteObservations: [], initialWorkAreaId: "area-2",
       workAreas: [{ workAreaId: "area-1", name: "1구역" }, { workAreaId: "area-2", name: "2구역" }],
       catalogPair: pair,
@@ -1885,7 +1898,7 @@ describe("analysis readiness check", () => {
 describe("first-use task order", () => {
   it("puts the pair form first and shelves the empty-history notice when candidates exist", () => {
     vi.stubGlobal("fetch", vi.fn());
-    renderPanel({ canCreate: true, initialAnalysisId: null, initialSelectedDetail: null,
+    renderPanel({ openRequestOnEntry: true, canCreate: true, initialAnalysisId: null, initialSelectedDetail: null,
       initialPage: listPage([]), initialWorkAreaId: "area-1" });
     expect(screen.getByLabelText("기준 관측")).toBeTruthy();
     expect(screen.getByLabelText("현재 관측")).toBeTruthy();
@@ -1894,9 +1907,9 @@ describe("first-use task order", () => {
 
   it("keeps the true-empty recovery copy when no candidates exist at all", () => {
     vi.stubGlobal("fetch", vi.fn());
-    renderPanel({ canCreate: true, initialAnalysisId: null, initialSelectedDetail: null,
+    renderPanel({ openRequestOnEntry: true, canCreate: true, initialAnalysisId: null, initialSelectedDetail: null,
       initialPage: listPage([]), observations: [], siteObservations: [], initialWorkAreaId: "area-1" });
-    expect(screen.getByText(/이 현장에는 아직 변화 분석 요청이 없습니다/)).toBeTruthy();
+    expect(screen.queryByText(/이 현장에는 아직 변화 분석 요청이 없습니다/)).toBeNull();
     expect(screen.getByText("이 구역의 분석 후보가 없습니다")).toBeTruthy();
     expect(screen.queryByLabelText("기준 관측")).toBeNull();
   });

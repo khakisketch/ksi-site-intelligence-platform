@@ -402,7 +402,7 @@ export function SpatialTaskPanel({ initialView, initialOptions, siteName, areas,
               <option value="">관측 선택</option>{candidates.map((item, index) => <option key={selectorKey(item.selector)} value={selectorKey(item.selector)}>{formatKoreanDateTime(item.captureStartedAt)} · 관측 {index + 1} · 자료 개정 {item.selector.revision}</option>)}
             </select>
           </label>)}
-          {areaId && candidates.length < 2 && <p className="text-sm text-high-ink sm:col-span-2">이 구역에는 현재 선택할 수 있는 관측이 두 개 미만입니다. 자료 등록·봉인과 접근 범위를 확인하세요. <Link className="underline underline-offset-4" href={`/sites/${encodeURIComponent(siteId)}/spatial-assets?workAreaId=${encodeURIComponent(areaId)}`}>등록 자료와 검사 상태 확인</Link></p>}
+          {areaId && candidates.length < 2 && <p className="text-sm text-high-ink sm:col-span-2">이 구역에는 현재 선택할 수 있는 관측이 두 개 미만입니다. 자료 등록·봉인과 접근 범위를 확인하세요. <Link className="underline underline-offset-4" href={`/sites/${encodeURIComponent(siteId)}?panel=materials&workAreaId=${encodeURIComponent(areaId)}`}>등록 자료와 검사 상태 확인</Link></p>}
           {baselineKey && baselineKey === currentKey && <p className="text-sm text-high-ink sm:col-span-2">서로 다른 두 관측을 선택하세요.</p>}
         </fieldset>}
         {options.nextOffset !== null && <button type="button" className="btn mt-3 min-h-11" disabled={Boolean(busy)} onClick={() => void more()}>관측 더 불러오기</button>}

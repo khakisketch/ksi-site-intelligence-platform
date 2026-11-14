@@ -58,7 +58,7 @@ export function BackButton() {
     <Link
       href={parent.href}
       aria-label={`${parent.label}으로 이동`}
-      className="tap-target -ml-1 inline-flex flex-none items-center gap-1 rounded-md px-2 text-[12px] font-semibold text-ink-2 hover:bg-sunk hover:text-ink-1"
+      className="tap-target -ml-1 inline-flex flex-none items-center gap-1 rounded-md px-2 text-caption font-semibold text-ink-2 hover:bg-sunk hover:text-ink-1"
     >
       <svg
         aria-hidden="true"

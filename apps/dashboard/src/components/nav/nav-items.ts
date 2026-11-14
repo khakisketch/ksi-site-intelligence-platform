@@ -16,7 +16,7 @@ export interface NavItem {
 export const NAV_ITEMS: NavItem[] = [
   { key: "home", label: "홈", href: "/", implemented: true, icon: "home", mobile: true },
   { key: "sites", label: "현장", href: "/sites", implemented: true, icon: "sites", mobile: true },
-  { key: "work", label: "업무", href: "/field", implemented: true, icon: "work", mobile: true },
+  { key: "work", label: "작업", href: "/field", implemented: true, icon: "work", mobile: true },
   {
     key: "fleet",
     label: "Dock·Edge 지원 범위",

@@ -308,8 +308,14 @@ describe("작업 연속성", () => {
   }
 
   it("저장소가 없으면 읽지 않고 쓰지 않는다", () => {
-    expect(readMaskedContinuity(scope)).toBeNull();
-    expect(writeMaskedContinuity(scope, { maskChildId: "mask-1", requestId: null })).toBe(false);
+    // vitest node 환경에도 sessionStorage가 있어 absence를 직접 재현한다.
+    vi.stubGlobal("sessionStorage", undefined);
+    try {
+      expect(readMaskedContinuity(scope)).toBeNull();
+      expect(writeMaskedContinuity(scope, { maskChildId: "mask-1", requestId: null })).toBe(false);
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it("키는 범위마다 안정적이며 사용자를 가른다", () => {

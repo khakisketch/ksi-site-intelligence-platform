@@ -4,6 +4,7 @@ import { StrictMode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { useDraftState } from "@/hooks/useDraftState";
+import { installFakeSessionStorage } from "./storage-fakes";
 
 const KEY = "synthetic-draft-preservation";
 const INITIAL = { name: "" };
@@ -22,6 +23,7 @@ describe("draft storage preservation", () => {
   beforeEach(() => sessionStorage.clear());
   afterEach(() => {
     cleanup();
+    vi.unstubAllGlobals();
     vi.restoreAllMocks();
   });
 
@@ -97,7 +99,7 @@ describe("draft storage preservation", () => {
   });
 
   it("reports a write failure rather than claiming the draft was saved", () => {
-    vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => { throw new Error("quota"); });
+    installFakeSessionStorage({ setItem: () => { throw new Error("quota"); } });
     render(<Probe />);
     fireEvent.change(screen.getByLabelText("draft name"), { target: { value: "unsaved input" } });
     expect(screen.getByTestId("storage-status").textContent).toBe("write-failed");
@@ -105,10 +107,13 @@ describe("draft storage preservation", () => {
 
   it("does not write if the previous storage value could not be read", () => {
     sessionStorage.setItem(KEY, '{"unread":"original"}');
-    const write = vi.spyOn(Storage.prototype, "setItem");
-    vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => { throw new Error("blocked"); });
+    let writes = 0;
+    installFakeSessionStorage({
+      getItem: () => { throw new Error("blocked"); },
+      setItem: (key, value, write) => { writes += 1; write(key, value); },
+    });
     render(<Probe />);
     expect(screen.getByTestId("storage-status").textContent).toBe("unavailable");
-    expect(write).not.toHaveBeenCalled();
+    expect(writes).toBe(0);
   });
 });

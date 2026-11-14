@@ -1,3 +1,5 @@
+import { normalizeSiteTab } from "@/lib/site-epochs";
+
 import { NAV_ITEMS } from "./nav-items";
 
 // 시안(ink-mono)의 topbar 는 현재 화면 이름을 갖는다 — 사이드바가 "어디로 갈 수 있나"를
@@ -11,13 +13,13 @@ const STATIC_TITLES: Record<string, string> = {
   "/sites/new": "현장 등록",
   "/more": "내 계정",
   "/help": "도움말",
-  "/field": "업무",
+  "/field": "작업",
   "/field/new": "관측 자료 등록",
-  "/field/inbox": "받은 업무",
+  "/field/inbox": "받은 작업",
   "/field/team": "팀 관리",
 };
 
-export function resolvePageTitle(pathname: string | null): string {
+export function resolvePageTitle(pathname: string | null, search?: { get(key: string): string | null }): string {
   if (!pathname) return "";
 
   const exact = STATIC_TITLES[pathname];
@@ -30,13 +32,18 @@ export function resolvePageTitle(pathname: string | null): string {
 
   if (/^\/sites\/[^/]+\/observations\/new\/?$/.test(pathname)) return "관측 자료 등록";
   if (/^\/sites\/[^/]+\/observations\/[^/]+\/?$/.test(pathname)) return "외부 비교 결과";
-  if (/^\/sites\/[^/]+\/observations\/?$/.test(pathname)) return "외부 비교 기록";
-  if (/^\/sites\/[^/]+\/analysis\/?$/.test(pathname)) return "분석 기록·검토";
-  if (/^\/sites\/[^/]+\/spatial-assets\/?$/.test(pathname)) return "등록 자료";
+  if (/^\/sites\/[^/]+\/observations\/?$/.test(pathname)) return "분석";
+  if (/^\/sites\/[^/]+\/analysis\/?$/.test(pathname)) return "분석";
+  if (/^\/sites\/[^/]+\/spatial-assets\/?$/.test(pathname)) return "공간";
   if (/^\/sites\/[^/]+\/spatial-data-requests\/?$/.test(pathname)) return "구역 자료 준비";
   if (/^\/sites\/[^/]+\/work-areas\/?$/.test(pathname)) return "작업구역";
-  if (/^\/sites\/[^/]+\/?$/.test(pathname)) return "현장 상세";
-  if (/^\/field\/work-orders\/[^/]+\/?$/.test(pathname)) return "현장 작업";
+  if (/^\/sites\/[^/]+\/?$/.test(pathname)) {
+    const section = normalizeSiteTab(search?.get("section") ?? search?.get("tab"));
+    if (section === "manage") return "현장 설정";
+    if (search?.get("mode") === "results") return "분석 결과";
+    return section === "analysis" ? "분석" : "공간";
+  }
+  if (/^\/field\/work-orders\/[^/]+\/?$/.test(pathname)) return "작업 상세";
 
   return "";
 }

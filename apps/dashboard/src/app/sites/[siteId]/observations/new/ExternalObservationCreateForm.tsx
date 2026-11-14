@@ -4,8 +4,11 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 
+import { ConsolePage } from "@/components/nav/ConsolePage";
 import { ResponsiveActionBoundary } from "@/components/responsive/ResponsiveActionBoundary";
+import { useOnlineStatus } from "@/hooks/useOnlineStatus";
 import type { TemporalCoherencePolicy } from "@/lib/core-api/types";
+import { isAccountContinuityMismatch } from "@/lib/account-continuity-mismatch";
 
 type WorkAreaOption = { workAreaId: string; name: string };
 
@@ -76,6 +79,7 @@ export function ExternalObservationCreateForm({
   const [attempt, setAttempt] = useState<CreateAttempt | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const online = useOnlineStatus();
   const fingerprint = accountIdentity?.fingerprint;
   const canStart = typeof fingerprint === "string" && FINGERPRINT_PATTERN.test(fingerprint);
   const key = useRef<string | null>(null);
@@ -119,7 +123,7 @@ export function ExternalObservationCreateForm({
   const returnHref = selected.length === 1 && selected[0]
     ? `/sites/${encodeURIComponent(siteId)}?workAreaId=${encodeURIComponent(selected[0])}`
     : `/sites/${encodeURIComponent(siteId)}`;
-  // 동결된 시도의 작업명 그대로 작업 큐를 검색한다 — 모호한 제출 뒤 이미
+  // 동결된 시도의 작업명 그대로 작업 목록를 검색한다 — 모호한 제출 뒤 이미
   // 만들어진 작업이 있는지 확인할 때 목록 전체를 뒤지지 않게 둔다. 큐 검색은
   // 작업명·현장명 포함 매칭이라 같은 이름 시도가 있으면 바로 보인다.
   // 같은 탭으로 이동하면 이 화면의 동결 키·본문이 사라져 같은 키 복구가
@@ -156,6 +160,14 @@ export function ExternalObservationCreateForm({
     submitAbort.current = controller;
     setBusy(true);
     setError(null);
+    // 오프라인이면 POST를 시도조차 하지 않는다 — 서버에 닿지 않았음이
+    // 확실하므로 모호한 제출로 남기지 않고 확정 차단한다. 입력·요청은 둔다.
+    if (!online) {
+      submitLock.current = false;
+      setBusy(false);
+      if (active.current && submitAbort.current === controller) setError("연결이 끊겨 요청을 보내지 않았습니다. 입력과 요청은 이 화면에 그대로 있습니다. 연결이 돌아오면 같은 요청으로 다시 시도하세요. 새로고침하면 입력과 요청이 사라집니다.");
+      return;
+    }
     try {
       const headers: Record<string, string> = {
         "content-type": "application/json",
@@ -169,14 +181,11 @@ export function ExternalObservationCreateForm({
         signal: controller.signal,
       });
       const value: unknown = await response.json().catch(() => null);
-      const responseCode = value && typeof value === "object" && "code" in value
-        ? String((value as { code?: unknown }).code ?? "")
-        : "";
       // 계정이 바뀐 같은 키 재시도는 서버로 나가지 않고 여기서 끊긴다. 원래
       // 키·내용을 버리면 중복 등록으로 이어지므로 동결을 유지하고, 원래 계정으로
       // 돌아가 같은 요청으로 다시 시도하라는 안내를 준다. 이는 중복 방지 가드이며
       // Core 권한·범위 판단을 대신하지 않는다.
-      if (response.status === 409 && responseCode === "ACCOUNT_CONTINUITY_MISMATCH") {
+      if (isAccountContinuityMismatch(response.status, value)) {
         if (active.current && submitAbort.current === controller) {
           setError("계정이 바뀌어 같은 요청을 다시 보내지 않았습니다. 이전 요청이 처리되었는지는 알 수 없습니다. 입력과 요청은 이 화면에 그대로 있습니다. 다른 탭에서 원래 계정으로 다시 로그인한 뒤 이 화면에서 같은 요청으로 다시 시도하세요. 먼저 작업 목록에서 원래 요청의 작업이 이미 만들어졌는지 확인하세요. 새로고침하면 입력과 요청이 사라집니다.");
         }
@@ -245,21 +254,21 @@ export function ExternalObservationCreateForm({
   };
 
   return (
-    <div className="console-page !max-w-[800px]">
+    <ConsolePage density="dense" className="!max-w-[800px]">
       <div>
         <div className="mt-1 flex flex-wrap items-center justify-between gap-2">
           <h2 className="console-page-title">관측 자료 등록</h2>
-          <Link href={returnHref} className="text-[13px] font-semibold text-accent-text hover:underline">현장으로 돌아가기</Link>
+          <Link href={returnHref} className="text-body font-semibold text-accent-text hover:underline">현장으로 돌아가기</Link>
         </div>
         <p className="console-page-description">{siteName}</p>
-        <ol aria-label="자료 등록 흐름" className="mt-5 grid grid-cols-3 gap-3 text-[12px]"><li aria-current="step" className="border-b-2 border-accent pb-3 font-semibold">1. 작업구역</li><li className="border-b-2 border-line pb-3 text-ink-muted">2. 파일 제출</li><li className="border-b-2 border-line pb-3 text-ink-muted">3. 검사 확인</li></ol>
+        <ol aria-label="자료 등록 흐름" className="mt-5 grid grid-cols-3 gap-3 text-caption"><li aria-current="step" className="border-b-2 border-accent pb-3 font-semibold">1. 작업구역</li><li className="border-b-2 border-line pb-3 text-ink-muted">2. 파일 제출</li><li className="border-b-2 border-line pb-3 text-ink-muted">3. 검사 확인</li></ol>
       </div>
 
       {/* 1024px 미만에서는 쓰기 경계가 폼을 숨기므로, 변경 없는 범위 정보만
           읽기로 보여준다. 여기에는 입력·단추·링크를 두지 않는다. 요약은
           읽기 전용이며, 다른 기기·창으로 입력이 옮겨간다고 약속하지 않는다. */}
       {workAreas.length > 0 && (
-        <div data-testid="compact-registration-summary" className="flex flex-col gap-2 rounded-xl border border-line bg-surface p-4 text-[12.5px] leading-5 text-ink-2 lg:hidden">
+        <div data-testid="compact-registration-summary" className="flex flex-col gap-2 rounded-xl border border-line bg-surface p-4 text-body leading-5 text-ink-2 lg:hidden">
           <p className="font-semibold text-ink-1">이 화면의 등록 범위</p>
           {templateNotice ? <p>{templateNotice}</p> : null}
           {scopeNotice ? <p>{scopeNotice}</p> : null}
@@ -275,58 +284,62 @@ export function ExternalObservationCreateForm({
       )}
       {workAreas.length === 0 ? (
         <section className="rounded-xl border border-line bg-surface p-4">
-          <h2 className="text-[15px] font-bold">먼저 작업구역을 등록하세요</h2>
-          <p className="mt-1 text-[13px] leading-5 text-ink-2">비교할 범위가 있어야 결과의 위치와 의미를 확인할 수 있습니다.</p>
+          <h2 className="text-lead font-bold">먼저 작업구역을 등록하세요</h2>
+          <p className="mt-1 text-body leading-5 text-ink-2">비교할 범위가 있어야 결과의 위치와 의미를 확인할 수 있습니다.</p>
           <Link href={`/sites/${encodeURIComponent(siteId)}/work-areas`} className="btn mt-3 lg:hidden">작업구역 목록 보기</Link>
           <Link href={`/sites/${encodeURIComponent(siteId)}/work-areas`} className="btn mt-3 hidden lg:inline-flex">작업구역 만들기</Link>
-          <p className="mt-2 text-[13px] leading-5 text-ink-2 lg:hidden">모바일에서는 목록을 확인할 수 있습니다. 작업구역 등록은 노트북에서 같은 계정으로 로그인한 뒤 화면 폭 1024px 이상에서 진행하세요.</p>
+          <p className="mt-2 text-body leading-5 text-ink-2 lg:hidden">모바일에서는 목록을 확인할 수 있습니다. 작업구역 등록은 노트북에서 같은 계정으로 로그인한 뒤 화면 폭 1024px 이상에서 진행하세요.</p>
         </section>
       ) : (
         <ResponsiveActionBoundary action="WORK_ORDERS_WRITE" title="화면 폭 1024px 이상에서 등록" reason="노트북에서 같은 계정으로 로그인하세요. 화면 폭 1024px 이상에서 같은 계정으로 새로 입력해 관측 자료 등록을 진행합니다. 이 화면의 입력은 다른 기기·창으로 옮겨가지 않으며, 권한은 등록 시점에 다시 확인합니다.">
           <section className="flex flex-col gap-5 rounded-lg border border-line bg-surface p-5 sm:p-6">
             <div>
-              <p className="text-[13px] leading-5 text-ink-2">등록할 자료의 작업 이름과 범위를 선택하세요.</p>
+              <p className="text-body leading-5 text-ink-2">등록할 자료의 작업 이름과 범위를 선택하세요.</p>
               {/* 반복 템플릿 공지는 실제 검증된 반복 진입에서만 page가 넘긴다. 범위 선택만으로 추론하지 않는다. */}
-              {templateNotice ? <p className="mt-2 rounded-lg bg-sunk px-3 py-2 text-[12.5px] leading-5 text-ink-2">{templateNotice}</p> : null}
-              {scopeNotice && <p role="status" className="mt-2 rounded-lg bg-sunk px-3 py-2 text-[12.5px] leading-5 text-ink-2">{scopeNotice}</p>}
-              {!hydrated && <p role="status" className="mt-2 rounded-lg bg-sunk px-3 py-2 text-[12.5px] leading-5 text-ink-2">화면을 준비하고 있습니다. 입력란이 활성화되면 작업 이름과 작업구역을 확인하고 등록하세요. 이 안내가 계속 보이면 자바스크립트 실행과 연결 상태를 확인하세요.</p>}
+              {templateNotice ? <p className="mt-2 rounded-lg bg-sunk px-3 py-2 text-body leading-5 text-ink-2">{templateNotice}</p> : null}
+              {scopeNotice && <p role="status" className="mt-2 rounded-lg bg-sunk px-3 py-2 text-body leading-5 text-ink-2">{scopeNotice}</p>}
+              {!hydrated && <p role="status" className="mt-2 rounded-lg bg-sunk px-3 py-2 text-body leading-5 text-ink-2">화면을 준비하고 있습니다. 입력란이 활성화되면 작업 이름과 작업구역을 확인하고 등록하세요. 이 안내가 계속 보이면 자바스크립트 실행과 연결 상태를 확인하세요.</p>}
             </div>
-            <label className="flex flex-col gap-1 text-[13px] font-semibold">작업 이름
+            <label className="flex flex-col gap-1 text-body font-semibold">작업 이름
               <input key={hydrated ? "name-live" : "name-ssr"} aria-label="작업 이름" className="input" maxLength={200} value={name} disabled={!hydrated || busy || attempt !== null} onChange={(event) => setName(event.target.value)} placeholder={suggestedName ?? "예: 9월 6일 현황 비교"} />
             </label>
             <fieldset disabled={!hydrated || busy || attempt !== null}>
-              <legend className="text-[13px] font-semibold">비교할 작업구역</legend>
+              <legend className="text-body font-semibold">비교할 작업구역</legend>
               <div className="mt-2 grid gap-2">
-                {workAreas.map((area, index) => <label key={area.workAreaId} className="flex cursor-pointer items-center gap-2 rounded-lg border border-line px-3 py-2 text-[13px] hover:bg-sunk">
+                {workAreas.map((area, index) => <label key={area.workAreaId} className="flex cursor-pointer items-center gap-2 rounded-lg border border-line px-3 py-2 text-body hover:bg-sunk">
                   <input key={hydrated ? `box-live-${area.workAreaId}` : `box-ssr-${area.workAreaId}`} type="checkbox" aria-label={workAreaLabel(area, index)} checked={selected.includes(area.workAreaId)} onChange={() => toggle(area.workAreaId)} disabled={!hydrated || busy || attempt !== null} />
                   <span>{workAreaLabel(area, index)}</span>
                 </label>)}
               </div>
             </fieldset>
             {selected.length > 1 && (
-              <p role="status" className="rounded-lg bg-sunk px-3 py-2 text-[12.5px] leading-5 text-ink-2">
+              <p role="status" className="rounded-lg bg-sunk px-3 py-2 text-body leading-5 text-ink-2">
                 작업구역을 {selected.length}개 선택했습니다. 구역별 자료 목록·비교 선택에서는 한 구역씩 확인해야 바로 보입니다. 구역별 비교용이면 하나만 선택하세요. 여러 구역 저장은 그대로 유지됩니다.
               </p>
             )}
-            {attempt && <p className="rounded-lg bg-sunk px-3 py-2 text-[12.5px] text-ink-2">이 요청은 같은 내용으로 재시도합니다. 내용을 바꾸려면 새 요청으로 시작하세요.</p>}
+            {attempt && <p className="rounded-lg bg-sunk px-3 py-2 text-body text-ink-2">이 요청은 같은 내용으로 재시도합니다. 내용을 바꾸려면 새 요청으로 시작하세요.</p>}
+            {/* 단추와 그 아래 안내문은 한 묶음이다 — 섹션 간격(20px)으로 흩어 두면 한 줄짜리
+                안내가 서로 다른 항목처럼 읽힌다. */}
+            <div className="flex flex-col gap-2">
             <div className="flex flex-wrap gap-2">
               <button className="btn btn-primary" disabled={!hydrated || busy || !name.trim() || selected.length === 0 || (!attempt && !canStart)} onClick={() => void submit()}>{busy ? "작업 만드는 중" : attempt ? "같은 요청 다시 시도" : "관측 자료 등록 계속"}</button>
               {attempt && !busy && error && <button className="btn" onClick={startOver}>새 요청으로 시작</button>}
             </div>
-            {!attempt && !canStart && <p role="alert" className="text-[13px] text-high-ink">계정을 확인하지 못해 요청을 보낼 수 없습니다. 연결과 로그인 상태를 확인한 뒤 화면을 다시 여세요. 화면을 떠나면 입력은 사라집니다.</p>}
-            {!attempt && <p className="text-[12px] leading-5 text-ink-2">연속으로 눌러도 같은 요청 한 번으로 처리됩니다.</p>}
-            {attempt && !busy && error && <p className="text-[12px] leading-5 text-ink-2">작업 목록에서 이미 만들어졌는지 먼저 확인하세요. 같은 이름이 있다고 해서 원래 요청이 성공했다고 단정하지 마세요. 목록에서 확인할 수 없으면 이 화면에서 같은 요청으로 다시 시도해도 중복 등록되지 않습니다. 새로 시작하면 다른 요청으로 등록됩니다.</p>}
-            <p className="text-[12px] leading-5 text-ink-2">계속하면 작업이 만들어집니다. 파일은 다음 화면에서 제출합니다.</p>
+            {!attempt && !canStart && <p role="alert" className="text-body text-high-ink">계정을 확인하지 못해 요청을 보낼 수 없습니다. 연결과 로그인 상태를 확인한 뒤 화면을 다시 여세요. 화면을 떠나면 입력은 사라집니다.</p>}
+            {!attempt && <p className="text-caption leading-5 text-ink-2">연속으로 눌러도 같은 요청 한 번으로 처리됩니다.</p>}
+            {attempt && !busy && error && <p className="text-caption leading-5 text-ink-2">작업 목록에서 이미 만들어졌는지 먼저 확인하세요. 같은 이름이 있다고 해서 원래 요청이 성공했다고 단정하지 마세요. 목록에서 확인할 수 없으면 이 화면에서 같은 요청으로 다시 시도해도 중복 등록되지 않습니다. 새로 시작하면 다른 요청으로 등록됩니다.</p>}
+            <p className="text-caption leading-5 text-ink-2">계속하면 작업이 만들어집니다. 파일은 다음 화면에서 제출합니다.</p>
             {/* 준비 게이트가 열리기 전에는 필수 입력 안내를 내지 않는다. 잠긴 입력칸에
                 입력하라는 안내는 모순이므로, 준비 안내가 그 자리를 대신한다. */}
-            {hydrated && !busy && !attempt && !name.trim() && selected.length === 0 && <p className="text-[12.5px] leading-5 text-ink-2">작업 이름을 입력하고 비교할 작업구역을 하나 이상 선택하세요.</p>}
-            {hydrated && !busy && !attempt && !name.trim() && selected.length > 0 && <p className="text-[12.5px] leading-5 text-ink-2">작업 이름을 입력하세요.</p>}
-            {hydrated && !busy && !attempt && name.trim() && selected.length === 0 && <p className="text-[12.5px] leading-5 text-ink-2">비교할 작업구역을 하나 이상 선택하세요.</p>}
-            {error && <p role="alert" className="text-[13px] text-high-ink">{error}{attempt && <> <Link href={workQueueHref} target="_blank" rel="noopener noreferrer" className="font-semibold underline">작업 목록 확인(새 탭)</Link></>}</p>}
+            {hydrated && !busy && !attempt && !name.trim() && selected.length === 0 && <p className="text-body leading-5 text-ink-2">작업 이름을 입력하고 비교할 작업구역을 하나 이상 선택하세요.</p>}
+            {hydrated && !busy && !attempt && !name.trim() && selected.length > 0 && <p className="text-body leading-5 text-ink-2">작업 이름을 입력하세요.</p>}
+            {hydrated && !busy && !attempt && name.trim() && selected.length === 0 && <p className="text-body leading-5 text-ink-2">비교할 작업구역을 하나 이상 선택하세요.</p>}
+            {error && <p role="alert" className="text-body text-high-ink">{error}{attempt && <> <Link href={workQueueHref} target="_blank" rel="noopener noreferrer" className="font-semibold underline">작업 목록 확인(새 탭)</Link></>}</p>}
+            </div>
           </section>
         </ResponsiveActionBoundary>
       )}
-      <Link href={`/sites/${encodeURIComponent(siteId)}/observations`} className="tap-target inline-flex w-fit items-center text-[12px] text-ink-2 underline">외부 비교 기록 확인</Link>
-    </div>
+      <Link href={`/sites/${encodeURIComponent(siteId)}/observations`} className="tap-target inline-flex w-fit items-center text-caption text-ink-2 underline">외부 비교 기록 확인</Link>
+    </ConsolePage>
   );
 }

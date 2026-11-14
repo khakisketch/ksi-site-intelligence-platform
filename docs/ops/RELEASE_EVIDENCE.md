@@ -79,8 +79,7 @@ contract is required before native reports can satisfy the gate on that store. T
 implemented in the additive v2 profile below, not by changing v1. Never fabricate
 a host observation, reinterpret a manifest as a config, or use the report's own ID as its
 expected trusted ID. Registry promotion, tool signatures, original DB bytes/freshness, security
-disposition and live containment remain separate gates. Detailed verification is in
-[local evidence](SPATIAL_DATA_LOCAL_VERIFICATION.md#python-repair-and-native-scanner-consumer--2026-10-04).
+disposition and live containment remain separate gates.
 
 ### Additive OCI archive link in host binding v2
 

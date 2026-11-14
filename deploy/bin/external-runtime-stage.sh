@@ -72,16 +72,30 @@ immutable_reference() {
   [[ "$1" =~ ^[A-Za-z0-9][A-Za-z0-9._/-]*:[A-Za-z0-9][A-Za-z0-9._-]*@sha256:[0-9a-f]{64}$ ]]
 }
 
+# Task 3: the retired managed reconstruction chain must not run again.
+# New-run admission rejects NodeODM/ODM images in any reference form —
+# the historical digest-only pin and a normal tag+digest pin alike.
+# Already-signed historical evidence still parses against the
+# release-evidence/host-binding schemas; that readability is never promoted
+# to a current image binding here.
+_is_retired_odm_image() {
+  local lowered
+  lowered="$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')"
+  case "$lowered" in
+    *opendronemap/*) return 0 ;;
+    */nodeodm|*/nodeodm[@:/]*|nodeodm|nodeodm[@:/]*) return 0 ;;
+    */odm|*/odm[@:/]*|odm|odm[@:/]*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
 pinned_external_runtime_reference() {
-  immutable_reference "$1" || [[ "$1" == "opendronemap/nodeodm@sha256:cb07d06e21fd6189cfad287c6fedfa0b72568100355635cd9035cb86eed42ee2" ]]
+  _is_retired_odm_image "$1" && return 1
+  immutable_reference "$1"
 }
 
 canonical_repository_digest() {
   local reference="$1" name_and_tag path_component repository digest
-  if [[ "$reference" == "opendronemap/nodeodm@sha256:cb07d06e21fd6189cfad287c6fedfa0b72568100355635cd9035cb86eed42ee2" ]]; then
-    printf '%s\n' "$reference"
-    return 0
-  fi
   immutable_reference "$reference" || return 1
   name_and_tag="${reference%@sha256:*}"
   digest="sha256:${reference##*@sha256:}"
@@ -425,8 +439,8 @@ validate_canonical_release_evidence() {
       and test("^(?:[a-z0-9][a-z0-9._/-]*/)*ksi-[a-z0-9][a-z0-9._-]*:(?!(?:latest|stable|main|master|dev|edge|nightly|local)@)(?=[A-Za-z0-9._-]*[0-9])[A-Za-z0-9][A-Za-z0-9._-]*@sha256:[0-9a-f]{64}$");
     def external_reference:
       type == "string"
-      and (test("^(?:[a-z0-9][a-z0-9._/-]*/)*[a-z0-9][a-z0-9._-]*:(?!(?:latest|stable|main|master|dev|edge|nightly|local)@)[A-Za-z0-9][A-Za-z0-9._-]*@sha256:[0-9a-f]{64}$")
-        or . == "opendronemap/nodeodm@sha256:cb07d06e21fd6189cfad287c6fedfa0b72568100355635cd9035cb86eed42ee2");
+      and (ascii_downcase | test("opendronemap/|(^|/)(nodeodm|odm)([:/@]|$)") | not)
+      and test("^(?:[a-z0-9][a-z0-9._/-]*/)*[a-z0-9][a-z0-9._-]*:(?!(?:latest|stable|main|master|dev|edge|nightly|local)@)[A-Za-z0-9][A-Za-z0-9._-]*@sha256:[0-9a-f]{64}$");
     type == "object"
     and (keys | sort == ["externalRuntimeImages", "generatedAtUtc", "productImages", "schemaVersion", "source"])
     and .schemaVersion == "1.0"
@@ -473,8 +487,8 @@ validate_host_binding() {
       and test("^(?:[a-z0-9][a-z0-9._/-]*/)*ksi-[a-z0-9][a-z0-9._-]*:(?!(?:latest|stable|main|master|dev|edge|nightly|local)@)(?=[A-Za-z0-9._-]*[0-9])[A-Za-z0-9][A-Za-z0-9._-]*@sha256:[0-9a-f]{64}$");
     def external_reference:
       type == "string"
-      and (test("^(?:[a-z0-9][a-z0-9._/-]*/)*[a-z0-9][a-z0-9._-]*:(?!(?:latest|stable|main|master|dev|edge|nightly|local)@)[A-Za-z0-9][A-Za-z0-9._-]*@sha256:[0-9a-f]{64}$")
-        or . == "opendronemap/nodeodm@sha256:cb07d06e21fd6189cfad287c6fedfa0b72568100355635cd9035cb86eed42ee2");
+      and (ascii_downcase | test("opendronemap/|(^|/)(nodeodm|odm)([:/@]|$)") | not)
+      and test("^(?:[a-z0-9][a-z0-9._/-]*/)*[a-z0-9][a-z0-9._-]*:(?!(?:latest|stable|main|master|dev|edge|nightly|local)@)[A-Za-z0-9][A-Za-z0-9._-]*@sha256:[0-9a-f]{64}$");
     def product:
       type == "object"
       and (keys | sort == ["component", "dockerImageId", "releaseReference", "repoDigests", "sbom", "scanner"])

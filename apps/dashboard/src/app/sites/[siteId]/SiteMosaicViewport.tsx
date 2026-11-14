@@ -1,5 +1,7 @@
 "use client";
 
+import { ActionMenu } from "@/components/ui/ActionMenu";
+import { Disclosure } from "@/components/ui/Disclosure";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 
@@ -791,7 +793,7 @@ export function SiteMosaicViewport({
   // 보관 만료의 1차 회복은 선택한 자료의 받기 요청으로 바로 연결한다 —
   // 요청 이력 목록이 아니라 이 asset의 준비 제어로 간다. 자산 참조는
   // Core 발행 불투명 식별자 그대로 쓰며 새로 만들지 않는다.
-  const assetPrepareHref = `/sites/${encodeURIComponent(siteId)}/spatial-assets?workAreaId=${encodeURIComponent(workAreaId)}&assetRef=${encodeURIComponent(assetRef)}#asset-${assetRef}`;
+  const assetPrepareHref = `/sites/${encodeURIComponent(siteId)}?panel=materials&workAreaId=${encodeURIComponent(workAreaId)}&assetRef=${encodeURIComponent(assetRef)}&info=1#asset-${assetRef}`;
   const canvasRequestsLink = (
     <a
       href={requestsHref}
@@ -840,7 +842,7 @@ export function SiteMosaicViewport({
   const canvasMediaAlert = compactKind !== "loading" && compactKind !== "preparing" && !(compactKind === "absent" && absentKind === "empty");
 
   const canvasDetailBody = (
-    <div className="mt-2 flex min-w-0 flex-col gap-2 text-[12px] leading-5 text-ink-2">
+    <div className="mt-2 flex min-w-0 flex-col gap-2 text-caption leading-5 text-ink-2">
       {requestBusy && <p role="status">창 준비 요청을 만드는 중…</p>}
       {supportCopy && <p role="status">{supportCopy}</p>}
       {canFillNow && (
@@ -859,7 +861,7 @@ export function SiteMosaicViewport({
               {hasRetentionExpired ? "미리보기 다시 준비" : "미리보기 준비"}
             </button>
           </ResponsiveActionBoundary>
-          <p className="text-[11.5px] leading-5 text-ink-muted lg:hidden">창 준비 요청은 노트북에서 할 수 있습니다.</p>
+          <p className="text-caption leading-5 text-ink-muted lg:hidden">창 준비 요청은 노트북에서 할 수 있습니다.</p>
         </div>
       )}
       {absentFileRing && (
@@ -897,7 +899,7 @@ export function SiteMosaicViewport({
           <p className="leading-5 text-ink-muted">{MOSAIC_ASSEMBLY_NOTE}</p>
           <ul className="mt-1 flex flex-col gap-1">
             {cells.map((cell) => (
-              <li key={cell.key} className="text-[12px] leading-5">
+              <li key={cell.key} className="text-caption leading-5">
                 <span className="font-mono">[{cell.plan.pixelWindow.join(", ")}]</span>
                 {` · ${cell.detail}`}
               </li>
@@ -913,7 +915,7 @@ export function SiteMosaicViewport({
       <p className="sr-only">이어 보기 — 여러 창의 나란한 배치</p>
 
       {!cover.ok && (
-        <p className="text-[12px] leading-5 text-ink-2" role="status">{VIEWPORT_RESOLVE_COPY[cover.reason]}</p>
+        <p className="text-caption leading-5 text-ink-2" role="status">{VIEWPORT_RESOLVE_COPY[cover.reason]}</p>
       )}
 
       {cover.ok && geometry && !showCanvas && (canvasMode ? (
@@ -930,12 +932,12 @@ export function SiteMosaicViewport({
                 preparedRing={preparedRing}
                 preparedLabel={preparedLabel}
               />
-              <span className="absolute left-3 top-3 rounded border border-white/15 bg-black/55 px-2 py-1 font-mono text-[9px] text-sidebar-text backdrop-blur-sm">
+              <span className="absolute left-3 top-3 rounded border border-white/15 bg-black/55 px-2 py-1 font-mono text-micro text-sidebar-text backdrop-blur-sm">
                 등록 범위 · 실제 픽셀 아님
               </span>
             </div>
             <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
-              <p className="min-w-0 text-[12px] leading-5 text-ink-2">
+              <p className="min-w-0 text-caption leading-5 text-ink-2">
                 <span className="font-semibold text-ink-1">{compactCopy.headline}</span>
                 {absentKind === "expired" ? " 등록 범위와 검사 기록은 유지됩니다." : compactCopy.recovery ? ` ${compactCopy.recovery}` : ""}
               </p>
@@ -943,20 +945,18 @@ export function SiteMosaicViewport({
                 <a href={prepareHref ?? requestsHref} className="btn btn-primary min-h-11">준비 요청</a>
               ) : canvasMediaAction}
             </div>
-            {canvasMediaHint && <p className="text-[11.5px] leading-5 text-ink-muted">{canvasMediaHint}</p>}
-            {absentOverlayNote && <p className="text-[11.5px] leading-5 text-ink-muted">{absentOverlayNote}</p>}
+            {canvasMediaHint && <p className="text-caption leading-5 text-ink-muted">{canvasMediaHint}</p>}
+            {absentOverlayNote && <p className="text-caption leading-5 text-ink-muted">{absentOverlayNote}</p>}
             {detailsTargetId ? (
               <DetailsPortal targetId={detailsTargetId}>
-                <details className="rounded-lg border border-line bg-surface px-3 py-2 text-[12px] text-ink-2">
-                  <summary className="tap-target cursor-pointer font-semibold">이어 보기 상세</summary>
+                <ActionMenu label="보기 도구" className="rounded-lg border border-line bg-surface px-3 py-2 text-caption text-ink-2" panelClassName="w-[min(34rem,calc(100vw-2rem))] max-h-[65vh]">
                   {canvasDetailBody}
-                </details>
+                </ActionMenu>
               </DetailsPortal>
             ) : (
-              <details className="rounded-lg border border-line bg-surface px-3 py-2 text-[12px] text-ink-2">
-                <summary className="tap-target cursor-pointer font-semibold">상세·준비</summary>
+              <ActionMenu label="보기 도구" className="rounded-lg border border-line bg-surface px-3 py-2 text-caption text-ink-2" panelClassName="w-[min(34rem,calc(100vw-2rem))] max-h-[65vh]">
                 {canvasDetailBody}
-              </details>
+              </ActionMenu>
             )}
           </div>
         ) : (
@@ -971,28 +971,26 @@ export function SiteMosaicViewport({
             />
             {detailsTargetId ? (
               <DetailsPortal targetId={detailsTargetId}>
-                <details className="rounded-lg border border-line bg-surface px-3 py-2 text-[12px] text-ink-2">
-                  <summary className="tap-target cursor-pointer font-semibold">이어 보기 상세</summary>
+                <ActionMenu label="보기 도구" className="rounded-lg border border-line bg-surface px-3 py-2 text-caption text-ink-2" panelClassName="w-[min(34rem,calc(100vw-2rem))] max-h-[65vh]">
                   {canvasDetailBody}
-                </details>
+                </ActionMenu>
               </DetailsPortal>
             ) : (
-              <details className="rounded-lg border border-line bg-surface px-3 py-2 text-[12px] text-ink-2">
-                <summary className="tap-target cursor-pointer font-semibold">상세·준비</summary>
+              <ActionMenu label="보기 도구" className="rounded-lg border border-line bg-surface px-3 py-2 text-caption text-ink-2" panelClassName="w-[min(34rem,calc(100vw-2rem))] max-h-[65vh]">
                 {canvasDetailBody}
-              </details>
+              </ActionMenu>
             )}
           </div>
         )
       ) : (
         <div className="flex w-full flex-col gap-2">
-          <p role="status" className="text-[12.5px] leading-5 font-semibold text-ink-1">
+          <p role="status" className="text-body leading-5 font-semibold text-ink-1">
             {compactCopy.headline}
           </p>
           {compactCopy.detail !== null && (
-            <p className="text-[12px] leading-5 text-ink-2">{compactCopy.detail}</p>
+            <p className="text-caption leading-5 text-ink-2">{compactCopy.detail}</p>
           )}
-          {compactCopy.recovery && <p className="text-[12px] leading-5 text-ink-2">{compactCopy.recovery}</p>}
+          {compactCopy.recovery && <p className="text-caption leading-5 text-ink-2">{compactCopy.recovery}</p>}
           <div className="flex flex-wrap gap-2">
             {hidePrepareActions && <a href={requestsHref} className="btn min-h-11">구역 자료 준비</a>}
             {canFillNow && (
@@ -1021,19 +1019,18 @@ export function SiteMosaicViewport({
             )}
           </div>
           {canFillNow && (
-            <p className="text-[11.5px] leading-5 text-ink-muted lg:hidden">창 준비 요청은 노트북에서 할 수 있습니다.</p>
+            <p className="text-caption leading-5 text-ink-muted lg:hidden">창 준비 요청은 노트북에서 할 수 있습니다.</p>
           )}
           {requestBusy && (
-            <p className="text-[12px] text-ink-2" role="status">창 준비 요청을 만드는 중…</p>
+            <p className="text-caption text-ink-2" role="status">창 준비 요청을 만드는 중…</p>
           )}
           {supportCopy && (
-            <p role="status" aria-live="polite" className="rounded-md border border-line bg-surface px-3 py-2 text-[12px] leading-5 text-ink-2">
+            <p role="status" aria-live="polite" className="rounded-md border border-line bg-surface px-3 py-2 text-caption leading-5 text-ink-2">
               {supportCopy}
             </p>
           )}
           {absentFileRing && (
-            <details className="rounded-lg border border-line bg-sunk/40 px-3 py-2 text-[12px] text-ink-2">
-              <summary className="tap-target cursor-pointer font-semibold">자료 범위 보기</summary>
+            <Disclosure label="자료 범위 상세" className="rounded-lg border border-line bg-sunk/40 px-3 py-2 text-caption text-ink-2">
               <div className="mt-2">
                 <SiteMosaicAbsentDiagram
                   fileRing={absentFileRing}
@@ -1046,10 +1043,9 @@ export function SiteMosaicViewport({
                   fileExtentLabel={observedCrsIdentifier ? `${observedCrsIdentifier} 네이티브 평면 ${grid.width} × ${grid.height} 픽셀` : null}
                 />
               </div>
-            </details>
+            </Disclosure>
           )}
-          <details className="text-[12px] text-ink-2">
-            <summary className="tap-target cursor-pointer font-semibold">준비 과정·상세 상태</summary>
+          <Disclosure label="준비 상태 상세" className="text-caption text-ink-2">
             <div className="mt-1 flex flex-col gap-1">
               {lane?.laneCopy && <p role="status" className="leading-5">{lane.laneCopy}</p>}
               {lane?.retryCopy && <p role="status" className="leading-5">{lane.retryCopy}</p>}
@@ -1066,14 +1062,14 @@ export function SiteMosaicViewport({
               <p className="leading-5 text-ink-muted">{MOSAIC_ASSEMBLY_NOTE}</p>
               <ul className="mt-1 flex flex-col gap-1">
                 {cells.map((cell) => (
-                  <li key={cell.key} className="text-[12px] leading-5">
+                  <li key={cell.key} className="text-caption leading-5">
                     <span className="font-mono">[{cell.plan.pixelWindow.join(", ")}]</span>
                     {` · ${cell.detail}`}
                   </li>
                 ))}
               </ul>
             </div>
-          </details>
+          </Disclosure>
         </div>
       ))}
       {showCanvas && (
@@ -1102,15 +1098,15 @@ export function SiteMosaicViewport({
             </div>
             <ViewportResetButton onReset={viewport.reset} />
           </div>
-          <p className="text-[12px] leading-5 text-ink-2" role="status">
+          <p className="text-caption leading-5 text-ink-2" role="status">
             {mosaicCoverStatusCopy(paintedCount, cells.length)}
             {observedCrsIdentifier ? ` · ${observedCrsIdentifier} 네이티브 평면 ${geometry.width} × ${geometry.height} 픽셀` : null}
           </p>
           {isDsm && (
-            <p className={canvasMode ? "text-[11.5px] leading-5 text-ink-muted" : "text-[12px] leading-5 text-ink-2"}>{DSM_RELATIVE_SHADING_NOTE}</p>
+            <p className={canvasMode ? "text-caption leading-5 text-ink-muted" : "text-caption leading-5 text-ink-2"}>{DSM_RELATIVE_SHADING_NOTE}</p>
           )}
           {paintError && (
-            <p className="rounded-md border border-line bg-sunk px-3 py-2 text-[12px] leading-5 text-ink-2" role="alert">
+            <p className="rounded-md border border-line bg-sunk px-3 py-2 text-caption leading-5 text-ink-2" role="alert">
               {paintError}
             </p>
           )}
@@ -1141,31 +1137,28 @@ export function SiteMosaicViewport({
             )}
           </div>
           {canFillNow && !canvasMode && (
-            <p className="text-[11.5px] leading-5 text-ink-muted lg:hidden">창 준비 요청은 노트북에서 할 수 있습니다.</p>
+            <p className="text-caption leading-5 text-ink-muted lg:hidden">창 준비 요청은 노트북에서 할 수 있습니다.</p>
           )}
           {requestBusy && !canvasMode && (
-            <p className="text-[12px] text-ink-2" role="status">창 준비 요청을 만드는 중…</p>
+            <p className="text-caption text-ink-2" role="status">창 준비 요청을 만드는 중…</p>
           )}
           {supportCopy && !canvasMode && (
-            <p role="status" aria-live="polite" className="rounded-md border border-line bg-surface px-3 py-2 text-[12px] leading-5 text-ink-2">
+            <p role="status" aria-live="polite" className="rounded-md border border-line bg-surface px-3 py-2 text-caption leading-5 text-ink-2">
               {supportCopy}
             </p>
           )}
           {detailsTargetId ? (
           <DetailsPortal targetId={detailsTargetId}>
-            <details className="rounded-lg border border-line bg-surface px-3 py-2 text-[12px] text-ink-2">
-              <summary className="tap-target cursor-pointer font-semibold">이어 보기 상세</summary>
+            <ActionMenu label="보기 도구" className="rounded-lg border border-line bg-surface px-3 py-2 text-caption text-ink-2" panelClassName="w-[min(34rem,calc(100vw-2rem))] max-h-[65vh]">
               {canvasDetailBody}
-            </details>
+            </ActionMenu>
           </DetailsPortal>
           ) : canvasMode ? (
-          <details className="rounded-lg border border-line bg-surface px-3 py-2 text-[12px] text-ink-2">
-            <summary className="tap-target cursor-pointer font-semibold">상세·준비</summary>
+          <ActionMenu label="보기 도구" className="rounded-lg border border-line bg-surface px-3 py-2 text-caption text-ink-2" panelClassName="w-[min(34rem,calc(100vw-2rem))] max-h-[65vh]">
             {canvasDetailBody}
-          </details>
+          </ActionMenu>
           ) : (
-          <details className="text-[12px] text-ink-2">
-            <summary className="tap-target cursor-pointer font-semibold">준비 과정·상세 상태</summary>
+          <Disclosure label="준비 상태 상세" className="text-caption text-ink-2">
             <div className="mt-1 flex flex-col gap-1">
               {isDisplayViewMoved(view) && (
                 <p className="leading-5" role="status">
@@ -1192,14 +1185,14 @@ export function SiteMosaicViewport({
               <p className="leading-5 text-ink-muted">{MOSAIC_ASSEMBLY_NOTE}</p>
               <ul className="mt-1 flex flex-col gap-1">
                 {cells.map((cell) => (
-                  <li key={cell.key} className="text-[12px] leading-5">
+                  <li key={cell.key} className="text-caption leading-5">
                     <span className="font-mono">[{cell.plan.pixelWindow.join(", ")}]</span>
                     {` · ${cell.detail}`}
                   </li>
                 ))}
               </ul>
             </div>
-          </details>
+          </Disclosure>
           )}
         </>
       )}

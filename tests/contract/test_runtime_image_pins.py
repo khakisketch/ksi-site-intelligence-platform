@@ -320,11 +320,32 @@ def test_expected_multi_arch_digest_references_are_present() -> None:
     assert "opendronemap/nodeodm" not in compose
 
 
-def test_canonical_historical_nodeodm_digest_still_validates() -> None:
-    reference = (
-        "opendronemap/nodeodm@sha256:"
-        "cb07d06e21fd6189cfad287c6fedfa0b72568100355635cd9035cb86eed42ee2"
-    )
-    assert _tool()._validate_reference(
+_RETIRED_NODEODM_DIGEST_ONLY = (
+    "opendronemap/nodeodm@sha256:"
+    "cb07d06e21fd6189cfad287c6fedfa0b72568100355635cd9035cb86eed42ee2"
+)
+_RETIRED_NODEODM_TAGGED = (
+    "opendronemap/nodeodm:2.2.4@sha256:"
+    "cb07d06e21fd6189cfad287c6fedfa0b72568100355635cd9035cb86eed42ee2"
+)
+
+
+@pytest.mark.parametrize(
+    "reference",
+    [_RETIRED_NODEODM_DIGEST_ONLY, _RETIRED_NODEODM_TAGGED],
+)
+def test_retired_nodeodm_images_are_rejected_for_new_runs(reference: str) -> None:
+    """Task 3 closed the NodeODM digest-only exception for new-run admission.
+
+    The canonical historical digest still parses in already-signed evidence
+    (schema readability is unchanged), but the pin gate — which defines what
+    may run now — rejects NodeODM/ODM images in both digest-only and normal
+    tag+digest forms.
+    """
+    violations = _tool()._validate_reference(
         reference, path=Path("deploy/bin/external-runtime-stage.sh"), line=1
-    ) == []
+    )
+
+    assert len(violations) == 1
+    assert violations[0].path == Path("deploy/bin/external-runtime-stage.sh")
+    assert "nodeodm" in violations[0].message.lower() or "odm" in violations[0].message.lower()

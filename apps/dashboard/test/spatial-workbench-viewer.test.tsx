@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { SiteListProvider } from "@/components/nav/SiteListContext";
 import { SpatialWorkbenchFrame } from "@/components/site/SpatialWorkbenchFrame";
+import { installFakeLocalStorage } from "./storage-fakes";
 
 vi.mock("next/navigation", () => ({
   usePathname: () => "/sites/site-1/spatial-assets",
@@ -11,6 +12,8 @@ vi.mock("next/navigation", () => ({
 }));
 
 beforeEach(() => {
+  // 이 jsdom 설정에는 localStorage가 없으므로 가짜를 깐다.
+  installFakeLocalStorage();
   window.localStorage.clear();
 });
 
@@ -18,7 +21,6 @@ afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
-  window.localStorage.clear();
 });
 
 function viewerFrame() {
@@ -53,12 +55,12 @@ function wideMatchMedia(query: string) {
 }
 
 describe("viewer-first workbench frame", () => {
-  it("starts with the full canvas and opens the layer/inspector panels on demand", async () => {
+  it("starts with the full canvas and opens the catalog/inspector panels on demand", async () => {
     vi.stubGlobal("matchMedia", wideMatchMedia);
     render(viewerFrame());
     expect(screen.getByText("실제 범위 캔버스")).toBeTruthy();
     expect(screen.queryByLabelText("자료 목록")).toBeNull();
-    const layer = screen.getByRole("button", { name: "레이어 패널 열기" });
+    const layer = screen.getByRole("button", { name: "자료 목록 열기" });
     expect(layer.getAttribute("aria-expanded")).toBe("false");
 
     fireEvent.click(layer);
@@ -86,15 +88,15 @@ describe("viewer-first workbench frame", () => {
     expect(inspector.className).not.toContain("absolute");
   });
 
-  it("closes and reopens the floating layer panel with focus restoration", async () => {
+  it("closes and reopens the catalog panel with focus restoration", async () => {
     vi.stubGlobal("matchMedia", wideMatchMedia);
     render(viewerFrame());
-    const layer = screen.getByRole("button", { name: "레이어 패널 열기" });
+    const layer = screen.getByRole("button", { name: "자료 목록 열기" });
     fireEvent.click(layer);
     await screen.findByLabelText("자료 목록");
     fireEvent.click(screen.getByRole("button", { name: "자료 목록 닫기" }));
     expect(screen.queryByLabelText("자료 목록")).toBeNull();
-    const toggle = screen.getByRole("button", { name: "레이어 패널 열기" });
+    const toggle = screen.getByRole("button", { name: "자료 목록 열기" });
     expect(toggle.getAttribute("aria-expanded")).toBe("false");
     expect(document.activeElement).toBe(toggle);
     fireEvent.click(toggle);
@@ -118,10 +120,10 @@ describe("viewer-first workbench frame", () => {
     await waitFor(() => expect(inspector.style.display).toBe(""));
   });
 
-  it("closes the focused layer panel with Escape", async () => {
+  it("closes the focused catalog panel with Escape", async () => {
     vi.stubGlobal("matchMedia", wideMatchMedia);
     render(viewerFrame());
-    fireEvent.click(screen.getByRole("button", { name: "레이어 패널 열기" }));
+    fireEvent.click(screen.getByRole("button", { name: "자료 목록 열기" }));
     const catalog = await screen.findByLabelText("자료 목록");
     catalog.focus();
     fireEvent.keyDown(catalog, { key: "Escape" });
