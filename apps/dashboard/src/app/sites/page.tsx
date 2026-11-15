@@ -243,7 +243,7 @@ export default async function SitesPage({
             </div>
 
             <div className="hidden w-full flex-col gap-3 lg:flex">
-              <div className="flex flex-wrap items-center gap-2" role="group" aria-label="현장 상태 필터">
+              <div className="flex flex-wrap items-center gap-1" role="group" aria-label="현장 상태 필터">
               {SITE_GROUPS.map((option) => {
                 const active = option.key === group;
                 const count =
@@ -256,14 +256,10 @@ export default async function SitesPage({
                     key={option.key}
                     href={hrefWith(params, { group: option.key === "all" ? undefined : option.key })}
                     current={active}
-                    className={`tap-target inline-flex items-center gap-1.5 rounded-md border px-2.5 text-caption break-keep transition-colors ${
-                      active
-                        ? "border-line-strong bg-sunk font-bold"
-                        : "border-line bg-surface hover:border-line-strong"
-                    }`}
+                    className="console-filter-link"
                   >
                     {option.label}
-                    <span className="num text-micro text-ink-muted">{count}</span>
+                    <span className="num">{count}</span>
                   </SiteListNavLink>
                 );
               })}
@@ -297,7 +293,7 @@ export default async function SitesPage({
                 // 걸린 행이 없으면 패널을 비운다 — 아래 EmptyState 하나만 말한다.
                 cards={
                   hasRows ? (
-                    <div className="w-full max-w-[976px] 2xl:max-w-full">
+                    <div className="w-full">
                       <SiteListDesktopCards
                         rows={desktopCards}
                         meta={cardsMeta}

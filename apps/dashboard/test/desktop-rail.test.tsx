@@ -31,11 +31,13 @@ afterEach(() => {
 });
 
 describe("좌측 레일 (ADR-KSI-043)", () => {
-  it("프로젝트 안에서는 공간·자료·분석을 위에, 작업·도움말을 아래에 둔다", () => {
+  it("프로젝트 안에서도 홈·프로젝트를 위에 두고, 그 아래에 공간·자료·분석을, 맨 아래에 작업·도움말을 둔다", () => {
     navigation.pathname = "/sites/site-1/analysis";
     render(<DesktopSidebar />);
     const links = within(rail()).getAllByRole("link").map((link) => [link.textContent, link.getAttribute("href")]);
     expect(links).toEqual([
+      ["홈", "/"],
+      ["프로젝트", "/sites"],
       ["공간", "/sites/site-1"],
       ["자료", "/sites/site-1/data"],
       ["분석", "/sites/site-1/analysis"],
@@ -44,6 +46,10 @@ describe("좌측 레일 (ADR-KSI-043)", () => {
     ]);
     expect(within(rail()).getByRole("link", { name: "분석" }).getAttribute("aria-current")).toBe("page");
     expect(within(rail()).getByRole("link", { name: "공간" }).getAttribute("aria-current")).toBeNull();
+    // 프로젝트 안에서는 목록·홈이 현재 위치가 아니다(주소가 /sites/… 로 시작해도).
+    expect(within(rail()).getByRole("link", { name: "프로젝트" }).getAttribute("aria-current")).toBeNull();
+    expect(within(rail()).getByRole("link", { name: "홈" }).getAttribute("aria-current")).toBeNull();
+    expect(within(rail()).getByText("현재 프로젝트")).toBeTruthy();
   });
 
   it("자료 화면과 공간의 자료 패널은 자료가 현재 위치다", () => {

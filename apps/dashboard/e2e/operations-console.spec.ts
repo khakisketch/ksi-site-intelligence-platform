@@ -265,8 +265,8 @@ test("현장 분석 목적지는 Site 접근은 유지하고 미구성 분석 AP
   // 옛 영역 링크는 중간 설명 버튼 대신 같은 실제 owner route로 간다.
   await expect(page).toHaveURL(`${siteHref}/analysis`);
   await expect(page.getByRole("main").getByRole("heading", { level: 1, name: "분석", exact: true })).toHaveCount(1);
-  await expect(page.getByRole("main").getByRole("heading", { level: 2, name: "분석", exact: true })).toBeVisible();
-  await expect(page.getByRole("main").getByRole("heading", { name: "E2E 현장 작업공간", exact: true })).toBeVisible();
+  // 분석 섹션 틀 — 컨텍스트 패널에서 분석 종류를 고른다. 프로젝트 이름은 셸 헤더가 맡는다.
+  await expect(page.getByRole("main").getByRole("navigation", { name: "분석 보기", exact: true }).getByRole("link", { name: "변화 분석", exact: true })).toHaveAttribute("aria-current", "page");
   const main = page.getByRole("main");
   const history = main.getByRole("heading", { name: "변화 분석 이력", exact: true });
   const historyError = main.getByRole("alert").filter({ hasText: "분석 이력을 확인할 수 없습니다" });
@@ -385,7 +385,7 @@ test("현장의 공간과 분석 메뉴가 자료 패널, 비교, 설정과 옛 
   }
   await page.goto(sitePath);
   const siteNavigation = await openSiteMenu(page);
-  await expect(siteNavigation.getByRole("link")).toHaveCount(hasRail() ? 5 : 2);
+  await expect(siteNavigation.getByRole("link")).toHaveCount(hasRail() ? 7 : 2);
   await expect(siteNavigation.getByRole("link", { name: "공간", exact: true })).toHaveAttribute("aria-current", "page");
   await expect(siteNavigation.getByRole("link", { name: "분석", exact: true })).toHaveAttribute("href", /\/analysis(?:\?|$)/);
   await expect(page.getByRole("main").getByRole("heading", { level: 1, name: "공간", exact: true })).toHaveCount(1);

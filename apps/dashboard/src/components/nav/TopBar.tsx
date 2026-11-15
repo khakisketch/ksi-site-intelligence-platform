@@ -38,10 +38,13 @@ function TopBarFrame({
       <Link
         href="/"
         aria-label="KSI Site Intelligence 홈"
-        className="hidden flex-none items-center gap-2 text-body font-bold tracking-tight md:flex"
+        // 로고 칸은 아래 레일과 같은 폭(펼침 188px·접힘 56px)이라 세로 구분선이 헤더에서 레일까지 이어진다.
+        // 접힘 폭은 body 클래스(globals.css)가 정한다 — 접으면 아이콘만 남는다.
+        data-header-brand="true"
+        className="hidden flex-none items-center justify-center gap-2 self-stretch border-r border-line text-body font-bold tracking-tight md:-ml-3 md:flex md:w-14 lg:w-[188px] lg:justify-start lg:pl-[18px]"
       >
         <span aria-hidden="true" className="grid size-6 place-items-center rounded-md bg-accent text-micro font-extrabold text-accent-on">KSI</span>
-        <span className="hidden lg:inline">Site Intelligence</span>
+        <span className="header-brand-name hidden lg:inline">Site Intelligence</span>
       </Link>
       {sessionState !== "expired" && (
         <span className="hidden md:block">

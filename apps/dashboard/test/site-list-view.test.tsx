@@ -548,8 +548,8 @@ describe("sites desktop view wiring", () => {
   it("간결 카드는 실제 미리보기 영역을 두고 장식 표지는 두지 않는다", () => {
     // 격자는 배치만 맡고 카드 본문은 공유 카드가 그린다.
     expect(CARDS).toContain("SiteDirectoryCard");
-    expect(CARDS).toContain("lg:grid-cols-3");
-    expect(CARDS).toContain("2xl:grid-cols-4");
+    // 카드 열 수는 가용 폭이 정한다(와이드 모니터에서도 화면을 채운다).
+    expect(CARDS).toContain("auto-fill");
     expect(CARDS).toContain("trailing");
     expect(CARDS).toContain("<h2");
     expect(CARDS).toContain("meta: string");

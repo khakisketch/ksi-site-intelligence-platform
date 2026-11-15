@@ -4,18 +4,16 @@
 @import "leaflet-draw/dist/leaflet.draw.css";
 
 /* Task surfaces share a rhythm, not a forced card-grid layout. */
+/* 목록·양식 화면도 공간·자료 섹션처럼 가용 폭을 그대로 쓴다 — 와이드 모니터에서 화면마다 폭이 달라지지 않게.
+   좁게 읽어야 하는 양식은 각자 `!max-w-[…]`로 폭을 제한한다. */
 .console-page {
   width: 100%;
-  max-width: 1440px;
   margin-inline: auto;
   padding: 24px;
   display: flex;
   flex-direction: column;
   gap: 24px;
 }
-/* 초광폭에서는 본문 컬럼도 함께 넓힌다(글자 배율은 --ui-scale 이 맡는다). 밀집 화면은 원래 제한이 없다. */
-@media (min-width: 2200px) { .console-page { max-width: 1800px; } }
-@media (min-width: 3000px) { .console-page { max-width: 2200px; } }
 .console-page-dense {
   max-width: none;
 }
@@ -55,24 +53,43 @@
   grid-column: 1 / -1;
   max-width: none;
 }
+/* 상태 필터 — 고른 쪽만 짙게 채워진 알약이다. 보기 전환(분할 토글)·화면 안 탭(밑줄)과 모양이 겹치지 않게 하고,
+   건수는 이름 옆 작은 배지로 둔다. */
 .console-filter-link {
   min-height: 44px;
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  padding: 8px 12px;
-  border: 1px solid transparent;
-  border-radius: 6px;
+  padding: 8px 14px;
+  border-radius: 999px;
   color: var(--ink-2);
   font-size: 13px;
   white-space: nowrap;
 }
-.console-filter-link:hover { background: var(--sunk); }
-.console-filter-link[aria-current="page"] {
-  border-color: var(--line-strong);
-  background: var(--surface);
-  color: var(--ink-1);
-  font-weight: 600;
+.console-filter-link:hover { background: var(--sunk); color: var(--ink-1); }
+.console-filter-link[aria-current="page"],
+.console-filter-link[aria-current="true"] {
+  background: var(--ink-1);
+  color: var(--surface);
+  font-weight: 700;
+}
+.console-filter-link > .num,
+.console-filter-link > .tabular-nums {
+  min-width: 20px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--sunk);
+  color: var(--ink-2);
+  font-size: 11px;
+  line-height: 18px;
+  text-align: center;
+}
+.console-filter-link[aria-current="page"] > .num,
+.console-filter-link[aria-current="page"] > .tabular-nums,
+.console-filter-link[aria-current="true"] > .num,
+.console-filter-link[aria-current="true"] > .tabular-nums {
+  background: rgb(255 255 255 / 0.2);
+  color: inherit;
 }
 .site-directory-card {
   min-width: 0;
@@ -804,6 +821,8 @@ body {
   letter-spacing: 0.04em;
   color: var(--rail-muted);
 }
+/* 접힌 레일에서 "현재 프로젝트" 라벨 자리를 대신하는 가는 구분선. 펼침에서는 라벨이 그 일을 한다. */
+.rail-sep { display: none; }
 .rail-link {
   position: relative;
   display: flex;
@@ -874,6 +893,7 @@ body {
 [data-rail][data-collapsed="true"] .rail-count,
 [data-rail][data-collapsed="true"] .rail-group { display: none; }
 [data-rail][data-collapsed="true"] .rail-dot { display: block; }
+[data-rail][data-collapsed="true"] .rail-sep { display: block; height: 1px; margin: 6px 12px; background: var(--line); }
 [data-rail][data-collapsed="true"] .rail-link:hover::after,
 [data-rail][data-collapsed="true"] .rail-link:focus-visible::after {
   content: attr(data-tip);
@@ -906,6 +926,7 @@ body {
   [data-rail] .rail-count,
   [data-rail] .rail-group { display: none; }
   [data-rail] .rail-dot { display: block; }
+  [data-rail] .rail-sep { display: block; height: 1px; margin: 6px 12px; background: var(--line); }
   [data-rail] .rail-link:hover::after,
   [data-rail] .rail-link:focus-visible::after {
     content: attr(data-tip);
@@ -944,6 +965,13 @@ body {
   body.desktop-nav-collapsed {
     grid-template-columns: 56px minmax(0, 1fr);
   }
+  /* 헤더의 로고 칸은 레일 폭을 따른다 — 접으면 레일처럼 아이콘만 남는다. */
+  body.desktop-nav-collapsed [data-header-brand] {
+    width: 56px;
+    justify-content: center;
+    padding-left: 0;
+  }
+  body.desktop-nav-collapsed [data-header-brand] .header-brand-name { display: none; }
   body.viewer-shell #main-content {
     display: flex;
     flex-direction: column;
