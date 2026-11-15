@@ -64,8 +64,10 @@ test("권한 없는 현장 상세는 식별 정보를 노출하지 않는 제목
   await expect(page.getByText("요청한 현장에 접근할 수 없습니다. 현장 목록에서 접근 가능한 현장을 확인하세요.", { exact: true })).toBeVisible();
   await expect(page.getByText("E2E 현장 작업공간", { exact: true })).toHaveCount(0);
 
+  // 옛 자료 주소는 자료 섹션으로 이관된다 — 접근 불가 현장은 같은 안내를 보인다.
   await page.goto("/sites/e2e-site-workspace/spatial-assets");
-  await expect(page.getByRole("main").getByRole("heading", { level: 1, name: "공간", exact: true })).toHaveCount(1);
+  await expect(page).toHaveURL(/\/sites\/e2e-site-workspace\/data$/);
+  await expect(page.getByRole("main").getByRole("heading", { level: 1, name: "자료", exact: true })).toHaveCount(1);
   await expect(page.getByRole("main").getByRole("heading", { level: 2, name: "현장을 찾을 수 없습니다", exact: true })).toBeVisible();
   await expect(page.getByText("요청한 현장에 접근할 수 없습니다. 현장 목록에서 접근 가능한 현장을 확인하세요.", { exact: true })).toBeVisible();
   await expect(page.getByText("E2E 현장 작업공간", { exact: true })).toHaveCount(0);

@@ -840,6 +840,10 @@ body {
   background: var(--rail-bar);
 }
 .rail-link:focus-visible { outline: 2px solid var(--rail-bar); outline-offset: -2px; }
+/* 계정 메뉴가 열려 있으면 이름 툴팁을 겹쳐 띄우지 않는다. */
+.rail-link[aria-expanded="true"]::after { display: none !important; }
+/* 이름·역할 두 줄이 들어가는 계정 항목은 높이를 키운다. */
+.rail-account { min-height: 44px; }
 .rail-count {
   margin-left: auto;
   border-radius: 999px;
@@ -864,6 +868,8 @@ body {
 }
 .rail-dot[data-urgent="true"] { background: var(--crit); }
 [data-rail][data-collapsed="true"] .rail-link { justify-content: center; padding: 0; margin: 0 5px; }
+/* 접힌 레일은 항목 여백이 5px 라 현재 위치 막대도 5px 만 밖으로 낸다(8px 이면 화면 밖으로 잘린다). */
+[data-rail][data-collapsed="true"] .rail-link[aria-current="page"]::before { left: -5px; }
 [data-rail][data-collapsed="true"] .rail-label,
 [data-rail][data-collapsed="true"] .rail-count,
 [data-rail][data-collapsed="true"] .rail-group { display: none; }
@@ -895,6 +901,7 @@ body {
 /* 768–1023px: 레일은 사용자 선택과 무관하게 아이콘 폭(56px)이다. 접기 버튼은 감춘다. */
 @media (max-width: 1023px) {
   [data-rail] .rail-link { justify-content: center; padding: 0; margin: 0 5px; }
+  [data-rail] .rail-link[aria-current="page"]::before { left: -5px; }
   [data-rail] .rail-label,
   [data-rail] .rail-count,
   [data-rail] .rail-group { display: none; }

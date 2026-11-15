@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
 
 import { isChromelessPath } from "./chromeless-path";
 import { setDesktopNavCollapsed, useDesktopNavCollapsed } from "./desktop-nav-preference";
@@ -61,9 +61,10 @@ function RailLink({
  * 프로젝트 안에서는 공간·자료·분석을, 밖에서는 홈·프로젝트를 위쪽에 두고 작업·도움말은
  * 어디서나 아래쪽에 둔다. 섹션 안의 세부 메뉴는 여기에 펼치지 않는다 — 화면 안의 컨텍스트
  * 패널이 맡는다. 접힘은 사용자가 고른 것이며 경로가 바뀌어도 폭을 바꾸지 않는다.
- * 계정·로그아웃은 상단 헤더의 계정 메뉴가 맡는다.
+ * 계정·로그아웃은 레일 맨 아래의 계정 메뉴(`account`)가 맡는다. 현재 어느 섹션인지는 레일의 선택 표시가
+ * 알려 주므로 상단바는 페이지 이름을 되풀이하지 않는다.
  */
-export function DesktopSidebar({ counts }: { counts?: NavCounts }) {
+export function DesktopSidebar({ counts, account }: { counts?: NavCounts; account?: ReactNode }) {
   // 프로젝트 수는 헤더 전환 메뉴와 같은 목록을 따른다 — 갱신된 목록이 있으면 그 값을 쓰고,
   // 0 이면 배지를 그리지 않는다(0 과 "모름"을 같게 보이지 않는다).
   const siteSnapshot = useSiteListSnapshot();
@@ -146,6 +147,7 @@ export function DesktopSidebar({ counts }: { counts?: NavCounts }) {
           </svg>
           <span className="rail-label">메뉴 접기</span>
         </button>
+        {account}
       </div>
     </nav>
   );

@@ -45,6 +45,7 @@ import { formatKoreanDate } from "@/lib/datetime";
 import { SITE_DETAIL_DOCUMENT_TITLE } from "@/lib/site-detail-title";
 import { normalizeSiteTab } from "@/lib/site-epochs";
 import { parseScopeId, pickFootprintAsset, resolveSelectedWorkAreaId } from "./site-spatial";
+import { siteDataHref } from "@/components/nav/site-context";
 
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Disclosure } from "@/components/ui/Disclosure";
@@ -77,14 +78,13 @@ export default async function SiteDetailPage({
   const legacySection = firstValue(query.section) ?? firstValue(query.tab);
   const tab = normalizeSiteTab(legacySection);
   const siteHref = `/sites/${encodeURIComponent(siteId)}`;
+  // 옛 탭 주소 — 자료·등록 진행은 자료 섹션(ADR-KSI-043)으로 보낸다.
   if (tab === "work-orders") {
-    const next = new URLSearchParams({ panel: "intake" });
-    const area = parseScopeId(query.workAreaId);
-    if (area) next.set("workAreaId", area);
-    redirect(`${siteHref}?${next}`);
+    redirect(siteDataHref(siteId, { workAreaId: parseScopeId(query.workAreaId), progress: true }));
   }
   if (legacySection === "materials" || legacySection === "assets" || legacySection === "spatial-assets") {
-    redirect(materialsHref(siteId, parseScopeId(query.workAreaId), {
+    redirect(siteDataHref(siteId, {
+      workAreaId: parseScopeId(query.workAreaId),
       assetRef: exactMaterialsAssetRef(query.assetRef),
       ...normalizeCatalogFilters({ q: firstValue(query.q), kind: firstValue(query.kind), state: firstValue(query.state) }),
     }));

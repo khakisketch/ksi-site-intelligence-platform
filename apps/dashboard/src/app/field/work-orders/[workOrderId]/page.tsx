@@ -280,7 +280,7 @@ export default async function FieldWorkOrderPage({ params, searchParams }: {
           <h2 className="break-keep text-title font-bold tracking-tight">{externalWorkflow ? "관측 자료와 검사 확인" : workOrder.name}</h2>
           {externalWorkflow && <p className="break-keep text-caption text-ink-2">등록된 작업명 · {workOrder.name}</p>}
           <p className="break-keep text-caption text-ink-2">{site?.name ?? SITE_NAME_UNAVAILABLE} · {areaSummary} · {workOrder.cycleNumber}회차</p>
-          {canViewSite && <Link href={`/sites/${encodeURIComponent(workOrder.siteId)}?panel=intake`} className="btn btn-sm w-fit">공간의 등록 진행 보기</Link>}
+          {canViewSite && <Link href={`/sites/${encodeURIComponent(workOrder.siteId)}/data?progress=1`} className="btn btn-sm w-fit">자료의 등록 진행 보기</Link>}
           <Disclosure label="식별 상세" className="text-ink-muted">
             <p className="mt-1 break-all">작업 {workOrder.workOrderId} · 현장 {workOrder.siteId} · 구역 {formatWorkAreaTechnicalRefs(workOrder.workAreaIds)}</p>
           </Disclosure>
@@ -315,8 +315,8 @@ export default async function FieldWorkOrderPage({ params, searchParams }: {
           {!planningBinding && externalExecutionContext === "EXTERNAL_INGRESS" && hasRetainedSubmissions && continuation && (() => {
             const sitePath = `/sites/${encodeURIComponent(workOrder.siteId)}`;
             const catalogHref = continuation.workAreaId
-              ? `${sitePath}?panel=materials&workAreaId=${encodeURIComponent(continuation.workAreaId)}`
-              : `${sitePath}?panel=materials`;
+              ? `${sitePath}/data?workAreaId=${encodeURIComponent(continuation.workAreaId)}`
+              : `${sitePath}/data`;
             const analysisHref = continuation.workAreaId
               ? `${sitePath}/analysis?request=new&workAreaId=${encodeURIComponent(continuation.workAreaId)}&currentWorkOrderId=${encodeURIComponent(workOrder.workOrderId)}#new-analysis-request`
               : `${sitePath}/analysis?request=new#new-analysis-request`;

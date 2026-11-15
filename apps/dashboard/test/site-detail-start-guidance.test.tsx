@@ -82,15 +82,15 @@ describe("Site detail start guidance", () => {
     searchParams: Promise.resolve(query),
   });
 
-  it("carries the legacy materials scope into the space panel", async () => {
+  it("carries the legacy materials scope into the data section", async () => {
     const assetRef = `ksa-v1-${"a".repeat(64)}`;
     await expect(openSite({ section: "materials", workAreaId: "area-1", assetRef }))
-      .rejects.toThrow(`/sites/site-1?panel=materials&workAreaId=area-1&assetRef=${assetRef}`);
+      .rejects.toThrow(`/sites/site-1/data?workAreaId=area-1&assetRef=${assetRef}`);
   });
 
-  it("routes the old work ledger to registration progress in the space panel", async () => {
+  it("routes the old work ledger to the registration progress drawer of the data section", async () => {
     await expect(openSite({ section: "work-orders", workAreaId: "area-1" }))
-      .rejects.toThrow("/sites/site-1?panel=intake&workAreaId=area-1");
+      .rejects.toThrow("/sites/site-1/data?workAreaId=area-1&progress=1");
   });
 
   it("routes old analysis and external-comparison links to their respective tabs", async () => {

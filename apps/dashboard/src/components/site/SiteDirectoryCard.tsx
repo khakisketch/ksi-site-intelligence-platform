@@ -32,7 +32,7 @@ export function SiteDirectoryCard({ row, sameName }: { row: SiteListRow; sameNam
           현장 열기
           <svg aria-hidden="true" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" className="size-4"><path d="M4 10h12m-5-5 5 5-5 5" /></svg>
         </Link>
-        <Link href={`${href}?panel=materials`} className="tap-target ml-auto inline-flex items-center text-ink-2 hover:underline">자료</Link>
+        <Link href={`${href}/data`} className="tap-target ml-auto inline-flex items-center text-ink-2 hover:underline">자료</Link>
         <Link href={`${href}/analysis`} className="tap-target inline-flex items-center text-ink-2 hover:underline">분석</Link>
       </div>
     </div>

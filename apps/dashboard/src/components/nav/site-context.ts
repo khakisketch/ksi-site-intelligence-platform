@@ -18,8 +18,8 @@ export const SITE_CONTEXT_SECTIONS = SITE_TABS.map<{ key: SiteSection; label: st
 
 /**
  * 프로젝트 안의 업무 섹션(ADR-KSI-043). 레일과 모바일 하단 탭이 같은 목록을 쓴다.
- * "자료"는 아직 공간 워크벤치의 자료 패널(`?panel=materials`)이며, 독립 화면이 생기면
- * `projectSectionHref`만 바꾼다.
+ * "자료"는 독립 화면(`/sites/{id}/data`)이다. 공간 뷰어 안의 자료 패널(`?panel=materials`)은
+ * 뷰어에서 볼 관측을 고르는 보조 패널로 남고, 그 주소도 자료 섹션으로 읽는다.
  */
 export type ProjectSection = "space" | "data" | "analysis";
 export const PROJECT_SECTIONS: ReadonlyArray<{ key: ProjectSection; label: string; icon: NavIconName }> = [
@@ -100,10 +100,11 @@ export function resolveProjectSection(
   pathname: string,
   search: QueryReader | null | undefined,
 ): ProjectSection | null {
+  const route = SITE_PATH.exec(pathname)?.[2]?.split("/")[1] ?? "";
+  if (route === "data" && resolveSiteId(pathname)) return "data";
   const section = resolveSiteSection(pathname, search);
   if (section === "analysis") return "analysis";
   if (section !== "space") return null;
-  const route = SITE_PATH.exec(pathname)?.[2]?.split("/")[1] ?? "";
   const panel = search?.get("panel");
   return route === "" && (panel === "materials" || panel === "intake") ? "data" : "space";
 }
@@ -111,8 +112,33 @@ export function resolveProjectSection(
 export function projectSectionHref(siteId: string, section: ProjectSection | null): string {
   const base = `/sites/${encodeURIComponent(siteId)}`;
   if (section === "analysis") return `${base}/analysis`;
-  if (section === "data") return `${base}?panel=materials`;
+  if (section === "data") return `${base}/data`;
   return base;
+}
+
+/** 자료 섹션의 한 장면 — 구역·선택 자료·검색 조건·페이지를 주소에 남긴다. 값이 없는 조건은 싣지 않는다. */
+export interface SiteDataScope {
+  workAreaId?: string | null;
+  assetRef?: string | null;
+  q?: string;
+  kind?: string;
+  state?: string;
+  cursor?: string | null;
+  /** 하단 서랍(등록 진행)을 열어 둔다. */
+  progress?: boolean;
+}
+
+export function siteDataHref(siteId: string, scope: SiteDataScope = {}): string {
+  const query = new URLSearchParams();
+  if (scope.workAreaId) query.set("workAreaId", scope.workAreaId);
+  if (scope.assetRef) query.set("assetRef", scope.assetRef);
+  if (scope.q) query.set("q", scope.q);
+  if (scope.kind) query.set("kind", scope.kind);
+  if (scope.state) query.set("state", scope.state);
+  if (scope.cursor) query.set("cursor", scope.cursor);
+  if (scope.progress) query.set("progress", "1");
+  const text = query.toString();
+  return `/sites/${encodeURIComponent(siteId)}/data${text ? `?${text}` : ""}`;
 }
 
 /** 다른 프로젝트로 전환할 때 지금 보던 섹션을 유지한다. 섹션을 모르면 공간으로 간다. */

@@ -37,7 +37,7 @@ describe("좌측 레일 (ADR-KSI-043)", () => {
     const links = within(rail()).getAllByRole("link").map((link) => [link.textContent, link.getAttribute("href")]);
     expect(links).toEqual([
       ["공간", "/sites/site-1"],
-      ["자료", "/sites/site-1?panel=materials"],
+      ["자료", "/sites/site-1/data"],
       ["분석", "/sites/site-1/analysis"],
       ["작업", "/field"],
       ["도움말", "/help"],
@@ -46,7 +46,12 @@ describe("좌측 레일 (ADR-KSI-043)", () => {
     expect(within(rail()).getByRole("link", { name: "공간" }).getAttribute("aria-current")).toBeNull();
   });
 
-  it("자료 패널을 연 화면은 자료가 현재 위치다", () => {
+  it("자료 화면과 공간의 자료 패널은 자료가 현재 위치다", () => {
+    navigation.pathname = "/sites/site-1/data";
+    navigation.search = new URLSearchParams("workAreaId=a1");
+    const first = render(<DesktopSidebar />);
+    expect(within(rail()).getByRole("link", { name: "자료" }).getAttribute("aria-current")).toBe("page");
+    first.unmount();
     navigation.pathname = "/sites/site-1";
     navigation.search = new URLSearchParams("panel=materials");
     render(<DesktopSidebar />);

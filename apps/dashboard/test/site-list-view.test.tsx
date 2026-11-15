@@ -535,7 +535,7 @@ describe("sites desktop view wiring", () => {
     expect((DIRECTORY_CARD.match(/현장 열기/g) ?? []).length).toBe(1);
     expect(DIRECTORY_CARD).toContain("조치 필요");
     expect(DIRECTORY_CARD).not.toContain("btn btn-primary");
-    expect(DIRECTORY_CARD).toContain("panel=materials");
+    expect(DIRECTORY_CARD).toContain("/data");
     expect(DIRECTORY_CARD).toContain("/analysis");
     expect((DENSE.match(/label="현장 열기"/g) ?? []).length).toBe(1);
     expect(DENSE).toMatch(/<TableAction[\s\S]*?primary[\s\S]*?\/>/);

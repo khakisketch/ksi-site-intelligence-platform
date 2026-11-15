@@ -942,7 +942,7 @@ function AnalysisBlockerItem({ blocker, siteId, workAreaId }: {
 }) {
   const guidance = getAnalysisIssueGuidance(blocker.code);
   const sitePath = `/sites/${encodeURIComponent(siteId)}`;
-  const evidencePath = `${sitePath}?panel=materials&workAreaId=${encodeURIComponent(workAreaId)}`;
+  const evidencePath = `${sitePath}/data?workAreaId=${encodeURIComponent(workAreaId)}`;
   const destination = guidance.destination === "work-areas"
     ? { href: `${sitePath}/work-areas`, label: "작업구역 현황 확인" }
     : guidance.destination === "spatial-assets"
@@ -1180,7 +1180,7 @@ function ReadinessCheckSection({
             <button type="button" className="btn min-h-11" disabled={!canCheck} onClick={() => void checkReadiness()}>
               다시 확인
             </button>
-            <Link className="btn min-h-11" href={`/sites/${encodeURIComponent(siteId)}?panel=materials&workAreaId=${encodeURIComponent(workAreaId)}`}>등록 자료와 검사 상태 확인</Link>
+            <Link className="btn min-h-11" href={`/sites/${encodeURIComponent(siteId)}/data?workAreaId=${encodeURIComponent(workAreaId)}`}>등록 자료와 검사 상태 확인</Link>
           </div>
         </div>
       ) : readiness.status === "failed" ? (
@@ -2095,13 +2095,13 @@ export function AnalysisRequestPanel({
   ].filter(Boolean).join(" ") : "";
   const sitePath = `/sites/${encodeURIComponent(siteId)}`;
   const areaQuery = workAreaId ? `workAreaId=${encodeURIComponent(workAreaId)}` : "";
-  const materialsHref = `${sitePath}?panel=materials${areaQuery ? `&${areaQuery}` : ""}`;
+  const materialsHref = `${sitePath}/data${areaQuery ? `?${areaQuery}` : ""}`;
   const spaceHref = areaQuery ? `${sitePath}?${areaQuery}` : sitePath;
   // 구역 범위 복귀 링크는 후보·이력 상태가 함께 닫힐 때 한 번만 둔다.
   const hasCommonScopeRecovery = listsBlockedForArea && !historyReady && workAreaId !== "";
   const commonScopeRecovery = hasCommonScopeRecovery ? (
     <nav aria-label="공통 범위 복구" className="flex flex-wrap gap-x-4 gap-y-2 text-body leading-5 text-ink-2">
-      <Link className="font-semibold text-accent-text underline underline-offset-4" href={`/sites/${encodeURIComponent(siteId)}?panel=materials&workAreaId=${encodeURIComponent(workAreaId)}`}>등록 자료 보기</Link>
+      <Link className="font-semibold text-accent-text underline underline-offset-4" href={`/sites/${encodeURIComponent(siteId)}/data?workAreaId=${encodeURIComponent(workAreaId)}`}>등록 자료 보기</Link>
       <Link className="font-semibold text-accent-text underline underline-offset-4" href={`/sites/${encodeURIComponent(siteId)}?workAreaId=${encodeURIComponent(workAreaId)}`}>공간으로 돌아가기</Link>
       {visualReturnHref && <Link className="font-semibold text-accent-text underline underline-offset-4" href={visualReturnHref}>독립 보기로 돌아가기</Link>}
     </nav>
@@ -2109,7 +2109,7 @@ export function AnalysisRequestPanel({
   const historyScopeRecovery = !listsBlockedForArea && !historyReady
     && listsState?.history === "unconfirmed" && workAreaId !== "" ? (
       <nav aria-label="이력 범위 복구" className="flex flex-wrap gap-x-4 gap-y-2 text-body leading-5 text-ink-2">
-        <Link className="font-semibold text-accent-text underline underline-offset-4" href={`/sites/${encodeURIComponent(siteId)}?panel=materials&workAreaId=${encodeURIComponent(workAreaId)}`}>등록 자료 보기</Link>
+        <Link className="font-semibold text-accent-text underline underline-offset-4" href={`/sites/${encodeURIComponent(siteId)}/data?workAreaId=${encodeURIComponent(workAreaId)}`}>등록 자료 보기</Link>
         <Link className="font-semibold text-accent-text underline underline-offset-4" href={`/sites/${encodeURIComponent(siteId)}?workAreaId=${encodeURIComponent(workAreaId)}`}>공간 보기</Link>
       </nav>
     ) : null;
@@ -2158,7 +2158,7 @@ export function AnalysisRequestPanel({
         </div>
       )}
       <div className="mt-2.5 flex flex-wrap gap-2">
-        <Link className="btn min-h-11" href={`/sites/${encodeURIComponent(siteId)}?panel=materials&workAreaId=${encodeURIComponent(workAreaId)}`}>등록 자료와 검사 상태 확인</Link>
+        <Link className="btn min-h-11" href={`/sites/${encodeURIComponent(siteId)}/data?workAreaId=${encodeURIComponent(workAreaId)}`}>등록 자료와 검사 상태 확인</Link>
         <Link className="btn min-h-11" href={`/sites/${encodeURIComponent(siteId)}?workAreaId=${encodeURIComponent(workAreaId)}`}>공간으로 돌아가기</Link>
         {visualReturnHref && <Link className="btn min-h-11" href={visualReturnHref}>독립 보기로 돌아가기</Link>}
       </div>
@@ -2221,7 +2221,7 @@ export function AnalysisRequestPanel({
       />
       {scopedObservations.length === 0 && (
         <div className="mt-2.5 flex flex-wrap gap-2">
-          <Link className="btn min-h-11" href={`/sites/${encodeURIComponent(siteId)}?panel=materials&workAreaId=${encodeURIComponent(workAreaId)}`}>등록 자료와 검사 상태 확인</Link>
+          <Link className="btn min-h-11" href={`/sites/${encodeURIComponent(siteId)}/data?workAreaId=${encodeURIComponent(workAreaId)}`}>등록 자료와 검사 상태 확인</Link>
           <Link className="btn min-h-11" href={`/sites/${encodeURIComponent(siteId)}?workAreaId=${encodeURIComponent(workAreaId)}`}>공간으로 돌아가기</Link>
           {visualReturnHref && <Link className="btn min-h-11" href={visualReturnHref}>독립 보기로 돌아가기</Link>}
         </div>
@@ -2241,7 +2241,7 @@ export function AnalysisRequestPanel({
         </p>
       )}
       {scopeNotice && !attempt && candidatesReady && <p role="status" className="mt-2 rounded-md border border-line bg-sunk/50 px-3 py-2 text-caption leading-5 text-ink-2">{scopeNotice}</p>}
-      {currentHintNotice && !attempt && <p role="status" className="mt-2 rounded-md border border-line bg-sunk/50 px-3 py-2 text-caption leading-5 text-ink-2">{currentHintNotice} <Link className="font-semibold text-accent-text underline" href={`/sites/${encodeURIComponent(siteId)}?panel=materials${workAreaId ? `&workAreaId=${encodeURIComponent(workAreaId)}` : ""}`}>등록 자료와 검사 상태 확인</Link></p>}
+      {currentHintNotice && !attempt && <p role="status" className="mt-2 rounded-md border border-line bg-sunk/50 px-3 py-2 text-caption leading-5 text-ink-2">{currentHintNotice} <Link className="font-semibold text-accent-text underline" href={`/sites/${encodeURIComponent(siteId)}/data${workAreaId ? `?workAreaId=${encodeURIComponent(workAreaId)}` : ""}`}>등록 자료와 검사 상태 확인</Link></p>}
       {requestListNotice}
       {showCatalogInspect && catalogInspectBlock}
       {listsBlockedForArea ? null : noCandidateForArea ? (showCatalogInspect ? null : noCandidateBlock) : (<>

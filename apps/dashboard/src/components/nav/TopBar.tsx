@@ -2,7 +2,6 @@ import { headers } from "next/headers";
 import Link from "next/link";
 import { Suspense } from "react";
 
-import { whoAmI } from "@/lib/core-api/auth";
 import { CoreApiError } from "@/lib/core-api/client";
 import { MissingSessionError } from "@/lib/core-api/session";
 import { ROLE_LABEL } from "@/lib/core-api/labels";
@@ -12,6 +11,7 @@ import { AccountMenu } from "./AccountMenu";
 import { BackButton } from "./BackButton";
 import { HeaderSearchTrigger } from "./HeaderSearchTrigger";
 import { PageTitle } from "./PageTitle";
+import { readShellPrincipal } from "./shell-principal";
 import { ProjectSwitcher } from "./ProjectSwitcher";
 import { TopBarSearchTrigger } from "./TopBarSearchTrigger";
 import { resolvePageTitle } from "./page-title";
@@ -67,9 +67,9 @@ export async function TopBar() {
   // 신원·역할·로그아웃은 헤더의 계정 메뉴(AccountMenu)가 갖는다(ADR-KSI-043).
   // 세션 만료를 알리는 자리도 이 헤더다(아래 catch). 만료·거절·확인 실패에서는 정상
   // 도구(프로젝트 전환·검색·계정)를 그리지 않고 복구 안내만 둔다.
-  let principal: Awaited<ReturnType<typeof whoAmI>>;
+  let principal: Awaited<ReturnType<typeof readShellPrincipal>>;
   try {
-    principal = await whoAmI();
+    principal = await readShellPrincipal();
   } catch (error) {
     // 로그인 화면 자체에서는 "다시 로그인하세요" 문구가 중복이니 숨긴다. 그 외
     // 화면에서는 조용히 숨기지 않는다 — proxy.ts 는 쿠키 "존재"만 보고 페이지 접근을

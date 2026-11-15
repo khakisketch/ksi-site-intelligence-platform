@@ -76,7 +76,7 @@ export function ProjectSwitcher() {
           aria-label="프로젝트 설정"
           title="프로젝트 설정"
           aria-current={search?.get("section") === "manage" ? "page" : undefined}
-          className="tap-target grid size-9 place-items-center rounded-md text-ink-2 hover:bg-sunk"
+          className={`tap-target grid size-9 place-items-center rounded-md hover:bg-sunk ${search?.get("section") === "manage" ? "bg-sunk text-ink-1" : "text-ink-2"}`}
         >
           <NavIcon name="settings" className="size-4" />
         </Link>

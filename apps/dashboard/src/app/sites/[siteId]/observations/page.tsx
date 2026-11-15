@@ -27,7 +27,7 @@ async function ExternalComparisonRegistration({ siteId, organizationId }: { site
   const candidates = orders.filter((order) => order.siteId === siteId && order.organizationId === organizationId
     && order.executionMode === "EXTERNAL_RECONSTRUCTION" && order.status !== "CANCELLED");
   if (candidates.length === 0) return <EmptyState title="선택할 수 있는 외부 처리 작업이 없습니다" description="자료 등록 진행을 확인하세요."
-    action={{ label: "등록 진행 보기", href: `/sites/${encodeURIComponent(siteId)}?panel=intake` }} />;
+    action={{ label: "등록 진행 보기", href: `/sites/${encodeURIComponent(siteId)}/data?progress=1` }} />;
   return <section aria-labelledby="external-comparison-registration" className="flex flex-col gap-3">
     <h3 id="external-comparison-registration" className="text-lead font-bold">외부 비교 등록</h3>
     <p className="text-body text-ink-2">현재 자료가 등록된 작업을 선택하세요. 작업 화면에서 기준 자료와 비교 조건을 확인한 뒤 요청할 수 있습니다.</p>

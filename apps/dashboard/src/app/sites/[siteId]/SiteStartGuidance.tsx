@@ -47,7 +47,7 @@ export function SiteStartGuidance({
   const nextStepAction = workAreaCount === null || workAreaCount === 0
     ? { href: `${sitePath}/work-areas`, label: "작업구역 확인" }
     : observationWorkOrderCount === null || observationWorkOrderCount === 0
-      ? { href: `${sitePath}?panel=intake`, label: "작업 현황 확인" }
+      ? { href: `${sitePath}/data?progress=1`, label: "작업 현황 확인" }
       : { href: `${sitePath}/analysis`, label: "비교할 자료 선택" };
 
   return <section className="rounded-lg border border-line bg-surface px-4 py-2.5" aria-label="현장 시작 안내">
