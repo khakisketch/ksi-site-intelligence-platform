@@ -212,6 +212,14 @@ describe("Home 분석-검토 읽기 완전성 (D1 unknown-not-0)", () => {
     expect(screen.queryByText(/분석 결과의 검토 대기 여부를 확인할 수 없습니다/)).toBeNull();
   });
 
+  it("최근 현장 목록이 안건 자리를 대신하면 같은 현장을 '다른 현장'에 다시 싣지 않는다", async () => {
+    mockAnalysisReads();
+    render(await HomePage());
+
+    expect(screen.getByRole("region", { name: "최근 현장 목록" })).toBeTruthy();
+    expect(screen.queryByRole("region", { name: "다른 현장 바로가기" })).toBeNull();
+  });
+
   it("분석 목록 읽기가 실패하면 0으로 낮추지 않는다", async () => {
     mockAnalysisReads({ failList: true });
     render(await HomePage());

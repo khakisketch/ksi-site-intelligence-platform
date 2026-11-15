@@ -36,12 +36,13 @@ export function HomeSiteGrid({ sites }: { sites: readonly SiteView[] }) {
                     <h3 className="min-w-0 text-body font-semibold break-keep sm:text-lead">{site.name}</h3>
                     <StateBadge label={status.label} tone={status.tone} />
                   </div>
-                  <div className="mt-auto flex flex-wrap items-center gap-x-3 gap-y-1 text-caption">
-                    <Link href={`/sites/${encoded}`} aria-label={`${site.name} 열기`} className="tap-target font-semibold text-accent-text hover:underline">열기</Link>
-                    <span aria-hidden="true" className="text-line-strong">·</span>
-                    <Link href={`/sites/${encoded}/data`} className="tap-target text-ink-2 hover:text-ink-1 hover:underline">자료</Link>
-                    <span aria-hidden="true" className="text-line-strong">·</span>
-                    <Link href={`/sites/${encoded}/analysis`} className="tap-target text-ink-2 hover:text-ink-1 hover:underline">분석</Link>
+                  {/* 주 동작(열기)은 버튼 모양, 바로가기(자료·분석)는 조용한 글자 링크로 구분한다. */}
+                  <div className="mt-auto grid grid-cols-[auto_1fr] items-center gap-x-3 border-t border-line pt-2.5 text-caption">
+                    <Link href={`/sites/${encoded}`} aria-label={`${site.name} 열기`} className="btn tap-target inline-flex items-center px-3 font-semibold">열기</Link>
+                    <span className="flex items-center justify-end gap-3">
+                      <Link href={`/sites/${encoded}/data`} className="tap-target inline-flex items-center text-ink-2 hover:text-ink-1 hover:underline">자료</Link>
+                      <Link href={`/sites/${encoded}/analysis`} className="tap-target inline-flex items-center text-ink-2 hover:text-ink-1 hover:underline">분석</Link>
+                    </span>
                   </div>
                 </div>
               </article>
