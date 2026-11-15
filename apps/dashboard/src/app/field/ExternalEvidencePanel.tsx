@@ -1,5 +1,6 @@
 "use client";
 
+import { Disclosure } from "@/components/ui/Disclosure";
 import { ExternalUseBlockerCard } from "@/components/external-results/ExternalUseBlockerCard";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
@@ -151,10 +152,10 @@ function DecisionSubjectBinding({
   if (!subject) return <p>{label}: 분석 시스템 기록 없음</p>;
   return (
     <div>
-      <p className="break-all font-mono text-[12px] text-ink-2">{label} · {formatRegistrationVersion(subject.revision)}</p>
+      <p className="break-all font-mono text-caption text-ink-2">{label} · {formatRegistrationVersion(subject.revision)}</p>
       <p>제출 식별자 {subject.submissionId} · 제출 확인값(해시) {subject.submissionDigest}</p>
       <p>목록 확인값(해시) {subject.manifestDigest} · 대상 확인값(해시) {coreValue(digest)}</p>
-      <p className="break-all font-mono text-[12px] text-ink-2">원본 보관용 식별자 · 조직 {subject.organizationId} · 현장 {subject.siteId} · 작업 {subject.workOrderId}</p>
+      <p className="break-all font-mono text-caption text-ink-2">원본 보관용 식별자 · 조직 {subject.organizationId} · 현장 {subject.siteId} · 작업 {subject.workOrderId}</p>
     </div>
   );
 }
@@ -213,7 +214,7 @@ function DecisionReceipt({ decision, historical = false }: { decision: Decision;
       <p>
         {historical ? "과거 판정 기록" : "현재 분석 시스템 판정"}: {headline}
       </p>
-      <p className="mt-1 text-[12px] text-ink-2">처리용 원본 코드 {decision.use} · {decision.verdict}는 파일 정보에서 확인할 수 있습니다.</p>
+      <p className="mt-1 text-caption text-ink-2">처리용 원본 코드 {decision.use} · {decision.verdict}는 파일 정보에서 확인할 수 있습니다.</p>
       {decision.verdict === "BLOCKED" ? (
         <ExternalUseBlockerCard reasons={decision.reasons} remediations={decision.remediations} />
       ) : (
@@ -222,7 +223,7 @@ function DecisionReceipt({ decision, historical = false }: { decision: Decision;
           <p>조치: {decision.remediations.join(", ") || "없음"}</p>
         </>
       )}
-      {historical && <details className="mt-2 text-[12px]"><summary className="tap-target cursor-pointer font-semibold">파일 정보 · 처리 상세</summary><DecisionBindings decision={decision} /></details>}
+      {historical && <Disclosure label="파일·식별 상세" className="mt-2 text-caption"><DecisionBindings decision={decision} /></Disclosure>}
       {historical && <p>과거 기록은 현재 사용 권한이나 실행 권한이 아닙니다.</p>}
     </div>
   );
@@ -482,7 +483,7 @@ export function ExternalEvidencePanel({
                     value: `${row.order.workOrderId}:${subject(revision)}`,
                     workOrderId: row.order.workOrderId,
                     revision,
-                    label: `${row.order.name ?? "관측 작업"} · ${describeArtifactKinds(revision.submission.artifacts)} · ${formatRegistrationVersion(revision.submission.revision)} · ${revision.submission.artifacts?.map((artifact) => artifact.fileName).join(", ") ?? "산출물"}`,
+                    label: `${row.order.name ?? "작업"} · ${describeArtifactKinds(revision.submission.artifacts)} · ${formatRegistrationVersion(revision.submission.revision)} · ${revision.submission.artifacts?.map((artifact) => artifact.fileName).join(", ") ?? "산출물"}`,
                   }))
               : [],
           ),
@@ -491,7 +492,7 @@ export function ExternalEvidencePanel({
           .filter((row) => !row.revisions)
           .map((row) => ({
             workOrderId: row.order.workOrderId,
-            label: row.order.name ?? "이름 없는 관측 작업",
+            label: row.order.name ?? "이름 없는 작업",
           }));
         setPairLoadFailures(failures);
         setPairLoad(failures.length === 0 ? "ready" : "partial");
@@ -667,7 +668,7 @@ export function ExternalEvidencePanel({
       return;
     }
     if (!newIntentAllowed && !upload) {
-      say("업무 종료 상태에서는 새 증거 선언을 시작할 수 없습니다.", true);
+      say("작업 종료 상태에서는 새 증거 선언을 시작할 수 없습니다.", true);
       return;
     }
     // 새 선언은 묶인 첫 신원과 함께 만든다. 재시도는 동결된 원래 키·내용·경로·연속성을
@@ -982,7 +983,7 @@ export function ExternalEvidencePanel({
     }
     const intent = decisionIntent(use, selected, singleVolume ? singleZone : zone);
     if (!newIntentAllowed && (!tries[intent] || fresh)) {
-      sayForUse(use, "업무 종료 상태에서는 새 사용 결정을 요청할 수 없습니다.", true);
+      sayForUse(use, "작업 종료 상태에서는 새 사용 결정을 요청할 수 없습니다.", true);
       return;
     }
     const frozen = attempts[intent];
@@ -1272,9 +1273,9 @@ export function ExternalEvidencePanel({
   };
 
   return (
-    <section id="external-evidence" className="flex flex-col gap-3 rounded-xl border border-line bg-surface p-4 text-[13px]">
-      <h2 className="text-[16px] font-bold">독립 검사점 증거와 사용 결정</h2>
-      {!newIntentAllowed && <p className="rounded-lg border border-line bg-sunk px-3 py-2 leading-5 text-ink-2">업무 종료 상태입니다. 새 증거와 사용 결정은 요청할 수 없지만, 기록과 이미 시작한 봉인 상태는 계속 확인할 수 있습니다.</p>}
+    <section id="external-evidence" className="flex flex-col gap-3 rounded-xl border border-line bg-surface p-4 text-body">
+      <h2 className="text-title font-bold">독립 검사점 증거와 사용 결정</h2>
+      {!newIntentAllowed && <p className="rounded-lg border border-line bg-sunk px-3 py-2 leading-5 text-ink-2">작업 종료 상태입니다. 새 증거와 사용 결정은 요청할 수 없지만, 기록과 이미 시작한 봉인 상태는 계속 확인할 수 있습니다.</p>}
       <ul>
         {sealed.map((revision) => {
           const isSelected = target !== null && subject(target) === subject(revision);
@@ -1292,9 +1293,9 @@ export function ExternalEvidencePanel({
               }}
             >
               <span className="block font-semibold">{formatSealedTargetLabel(revision.submission.revision, revision.submission.artifacts)}{isSelected ? " · 선택됨" : ""}</span>
-              <span className="mt-0.5 block break-all text-[12px] text-ink-2">{revision.submission.artifacts?.map((artifact) => artifact.fileName).join(", ")}</span>
+              <span className="mt-0.5 block break-all text-caption text-ink-2">{revision.submission.artifacts?.map((artifact) => artifact.fileName).join(", ")}</span>
               {duplicateTargetKeys.has(sealedTargetSubjectKey({ submissionRef: revision.submissionRef, revision: revision.submission.revision })) && (
-                <span className="mt-0.5 block break-all font-mono text-[11.5px] text-ink-muted">제출 식별자 · {revision.submissionRef}</span>
+                <span className="mt-0.5 block break-all font-mono text-caption text-ink-muted">제출 식별자 · {revision.submissionRef}</span>
               )}
             </button>
             {!hasDsm(revision) && <p>DSM 없음: 표시는 가능하지만 독립 검사점·높이 확인·변화 분석은 제한됩니다.</p>}
@@ -1310,7 +1311,7 @@ export function ExternalEvidencePanel({
           <p>비교할 이전 등록 버전 또는 작업구역을 읽지 못했습니다.</p>
           {pairLoad === "partial" && (
             <p>
-              일부 같은 현장 작업의 비교 대상을 읽지 못했습니다: {pairLoadFailures.map((failure) => failure.label).join(", ")}. 목록이 완전하지 않습니다.
+              일부 같은 작업의 비교 대상을 읽지 못했습니다: {pairLoadFailures.map((failure) => failure.label).join(", ")}. 목록이 완전하지 않습니다.
             </p>
           )}
           <button className="btn" onClick={retryPairChoices}>비교 대상 다시 시도</button>
@@ -1319,7 +1320,7 @@ export function ExternalEvidencePanel({
 
       {target && (
         <>
-          <h3 className="text-[14px] font-bold">선택한 등록본 · {formatSealedTargetLabel(target.submission.revision, target.submission.artifacts)}</h3>
+          <h3 className="text-lead font-bold">선택한 등록본 · {formatSealedTargetLabel(target.submission.revision, target.submission.artifacts)}</h3>
           {/* 동결된 증거 시도가 현재 선택과 다른 문맥이면, 조용히 버리는 대신
               원래 요청의 복구 경로를 내놓는다. 선택만으로는 어떤 변이도 나가지
               않는다. 동결은 이 화면의 메모리에만 있어 새로고침·이탈·다른 기기에는
@@ -1327,8 +1328,8 @@ export function ExternalEvidencePanel({
           {uploadTargetMismatch && upload && (
             <div role="alert" className="flex flex-col gap-2 rounded-lg border border-line bg-sunk px-3 py-2">
               <p>다른 등록본에서 시작한, 전송 상태를 확인하지 못한 증거 요청이 있습니다. 이전 요청이 처리되었는지는 알 수 없습니다. 먼저 기록에서 원래 요청의 증거가 이미 있는지 확인하세요.</p>
-              <p className="break-all text-[12px] leading-5 text-ink-2">원래 요청 · 작업 {upload.workOrderId} · 제출 {upload.revision}회차 · {upload.artifactId} · {upload.file.name}</p>
-              <p className="text-[12px] leading-5 text-ink-2">이 요청은 이 화면의 메모리에만 있습니다. 새로고침·화면 이탈·다른 기기에서는 같은 요청으로 이어지지 않습니다.</p>
+              <p className="break-all text-caption leading-5 text-ink-2">원래 요청 · 작업 {upload.workOrderId} · 제출 {upload.revision}회차 · {upload.artifactId} · {upload.file.name}</p>
+              <p className="text-caption leading-5 text-ink-2">이 요청은 이 화면의 메모리에만 있습니다. 새로고침·화면 이탈·다른 기기에서는 같은 요청으로 이어지지 않습니다.</p>
               {/* 재시도 변이는 쓰기 권한과 노트북 화면 경계 안에만 둔다. 알림과
                   돌아가기는 읽기 전용이라 그대로 둔다. */}
               {canWrite ? (
@@ -1341,7 +1342,7 @@ export function ExternalEvidencePanel({
                   </div>
                 </ResponsiveActionBoundary>
               ) : (
-                <p className="text-[12px] leading-5 text-ink-2">읽기 전용 화면에서는 다시 시도할 수 없습니다. 이 화면을 유지한 채 원래 계정의 쓰기 권한이 복원되면 노트북 크기에서 같은 요청으로 다시 시도할 수 있습니다.</p>
+                <p className="text-caption leading-5 text-ink-2">읽기 전용 화면에서는 다시 시도할 수 없습니다. 이 화면을 유지한 채 원래 계정의 쓰기 권한이 복원되면 노트북 크기에서 같은 요청으로 다시 시도할 수 있습니다.</p>
               )}
               <div className="flex flex-wrap gap-2">
                 {upload.workOrderId === workOrderId && frozenRevision && (
@@ -1355,8 +1356,8 @@ export function ExternalEvidencePanel({
           {!uploadTargetMismatch && upload && !canWrite && (
             <div role="status" className="flex flex-col gap-2 rounded-lg border border-line bg-sunk px-3 py-2">
               <p>전송 상태를 확인하지 못한 증거 요청이 있습니다. 이전 요청이 처리되었는지는 알 수 없습니다. 먼저 기록에서 원래 요청의 증거가 이미 있는지 확인하세요.</p>
-              <p className="break-all text-[12px] leading-5 text-ink-2">원래 요청 · 작업 {upload.workOrderId} · 제출 {upload.revision}회차 · {upload.artifactId} · {upload.file.name}</p>
-              <p className="text-[12px] leading-5 text-ink-2">읽기 전용 화면에서는 다시 시도할 수 없습니다. 이 화면을 유지한 채 원래 계정의 쓰기 권한이 복원되면 같은 요청으로 다시 시도할 수 있습니다. 새로고침·화면 이동·기기 변경 시 이 화면의 요청은 사라집니다.</p>
+              <p className="break-all text-caption leading-5 text-ink-2">원래 요청 · 작업 {upload.workOrderId} · 제출 {upload.revision}회차 · {upload.artifactId} · {upload.file.name}</p>
+              <p className="text-caption leading-5 text-ink-2">읽기 전용 화면에서는 다시 시도할 수 없습니다. 이 화면을 유지한 채 원래 계정의 쓰기 권한이 복원되면 같은 요청으로 다시 시도할 수 있습니다. 새로고침·화면 이동·기기 변경 시 이 화면의 요청은 사라집니다.</p>
             </div>
           )}
           {/* 확인하지 못한 사용 결정도 읽기 전용에서 모름·기록 확인을 잃지
@@ -1369,8 +1370,8 @@ export function ExternalEvidencePanel({
           {/* 사용 결정 기록 조회(GET)도 scoped 배포 범위 밖이라 닫혀 있다. 확정
               403 조회를 내놓지 않고 닫힘 안내로 연결한다. */}
           {!legacyDecisionClosed && (
-          <details>
-            <summary>과거 판정 기록 조회</summary>
+          <section className="grid gap-2" aria-label="과거 판정 기록 조회">
+            <h3 className="font-semibold">과거 판정 기록 조회</h3>
             <label className="flex flex-col gap-1 font-semibold">과거 판정 기록 참조
               <input
                 aria-label="과거 판정 기록 참조"
@@ -1379,19 +1380,19 @@ export function ExternalEvidencePanel({
                 onChange={(event) => setHistoryRef(event.target.value)}
               />
             </label>
-            <p className="text-[12px] leading-5 text-ink-2">판정 영수증에 있는 전체 참조를 붙여넣으세요.</p>
+            <p className="text-caption leading-5 text-ink-2">판정 영수증에 있는 전체 참조를 붙여넣으세요.</p>
             <button className="btn w-fit" onClick={() => void loadHistoricalDecision()}>과거 기록 조회</button>
             {history && <DecisionReceipt decision={history} historical />}
-          </details>
+          </section>
           )}
 
           {canWrite && (
             <>
               {legacyDecisionClosed && (
                 <div role="status" className="flex flex-col gap-2 rounded-lg border border-line bg-sunk px-3 py-2">
-                  <h3 className="text-[14px] font-bold">사용 결정 요청 닫힘</h3>
-                  <p className="text-[12px] leading-5 text-ink-2">이 화면의 사용 결정 요청(화면·높이·비교·측정 확인)은 현재 계정의 배포 범위에 열려 있지 않아 보낼 수 없습니다. 이 화면에서는 새로운 사용 결정 요청을 보내지 않습니다. 노트북 화면에서도 마찬가지입니다. 등록된 증거·검사 상태·봉인 기록은 그대로 볼 수 있습니다.</p>
-                  <p className="text-[12px] leading-5 text-ink-2">새로운 두 시점 관측 변화 분석은 현장의 분석 화면에서 진행합니다.</p>
+                  <h3 className="text-lead font-bold">사용 결정 요청 닫힘</h3>
+                  <p className="text-caption leading-5 text-ink-2">이 화면의 사용 결정 요청(화면·높이·비교·측정 확인)은 현재 계정의 배포 범위에 열려 있지 않아 보낼 수 없습니다. 이 화면에서는 새로운 사용 결정 요청을 보내지 않습니다. 노트북 화면에서도 마찬가지입니다. 등록된 증거·검사 상태·봉인 기록은 그대로 볼 수 있습니다.</p>
+                  <p className="text-caption leading-5 text-ink-2">새로운 두 시점 관측 변화 분석은 현장의 분석 화면에서 진행합니다.</p>
                   <a className="btn w-fit" href={`/sites/${encodeURIComponent(siteId)}/analysis`}>분석 화면 열기</a>
                 </div>
               )}
@@ -1404,17 +1405,17 @@ export function ExternalEvidencePanel({
               <div>
                 {!legacyDecisionClosed && (
                   <>
-                <p className="text-[12px] leading-5 text-ink-2">같은 조건의 확인 요청은 같은 요청으로 재시도됩니다.</p>
+                <p className="text-caption leading-5 text-ink-2">같은 조건의 확인 요청은 같은 요청으로 재시도됩니다.</p>
                 {canWrite && !canBindNewAttempt && (
-                  <p role="alert" className="text-[12px] leading-5 text-high-ink">계정을 확인하지 못해 새 확인 요청을 시작할 수 없습니다. 연결과 로그인 상태를 확인한 뒤 화면을 다시 여세요. 이미 시작한 요청의 같은 키 재시도는 계속할 수 있습니다. 새로고침하면 입력과 요청이 사라집니다.</p>
+                  <p role="alert" className="text-caption leading-5 text-high-ink">계정을 확인하지 못해 새 확인 요청을 시작할 수 없습니다. 연결과 로그인 상태를 확인한 뒤 화면을 다시 여세요. 이미 시작한 요청의 같은 키 재시도는 계속할 수 있습니다. 새로고침하면 입력과 요청이 사라집니다.</p>
                 )}
                   </>
                 )}
                 {hasDsm(target) && (
                   <>
-                    <h3 className="text-[14px] font-bold">독립 검사점 증거 (선택)</h3>
+                    <h3 className="text-lead font-bold">독립 검사점 증거 (선택)</h3>
                     {canWrite && !canBindNewAttempt && !upload && (
-                      <p role="alert" className="text-[12px] leading-5 text-high-ink">계정을 확인하지 못해 새 증거 선언을 시작할 수 없습니다. 연결과 로그인 상태를 확인한 뒤 화면을 다시 여세요. 이미 시작한 제출의 같은 증거 재시도는 계속할 수 있습니다. 새로고침하면 입력과 요청이 사라집니다.</p>
+                      <p role="alert" className="text-caption leading-5 text-high-ink">계정을 확인하지 못해 새 증거 선언을 시작할 수 없습니다. 연결과 로그인 상태를 확인한 뒤 화면을 다시 여세요. 이미 시작한 제출의 같은 증거 재시도는 계속할 수 있습니다. 새로고침하면 입력과 요청이 사라집니다.</p>
                     )}
                     <FilePickerField
                       label="독립 검사점 CSV"
@@ -1434,7 +1435,7 @@ export function ExternalEvidencePanel({
                       />
                     </label>
                     {uploadTargetMismatch && upload && (
-                      <p className="text-[12px] leading-5 text-ink-2">현재 선택은 원래 요청(작업 {upload.workOrderId} · 제출 {upload.revision}회차)과 다릅니다. 아래 제출 버튼은 동결된 원래 키·내용·경로를 그대로 다시 보내며, 접수 여부는 분석 시스템 기록으로만 확인합니다.</p>
+                      <p className="text-caption leading-5 text-ink-2">현재 선택은 원래 요청(작업 {upload.workOrderId} · 제출 {upload.revision}회차)과 다릅니다. 아래 제출 버튼은 동결된 원래 키·내용·경로를 그대로 다시 보내며, 접수 여부는 분석 시스템 기록으로만 확인합니다.</p>
                     )}
                     <button
                       className="btn"
@@ -1443,12 +1444,12 @@ export function ExternalEvidencePanel({
                     >
                       파일 제출 마치기
                     </button>
-                    <p className="text-[12px] leading-5 text-ink-2">마치면 파일 검사가 준비됩니다. 검증 완료를 뜻하지 않습니다.</p>
-                    <p className="text-[12px] leading-5 text-ink-2">같은 파일·선언으로는 같은 증거 요청으로 재시도됩니다.</p>
+                    <p className="text-caption leading-5 text-ink-2">마치면 파일 검사가 준비됩니다. 검증 완료를 뜻하지 않습니다.</p>
+                    <p className="text-caption leading-5 text-ink-2">같은 파일·선언으로는 같은 증거 요청으로 재시도됩니다.</p>
                     {upload && !confirmingEvidenceRestart && (
                       <>
                         <button className="btn w-fit" disabled={busy} onClick={restartEvidence}>다른 파일·선언으로 새로 시작</button>
-                        <p className="text-[12px] leading-5 text-ink-2">이미 접수된 증거가 있을 수 있으니 목록 상태를 먼저 확인하세요. 새로 시작하면 다른 증거 요청으로 등록됩니다.</p>
+                        <p className="text-caption leading-5 text-ink-2">이미 접수된 증거가 있을 수 있으니 목록 상태를 먼저 확인하세요. 새로 시작하면 다른 증거 요청으로 등록됩니다.</p>
                       </>
                     )}
                     {upload && confirmingEvidenceRestart && (
@@ -1465,7 +1466,7 @@ export function ExternalEvidencePanel({
 
                 {!legacyDecisionClosed && (
                   <>
-                <h3 className="text-[14px] font-bold">화면·높이 확인</h3>
+                <h3 className="text-lead font-bold">화면·높이 확인</h3>
                 <button
                   className="btn"
                   disabled={!newIntentAllowed && currentSlot("DISPLAY")?.phase !== "error"}
@@ -1503,7 +1504,7 @@ export function ExternalEvidencePanel({
                   </>
                 )}
 
-                <h3 className="text-[14px] font-bold">두 시점 비교</h3>
+                <h3 className="text-lead font-bold">두 시점 비교</h3>
                 <label className="flex flex-col gap-1 font-semibold">비교할 이전 등록 버전
                 <select
                   aria-label="비교할 이전 등록 버전"
@@ -1573,7 +1574,7 @@ export function ExternalEvidencePanel({
                   </>
                 )}
 
-                <h3 className="text-[14px] font-bold">한 시점 측정</h3>
+                <h3 className="text-lead font-bold">한 시점 측정</h3>
                 <label className="flex flex-col gap-1 font-semibold">한 시점 측정 구역
                 <select
                   aria-label="한 시점 측정 구역"

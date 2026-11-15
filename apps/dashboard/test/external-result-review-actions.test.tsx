@@ -216,15 +216,15 @@ it("names the missing permission for each action in a popover without offering t
 
 it("keeps a closed workflow readable while refusing every new intent", async () => {
   const { rerender } = render(<ExternalResultReviewActions {...props({ newIntentAllowed: false })} />);
-  expect(await screen.findByText("업무 종료 상태에서는 새 결과 검토를 기록할 수 없습니다.")).toBeTruthy();
+  expect(await screen.findByText("작업 종료 상태에서는 새 결과 검토를 기록할 수 없습니다.")).toBeTruthy();
 
   rerender(<ExternalResultReviewActions {...props({
     review: reviewReceipt(),
     proposals: [proposalView()],
     newIntentAllowed: false,
   })} />);
-  expect(await screen.findByText("업무 종료 상태에서는 새 재관측 제안을 기록할 수 없습니다.")).toBeTruthy();
-  expect(screen.getByText("업무 종료 상태에서는 새 후속 작업 승인을 시작할 수 없습니다.")).toBeTruthy();
+  expect(await screen.findByText("작업 종료 상태에서는 새 재관측 제안을 기록할 수 없습니다.")).toBeTruthy();
+  expect(screen.getByText("작업 종료 상태에서는 새 후속 작업 승인을 시작할 수 없습니다.")).toBeTruthy();
   expect(screen.getByText("재관측 제안이 기록되었습니다.")).toBeTruthy();
   expect(fetchMock).not.toHaveBeenCalled();
 });

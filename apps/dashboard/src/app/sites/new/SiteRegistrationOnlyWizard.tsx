@@ -1387,7 +1387,7 @@ export function SiteRegistrationOnlyWizard({
             <p className="font-semibold break-keep">
               확인되지 않은 이전 요청이 {entries.length}건 있습니다
             </p>
-            <p className="text-[12px] break-keep text-ink-2">
+            <p className="text-caption break-keep text-ink-2">
               현장 목록에서 이름이 있는지 먼저 확인하세요. 기록을 지워도 서버의 등록
               상태는 바뀌지 않습니다. 실제로 등록됐던 요청의 기록을 지우면, 같은
               내용으로 다시 등록할 때 충돌 안내만 보고 헷갈릴 수 있습니다.
@@ -1395,7 +1395,7 @@ export function SiteRegistrationOnlyWizard({
           </>
         )}
         {quarantinedCount > 0 && (
-          <p className="text-[12px] break-keep text-ink-2">
+          <p className="text-caption break-keep text-ink-2">
             {`읽을 수 없는 이전 기록이 ${quarantinedCount}건 보존되어 있습니다(형식이 달라 복원할 수 없음). 삭제하지 않으며, 어느 계정의 것으로도 표시·귀속하지 않습니다.`}
           </p>
         )}
@@ -1407,7 +1407,7 @@ export function SiteRegistrationOnlyWizard({
             return (
               <li
                 key={JSON.stringify([entry.kind, entry.key, entry.originFingerprint, entry.payloadDigest])}
-                className="flex flex-wrap items-center gap-2 text-[12.5px] break-keep"
+                className="flex flex-wrap items-center gap-2 text-body break-keep"
               >
                 <span className="font-medium">
                   {showDetails
@@ -1421,7 +1421,7 @@ export function SiteRegistrationOnlyWizard({
                   <button
                     type="button"
                     onClick={() => dismissPriorUnknown(entry)}
-                    className="tap-target rounded-md border border-line-strong bg-surface px-2 py-1 text-[12px]"
+                    className="tap-target rounded-md border border-line-strong bg-surface px-2 py-1 text-caption"
                   >
                     기록 지우기
                   </button>
@@ -1680,7 +1680,7 @@ export function SiteRegistrationOnlyWizard({
         <div className="flex flex-col gap-3 rounded-lg border border-line bg-sunk p-4 text-sm text-ink-1">
           <h2 className="font-semibold break-keep">다른 계정의 입력입니다</h2>
           <p className="break-keep text-ink-2">지도 입력은 이 화면에 표시하거나 보내지 않습니다. 원래 계정으로 돌아온 뒤 이 탭에 다시 포커스하면 이어서 확인할 수 있습니다.</p>
-          <p className="text-[12px] break-keep text-ink-2">미반영 지도 입력을 보존하려면 이 탭을 닫거나 새로고침하지 마세요.</p>
+          <p className="text-caption break-keep text-ink-2">미반영 지도 입력을 보존하려면 이 탭을 닫거나 새로고침하지 마세요.</p>
         </div>
       )}
       {(mapStorage === "failed" || mapConflict) && <SiteRegistrationRecoveryGuidance />}
@@ -1724,11 +1724,11 @@ export function SiteRegistrationOnlyWizard({
                 <button
                   type="button"
                   onClick={() => router.refresh()}
-                  className="btn tap-target bg-surface text-[13px]"
+                  className="btn tap-target bg-surface text-body"
                 >
                   계정 정보 새로고침
                 </button>
-                <p className="text-[12px] break-keep text-ink-2">
+                <p className="text-caption break-keep text-ink-2">
                   화면의 계정 정보가 최신이 아닐 수 있습니다. 새로고침 뒤에도 차단되면
                   원래 계정으로 돌아와 다시 시도하세요. BFF가 현재 세션을 매번
                   확인하므로 차단 상태에서는 Core에 보내지 않습니다.
@@ -1756,7 +1756,7 @@ export function SiteRegistrationOnlyWizard({
               : "이 입력이 어느 계정의 것인지 확인할 수 없어 표시하지도 보내지도 않습니다. " +
                 "삭제하지 않았습니다. 원래 계정과 이전 요청을 먼저 확인하세요."}
           </p>
-          <p className="text-[12px] break-keep text-ink-2">
+          <p className="text-caption break-keep text-ink-2">
             이 화면에서 입력을 지우는 방법은 없습니다 — 원본 삭제를 어느 계정에도
             허용하지 않기 때문입니다.
           </p>
@@ -1798,10 +1798,10 @@ export function SiteRegistrationOnlyWizard({
           )}
 
           <fieldset className="flex flex-col gap-2 sm:col-span-2">
-            <legend className="text-[12.5px] font-semibold break-keep text-ink-1">
+            <legend className="text-body font-semibold break-keep text-ink-1">
               외부 클라우드 처리 동의
             </legend>
-            <p className="text-[13px] leading-5 break-keep text-ink-2">
+            <p className="text-body leading-5 break-keep text-ink-2">
               등록 후 변경할 수 없습니다. 허용 또는 불허를 고르면 처리 기준 관할이 필요합니다.
             </p>
             {EGRESS_CHOICE_OPTIONS.map((opt) => (
@@ -1823,13 +1823,13 @@ export function SiteRegistrationOnlyWizard({
                 />
                 <span>
                   <span className="block font-medium">{opt.value === "unset" ? "미정 (기본값 — 등록 후 변경 불가)" : opt.value === "deny" ? "아니오 — 외부 클라우드 처리를 허용하지 않음" : opt.label}</span>
-                  {opt.value === "unset" && <span className="mt-0.5 block text-[13px] leading-5 break-keep text-ink-2">벤더 클라우드 처리 작업을 발급할 수 없습니다.</span>}
+                  {opt.value === "unset" && <span className="mt-0.5 block text-body leading-5 break-keep text-ink-2">벤더 클라우드 처리 작업을 발급할 수 없습니다.</span>}
                 </span>
               </label>
             ))}
           </fieldset>
 
-          <p className="text-[13px] leading-5 break-keep text-ink-2 sm:col-span-2">
+          <p className="text-body leading-5 break-keep text-ink-2 sm:col-span-2">
             다음 단계의 OpenStreetMap 타일 요청은 보는 지도 범위와 접속 IP를 제공자에게 전달할 수 있습니다. 클라우드 처리 선택 및 AI 동의와 별개입니다.
           </p>
 
@@ -1854,10 +1854,10 @@ export function SiteRegistrationOnlyWizard({
           )}
 
           <fieldset className="flex flex-col gap-2 rounded-md border border-line-strong bg-surface px-3 py-3 sm:col-span-2">
-            <legend className="text-[12.5px] font-semibold break-keep text-ink-1">
+            <legend className="text-body font-semibold break-keep text-ink-1">
               KSI AI 활용 동의 (선택 사항)
             </legend>
-            <p className="text-[13px] leading-5 break-keep text-ink-2">
+            <p className="text-body leading-5 break-keep text-ink-2">
               외부 클라우드 처리 선택과 별개이며 기본값은 허용하지 않음입니다. 허용된 현장 정보에 접근하려면 별도 설정과 권한이 필요하며, 동의만으로 AI가 실행되지는 않습니다. 이 등록 과정에서는 고객 원본 사진을 요청하지 않습니다.
             </p>
             <label className="tap-target flex items-start gap-2 text-sm">
@@ -1932,17 +1932,17 @@ export function SiteRegistrationOnlyWizard({
             <section className="flex flex-col gap-3 rounded-lg border border-line bg-sunk p-4 text-sm sm:col-span-2">
               <h2 className="font-semibold break-keep">등록 내용을 확인하세요</h2>
               <dl className="grid gap-2 sm:grid-cols-2">
-                <div><dt className="text-[11.5px] text-ink-muted">현장</dt><dd className="font-medium">{form.name.trim()}</dd></div>
+                <div><dt className="text-caption text-ink-muted">현장</dt><dd className="font-medium">{form.name.trim()}</dd></div>
                 {mode === "LEGACY_SITE_ID" && (
-                  <div><dt className="text-[11.5px] text-ink-muted">현장 ID</dt><dd className="num break-token">{trimmedSiteId}</dd></div>
+                  <div><dt className="text-caption text-ink-muted">현장 ID</dt><dd className="num break-token">{trimmedSiteId}</dd></div>
                 )}
-                <div><dt className="text-[11.5px] text-ink-muted">현장 범위</dt><dd>{form.aoi.length}개 꼭짓점</dd></div>
-                <div><dt className="text-[11.5px] text-ink-muted">현장 좌표계</dt><dd className="num break-token">{form.crs.trim()}</dd></div>
-                <div><dt className="text-[11.5px] text-ink-muted">외부 클라우드 처리</dt><dd>{form.egressChoice === "allow" ? "허용" : form.egressChoice === "deny" ? "허용하지 않음 — 벤더 클라우드 처리 작업 발급 불가" : "미정 — 벤더 클라우드 처리 작업 발급 불가, 등록 후 변경 불가"}</dd></div>
-                <div><dt className="text-[11.5px] text-ink-muted">처리 기준 관할</dt><dd className="num break-token">{jurisdictionRequired ? form.jurisdiction.trim() : "—"}</dd></div>
-                <div><dt className="text-[11.5px] text-ink-muted">외부 AI 접근 동의</dt><dd>{form.aiEgressAllowed ? "허용 — 실제 접근에는 별도 설정과 권한이 필요" : "허용하지 않음(기본값)"}</dd></div>
+                <div><dt className="text-caption text-ink-muted">현장 범위</dt><dd>{form.aoi.length}개 꼭짓점</dd></div>
+                <div><dt className="text-caption text-ink-muted">현장 좌표계</dt><dd className="num break-token">{form.crs.trim()}</dd></div>
+                <div><dt className="text-caption text-ink-muted">외부 클라우드 처리</dt><dd>{form.egressChoice === "allow" ? "허용" : form.egressChoice === "deny" ? "허용하지 않음 — 벤더 클라우드 처리 작업 발급 불가" : "미정 — 벤더 클라우드 처리 작업 발급 불가, 등록 후 변경 불가"}</dd></div>
+                <div><dt className="text-caption text-ink-muted">처리 기준 관할</dt><dd className="num break-token">{jurisdictionRequired ? form.jurisdiction.trim() : "—"}</dd></div>
+                <div><dt className="text-caption text-ink-muted">외부 AI 접근 동의</dt><dd>{form.aiEgressAllowed ? "허용 — 실제 접근에는 별도 설정과 권한이 필요" : "허용하지 않음(기본값)"}</dd></div>
               </dl>
-              <p className="text-[12px] break-keep text-ink-2">
+              <p className="text-caption break-keep text-ink-2">
                 현장 등록과 자료 검사·분석은 별개입니다. 등록 후 작업구역과 관측 자료를 확인하세요.
               </p>
             </section>
@@ -1959,11 +1959,11 @@ export function SiteRegistrationOnlyWizard({
                   실패로 이 화면이 사라져도, 이 ID·이름이 다음 행동의 기준점이다. */}
               <dl className="grid gap-2 sm:grid-cols-2">
                 <div>
-                  <dt className="text-[11.5px] text-safe-ink/70">현장</dt>
+                  <dt className="text-caption text-safe-ink/70">현장</dt>
                   <dd className="font-medium break-keep text-safe-ink">{confirmedSiteName || "이름 확인 안 됨"}</dd>
                 </div>
                 <div>
-                  <dt className="text-[11.5px] text-safe-ink/70">현장 ID</dt>
+                  <dt className="text-caption text-safe-ink/70">현장 ID</dt>
                   <dd className="num font-medium break-token text-safe-ink">{confirmedSiteId || "ID 확인 안 됨"}</dd>
                 </div>
               </dl>
@@ -1976,13 +1976,13 @@ export function SiteRegistrationOnlyWizard({
                   ? "현장에서 작업구역과 관측 자료를 확인하세요."
                   : "현장에서 작업구역을 확인하고 관측 자료 등록을 이어가세요."}
               </p>
-              <p className="text-[12px] break-keep text-safe-ink/80">
+              <p className="text-caption break-keep text-safe-ink/80">
                 좌측 현장 목록·건수는 다음 화면으로 이동하면 서버 기준으로 반영됩니다.
                 이 화면에서는 바로 바뀌지 않지만, 위 현장 ID로의 등록은 끝났습니다.
                 아래에서 목록을 직접 열어 ID가 있는지 확인할 수 있습니다.
               </p>
               {!receiptPersisted && (
-                <div className="text-[12px] break-keep text-safe-ink/80">
+                <div className="text-caption break-keep text-safe-ink/80">
                   <p>
                   이 확인은 이 화면에서만 유지됩니다. 등록은 확인됐지만 초안 또는 영수증 저장·정리를 확인하지 못했습니다. 이전 요청 기록을 보존하고 자동 이동을 막았습니다. 이 탭을 유지하고 현장 ID를 목록에서 확인하세요.
                   </p>
@@ -1996,7 +1996,7 @@ export function SiteRegistrationOnlyWizard({
                 href="/sites"
                 target={!receiptPersisted ? "_blank" : undefined}
                 rel={!receiptPersisted ? "noopener noreferrer" : undefined}
-                className="tap-target self-start text-[13px] font-semibold break-keep text-safe-ink underline underline-offset-2"
+                className="tap-target self-start text-body font-semibold break-keep text-safe-ink underline underline-offset-2"
               >
                 현장 목록에서 직접 확인하기
               </Link>

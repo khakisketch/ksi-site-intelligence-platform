@@ -1,3 +1,5 @@
+import { PageHeader } from "@/components/ui/PageHeader";
+import { Disclosure } from "@/components/ui/Disclosure";
 import Link from "next/link";
 
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -120,23 +122,20 @@ export default async function FieldWorkListPage({ searchParams }: {
 
   return (
       <div className="console-page">
-        <header className="flex flex-col gap-2.5">
-          <FieldWorkNav active="orders" showTeam={showTeam} />
-          <div className="console-work-heading pt-1">
-            <div className="min-w-0 flex-1">
-              <h2 className="console-page-title">관측 작업</h2>
-            </div>
-            {canCreateObservation ? (
-              <Link href="/field/new" className="btn btn-primary tap-target">관측 자료 등록</Link>
-            ) : (
-              <ActionUnavailable label="관측 자료 등록" description="현재 계정으로는 관측 자료를 등록할 수 없습니다. 작업 등록 권한이 있는 담당자에게 문의하세요." />
-            )}
-            <p className="console-page-description !mt-0 basis-full">조직의 관측 작업 기록입니다. 나에게 배정되거나 공유된 항목은 받은 업무에서 확인하세요.</p>
-          </div>
-        </header>
+        <FieldWorkNav active="orders" showTeam={showTeam} />
+        <PageHeader
+          title="작업"
+          description="조직의 작업 기록을 현장별로 확인하세요."
+          headingLevel={2}
+          actions={canCreateObservation ? (
+            <Link href="/field/new" className="btn btn-primary tap-target">관측 자료 등록</Link>
+          ) : (
+            <ActionUnavailable label="관측 자료 등록" description="현재 계정으로는 관측 자료를 등록할 수 없습니다. 작업 등록 권한이 있는 담당자에게 문의하세요." />
+          )}
+        />
         <WorkQueueOperationsNotices notices={notices} />
         {workOrders.length === 0 ? (
-          <EmptyState title="등록된 관측 작업이 없습니다" description="현장 화면에서 작업구역을 확인하고 관측 자료 등록을 시작할 수 있습니다." action={{ label: "현장 보기", href: "/sites" }} />
+          <EmptyState title="등록된 작업이 없습니다" description="현장 화면에서 작업구역을 확인하고 관측 자료 등록을 시작할 수 있습니다." action={{ label: "현장 보기", href: "/sites" }} />
         ) : (
           <>
             <nav className="flex flex-wrap items-center gap-x-1 gap-y-2 border-b border-line pb-3 sm:flex-nowrap sm:gap-1 sm:overflow-x-auto" aria-label="작업 요약">
@@ -145,17 +144,17 @@ export default async function FieldWorkListPage({ searchParams }: {
                 <Link key={key} href={filterHref(key)} aria-current={groupKey === key ? "page" : undefined} className="console-filter-link">{label}<span className="tabular-nums text-ink-muted">{summary[key].length}</span></Link>
               ))}
             </nav>
-            <form action="/field" className="flex flex-wrap items-end gap-3" role="search" aria-label="관측 작업 검색">
+            <form action="/field" className="flex flex-wrap items-end gap-3" role="search" aria-label="작업 검색">
               {groupKey && <input type="hidden" name="group" value={groupKey} />}
-              <label className="grid min-w-0 flex-1 basis-56 gap-1.5 text-[12px] font-medium sm:max-w-md">작업 검색<input className="input w-full" type="search" name="q" defaultValue={query} placeholder="작업명 또는 현장명" /></label>
-              <label className="grid min-w-0 gap-1.5 text-[12px] font-medium">현장<select className="input w-full sm:max-w-64" name="site" defaultValue={params.site ?? ""}><option value="">전체 현장</option>{[...siteById.values()].filter((site) => siteIds.includes(site.siteId)).map((site) => <option key={site.siteId} value={site.siteId}>{site.name}</option>)}</select></label>
+              <label className="grid min-w-0 flex-1 basis-56 gap-1.5 text-caption font-medium sm:max-w-md">작업 검색<input className="input w-full" type="search" name="q" defaultValue={query} placeholder="작업명 또는 현장명" /></label>
+              <label className="grid min-w-0 gap-1.5 text-caption font-medium">현장<select className="input w-full sm:max-w-64" name="site" defaultValue={params.site ?? ""}><option value="">전체 현장</option>{[...siteById.values()].filter((site) => siteIds.includes(site.siteId)).map((site) => <option key={site.siteId} value={site.siteId}>{site.name}</option>)}</select></label>
               <button className="btn" type="submit">검색</button>
-              {(query || params.site || groupKey) && <Link href="/field" className="tap-target inline-flex items-center px-2 text-[12px] underline">필터 초기화</Link>}
+              {(query || params.site || groupKey) && <Link href="/field" className="tap-target inline-flex items-center px-2 text-caption underline">필터 초기화</Link>}
             </form>
-            <section aria-label="관측 작업 목록" className="overflow-hidden rounded-lg border border-line bg-surface">
-              <div className="flex items-center justify-between border-b border-line px-4 py-3 text-[12px] text-ink-2"><span>{groupKey ? GROUPS.find(([key]) => key === groupKey)?.[1] : "전체 작업"}</span><span role="status" className="tabular-nums">{matching.length}건 표시</span></div>
-              <div className="hidden grid-cols-[minmax(0,1fr)_140px_110px_150px] gap-4 border-b border-line bg-page px-4 py-2.5 text-[12px] text-ink-muted xl:grid" aria-hidden="true"><span>작업 · 현장</span><span>담당</span><span>기한</span><span>상태</span></div>
-              {matching.length === 0 ? <EmptyState title="조건에 맞는 작업이 없습니다" description="검색어나 상태·현장 필터를 바꿔 보세요." action={{ label: "필터 초기화", href: "/field" }} /> : <ul className="divide-y divide-line">
+            <section aria-label="작업 목록" className="overflow-hidden rounded-lg border border-line bg-surface">
+              <div className="flex items-center justify-between border-b border-line px-4 py-3 text-caption text-ink-2"><span>{groupKey ? GROUPS.find(([key]) => key === groupKey)?.[1] : "전체 작업"}</span><span role="status" className="tabular-nums">{matching.length}건 표시</span></div>
+              <div className="hidden grid-cols-[minmax(0,1fr)_140px_110px_150px] gap-4 border-b border-line bg-page px-4 py-2.5 text-caption text-ink-muted xl:grid" aria-hidden="true"><span>작업 · 현장</span><span>담당</span><span>기한</span><span>상태</span></div>
+              {matching.length === 0 ? <EmptyState title="조건에 맞는 작업이 없습니다" description="검색어나 상태·현장 필터를 바꿔 보세요." compact /> : <ul className="divide-y divide-line">
                       {matching.map(({ key, order }) => {
                         const state = presentWorkOrder(order.status, order.executionMode);
                         const siteName = siteById.get(order.siteId)?.name ?? null;
@@ -169,21 +168,22 @@ export default async function FieldWorkListPage({ searchParams }: {
                         });
                         return (
                           <li key={order.workOrderId}>
-                            <Link href={`/field/work-orders/${encodeURIComponent(order.workOrderId)}`} className="tap-target grid grid-cols-2 gap-x-4 gap-y-2 px-4 py-4 hover:bg-page xl:grid-cols-[minmax(0,1fr)_140px_110px_150px] xl:items-center">
+                            <Link href={`/field/work-orders/${encodeURIComponent(order.workOrderId)}`} className="tap-target grid grid-cols-2 gap-x-4 gap-y-1.5 px-4 py-3 hover:bg-page xl:grid-cols-[minmax(0,1fr)_140px_110px_150px] xl:items-center">
                               <span className="col-span-2 min-w-0 flex-1 xl:col-span-1">
-                                <span className="block break-words break-keep text-[14px] font-semibold">{order.name}</span>
-                                <span className="mt-1 block break-words break-keep text-[12px] leading-5 text-ink-2">{context}</span>
+                                <span className="block break-words break-keep text-lead font-semibold">{order.name}</span>
+                                <span className="mt-1 block break-words break-keep text-caption leading-5 text-ink-2">{context}</span>
                               </span>
-                              <span className="min-w-0 break-words text-[12px] text-ink-2"><span className="xl:hidden">담당 · </span>{operation ? operation.assigneePrincipalId === session.principal.principalId ? "나" : operation.assigneePrincipalId ?? "미배정" : "확인 불가"}</span>
-                              <span className="text-[12px] text-ink-2 tabular-nums"><span className="xl:hidden">기한 · </span>{operation ? operation.dueAt ? formatKoreanDateTime(operation.dueAt, { dateStyle: "short", timeStyle: "short" }) : "미정" : "확인 불가"}</span>
+                              {/* 좁은 화면에서는 값이 있는 담당·기한만 둔다 — "미배정·미정"이 행마다 한 줄을
+                                  차지하면 목록이 상태 대신 빈칸을 읽게 만든다. 표 배치(xl)는 열을 유지한다. */}
+                              <span className={`min-w-0 break-words text-caption text-ink-2${operation && !operation.assigneePrincipalId ? " max-xl:hidden" : ""}`}><span className="xl:hidden">담당 · </span>{operation ? operation.assigneePrincipalId === session.principal.principalId ? "나" : operation.assigneePrincipalId ?? "미배정" : "확인 불가"}</span>
+                              <span className={`text-caption text-ink-2 tabular-nums${operation && !operation.dueAt ? " max-xl:hidden" : ""}`}><span className="xl:hidden">기한 · </span>{operation ? operation.dueAt ? formatKoreanDateTime(operation.dueAt, { dateStyle: "short", timeStyle: "short" }) : "미정" : "확인 불가"}</span>
                               <span className="col-span-2 xl:col-span-1">
                               <StateBadge label={key === "completed" ? "이력 보기" : key === "operationsUnavailable" ? "담당·기한 상태 확인" : state.label} tone={key === "completed" ? "neutral" : key === "operationsUnavailable" ? "warning" : state.tone} />
                               </span>
                             </Link>
-                            {rowsNeedingTechnicalRef.has(order.workOrderId) && <details className="px-4 pb-2 text-[11.5px] text-ink-muted">
-                              <summary className="tap-target inline-flex cursor-pointer items-center font-semibold">파일 정보</summary>
+                            {rowsNeedingTechnicalRef.has(order.workOrderId) && <Disclosure label="식별 상세" className="px-4 pb-2 text-caption text-ink-muted">
                               <p className="mt-1 break-all">작업 {order.workOrderId} · 현장 {siteName ?? SITE_NAME_UNAVAILABLE} ({order.siteId}) · 구역 {formatWorkAreaTechnicalRefs(order.workAreaIds)} · {formatKoreanDateTime(order.updatedAt, { dateStyle: "medium", timeStyle: "short" })} 갱신</p>
-                            </details>}
+                            </Disclosure>}
                           </li>
                         );
                       })}

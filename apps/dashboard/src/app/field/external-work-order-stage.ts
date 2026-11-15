@@ -20,6 +20,32 @@ export type ExternalStagePresentation = {
   anchor: string;
 };
 
+/** 외부 산출물 작업의 진행 순서 — 상세 화면의 단계 표시가 쓴다. */
+export const EXTERNAL_STAGE_STEPS = ["산출물 등록", "업로드·봉인", "검사·비교", "결과 검토"] as const;
+
+/**
+ * 단계 표시에서 현재로 둘 자리. 보존된 사실에서 나온 `stage`만 옮기며 새 판정을
+ * 만들지 않는다. 후속 관측까지 계획된 작업은 모든 단계가 지난 것으로(길이와 같은
+ * 값), 종료된 작업은 현재 단계 없이(null) 순서만 보여 준다.
+ */
+export function externalStageStepIndex(stage: ExternalStage): number | null {
+  switch (stage) {
+    case "REGISTER":
+      return 0;
+    case "SEAL":
+      return 1;
+    case "DECIDE":
+      return 2;
+    case "REVIEW":
+    case "PROPOSE":
+      return 3;
+    case "DONE":
+      return EXTERNAL_STAGE_STEPS.length;
+    case "CLOSED":
+      return null;
+  }
+}
+
 /**
  * Derives the operator's next action for an external-reconstruction work order
  * from retained facts only. It never infers processing, flight or device state.
@@ -28,7 +54,7 @@ export function deriveExternalWorkOrderStage(input: ExternalStageInput): Externa
   if (input.workflowClosed) {
     return {
       stage: "CLOSED",
-      label: "업무 종료",
+      label: "작업 종료",
       detail: "이 작업은 종료되었습니다. 새 산출물 등록과 비교·검토 요청은 시작할 수 없으며, 이미 등록한 파일과 결과는 계속 확인할 수 있습니다.",
       tone: "neutral",
       anchor: "external-submissions",

@@ -94,7 +94,7 @@ describe("WorkInboxPanel 맥락 이름", () => {
   });
 
   it("긴 작업 이름도 잘라내지 않고 현장 줄과 함께 감싼다", () => {
-    const longName = "[합성] 동측 절토구역 장마 이후 지형 변화 확인을 위한 매우 긴 관측 작업 이름";
+    const longName = "[합성] 동측 절토구역 장마 이후 지형 변화 확인을 위한 매우 긴 작업 이름";
     render(<WorkInboxPanel
       initialUnreadOnly
       initialNextCursor={null}

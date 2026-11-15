@@ -1,5 +1,6 @@
 "use client";
 
+import { Disclosure } from "@/components/ui/Disclosure";
 import { useRef, useState } from "react";
 
 import { ResponsiveActionBoundary } from "@/components/responsive/ResponsiveActionBoundary";
@@ -272,27 +273,31 @@ export function TeamRosterPanel({ initialMembers, canManage, currentPrincipalId,
 
   return <div className="flex flex-col gap-4">
     <section className="rounded-xl border border-line bg-surface px-4 py-3">
-      <h2 className="text-[15px] font-bold">조직 작업 팀</h2>
-      <p className="mt-1 text-[12.5px] leading-5 text-ink-2">업무 구분은 작업 흐름 안내용 정보입니다. 계정 생성·로그인 초대·권한 부여는 여기서 하지 않습니다.</p>
-      <p className="mt-2 text-[12px] text-ink-muted">현재 사용자 · {currentPrincipalId}</p>
+      <h2 className="text-lead font-bold">조직 작업 팀</h2>
+      <p className="mt-1 text-caption leading-5 text-ink-2">업무 구분은 작업 흐름 안내용 정보입니다. 계정 생성·로그인 초대·권한 부여는 여기서 하지 않습니다.</p>
+      <p className="mt-2 text-caption text-ink-muted">현재 사용자 · {currentPrincipalId}</p>
     </section>
     <section className="overflow-hidden rounded-xl border border-line bg-surface">
-      <ul className="divide-y divide-line px-4">{members.map((member) => <li key={member.principalId} className="flex flex-wrap items-center justify-between gap-2 py-3"><span><span className="block text-[14px] font-semibold">{member.displayName}</span><span className="block text-[12px] text-ink-2">{member.principalId} · 업무 구분 {roleLabel(member.roleHint)} · {member.status === "ACTIVE" ? "활성" : "비활성"}</span></span>{canManage && <button className="btn" disabled={frozenSave} onClick={() => edit(member)}>수정</button>}</li>)}</ul>
-      {members.length === 0 && (canManage ? <p className="px-4 py-3 text-[13px] text-ink-2">작업 배정과 결과 공유에 쓸 팀원 정보를 추가할 수 있습니다. 이 등록은 계정이나 권한을 만들지 않습니다.</p> : <p className="px-4 py-3 text-[13px] text-ink-2">등록된 팀원 정보가 없습니다. 작업 배정·공유 대상은 관리자에게 확인하세요.</p>)}
+      <ul className="divide-y divide-line px-4">{members.map((member) => <li key={member.principalId} className="flex flex-wrap items-center justify-between gap-2 py-3"><div className="min-w-0">
+        <p className="break-words text-lead font-semibold">{member.displayName}</p>
+        <p className="text-caption text-ink-2">업무 구분 {roleLabel(member.roleHint)} · {member.status === "ACTIVE" ? "활성" : "비활성"}</p>
+        <Disclosure label="계정 식별 상세"><p className="break-all text-caption text-ink-muted">{member.principalId}</p></Disclosure>
+      </div>{canManage && <button className="btn" disabled={frozenSave} onClick={() => edit(member)}>수정</button>}</li>)}</ul>
+      {members.length === 0 && (canManage ? <p className="px-4 py-3 text-body text-ink-2">작업 배정과 결과 공유에 쓸 팀원 정보를 추가할 수 있습니다. 이 등록은 계정이나 권한을 만들지 않습니다.</p> : <p className="px-4 py-3 text-body text-ink-2">등록된 팀원 정보가 없습니다. 작업 배정·공유 대상은 관리자에게 확인하세요.</p>)}
     </section>
     <ResponsiveActionBoundary action="WORK_ORDERS_WRITE" reason="팀원 정보는 노트북 이상의 화면에서 관리합니다.">
-      {canManage ? <section className="rounded-xl border border-line bg-surface p-4"><h2 className="text-[15px] font-bold">팀원 등록 또는 수정</h2><div className="mt-3 grid gap-3 sm:grid-cols-2"><label className="flex flex-col gap-1 text-[13px] font-semibold">사용자 ID<input aria-label="사용자 ID" disabled={frozenSave} className="input" value={draft.principalId} onChange={(event) => setDraft({ ...draft, principalId: event.target.value })} /><span className="text-[12px] font-normal text-ink-muted">조직에서 쓰는 안정된 사용자 식별자입니다.</span></label><label className="flex flex-col gap-1 text-[13px] font-semibold">표시 이름<input disabled={frozenSave} className="input" value={draft.displayName} onChange={(event) => setDraft({ ...draft, displayName: event.target.value })} /></label><label className="flex flex-col gap-1 text-[13px] font-semibold">업무 구분<select disabled={frozenSave} className="input" value={draft.roleHint} onChange={(event) => setDraft({ ...draft, roleHint: event.target.value as typeof draft.roleHint })}><option value="ADMIN">관리자</option><option value="FIELD_OPERATOR">현장담당</option><option value="VIEWER">열람자</option></select></label><label className="flex flex-col gap-1 text-[13px] font-semibold">상태<select disabled={frozenSave} className="input" value={draft.status} onChange={(event) => setDraft({ ...draft, status: event.target.value as typeof draft.status })}><option value="ACTIVE">활성</option><option value="INACTIVE">비활성</option></select></label></div><div className="mt-3 flex flex-wrap gap-2"><button className="btn btn-primary" disabled={pending !== null || !draft.principalId.trim() || !draft.displayName.trim()} onClick={() => void save()}>{pending ? "저장 중" : unresolved ? "같은 요청 다시 시도" : "팀원 정보 저장"}</button>{unresolved && !confirmingDiscard && <><button className="btn" disabled={pending !== null} onClick={() => void reloadRoster()}>최신 팀원 목록 불러오기</button><button className="btn" disabled={pending !== null} onClick={() => setConfirmingDiscard(true)}>동결된 요청 버리기</button></>}{conflictedPrincipalId && !unresolved && <button className="btn" disabled={pending !== null || unresolved !== null} onClick={() => void reloadRoster()}>최신 팀원 목록 불러오기</button>}</div>{unresolved && !confirmingDiscard && <p className="mt-2 text-[12.5px] leading-5 text-ink-2">주의: 이 요청은 이미 반영됐을 수 있습니다. 버린 뒤 다시 저장하면 새 요청(새 키)으로 기록됩니다.</p>}{unresolved && confirmingDiscard && <div className="mt-2 rounded-lg border border-line bg-sunk px-3 py-2 text-[13px] leading-5 text-ink-2"><p>정말 버릴까요? 버린 요청의 처리 여부는 알 수 없습니다. 같은 키 재시도는 사라지고, 다음 저장은 새 요청이 됩니다.</p><div className="mt-2 flex flex-wrap gap-2"><button className="btn" disabled={pending !== null} onClick={() => discardUnresolved()}>버리기 확인</button><button className="btn" disabled={pending !== null} onClick={() => setConfirmingDiscard(false)}>취소</button></div></div>}{feedback && <p role="status" className="mt-2 text-[13px] leading-5 text-ink-2">{feedback}</p>}</section> : <>{unresolved && (
+      {canManage ? <section className="rounded-xl border border-line bg-surface p-4"><h2 className="text-lead font-bold">팀원 등록 또는 수정</h2><div className="mt-3 grid gap-3 sm:grid-cols-2"><label className="flex flex-col gap-1 text-body font-semibold">사용자 ID<input aria-label="사용자 ID" disabled={frozenSave} className="input" value={draft.principalId} onChange={(event) => setDraft({ ...draft, principalId: event.target.value })} /><span className="text-caption font-normal text-ink-muted">조직에서 쓰는 안정된 사용자 식별자입니다.</span></label><label className="flex flex-col gap-1 text-body font-semibold">표시 이름<input disabled={frozenSave} className="input" value={draft.displayName} onChange={(event) => setDraft({ ...draft, displayName: event.target.value })} /></label><label className="flex flex-col gap-1 text-body font-semibold">업무 구분<select disabled={frozenSave} className="input" value={draft.roleHint} onChange={(event) => setDraft({ ...draft, roleHint: event.target.value as typeof draft.roleHint })}><option value="ADMIN">관리자</option><option value="FIELD_OPERATOR">현장담당</option><option value="VIEWER">열람자</option></select></label><label className="flex flex-col gap-1 text-body font-semibold">상태<select disabled={frozenSave} className="input" value={draft.status} onChange={(event) => setDraft({ ...draft, status: event.target.value as typeof draft.status })}><option value="ACTIVE">활성</option><option value="INACTIVE">비활성</option></select></label></div><div className="mt-3 flex flex-wrap gap-2"><button className="btn btn-primary" disabled={pending !== null || !draft.principalId.trim() || !draft.displayName.trim()} onClick={() => void save()}>{pending ? "저장 중" : unresolved ? "같은 요청 다시 시도" : "팀원 정보 저장"}</button>{unresolved && !confirmingDiscard && <><button className="btn" disabled={pending !== null} onClick={() => void reloadRoster()}>최신 팀원 목록 불러오기</button><button className="btn" disabled={pending !== null} onClick={() => setConfirmingDiscard(true)}>동결된 요청 버리기</button></>}{conflictedPrincipalId && !unresolved && <button className="btn" disabled={pending !== null || unresolved !== null} onClick={() => void reloadRoster()}>최신 팀원 목록 불러오기</button>}</div>{unresolved && !confirmingDiscard && <p className="mt-2 text-caption leading-5 text-ink-2">주의: 이 요청은 이미 반영됐을 수 있습니다. 버린 뒤 다시 저장하면 새 요청(새 키)으로 기록됩니다.</p>}{unresolved && confirmingDiscard && <div className="mt-2 rounded-lg border border-line bg-sunk px-3 py-2 text-body leading-5 text-ink-2"><p>정말 버릴까요? 버린 요청의 처리 여부는 알 수 없습니다. 같은 키 재시도는 사라지고, 다음 저장은 새 요청이 됩니다.</p><div className="mt-2 flex flex-wrap gap-2"><button className="btn" disabled={pending !== null} onClick={() => discardUnresolved()}>버리기 확인</button><button className="btn" disabled={pending !== null} onClick={() => setConfirmingDiscard(false)}>취소</button></div></div>}{feedback && <p role="status" className="mt-2 text-body leading-5 text-ink-2">{feedback}</p>}</section> : <>{unresolved && (
         <section className="rounded-xl border border-line bg-surface p-4">
-          <h2 className="text-[15px] font-bold">동결된 팀원 요청</h2>
-          <p className="mt-1 text-[12.5px] leading-5 text-ink-2">이전 저장 요청의 응답을 확인하지 못했습니다. 현재 권한으로는 다시 보낼 수 없습니다.</p>
-          <p className="mt-1 text-[12.5px] leading-5 text-ink-2">주의: 이 요청은 이미 반영됐을 수 있습니다. 버린 뒤 다시 저장하면 새 요청(새 키)으로 기록됩니다.</p>
+          <h2 className="text-lead font-bold">동결된 팀원 요청</h2>
+          <p className="mt-1 text-caption leading-5 text-ink-2">이전 저장 요청의 응답을 확인하지 못했습니다. 현재 권한으로는 다시 보낼 수 없습니다.</p>
+          <p className="mt-1 text-caption leading-5 text-ink-2">주의: 이 요청은 이미 반영됐을 수 있습니다. 버린 뒤 다시 저장하면 새 요청(새 키)으로 기록됩니다.</p>
           {!confirmingDiscard ? (
             <div className="mt-3 flex flex-wrap gap-2">
               <button className="btn" disabled={pending !== null} onClick={() => void reloadRoster()}>최신 팀원 목록 불러오기</button>
               <button className="btn" disabled={pending !== null} onClick={() => setConfirmingDiscard(true)}>동결된 요청 버리기</button>
             </div>
           ) : (
-            <div className="mt-2 rounded-lg border border-line bg-sunk px-3 py-2 text-[13px] leading-5 text-ink-2">
+            <div className="mt-2 rounded-lg border border-line bg-sunk px-3 py-2 text-body leading-5 text-ink-2">
               <p>정말 버릴까요? 버린 요청의 처리 여부는 알 수 없습니다. 같은 키 재시도는 사라지고, 다음 저장은 새 요청이 됩니다.</p>
               <div className="mt-2 flex flex-wrap gap-2">
                 <button className="btn" disabled={pending !== null} onClick={() => discardUnresolved()}>버리기 확인</button>
@@ -300,14 +305,14 @@ export function TeamRosterPanel({ initialMembers, canManage, currentPrincipalId,
               </div>
             </div>
           )}
-          {feedback && <p role="status" className="mt-2 text-[13px] leading-5 text-ink-2">{feedback}</p>}
+          {feedback && <p role="status" className="mt-2 text-body leading-5 text-ink-2">{feedback}</p>}
         </section>
       )}<ActionUnavailable label="팀원 등록/관리" description="팀 관리에는 관리자 권한이 필요합니다." /></>}
     </ResponsiveActionBoundary>
     {unresolved && (
       <div className="rounded-xl border border-line bg-surface p-4 lg:hidden">
-        <p className="text-[13px] leading-5 text-ink-2">이전 저장 요청의 응답을 확인하지 못했습니다. 결과는 알 수 없습니다.</p>
-        <p className="mt-1 text-[12.5px] leading-5 text-ink-2">이 요청의 기억은 이 화면에만 있어 새로고침·화면 이동·기기 변경 뒤에는 같은 키로 다시 시도할 수 없습니다. 노트북의 같은 화면에서 팀원 목록의 원래 기록을 먼저 확인하세요.</p>
+        <p className="text-body leading-5 text-ink-2">이전 저장 요청의 응답을 확인하지 못했습니다. 결과는 알 수 없습니다.</p>
+        <p className="mt-1 text-caption leading-5 text-ink-2">이 요청의 기억은 이 화면에만 있어 새로고침·화면 이동·기기 변경 뒤에는 같은 키로 다시 시도할 수 없습니다. 노트북의 같은 화면에서 팀원 목록의 원래 기록을 먼저 확인하세요.</p>
       </div>
     )}
   </div>;

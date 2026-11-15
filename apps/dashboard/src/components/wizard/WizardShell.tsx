@@ -81,37 +81,37 @@ export function WizardShell({
 
   return (
     <div className={layout === "steps" ? "console-page !max-w-[960px]" : `flex w-full flex-col gap-4 p-4 sm:p-5 lg:grid lg:grid-cols-[230px_minmax(0,1fr)] lg:items-start ${aside ? "xl:grid-cols-[230px_minmax(0,1fr)_320px]" : "max-w-[1200px]"}`}>
-      {layout === "steps" && <header className="hidden flex-col gap-5 lg:flex"><div className="console-page-heading"><h2 className="console-page-title">{title}</h2>{exitHref && <Link href={exitHref} className="tap-target inline-flex items-center text-[13px] text-ink-2 underline">{exitLabel}</Link>}</div><ol className="grid grid-cols-3 gap-3" aria-label="진행 단계">{stepLabels.map((label, index) => <li key={label} aria-current={index === currentStep ? "step" : undefined} className={`flex items-center gap-2 border-b-2 pb-3 text-[13px] ${index === currentStep ? "border-accent font-semibold text-ink-1" : "border-line text-ink-muted"}`}><span className="tabular-nums">{index + 1}</span>{label}</li>)}</ol>{origin}</header>}
+      {layout === "steps" && <header className="hidden flex-col gap-5 lg:flex"><div className="console-page-heading"><h2 className="console-page-title">{title}</h2>{exitHref && <Link href={exitHref} className="tap-target inline-flex items-center text-body text-ink-2 underline">{exitLabel}</Link>}</div><ol className="grid grid-cols-3 gap-3" aria-label="진행 단계">{stepLabels.map((label, index) => <li key={label} aria-current={index === currentStep ? "step" : undefined} className={`flex items-center gap-2 border-b-2 pb-3 text-body ${index === currentStep ? "border-accent font-semibold text-ink-1" : "border-line text-ink-muted"}`}><span className="tabular-nums">{index + 1}</span>{label}</li>)}</ol>{origin}</header>}
       {/* ── 좁은 화면용 축약 진행 표시 ─────────────────────────────────── */}
       <div className="flex flex-col gap-2 lg:hidden">
         <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1">
-          <p className="text-[10.5px] font-bold tracking-[0.1em] break-keep text-ink-muted uppercase">
+          <p className="text-micro font-bold tracking-[0.1em] break-keep text-ink-muted uppercase">
             {title}
           </p>
           {exitHref && (
             <Link
               href={exitHref}
-              className="text-[12.5px] font-semibold break-keep text-ink-2 underline-offset-2 hover:text-ink-1 hover:underline"
+              className="text-body font-semibold break-keep text-ink-2 underline-offset-2 hover:text-ink-1 hover:underline"
             >
               {exitLabel}
             </Link>
           )}
         </div>
         <div className="flex items-center gap-3">
-          <span className="num ring-accent/15 flex size-[26px] shrink-0 items-center justify-center rounded-full border-[1.5px] border-accent bg-accent-tint text-[12px] font-bold text-accent-ink ring-3">
+          <span className="num ring-accent/15 flex size-[26px] shrink-0 items-center justify-center rounded-full border-[1.5px] border-accent bg-accent-tint text-caption font-bold text-accent-ink ring-3">
             {currentStep + 1}
           </span>
           <div className="min-w-0 flex-1">
-            <p className="truncate text-[13px] font-semibold break-keep text-ink-1">
+            <p className="truncate text-body font-semibold break-keep text-ink-1">
               {stepLabels[currentStep]}
             </p>
             {currentStep + 1 < totalSteps && (
-              <p className="truncate text-[11.5px] break-keep text-ink-muted">
+              <p className="truncate text-caption break-keep text-ink-muted">
                 다음: {stepLabels[currentStep + 1]}
               </p>
             )}
           </div>
-          <span className="num shrink-0 text-[12px] text-ink-muted">
+          <span className="num shrink-0 text-caption text-ink-muted">
             {currentStep + 1} / {totalSteps}
           </span>
         </div>
@@ -135,13 +135,13 @@ export function WizardShell({
       <aside className={layout === "steps" ? "hidden" : "hidden flex-col gap-3 rounded-lg border border-line bg-surface p-3.5 lg:flex"}>
         {/* 초안 자동 저장은 이미 동작하지만 **말해 준 적이 없었다** — 여러 단계를
             채우는 화면에서 "나가면 날아가나"는 실제로 사람을 붙잡아 두는 불안이다. */}
-        <p className="flex items-center gap-2 rounded-md border border-line bg-sunk px-2.5 py-2 text-[11.5px] break-keep text-ink-2">
+        <p className="flex items-center gap-2 rounded-md border border-line bg-sunk px-2.5 py-2 text-caption break-keep text-ink-2">
           {draftStatusText === undefined && <span aria-hidden="true" className="size-1.5 flex-none rounded-full bg-safe" />}
           {draftStatusText ?? "임시저장됨 · 지금 나가도 입력이 남습니다"}
         </p>
 
         <div>
-          <p className="text-[10.5px] font-bold tracking-[0.1em] break-keep text-ink-muted uppercase">
+          <p className="text-micro font-bold tracking-[0.1em] break-keep text-ink-muted uppercase">
             {title}
           </p>
         </div>
@@ -162,7 +162,7 @@ export function WizardShell({
               >
                 <span
                   aria-hidden="true"
-                  className={`num grid size-[22px] place-items-center rounded-full border-[1.5px] text-[10.5px] font-bold ${
+                  className={`num grid size-[22px] place-items-center rounded-full border-[1.5px] text-micro font-bold ${
                     done
                       ? "border-accent bg-accent text-accent-on"
                       : current
@@ -174,14 +174,14 @@ export function WizardShell({
                 </span>
                 <span className="min-w-0 pt-px">
                   <span
-                    className={`block text-[12.5px] break-keep ${
+                    className={`block text-body break-keep ${
                       current ? "font-bold text-ink-1" : done ? "text-ink-2" : "text-ink-muted"
                     }`}
                   >
                     {label}
                   </span>
                   {stepHints?.[index] && (
-                    <span className="mt-px block text-[11px] break-keep text-ink-muted">
+                    <span className="mt-px block text-micro break-keep text-ink-muted">
                       {stepHints[index]}
                     </span>
                   )}
@@ -194,7 +194,7 @@ export function WizardShell({
         {exitHref && (
           <Link
             href={exitHref}
-            className="tap-target mt-auto inline-flex items-center text-[12.5px] font-semibold break-keep text-ink-2 underline-offset-2 hover:text-ink-1 hover:underline"
+            className="tap-target mt-auto inline-flex items-center text-body font-semibold break-keep text-ink-2 underline-offset-2 hover:text-ink-1 hover:underline"
           >
             {exitLabel}
           </Link>
@@ -211,7 +211,7 @@ export function WizardShell({
           <button type="button" onClick={onBack} disabled={!onBack} className="btn disabled:invisible">
             이전
           </button>
-          <span className="text-[12px] break-keep text-ink-muted">
+          <span className="text-caption break-keep text-ink-muted">
             {totalSteps}단계 중 {currentStep + 1}단계 · {draftStatusText ?? "입력 내용은 자동 저장됩니다"}
           </span>
           <button
@@ -225,7 +225,7 @@ export function WizardShell({
           </button>
         </div>
         {nextDisabled && nextDisabledReason && (
-          <p className="border-t border-line bg-page px-4 pb-3 text-[12px] break-keep text-ink-2 sm:px-5">
+          <p className="border-t border-line bg-page px-4 pb-3 text-caption break-keep text-ink-2 sm:px-5">
             {nextDisabledReason}
           </p>
         )}
