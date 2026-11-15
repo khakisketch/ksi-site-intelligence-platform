@@ -27,8 +27,9 @@ export function SectionFrame({
 }: {
   contextLabel: string;
   context: ReactNode;
-  inspectorLabel: string;
-  inspector: ReactNode;
+  /** 선택한 항목의 상세가 없는 보기(목록만 있는 화면)는 비워 둔다 — 오른쪽 열 없이 본문이 넓어진다. */
+  inspectorLabel?: string;
+  inspector?: ReactNode;
   drawerLabel?: string;
   drawer?: ReactNode;
   drawerOpen?: boolean;
@@ -58,14 +59,16 @@ export function SectionFrame({
         )}
       </div>
 
-      <aside
-        aria-label={inspectorLabel}
-        id="section-inspector"
-        data-section-inspector="true"
-        className="order-3 min-w-0 scroll-mt-4 border-t border-line bg-surface p-4 xl:order-none xl:w-[340px] xl:shrink-0 xl:overflow-y-auto xl:border-t-0 xl:border-l"
-      >
-        {inspector}
-      </aside>
+      {inspector !== undefined && inspectorLabel && (
+        <aside
+          aria-label={inspectorLabel}
+          id="section-inspector"
+          data-section-inspector="true"
+          className="order-3 min-w-0 scroll-mt-4 border-t border-line bg-surface p-4 xl:order-none xl:w-[340px] xl:shrink-0 xl:overflow-y-auto xl:border-t-0 xl:border-l"
+        >
+          {inspector}
+        </aside>
+      )}
     </div>
   );
 }

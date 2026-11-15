@@ -32,6 +32,7 @@ import type {
 } from "@/lib/core-api/analysis";
 import type { AnalysisReadinessViewV1 } from "@/lib/analysis-readiness";
 import { isAnalysisReadinessView, isAnalysisReadinessViewFor } from "@/lib/analysis-readiness";
+import { SectionFrame } from "@/components/section/SectionFrame";
 import { safeNextPath } from "@/lib/auth/safe-next";
 import { formatKoreanDate, formatKoreanDateTime } from "@/lib/datetime";
 import { latestAnalysisReview, sameAnalysisReviewTarget } from "@/lib/analysis-review";
@@ -562,16 +563,55 @@ function NewerObservationNotice({ siteId, detail, summaryNewerSiblingIds, observ
   </p>;
 }
 
-function AnalysisCard({ summary, detail, selected, onSelect, evidencePages, siteId, workAreaId, workAreaName, scopeLine, canCreate, reviewState, reviewLoading, reviewError, onRefreshReview, onRefreshAfterReviewConflict, observations, siteObservations, newerAnalyses, deltaExportConfig = null, maskUploadBudgetBytes = null, maskedSessionScope = null, onLoadMaskedSource, maskedSourceLoading = false }: {
+/**
+ * 이력의 한 줄 — 어떤 분석인지와 실행·적합성 상태만 한눈에 보인다. 근거·검토·산출물은 선택했을 때
+ * 섹션의 Inspector(`AnalysisDetail`)에 나온다. 선택하지 않은 줄은 요약 수치만 곁들인다.
+ */
+function AnalysisCard({ summary, hasBlockers, selected, onSelect, workAreaName, scopeLine, canCreate }: {
   summary: AnalysisListRow;
-  detail: AnalysisView | null;
+  hasBlockers: boolean;
   selected: boolean;
   onSelect: () => void;
+  workAreaName: string;
+  scopeLine: string | null;
+  canCreate: boolean;
+}) {
+  const execution = executionLabel(summary.executionState);
+  const suitability = suitabilityLabel(summary.suitabilityState);
+  return <article id={`analysis-${summary.analysisId}`} data-analysis-row="true" data-selected={selected ? "true" : undefined} className={`scroll-mt-5 rounded-lg border bg-surface ${selected ? "border-accent" : "border-line"}`}>
+    <div className="flex flex-wrap items-start justify-between gap-3 px-4 py-3">
+      <div className="min-w-0">
+        <p className="text-lead font-bold">{analysisResultTitle(summary.createdAt)} · {formatKoreanDateTime(summary.createdAt, { timeStyle: "short" })}</p>
+        <p className="mt-1 text-caption text-ink-2">{workAreaName}</p>
+        {scopeLine && <p className="mt-0.5 text-caption text-ink-2">{scopeLine}</p>}
+        <Disclosure label="분석 식별 상세" className="mt-1 text-micro text-ink-muted">
+          <p className="mt-1 break-all">분석 ID · {summary.analysisId}</p>
+        </Disclosure>
+      </div>
+      <button type="button" className="btn" onClick={() => {
+        onSelect();
+        // 1280px 미만에서는 상세가 목록 아래에 있다 — 고른 뒤 상세로 데려간다.
+        if (window.matchMedia?.("(min-width: 1280px)").matches === false) {
+          requestAnimationFrame(() => document.getElementById("section-inspector")?.scrollIntoView?.({ block: "start" }));
+        }
+      }} aria-current={selected ? "page" : undefined}>이 변화 분석 보기</button>
+    </div>
+      <div className="grid grid-cols-2 gap-2 border-t border-line px-4 py-3"><div className="min-w-0"><p className="mb-1 text-caption text-ink-muted">실행 상태</p><StateBadge label={execution.label} tone={execution.tone} /></div><div className="min-w-0"><p className="mb-1 text-caption text-ink-muted">적합성 상태</p><StateBadge label={suitability.label} tone={suitability.tone} /></div>{summary.executionState === "COMPLETED" && summary.suitabilityState === "REASSESSMENT_REQUIRED" && <p className="col-span-2 rounded-md bg-high-bg px-3 py-2 text-body leading-5 text-high-ink">계산은 완료됐습니다. 현장 적합성은 재평가가 필요합니다.</p>}{summary.executionState === "FAILED" && <p className="col-span-2 rounded-md bg-crit-bg px-3 py-2 text-body leading-5 text-crit-ink">{hasBlockers ? "Core의 실패 사유와 필요한 조치를 선택한 분석의 상세에서 확인하세요. 원인을 확인하기 전에는 같은 요청을 반복하지 마세요." : canCreate ? "Core가 변화 분석을 완료하지 못했습니다. 상세의 실패 사유를 검토하고 자료 또는 운영 담당자와 해결 여부를 확인하세요. 결과를 0으로 해석하거나 같은 요청을 바로 반복하지 마세요." : "Core가 변화 분석을 완료하지 못했습니다. 현장 변화 분석 담당자에게 실패 사유와 근거 검토를 요청하세요."}</p>}</div>
+    {!selected && summary.metrics ? <MetricSummary summary={summary} detail={null} /> : null}
+  </article>;
+}
+
+/**
+ * 선택한 분석의 상세(Inspector) — 새 관측 안내, 확인·보완, 계산 결과, 산출물, 결과 검토, 근거.
+ * 이력 줄에 있던 같은 구역을 옮긴 것이며 읽기·권한·판정은 그대로다.
+ */
+function AnalysisDetail({ summary, detail, evidencePages, siteId, workAreaId, workAreaName, canCreate, reviewState, reviewLoading, reviewError, onRefreshReview, onRefreshAfterReviewConflict, observations, siteObservations, newerAnalyses, deltaExportConfig = null, maskUploadBudgetBytes = null, maskedSessionScope = null, onLoadMaskedSource, maskedSourceLoading = false }: {
+  summary: AnalysisListRow;
+  detail: AnalysisView | null;
   evidencePages: AnalysisEvidencePage[];
   siteId: string;
   workAreaId: string;
   workAreaName: string;
-  scopeLine: string | null;
   canCreate: boolean;
   reviewState: LoadedReviews | null;
   reviewLoading: boolean;
@@ -587,30 +627,17 @@ function AnalysisCard({ summary, detail, selected, onSelect, evidencePages, site
   onLoadMaskedSource?: () => void;
   maskedSourceLoading?: boolean;
 }) {
-  const execution = executionLabel(summary.executionState);
-  const suitability = suitabilityLabel(summary.suitabilityState);
-  return <article id={`analysis-${summary.analysisId}`} className={`scroll-mt-5 rounded-lg border bg-surface ${selected ? "border-accent" : "border-line"}`}>
-    <div className="flex flex-wrap items-start justify-between gap-3 px-4 py-3">
-      <div className="min-w-0">
-        <p className="text-lead font-bold">{analysisResultTitle(summary.createdAt)} · {formatKoreanDateTime(summary.createdAt, { timeStyle: "short" })}</p>
-        <p className="mt-1 text-caption text-ink-2">{workAreaName}</p>
-        {scopeLine && <p className="mt-0.5 text-caption text-ink-2">{scopeLine}</p>}
-        <Disclosure label="분석 식별 상세" className="mt-1 text-micro text-ink-muted">
-          <p className="mt-1 break-all">분석 ID · {summary.analysisId}</p>
-        </Disclosure>
-      </div>
-      <button type="button" className="btn" onClick={onSelect} aria-current={selected ? "page" : undefined}>이 변화 분석 보기</button>
-    </div>
+  return <div data-analysis-detail={summary.analysisId} className="-mx-4 -my-4 flex min-w-0 flex-col">
+    <p className="px-4 pt-4 pb-3 text-lead font-bold">{analysisResultTitle(summary.createdAt)} · {formatKoreanDateTime(summary.createdAt, { timeStyle: "short" })}</p>
     {detail && <NewerObservationNotice siteId={siteId} detail={detail} summaryNewerSiblingIds={summary.newerSiblingAnalysisIds} observations={observations} siteObservations={siteObservations} analyses={newerAnalyses} />}
-      <div className="grid grid-cols-2 gap-2 border-t border-line px-4 py-3"><div className="min-w-0"><p className="mb-1 text-caption text-ink-muted">실행 상태</p><StateBadge label={execution.label} tone={execution.tone} /></div><div className="min-w-0"><p className="mb-1 text-caption text-ink-muted">적합성 상태</p><StateBadge label={suitability.label} tone={suitability.tone} /></div>{summary.executionState === "COMPLETED" && summary.suitabilityState === "REASSESSMENT_REQUIRED" && <p className="col-span-2 rounded-md bg-high-bg px-3 py-2 text-body leading-5 text-high-ink">계산은 완료됐습니다. 현장 적합성은 재평가가 필요합니다.</p>}{summary.executionState === "FAILED" && <p className="col-span-2 rounded-md bg-crit-bg px-3 py-2 text-body leading-5 text-crit-ink">{detail?.blockers.length ? "Core의 실패 사유와 필요한 조치를 아래에서 확인하세요. 원인을 확인하기 전에는 같은 요청을 반복하지 마세요." : canCreate ? "Core가 변화 분석을 완료하지 못했습니다. 아래 상세의 실패 사유를 검토하고 자료 또는 운영 담당자와 해결 여부를 확인하세요. 결과를 0으로 해석하거나 같은 요청을 바로 반복하지 마세요." : "Core가 변화 분석을 완료하지 못했습니다. 현장 변화 분석 담당자에게 실패 사유와 근거 검토를 요청하세요."}</p>}</div>
     {detail?.blockers.length ? <section className="border-t border-line px-4 py-3" aria-label="확인 및 보완"><h3 className="text-body font-bold">확인 및 보완</h3><ul className="mt-2 space-y-2">{detail.blockers.map((blocker, index) => <AnalysisBlockerItem key={`${blocker.code}-${index}`} blocker={blocker} siteId={siteId} workAreaId={workAreaId} />)}</ul></section> : null}
-    {detail ? <MetricSummary summary={summary} detail={detail} /> : !selected && summary.metrics ? <MetricSummary summary={summary} detail={null} /> : null}
-    {selected && detail?.executionState === "COMPLETED" && detail.result && <AnalysisDeltaPublication
+    {detail ? <MetricSummary summary={summary} detail={detail} /> : null}
+    {detail?.executionState === "COMPLETED" && detail.result && <AnalysisDeltaPublication
       detail={detail} workAreaLabel={workAreaName} canRequest={canCreate} delivery={deltaExportConfig}
       reviewAnalysisId={reviewState?.analysisId ?? null} target={reviewState?.target ?? null}
       sourceLoading={reviewLoading}
     />}
-    {selected && detail?.executionState === "COMPLETED" && detail.result && <AnalysisReviewSection
+    {detail?.executionState === "COMPLETED" && detail.result && <AnalysisReviewSection
       siteId={siteId}
       analysisId={detail.analysisId}
       reviewState={reviewState}
@@ -620,12 +647,12 @@ function AnalysisCard({ summary, detail, selected, onSelect, evidencePages, site
       onRefresh={onRefreshReview}
       onRefreshAfterConflict={onRefreshAfterReviewConflict}
     />}
-    {selected && evidencePages.length > 0 && <EvidenceSummary pages={evidencePages} />}
-    {selected && detail && <AnalysisMaskedCalculation detail={detail} pages={evidencePages}
+    {evidencePages.length > 0 && <EvidenceSummary pages={evidencePages} />}
+    {detail && <AnalysisMaskedCalculation detail={detail} pages={evidencePages}
       workAreaName={workAreaName} canRequest={canCreate} maskBudgetBytes={maskUploadBudgetBytes}
       delivery={deltaExportConfig} sessionScope={maskedSessionScope}
       onLoadSource={onLoadMaskedSource} sourceLoading={maskedSourceLoading} />}
-  </article>;
+  </div>;
 }
 
 function isListPage(value: unknown): value is AnalysisListPage {
@@ -1252,6 +1279,7 @@ export function AnalysisRequestPanel({
   listsState = null,
   openRequestOnEntry = false,
   emptyHistoryGuide,
+  contextPanel = null,
 }: {
   siteId: string;
   workAreas: readonly { workAreaId: string; name: string }[];
@@ -1297,6 +1325,8 @@ export function AnalysisRequestPanel({
   maskUploadBudgetBytes?: number | null;
   openRequestOnEntry?: boolean;
   emptyHistoryGuide?: ReactNode;
+  /** 섹션 틀의 컨텍스트 패널(분석 보기 선택). 서버 페이지가 만들어 넘긴다. */
+  contextPanel?: ReactNode;
   /**
    * 서버에서 확인하지 못한 목록 — unavailable을 empty로 다루지 않기 위한 명시 상태.
    * 없으면(기존 호출) 모두 ready로 본다.
@@ -1539,7 +1569,7 @@ export function AnalysisRequestPanel({
         ? "실패한 변화 분석이 있습니다. 아래 이력의 실패 사유와 보완 안내를 먼저 확인하세요."
         : latestRow.suitabilityState === "BLOCKED" || latestRow.suitabilityState === "REMEDIATION_REQUIRED" || latestRow.suitabilityState === "REASSESSMENT_REQUIRED"
           ? "적합성 확인이 필요합니다. 아래 이력의 확인 및 보완 안내를 확인하세요."
-          : "최신 기록의 근거와 검토 상태를 아래에서 확인하세요. 이 기록은 정확도 보증이 아닙니다.";
+          : "최신 기록의 근거와 검토 상태를 상세에서 확인하세요. 이 기록은 정확도 보증이 아닙니다.";
 
   const setPagesAndRef = useCallback((update: (current: AnalysisPageState[]) => AnalysisPageState[]) => {
     const next = update(pagesRef.current);
@@ -2228,6 +2258,16 @@ export function AnalysisRequestPanel({
       )}
     </section>
   );
+  // 선택한 쌍의 조건 확인 — 요청 양식 옆(Inspector)에 둔다. 버튼은 모두 type="button"이라 양식 밖에서도 요청을 제출하지 않는다.
+  const readinessCheck = listsBlockedForArea || noCandidateForArea ? null : <ReadinessCheckSection
+    key={`${workAreaId}|${baselineIndex}|${currentIndex}`}
+    siteId={siteId}
+    workAreaId={workAreaId}
+    baseline={pickedBaseline}
+    current={pickedCurrent}
+    busy={busy}
+    mode="request"
+  />;
   const requestSection = <section id="new-analysis-request" aria-label={canCreate ? "새 분석 요청" : "분석 조건 확인"} className="scroll-mt-20 rounded-lg border border-line bg-surface p-4">
       {exactHintNotice && !attempt && <p role="status" className="mt-2 rounded-md border border-line bg-sunk/50 px-3 py-2 text-caption leading-5 text-ink-2">{exactHintNotice}</p>}
       {!attempt && (initialBaselineSelector || initialCurrentSelector) && !exactHintNotice && (
@@ -2306,15 +2346,6 @@ export function AnalysisRequestPanel({
             </dl>
           </Disclosure>
         </div>}
-        <div className="lg:col-span-2"><ReadinessCheckSection
-          key={`${workAreaId}|${baselineIndex}|${currentIndex}`}
-          siteId={siteId}
-          workAreaId={workAreaId}
-          baseline={pickedBaseline}
-          current={pickedCurrent}
-          busy={busy}
-          mode="request"
-        /></div>
       {canCreate ? (
       <ResponsiveActionBoundary action="ANALYSIS_REQUEST" reason="변화 분석 요청은 노트북 이상의 화면에서 진행하세요. 모바일에서는 결과와 근거 검토를 이어갈 수 있습니다.">
         <div className="flex flex-wrap items-center gap-2 lg:col-span-2">
@@ -2412,9 +2443,6 @@ export function AnalysisRequestPanel({
           {workspaceBridgeControls}
         </div>
       )}
-      {selectedId && !selectedDetail && detailLoadingId === selectedId && <p role="status" className="rounded-lg border border-line bg-surface px-4 py-3 text-body">변화 분석 상세를 불러오는 중입니다.</p>}
-      {selectedDetail && <AnalysisRecordReuse record={selectedDetail} evidencePages={selectedEvidencePages}
-        inputLabels={{ baseline: workOrderNames[selectedDetail.baseline.workOrderId], current: workOrderNames[selectedDetail.current.workOrderId] }} />}
       {recordsActive && <section id="analysis-history" className="flex flex-col gap-3" aria-label="변화 분석 이력">
         {selectedDetail && visualContext && visualReturnHref && (
           <div className="rounded-lg border border-line bg-sunk/40 px-4 py-2.5 text-caption leading-5 text-ink-2">
@@ -2432,40 +2460,56 @@ export function AnalysisRequestPanel({
         {rows.map((summary) => <AnalysisCard
           key={summary.analysisId}
           summary={summary}
-          detail={details.get(summary.analysisId) ?? null}
+          hasBlockers={Boolean(details.get(summary.analysisId)?.blockers.length)}
           selected={summary.analysisId === selectedId}
           onSelect={() => choose(summary.analysisId)}
-          evidencePages={summary.analysisId === selectedId ? selectedEvidencePages : []}
-          siteId={siteId}
-          workAreaId={summary.workAreaId}
           workAreaName={workAreaNameById.get(summary.workAreaId) ?? "이름을 확인할 수 없는 구역"}
           scopeLine={scopeLineByAnalysisId.get(summary.analysisId) ?? null}
           canCreate={canCreate}
-          deltaExportConfig={deltaExportConfig}
-          maskUploadBudgetBytes={maskUploadBudgetBytes}
-          maskedSessionScope={attemptScope}
-          onLoadMaskedSource={loadEvidence}
-          maskedSourceLoading={evidenceLoading}
-          reviewState={reviewData?.analysisId === summary.analysisId ? reviewData : null}
-          reviewLoading={reviewLoadingId === summary.analysisId}
-          reviewError={reviewLoadError?.analysisId === summary.analysisId ? reviewLoadError.message : null}
-          onRefreshReview={loadReviewState}
-          onRefreshAfterReviewConflict={refreshReviewAfterConflict}
-          observations={observations}
-          newerAnalyses={newerAnalyses}
-          siteObservations={siteObservations}
         />)}
         {rows.length === 0 && listLoading && <p role="status" className="rounded-lg border border-line bg-surface px-4 py-3 text-body text-ink-2">변화 분석 목록을 불러오는 중입니다.</p>}
         {emptyHistoryNotice}
       </section>}
       {!recordsActive && emptyHistoryNotice}
       {!recordsActive && historyEffectiveReady && emptyHistoryGuide}
-      {lastEvidencePage?.nextCursor && <div className="flex justify-center"><button type="button" className="btn" disabled={evidenceLoading} onClick={loadNextEvidence}>{evidenceLoading ? "근거 불러오는 중" : "다음 근거 보기"}</button></div>}
       {nextListCursor && <div className="flex justify-center"><button type="button" className="btn" disabled={listLoading} onClick={() => void loadMoreAnalyses()}>{listLoading ? "변화 분석 목록 불러오는 중" : "다음 변화 분석 보기"}</button></div>}
     </div>
   );
 
-  return <div className="flex flex-col gap-4">
+  const selectedRow = selectedId ? rows.find((row) => row.analysisId === selectedId) ?? null : null;
+  // 선택한 분석의 상세 — 목록 줄에서 옮겨 온 근거·검토·산출물과 기록 재사용. 이력을 보는 동안에만 둔다.
+  const inspector = requestOpen ? readinessCheck : selectedId ? (
+    <div className="flex min-w-0 flex-col gap-4">
+      {!selectedDetail && detailLoadingId === selectedId && <p role="status" className="rounded-lg border border-line bg-surface px-4 py-3 text-body">변화 분석 상세를 불러오는 중입니다.</p>}
+      {selectedRow && <AnalysisDetail
+        summary={selectedRow}
+        detail={selectedDetail ?? details.get(selectedRow.analysisId) ?? null}
+        evidencePages={selectedEvidencePages}
+        siteId={siteId}
+        workAreaId={selectedRow.workAreaId}
+        workAreaName={workAreaNameById.get(selectedRow.workAreaId) ?? "이름을 확인할 수 없는 구역"}
+        canCreate={canCreate}
+        deltaExportConfig={deltaExportConfig}
+        maskUploadBudgetBytes={maskUploadBudgetBytes}
+        maskedSessionScope={attemptScope}
+        onLoadMaskedSource={loadEvidence}
+        maskedSourceLoading={evidenceLoading}
+        reviewState={reviewData?.analysisId === selectedRow.analysisId ? reviewData : null}
+        reviewLoading={reviewLoadingId === selectedRow.analysisId}
+        reviewError={reviewLoadError?.analysisId === selectedRow.analysisId ? reviewLoadError.message : null}
+        onRefreshReview={loadReviewState}
+        onRefreshAfterReviewConflict={refreshReviewAfterConflict}
+        observations={observations}
+        newerAnalyses={newerAnalyses}
+        siteObservations={siteObservations}
+      />}
+      {selectedDetail && <AnalysisRecordReuse record={selectedDetail} evidencePages={selectedEvidencePages}
+        inputLabels={{ baseline: workOrderNames[selectedDetail.baseline.workOrderId], current: workOrderNames[selectedDetail.current.workOrderId] }} />}
+      {lastEvidencePage?.nextCursor && <div className="flex justify-center"><button type="button" className="btn" disabled={evidenceLoading} onClick={loadNextEvidence}>{evidenceLoading ? "근거 불러오는 중" : "다음 근거 보기"}</button></div>}
+    </div>
+  ) : <p className="text-caption text-ink-2">이력에서 변화 분석을 고르면 결과·근거·검토가 여기에 나옵니다.</p>;
+
+  const main = <div className="flex flex-col gap-4">
     <div className="flex flex-wrap items-center justify-between gap-2">
       <h3 ref={analysisHeading} tabIndex={-1} className="text-lead font-bold">
         {requestOpen ? (canCreate ? "새 분석 요청" : "분석 조건 확인") : "변화 분석 이력"}
@@ -2495,4 +2539,12 @@ export function AnalysisRequestPanel({
     }>요청이 접수됐습니다.</InlineNotice>}
     {requestOpen ? requestSection : recordsColumn}
   </div>;
+  return <SectionFrame
+    contextLabel="분석 보기"
+    context={contextPanel}
+    inspectorLabel={requestOpen ? "선택한 쌍의 조건 확인" : "선택한 분석 상세"}
+    inspector={inspector}
+  >
+    {main}
+  </SectionFrame>;
 }
