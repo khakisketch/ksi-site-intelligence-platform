@@ -1,13 +1,17 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  DESKTOP_NAV_GROUPS,
   DESKTOP_NAV_ITEMS,
   MOBILE_TAB_ITEMS,
   NAV_ITEMS,
+  SHELL_ACCOUNT_ITEM,
+  SHELL_HOME_ITEM,
+  SHELL_PROJECTS_ITEM,
+  SHELL_WORK_ITEM,
+  projectMobileTabItems,
 } from "@/components/nav/nav-items";
 
-// 이 파일이 고정하는 것은 **도달 가능성**이다. 사이드바 그룹이 키 화이트리스트로
+// 이 파일이 고정하는 것은 **도달 가능성**이다. 레일 그룹이 키 화이트리스트로
 // 항목을 고르던 시절, 어느 목록에도 안 걸린 항목은 오류 없이 그냥 사라졌다 —
 // 2026-08-08 에 assets·world·reports·settings 가 "준비 중"에서 실동작으로
 // 승격되면서 정확히 그렇게 사라졌고, /reports(두 시점 비교 결과 화면 전체)는
@@ -21,51 +25,32 @@ import {
 // 잡히고, key 를 못박으면 이 파일이 원래 막으려던 회귀 — 항목이 조용히 사라지는 것 —
 // 만 잡힌다. 라벨↔topbar 제목 동기화는 page-title.test.ts 가 따로 강제한다.
 
-describe("DESKTOP_NAV_GROUPS", () => {
-  it("[핵심][회귀] 데스크톱 항목이 하나도 빠짐없이 어느 그룹엔가 들어간다", () => {
-    const grouped = DESKTOP_NAV_GROUPS.flatMap((group) => group.items.map((i) => i.key));
-    const expected = DESKTOP_NAV_ITEMS.map((i) => i.key);
-    expect([...grouped].sort()).toEqual([...expected].sort());
-  });
-
-  it("[핵심][회귀] 한 항목이 두 그룹에 중복해서 들어가지 않는다", () => {
-    const grouped = DESKTOP_NAV_GROUPS.flatMap((group) => group.items.map((i) => i.key));
-    expect(grouped).toHaveLength(new Set(grouped).size);
-  });
-
-  it("[핵심][회귀] 범위 밖 장비 안내는 주 메뉴 그룹에 들어가지 않는다", () => {
-    const grouped = DESKTOP_NAV_GROUPS.flatMap((group) => group.items.map((i) => i.key));
-    expect(grouped).toEqual(["home", "sites", "work", "more"]);
-    expect(grouped).not.toContain("fleet");
+describe("셸 전역 입구", () => {
+  it("[핵심][회귀] 레일의 전역 입구는 홈·프로젝트·작업이고 범위 밖 장비 안내는 들어가지 않는다", () => {
+    const keys = [SHELL_HOME_ITEM, SHELL_PROJECTS_ITEM, SHELL_WORK_ITEM].map((item) => item.key);
+    expect(keys).toEqual(["home", "sites", "work"]);
+    expect(DESKTOP_NAV_ITEMS.map((item) => item.key)).not.toContain("fleet");
     // 옛날 링크는 살아 있다 — 우선순위에서만 뺀다.
     expect(NAV_ITEMS.find((item) => item.key === "fleet")?.href).toBe("/coming-soon/fleet");
   });
 
-  it("모든 항목이 비어 있지 않고 서로 겹치지 않는 이름을 갖는다", () => {
-    const labels = DESKTOP_NAV_GROUPS.flatMap((group) => group.items.map((i) => i.label));
+  it("셸 라벨은 프로젝트를 쓰고 같은 목적지(/sites)를 가리킨다", () => {
+    expect(SHELL_PROJECTS_ITEM.label).toBe("프로젝트");
+    expect(SHELL_PROJECTS_ITEM.href).toBe(NAV_ITEMS.find((item) => item.key === "sites")?.href);
+  });
+
+  it("셸 전역 입구의 이름은 비어 있지 않고 겹치지 않는다", () => {
+    const labels = [SHELL_HOME_ITEM, SHELL_PROJECTS_ITEM, SHELL_WORK_ITEM, SHELL_ACCOUNT_ITEM].map((item) => item.label);
     expect(labels.every((label) => label.trim().length > 0)).toBe(true);
     expect(new Set(labels).size).toBe(labels.length);
-  });
-
-  it("그룹 순서가 NAV_ITEMS 순서를 뒤집지 않는다(PRD 가 순서를 고정한다)", () => {
-    const order = new Map(NAV_ITEMS.map((item, index) => [item.key, index]));
-    const grouped = DESKTOP_NAV_GROUPS.flatMap((group) => group.items.map((i) => i.key));
-    const positions = grouped.map((key) => order.get(key)!);
-    expect(positions).toEqual([...positions].sort((a, b) => a - b));
-  });
-
-  it("빈 그룹은 그리지 않는다(라벨만 남은 칸이 생기지 않게)", () => {
-    for (const group of DESKTOP_NAV_GROUPS) {
-      expect(group.items.length).toBeGreaterThan(0);
-    }
   });
 });
 
 describe("MOBILE_TAB_ITEMS", () => {
-  it("모바일은 세 가지 전역 업무와 계정 탭이다", () => {
+  it("프로젝트 밖의 모바일 탭은 홈·프로젝트·작업·계정이다", () => {
     expect(MOBILE_TAB_ITEMS.map((i) => i.label)).toEqual([
       "홈",
-      "현장",
+      "프로젝트",
       "작업",
       "계정",
     ]);
@@ -83,5 +68,23 @@ describe("MOBILE_TAB_ITEMS", () => {
 
   it("모든 하단 탭은 같은 아이콘 계약을 갖는다", () => {
     expect(MOBILE_TAB_ITEMS.every((item) => item.icon.length > 0)).toBe(true);
+  });
+});
+
+describe("projectMobileTabItems", () => {
+  it("프로젝트 안의 모바일 탭은 공간·자료·분석·작업이고 프로젝트 주소를 가리킨다", () => {
+    const tabs = projectMobileTabItems("site-1");
+    expect(tabs.map((item) => item.label)).toEqual(["공간", "자료", "분석", "작업"]);
+    expect(tabs.map((item) => item.href)).toEqual([
+      "/sites/site-1",
+      "/sites/site-1?panel=materials",
+      "/sites/site-1/analysis",
+      "/field",
+    ]);
+    expect(tabs.every((item) => item.icon.length > 0)).toBe(true);
+  });
+
+  it("프로젝트 ID는 주소에 맞게 인코딩한다", () => {
+    expect(projectMobileTabItems("a b/c")[0]!.href).toBe("/sites/a%20b%2Fc");
   });
 });

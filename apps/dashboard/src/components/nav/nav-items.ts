@@ -1,4 +1,5 @@
 import type { NavIconName } from "./NavIcon";
+import { PROJECT_SECTIONS, projectSectionHref } from "./site-context";
 
 /** 고객의 세 가지 전역 업무와 계정·도움을 분리한다. */
 export interface NavItem {
@@ -44,37 +45,48 @@ export const NAV_ITEMS: NavItem[] = [
 
 export const DESKTOP_NAV_ITEMS = NAV_ITEMS.filter((item) => !item.demoted);
 
-export interface NavGroup {
-  key: string;
-  label: string | null;
-  items: NavItem[];
-}
+/**
+ * 새 셸(ADR-KSI-043)의 전역 입구. 라벨은 셸의 용어(프로젝트)를 쓰고, 팔레트가 쓰는
+ * NAV_ITEMS 의 라벨(현장)은 화면별 용어 전환 때 함께 바꾼다.
+ */
+export const SHELL_HOME_ITEM: NavItem = NAV_ITEMS.find((item) => item.key === "home")!;
+export const SHELL_PROJECTS_ITEM: NavItem = {
+  key: "sites",
+  label: "프로젝트",
+  href: "/sites",
+  implemented: true,
+  icon: "sites",
+  mobile: true,
+};
+export const SHELL_WORK_ITEM: NavItem = NAV_ITEMS.find((item) => item.key === "work")!;
+export const SHELL_ACCOUNT_ITEM: NavItem = {
+  key: "more",
+  label: "계정",
+  href: "/more",
+  implemented: true,
+  icon: "more",
+  mobile: true,
+};
 
-const PRIMARY_KEYS = new Set(["home", "sites", "work"]);
-
-export const DESKTOP_NAV_GROUPS: NavGroup[] = [
-  {
-    key: "primary",
-    label: null,
-    items: DESKTOP_NAV_ITEMS.filter((item) => PRIMARY_KEYS.has(item.key)),
-  },
-  {
-    key: "account",
-    label: null,
-    items: DESKTOP_NAV_ITEMS.filter((item) => item.key === "more"),
-  },
-].filter((group) => group.items.length > 0);
-
+/** 프로젝트 밖(홈·목록 등)의 휴대폰 하단 탭. */
 export const MOBILE_TAB_ITEMS: NavItem[] = [
-  ...NAV_ITEMS.filter((item) => item.mobile),
-  {
-    key: "more",
-    // 휴대폰 넷째 탭은 계정·도움말 입구다. 범위 밖 장비 안내만 있던
-    // '더보기'가 아니라, 계정·도움·지원 경계를 여는 자리다.
-    label: "계정",
-    href: "/more",
-    implemented: true,
-    icon: "more",
-    mobile: true,
-  },
+  SHELL_HOME_ITEM,
+  SHELL_PROJECTS_ITEM,
+  SHELL_WORK_ITEM,
+  SHELL_ACCOUNT_ITEM,
 ];
+
+/** 프로젝트 안의 휴대폰 하단 탭 — 공간·자료·분석과 전역 작업. */
+export function projectMobileTabItems(siteId: string): NavItem[] {
+  return [
+    ...PROJECT_SECTIONS.map<NavItem>((section) => ({
+      key: `project-${section.key}`,
+      label: section.label,
+      href: projectSectionHref(siteId, section.key),
+      implemented: true,
+      icon: section.icon,
+      mobile: true,
+    })),
+    SHELL_WORK_ITEM,
+  ];
+}

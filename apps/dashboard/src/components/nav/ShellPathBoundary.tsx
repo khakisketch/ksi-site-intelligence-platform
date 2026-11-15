@@ -8,23 +8,23 @@ import { isViewerPath } from "./viewer-path";
 import { useDesktopNavCollapsed } from "./desktop-nav-preference";
 
 const CONSOLE_BODY_CLASSES = [
-  "lg:grid",
-  "lg:h-screen",
-  "lg:grid-cols-[176px_1fr]",
-  "lg:overflow-hidden",
-  "xl:grid-cols-[232px_1fr]",
+  "md:grid",
+  "md:h-screen",
+  "md:grid-cols-[56px_1fr]",
+  "lg:grid-cols-[188px_1fr]",
+  "md:grid-rows-[auto_minmax(0,1fr)]",
+  "md:overflow-hidden",
 ] as const;
 
 /**
  * Root layouts survive App Router navigation, including a session-expiry
  * redirect to /login. Reconcile the body grid with the live pathname so the
- * chromeless login card never inherits the console's 176px sidebar column.
+ * chromeless login card never inherits the console's rail column.
  *
- * Dense authenticated screens keep the full labelled rail and the global top
- * bar. The viewer-first paths (site 공간/자료) deliberately switch to the
- * 56px icon rail and hide the top bar/site header at lg+; the exception is
- * owned by `viewer-path.ts` and is toggled here because layouts survive
- * client navigation.
+ * The global header spans both columns (row 1); the rail and the viewport share
+ * row 2 (ADR-KSI-043). The viewer-first paths (site 공간/자료) keep the main from
+ * scrolling and hide only the site header at lg+; the exception is owned by
+ * `viewer-path.ts` and is toggled here because layouts survive client navigation.
  */
 export function ShellLayoutMode() {
   const pathname = usePathname();
@@ -51,9 +51,9 @@ export function ShellOnly({ children }: { children: React.ReactNode }) {
 }
 
 const VIEWPORT_BASE =
-  "flex min-h-full flex-col lg:col-start-2 lg:row-start-1 lg:min-h-0 lg:overflow-hidden";
+  "flex min-h-full flex-col md:col-start-2 md:row-start-2 md:min-h-0 md:overflow-hidden";
 const MAIN_BASE =
-  "flex-1 pb-[var(--mobile-bottom-nav-clearance)] lg:min-h-0 lg:overflow-y-auto lg:pb-0";
+  "flex-1 pb-[var(--mobile-bottom-nav-clearance)] md:min-h-0 md:overflow-y-auto md:pb-0";
 
 export function ShellViewport({ children }: { children: React.ReactNode }) {
   return <div className={VIEWPORT_BASE}>{children}</div>;

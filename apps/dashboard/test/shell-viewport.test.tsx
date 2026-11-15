@@ -14,9 +14,9 @@ function readSource(relativePath: string): string {
 }
 
 const VIEWPORT_CLASS =
-  "flex min-h-full flex-col lg:col-start-2 lg:row-start-1 lg:min-h-0 lg:overflow-hidden";
+  "flex min-h-full flex-col md:col-start-2 md:row-start-2 md:min-h-0 md:overflow-hidden";
 const MAIN_CLASS =
-  "flex-1 pb-[var(--mobile-bottom-nav-clearance)] lg:min-h-0 lg:overflow-y-auto lg:pb-0";
+  "flex-1 pb-[var(--mobile-bottom-nav-clearance)] md:min-h-0 md:overflow-y-auto md:pb-0";
 
 describe("uniform console viewport", () => {
   it("keeps the same viewport/main skeleton on site workspace and ordinary paths", () => {

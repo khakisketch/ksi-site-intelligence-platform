@@ -2,15 +2,12 @@
 
 import { PALETTE_OPEN_EVENT } from "@/components/console/CommandPalette";
 
-/* 상단바의 검색 트리거 — 사이드바가 숨는 lg 미만에서만 보인다.
- *
- * 사이드바 트리거(SidebarSearchTrigger)를 그대로 재사용하지 않는 이유는 그 버튼이
- * 어두운 레일 위에 그려지는 전제(흰 투명 배경·밝은 글자)라, 밝은 상단바에서는
- * 대비가 무너지고 390px 폭에서 글자까지 담기 좁기 때문이다. 동작은 같다 —
- * 같은 PALETTE_OPEN_EVENT 를 쏘아 ⌘K 팔레트를 연다. 새 데이터 읽기·API 없음. */
+/* 상단바의 검색 트리거 — 헤더의 검색 입구(HeaderSearchTrigger)가 숨는 768px 미만에서만 보인다.
+ * 390px 폭에 맞춘 작은 버튼이며 동작은 같다 — 같은 PALETTE_OPEN_EVENT 를 쏘아
+ * ⌘K 팔레트를 연다. 새 데이터 읽기·API 없음. */
 export function TopBarSearchTrigger() {
   return (
-    <span className="inline-flex flex-none lg:hidden">
+    <span className="inline-flex flex-none md:hidden">
       <button
         type="button"
         onClick={() => window.dispatchEvent(new CustomEvent(PALETTE_OPEN_EVENT))}

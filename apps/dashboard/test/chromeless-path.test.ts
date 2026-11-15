@@ -72,8 +72,8 @@ describe("셸 벗기 판정이 실제로 배선돼 있다", () => {
     expect(layout).toContain("<ShellLayoutMode />");
     expect(layout).toContain("<ShellOnly>");
     expect(boundary).toContain("document.body.classList.toggle");
-    expect(boundary).toContain('"lg:grid-cols-[176px_1fr]"');
-    expect(boundary).toContain('"xl:grid-cols-[232px_1fr]"');
+    expect(boundary).toContain('"lg:grid-cols-[188px_1fr]"');
+    expect(boundary).toContain('"md:grid-rows-[auto_minmax(0,1fr)]"');
   });
 });
 

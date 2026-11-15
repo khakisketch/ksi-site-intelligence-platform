@@ -8,11 +8,11 @@ vi.mock('@/components/nav/AccountDisplayBoundary', () => ({useAccountDisplayLock
 import { SiteListProvider, useSidebarSites, useSiteListRefresh } from '@/components/nav/SiteListContext';
 import { DesktopSidebar } from '@/components/nav/DesktopSidebar';
 import { CommandPalette } from '@/components/console/CommandPalette';
-import { SiteContextNav } from '@/components/nav/SiteContextNav';
+import { ProjectSwitcher } from '@/components/nav/ProjectSwitcher';
 const fingerprint = 'v1-' + 'a'.repeat(64);
 function Shell() {
  const sites = useSidebarSites(); const refresh = useSiteListRefresh?.() ?? (() => Promise.resolve());
- return <><button onClick={() => {void refresh("new-id"); env.path = '/sites/new-id';}}>현장 브리핑으로 이동</button><input aria-label="원문" defaultValue="보존"/><SiteContextNav sites={sites}/><span data-testid="count">{sites.length}</span></>;
+ return <><button onClick={() => {void refresh("new-id"); env.path = '/sites/new-id';}}>현장 브리핑으로 이동</button><input aria-label="원문" defaultValue="보존"/><ProjectSwitcher/><span data-testid="count">{sites.length}</span></>;
 }
 afterEach(() => {cleanup(); vi.restoreAllMocks(); env.path='/sites/new'; env.locked=false; env.generation=0; env.push.mockClear(); window.history.replaceState({}, '', '/');});
 it('explicit briefing entry refreshes the server-confirmed site without remounting input', async () => {
@@ -21,7 +21,7 @@ it('explicit briefing entry refreshes the server-confirmed site without remounti
  const input = screen.getByLabelText('원문') as HTMLInputElement; fireEvent.change(input,{target:{value:'미저장'}});
  fireEvent.click(screen.getByRole('button',{name:'현장 브리핑으로 이동'}));
  await waitFor(() => expect(screen.getByText('신규 현장')).toBeTruthy());
- expect(screen.getByRole('navigation',{name:'현재 현장 메뉴'})).toBeTruthy();
+ expect(screen.getByRole('button',{name:'프로젝트 변경: 신규 현장'})).toBeTruthy();
  expect(screen.getByTestId('count').textContent).toBe('1'); expect(input.value).toBe('미저장');
 });
 it('discards a response across lock and return to the same account', async () => {
@@ -59,23 +59,28 @@ it('latest refresh wins even if previous request returns last', async () => {
  first(new Response(JSON.stringify({fingerprint,sites:[{siteId:'new-id',name:'older',status:'UNMAPPED'}]})));
  await new Promise(r=>setTimeout(r,0)); expect(screen.queryByText('older')).toBeNull();
 });
-it('rail count, current site, switcher and palette share refreshed list', async () => {
+it('rail count, current project, switcher and palette share refreshed list', async () => {
  HTMLElement.prototype.scrollIntoView = vi.fn();
  const all = [{siteId:'new-id',name:'신규 현장',status:'UNMAPPED'},{siteId:'old-id',name:'기존 현장',status:'UNMAPPED'}];
  vi.stubGlobal('fetch',vi.fn(async (url:string) => new Response(JSON.stringify(url === '/api/shell-sites' ? {fingerprint,sites:all} : {fingerprint}))));
- function Parts() { const refresh = useSiteListRefresh(); return <><button onClick={() => { env.path='/sites/new-id'; void refresh('new-id'); }}>들어가기</button><DesktopSidebar sites={[]} counts={{}}/><CommandPalette items={[]}/></>; }
- render(<SiteListProvider sites={[]} fingerprint={fingerprint}><Parts/></SiteListProvider>);
+ function Parts() { const refresh = useSiteListRefresh(); return <><button onClick={() => { env.path='/sites/new-id'; void refresh('new-id'); }}>들어가기</button><ProjectSwitcher/><DesktopSidebar counts={{}}/><CommandPalette items={[]}/></>; }
+ const tree = () => <SiteListProvider sites={[]} fingerprint={fingerprint}><Parts/></SiteListProvider>;
+ const view = render(tree());
  fireEvent.click(screen.getByRole('button',{name:'들어가기'}));
- await screen.findByRole('button',{name:'현장 변경: 신규 현장'});
- expect(screen.getByRole('link',{name:/현장.*2/})).toBeTruthy();
- fireEvent.click(screen.getByRole('button',{name:'현장 변경: 신규 현장'}));
+ // 헤더 전환기는 현재 프로젝트를 이름으로, 전환 목록은 갱신된 목록을 보인다.
+ await screen.findByRole('button',{name:'프로젝트 변경: 신규 현장'});
+ fireEvent.click(screen.getByRole('button',{name:'프로젝트 변경: 신규 현장'}));
  expect(screen.getByRole('link',{name:/기존 현장/}).getAttribute('href')).toBe('/sites/old-id');
+ expect(screen.getByRole('link',{name:/전체 프로젝트 \(2\)/}).getAttribute('href')).toBe('/sites');
  fireEvent.keyDown(document,{key:'Escape'});
  fireEvent.keyDown(window,{key:'k',ctrlKey:true});
  const dialog = screen.getByRole('dialog',{name:'검색 및 이동'});
  expect(dialog.textContent).toContain('신규 현장'); expect(dialog.textContent).toContain('기존 현장');
- fireEvent.keyDown(window,{key:'Escape'}); fireEvent.click(screen.getByRole('button',{name:'주 메뉴 접기'}));
- expect(screen.getByRole('link',{name:'현재 현장: 신규 현장'})).toBeTruthy();
+ fireEvent.keyDown(window,{key:'Escape'});
+ // 프로젝트 안의 레일은 섹션을, 밖의 레일은 같은 목록의 프로젝트 수를 보인다.
+ expect(screen.getByRole('link',{name:'공간'})).toBeTruthy();
+ env.path='/sites'; view.rerender(tree());
+ expect(screen.getByRole('link',{name:/프로젝트.*2/})).toBeTruthy();
 });
 it('failed list announces recovery and explicit retry checks account before showing the site', async () => {
  const {SiteListRefreshNotice}=await import('@/components/nav/SiteListRefreshNotice');

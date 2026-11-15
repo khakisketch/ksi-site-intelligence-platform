@@ -12,7 +12,6 @@ vi.mock("next/navigation", () => ({
   usePathname: () => route.pathname,
   useSearchParams: () => route.query,
 }));
-vi.mock("@/components/nav/SidebarSearchTrigger", () => ({ SidebarSearchTrigger: () => <button>검색</button> }));
 
 function shell() { return <><ShellLayoutMode /><DesktopSidebar /></>; }
 

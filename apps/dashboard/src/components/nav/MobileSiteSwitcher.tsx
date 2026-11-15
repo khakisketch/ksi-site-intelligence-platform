@@ -75,7 +75,7 @@ export function MobileSiteSwitcher({
       const opener = openerRef.current;
       openerRef.current = null;
       if (opener instanceof HTMLElement && opener.isConnected) {
-        // 데스크톱으로 리사이즈되어 닫힌 뒤에는 lg:hidden 트리거로
+        // 데스크톱으로 리사이즈되어 닫힌 뒤에는 md:hidden 트리거로
         // 포커스를 돌리지 않는다(숨은 요소 포커스 방지).
         if (
           typeof window !== "undefined" &&
@@ -131,7 +131,7 @@ export function MobileSiteSwitcher({
         aria-controls="mobile-site-switcher"
         aria-label={`현장 변경: ${current.name}`}
         onClick={() => setOpen(true)}
-        className="tap-target inline-flex h-9 shrink-0 items-center gap-1 rounded-md border border-line bg-surface px-2 text-caption font-semibold text-ink-2 hover:bg-sunk lg:hidden"
+        className="tap-target inline-flex h-9 shrink-0 items-center gap-1 rounded-md border border-line bg-surface px-2 text-caption font-semibold text-ink-2 hover:bg-sunk md:hidden"
       >
         <svg aria-hidden="true" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.6" className="size-4">
           <path d="M4 7h11l-2.5-2.5M16 13H5l2.5 2.5" />
@@ -157,9 +157,9 @@ export function MobileSiteSwitcher({
         }}
         // 네이티브 top-layer 다이얼로그를 그대로 하단 시트처럼 둔다:
         // m-0 + fixed bottom 으로 UA 중앙 정렬을 걷어내고, ::backdrop 이
-        // 배경 스크림을 맡는다. lg:hidden 은 닫힘 전 모바일 진입점과 짝을
+        // 배경 스크림을 맡는다. md:hidden 은 닫힘 전 모바일 진입점과 짝을
         // 이루고, 실제 데스크톱 잔류 방지는 위 resize effect 가 맡는다.
-        className="fixed inset-x-2 bottom-[calc(var(--mobile-bottom-nav-clearance,56px)+8px)] top-auto m-0 max-h-[min(70vh,560px)] w-auto flex-col overflow-hidden rounded-2xl border border-line bg-surface p-0 text-ink-1 shadow-xl backdrop:bg-black/35 open:flex lg:hidden"
+        className="fixed inset-x-2 bottom-[calc(var(--mobile-bottom-nav-clearance,56px)+8px)] top-auto m-0 max-h-[min(70vh,560px)] w-auto flex-col overflow-hidden rounded-2xl border border-line bg-surface p-0 text-ink-1 shadow-xl backdrop:bg-black/35 open:flex md:hidden"
       >
         {open && (
           <>

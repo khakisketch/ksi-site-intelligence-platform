@@ -13,6 +13,9 @@
   flex-direction: column;
   gap: 24px;
 }
+/* 초광폭에서는 본문 컬럼도 함께 넓힌다(글자 배율은 --ui-scale 이 맡는다). 밀집 화면은 원래 제한이 없다. */
+@media (min-width: 2200px) { .console-page { max-width: 1800px; } }
+@media (min-width: 3000px) { .console-page { max-width: 2200px; } }
 .console-page-dense {
   max-width: none;
 }
@@ -191,6 +194,19 @@
   --mobile-bottom-nav-clearance: calc(
     var(--mobile-bottom-nav-row-height) + 1px + var(--mobile-bottom-nav-safe-area)
   );
+}
+/* 초광폭 화면의 글자 배율 — 타입 토큰·본문·레일 글자만 키운다(간격·폭은 그대로).
+   2200px 이상(QHD 이상 큰 모니터) 1.125배, 3000px 이상(울트라와이드) 1.25배. */
+:root { --ui-scale: 1; }
+@media (min-width: 2200px) { :root { --ui-scale: 1.125; } }
+@media (min-width: 3000px) { :root { --ui-scale: 1.25; } }
+/* 768px 이상에서는 하단 탭이 없고 레일이 그 자리를 맡는다 — 시트·토스트가 비워 둘 여백도 0. */
+@media (min-width: 768px) {
+  :root {
+    --mobile-bottom-nav-clearance: 0px;
+  }
+}
+:root {
 
   /* — 액센트(무채색) — 누를 것·활성 상태·현재 위치 — */
   --accent: #1f2124;
@@ -231,6 +247,16 @@
   --sidebar-active: #2c3035;
   --sidebar-active-ink: #ffffff;
   --sidebar-hover: rgba(255, 255, 255, 0.07);
+
+  /* — 레일(좌측 주 메뉴) — 밝은 테마가 기본이다. --sidebar* 는 지도 무대·미리보기 같은
+     어두운 면에도 쓰이므로 레일은 전용 토큰을 쓴다(둘을 섞으면 무대가 밝아진다). */
+  --rail: #ffffff;
+  --rail-text: #4e5359;
+  --rail-muted: #5e6872;
+  --rail-active: #edeef0;
+  --rail-active-ink: #121417;
+  --rail-hover: rgba(18, 20, 23, 0.06);
+  --rail-bar: #1f2124;
 
   /* — 텍스트 — */
   --ink-1: #121417;
@@ -295,6 +321,14 @@
     --sidebar-active-ink: #ffffff;
     --sidebar-hover: rgba(255, 255, 255, 0.06);
 
+    --rail: #101214;
+    --rail-text: #c9cdd1;
+    --rail-muted: #8b9197;
+    --rail-active: #23262a;
+    --rail-active-ink: #ffffff;
+    --rail-hover: rgba(255, 255, 255, 0.06);
+    --rail-bar: #ffffff;
+
     --ink-1: #e9ebed;
     --ink-2: #a8aeb5;
     --ink-muted: #798088;
@@ -329,6 +363,13 @@
   --color-sidebar-active: var(--sidebar-active);
   --color-sidebar-active-ink: var(--sidebar-active-ink);
   --color-sidebar-hover: var(--sidebar-hover);
+
+  --color-rail: var(--rail);
+  --color-rail-text: var(--rail-text);
+  --color-rail-muted: var(--rail-muted);
+  --color-rail-active: var(--rail-active);
+  --color-rail-active-ink: var(--rail-active-ink);
+  --color-rail-hover: var(--rail-hover);
 
   --color-ink-1: var(--ink-1);
   --color-ink-2: var(--ink-2);
@@ -365,21 +406,21 @@
   /* — 타입 스케일 — 화면마다 `text-[Npx]`를 새로 고르지 않도록 여섯 단으로 고정한다.
      계측 도구라 본문이 13px이고, 단 사이 비율은 1.08~1.3으로 좁다(표·패널에 글자
      종류가 많아 큰 대비는 소음이 된다). 새 코드와 손대는 코드부터 이 이름을 쓴다. */
-  --text-micro: 11px;
-  --text-micro--line-height: 16px;
-  --text-caption: 12px;
-  --text-caption--line-height: 18px;
-  --text-body: 13px;
-  --text-body--line-height: 20px;
-  --text-lead: 14px;
-  --text-lead--line-height: 22px;
-  --text-title: 17px;
-  --text-title--line-height: 24px;
-  --text-display: 22px;
-  --text-display--line-height: 30px;
+  --text-micro: calc(11px * var(--ui-scale, 1));
+  --text-micro--line-height: calc(16px * var(--ui-scale, 1));
+  --text-caption: calc(12px * var(--ui-scale, 1));
+  --text-caption--line-height: calc(18px * var(--ui-scale, 1));
+  --text-body: calc(13px * var(--ui-scale, 1));
+  --text-body--line-height: calc(20px * var(--ui-scale, 1));
+  --text-lead: calc(14px * var(--ui-scale, 1));
+  --text-lead--line-height: calc(22px * var(--ui-scale, 1));
+  --text-title: calc(17px * var(--ui-scale, 1));
+  --text-title--line-height: calc(24px * var(--ui-scale, 1));
+  --text-display: calc(22px * var(--ui-scale, 1));
+  --text-display--line-height: calc(30px * var(--ui-scale, 1));
   /* 결과 화면의 핵심 수치 한 개에만 쓴다(순변화). 화면에서 가장 먼저 읽혀야 하는 값이다. */
-  --text-hero: 36px;
-  --text-hero--line-height: 40px;
+  --text-hero: calc(36px * var(--ui-scale, 1));
+  --text-hero--line-height: calc(40px * var(--ui-scale, 1));
 
   /* — 높이(그림자) — 두 단만 둔다. 1은 면에서 살짝 뜬 패널, 2는 팝오버·시트. */
   --shadow-elev-1: 0 1px 2px rgb(16 20 24 / 0.06), 0 2px 8px -2px rgb(16 20 24 / 0.08);
@@ -404,7 +445,7 @@ body {
   /* 시안 본문 14px. 계측 도구는 한 화면에 들어가는 사실의 개수가 곧 쓸모라서
      읽기용 문서(16px)보다 한 단계 조인다. Tailwind 유틸리티는 rem 기준이라
      이 값에 영향받지 않는다 — 클래스가 없는 텍스트만 text-sm 과 같아진다. */
-  font-size: 14px;
+  font-size: calc(14px * var(--ui-scale, 1));
   line-height: 1.5;
   /* UX 목표 §5 — 한글 어절 단위 줄바꿈을 기본값으로(단어 중간 끊김 방지). */
   word-break: keep-all;
@@ -480,7 +521,7 @@ body {
    화면을 차지하지 않고, 키보드로 포커스를 받았을 때만 나타난다. 나타나는 자리는
    **본문 칸의 왼쪽 위**다 — 사이드바 위에 겹쳐 뜨면 "본문으로 건너뛰기"라는 말과
    어긋나고, 문서 흐름에 끼어들면(position: static) 포커스할 때마다 본문이 밀린다.
-   왼쪽 오프셋은 앱 셸 그리드(lg: 176px / xl: 232px)와 같은 값이다. */
+   왼쪽 오프셋은 레일 폭(펼침 188px, 접힘 56px)에 8px을 더한 값이다. */
 .skip-link {
   position: fixed;
   z-index: 50;
@@ -495,11 +536,12 @@ body {
   font-weight: 700;
   transition: transform 0.12s ease;
 }
-@media (min-width: 1024px) {
-  .skip-link { left: 184px; }
+@media (min-width: 768px) {
+  .skip-link { left: 64px; }
 }
-@media (min-width: 1280px) {
-  .skip-link { left: 240px; }
+@media (min-width: 1024px) {
+  .skip-link { left: 196px; }
+  body.desktop-nav-collapsed .skip-link { left: 64px; }
 }
 .skip-link:focus {
   transform: translateY(0);
@@ -748,13 +790,145 @@ body {
    탭·내보내기 버튼 각각에 개별로 건다 — 여기서 셀렉터로 다시 감추지 않는다.
    ═══════════════════════════════════════════════════════════════════════════ */
 /* ═══════════════════════════════════════════════════════════════════════════
+   Rail — 좌측 주 메뉴 (ADR-KSI-043)
+
+   펼침 188px / 접힘 56px. 접으면 라벨을 감추고, 마우스를 올리거나 키보드로 포커스하면
+   아이콘 옆에 이름이 뜬다(툴팁은 레일 밖으로 나오므로 nav 에 overflow 를 걸지 않는다).
+   현재 위치는 왼쪽 막대와 배경으로, 작업 건수는 펼침에서는 알약·접힘에서는 점으로 보인다.
+   ═══════════════════════════════════════════════════════════════════════════ */
+.rail-group {
+  padding: 8px 18px 2px;
+  font-size: calc(11px * var(--ui-scale, 1));
+  line-height: calc(16px * var(--ui-scale, 1));
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--rail-muted);
+}
+.rail-link {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 8px;
+  padding: 0 10px;
+  min-height: 36px;
+  border-radius: 6px;
+  border: 0;
+  background: transparent;
+  color: var(--rail-text);
+  font-size: calc(13px * var(--ui-scale, 1));
+  line-height: calc(20px * var(--ui-scale, 1));
+  white-space: nowrap;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 0.12s ease;
+}
+.rail-link:hover { background: var(--rail-hover); }
+.rail-link[aria-current="page"] {
+  background: var(--rail-active);
+  color: var(--rail-active-ink);
+  font-weight: 600;
+}
+.rail-link[aria-current="page"]::before {
+  content: "";
+  position: absolute;
+  left: -8px;
+  top: 7px;
+  bottom: 7px;
+  width: 3px;
+  border-radius: 2px;
+  background: var(--rail-bar);
+}
+.rail-link:focus-visible { outline: 2px solid var(--rail-bar); outline-offset: -2px; }
+.rail-count {
+  margin-left: auto;
+  border-radius: 999px;
+  padding: 0 7px;
+  font-size: calc(11px * var(--ui-scale, 1));
+  line-height: calc(16px * var(--ui-scale, 1));
+  font-weight: 600;
+  background: var(--rail-active);
+  color: var(--rail-active-ink);
+}
+.rail-count[data-urgent="true"] { background: var(--crit); color: #fff; }
+.rail-dot {
+  display: none;
+  position: absolute;
+  top: 6px;
+  right: 11px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--mid);
+  box-shadow: 0 0 0 2px var(--rail);
+}
+.rail-dot[data-urgent="true"] { background: var(--crit); }
+[data-rail][data-collapsed="true"] .rail-link { justify-content: center; padding: 0; margin: 0 5px; }
+[data-rail][data-collapsed="true"] .rail-label,
+[data-rail][data-collapsed="true"] .rail-count,
+[data-rail][data-collapsed="true"] .rail-group { display: none; }
+[data-rail][data-collapsed="true"] .rail-dot { display: block; }
+[data-rail][data-collapsed="true"] .rail-link:hover::after,
+[data-rail][data-collapsed="true"] .rail-link:focus-visible::after {
+  content: attr(data-tip);
+  position: absolute;
+  left: calc(100% + 10px);
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 70;
+  padding: 3px 10px;
+  border-radius: 6px;
+  background: #16181a;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 18px;
+  white-space: nowrap;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+  pointer-events: none;
+}
+/* 터치 기기는 레일 항목도 44px 이상(접힌 레일은 56px 폭에서 좌우 5px 여백으로 45px). */
+@media (pointer: coarse) {
+  .rail-link { min-height: 44px; }
+}
+
+/* 768–1023px: 레일은 사용자 선택과 무관하게 아이콘 폭(56px)이다. 접기 버튼은 감춘다. */
+@media (max-width: 1023px) {
+  [data-rail] .rail-link { justify-content: center; padding: 0; margin: 0 5px; }
+  [data-rail] .rail-label,
+  [data-rail] .rail-count,
+  [data-rail] .rail-group { display: none; }
+  [data-rail] .rail-dot { display: block; }
+  [data-rail] .rail-link:hover::after,
+  [data-rail] .rail-link:focus-visible::after {
+    content: attr(data-tip);
+    position: absolute;
+    left: calc(100% + 10px);
+    top: 50%;
+    transform: translateY(-50%);
+    z-index: 70;
+    padding: 3px 10px;
+    border-radius: 6px;
+    background: #16181a;
+    color: #fff;
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 18px;
+    white-space: nowrap;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+    pointer-events: none;
+  }
+  [data-rail] .rail-toggle { display: none; }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
    Viewer shell — 공간 (ADR-KSI-042)
 
-   The labelled 176/232px rail is the default on every route. Only an explicit
+   The labelled 188px rail is the default on every route. Only an explicit
    user choice switches it to a 56px icon rail. On viewer paths the main stops
-   scrolling so the spatial stage owns the viewport. The top bar hides only
-   for a healthy session — expiry/unknown keeps its recovery strip. The site
-   header moves into the floating layer panel at lg+; mobile keeps it.
+   scrolling so the spatial stage owns the viewport. The global header (project
+   switcher, search, account) is always shown — ADR-KSI-043. The site header
+   moves into the floating layer panel at lg+; mobile keeps it.
 
    `viewer-path.ts` owns the path predicate. `ShellLayoutMode` toggles this
    class on client navigation; the root layout sets it in the first render.
@@ -769,9 +943,10 @@ body {
     min-height: 0;
     overflow: hidden;
   }
-  body.viewer-shell [data-shell-topbar][data-session-state="ok"] {
-    display: none;
-  }
+}
+/* 768px 이상: 헤더의 프로젝트 전환·설정이 현장 머리말 역할을 하므로 공간 화면에서는 머리말을 접어
+   세로 공간(특히 확대한 화면)을 지도에 돌려준다. */
+@media (min-width: 768px) {
   body.viewer-shell [data-site-header] {
     display: none;
   }
