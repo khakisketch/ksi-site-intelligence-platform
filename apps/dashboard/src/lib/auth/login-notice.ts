@@ -20,5 +20,7 @@ export function loginNoticeText(input: {
       ? "이전 로그인 요청을 검증하지 못했습니다. 이 화면에서 기본 개발 계정으로 다시 시작하세요."
       : "로그인 요청을 완료하지 못했습니다. 이 화면에서 다시 로그인하세요.";
   }
-  return notice;
+  // 주소의 notice는 누구나 적을 수 있다. 위에서 정한 코드만 문구로 바꾸고,
+  // 모르는 값은 그대로 화면에 찍지 않는다.
+  return undefined;
 }

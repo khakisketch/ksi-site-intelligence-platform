@@ -1,7 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 
 async function login(page: Page, viewer = false) {
-  await page.goto("/login");
+  await page.goto(viewer ? "/login?intent=role-test" : "/login");
   if (viewer) {
     await page.getByRole("button", { name: "다른 개발 계정 선택" }).click();
     await page.getByText("권한별 화면 테스트(선택)", { exact: true }).click();

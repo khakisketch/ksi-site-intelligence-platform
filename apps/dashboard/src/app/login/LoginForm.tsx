@@ -13,7 +13,7 @@ export function LoginForm({ next }: { next: string }) {
     <form action={formAction} className="flex flex-col gap-4">
       <input type="hidden" name="next" value={next} />
       <div className="flex flex-col gap-1.5">
-        <label htmlFor="token" className="text-sm font-medium break-keep">
+        <label htmlFor="token" className="text-body font-medium break-keep">
           개발용 Bearer 토큰
         </label>
         <input
@@ -28,7 +28,7 @@ export function LoginForm({ next }: { next: string }) {
         />
       </div>
       {state.error && (
-        <p role="alert" className="break-keep text-sm text-crit-ink">
+        <p role="alert" className="break-keep text-body text-crit-ink">
           {state.error}
         </p>
       )}

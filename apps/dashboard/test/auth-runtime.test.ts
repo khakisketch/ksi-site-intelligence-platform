@@ -179,6 +179,21 @@ describe("Auth.js token exposure boundary", () => {
     ).toBe("로그인 요청을 완료하지 못했습니다. 이 화면에서 다시 로그인하세요.");
   });
 
+  it("turns only known login notice codes into text and never echoes the URL value", () => {
+    expect(
+      loginNoticeText({ localDevelopmentIdentityEnabled: false, notice: "oidc-session-expired" }),
+    ).toBe("보안 세션을 갱신하지 못했습니다. 다시 로그인하세요.");
+    expect(
+      loginNoticeText({ localDevelopmentIdentityEnabled: false, notice: "oidc-not-configured" }),
+    ).toBe("OIDC 로그인이 이 환경에 설정되지 않았습니다.");
+    for (const localDevelopmentIdentityEnabled of [true, false]) {
+      expect(
+        loginNoticeText({ localDevelopmentIdentityEnabled, notice: "지금 이 번호로 전화하세요" }),
+      ).toBeUndefined();
+    }
+    expect(loginNoticeText({ localDevelopmentIdentityEnabled: false })).toBeUndefined();
+  });
+
   it("browser refresh request is single-flight within a tab", () => {
     const source = readFileSync(
       join(process.cwd(), "src/components/auth/SessionRefresh.tsx"),
