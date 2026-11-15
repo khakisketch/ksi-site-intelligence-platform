@@ -166,7 +166,7 @@ describe("작업 페이지 follow-up", () => {
     const section = operations.closest("section");
     expect(section?.id).toBe("work-operations");
     expect(section?.querySelector("details")).toBeNull();
-    expect(screen.getByRole("link", { name: "공간의 등록 진행 보기" }).getAttribute("href")).toBe("/sites/site-1?panel=intake");
+    expect(screen.getByRole("link", { name: "자료의 등록 진행 보기" }).getAttribute("href")).toBe("/sites/site-1/data?progress=1");
   });
 
   it("uses the shared count format for WorkAreas and draft regions", async () => {
@@ -264,7 +264,7 @@ describe("작업 페이지 follow-up", () => {
     await renderPage();
     const continuation = within(screen.getByRole("region", { name: "등록 자료 다음 확인" }));
     expect(continuation.getByRole("link", { name: "등록 자료 목록 보기" }).getAttribute("href"))
-      .toBe("/sites/site-1?panel=materials&workAreaId=area-1");
+      .toBe("/sites/site-1/data?workAreaId=area-1");
     expect(continuation.getByRole("link", { name: "변화 분석에서 비교하기" }).getAttribute("href"))
       .toBe("/sites/site-1/analysis?request=new&workAreaId=area-1&currentWorkOrderId=order-1#new-analysis-request");
     // 등록·검사 기록으로 이동하는 주 버튼과 같은 무게로 보이지 않는다.

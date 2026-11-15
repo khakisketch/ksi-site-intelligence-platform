@@ -209,7 +209,7 @@ export function DetailBlock({ detail, workName, areaName, headline, compareHref,
   />;
   return <section aria-label="관측 자료 상세" id={`asset-${detail.assetRef}`} className="flex min-w-0 scroll-mt-4 flex-col gap-3">
     <h3 className="break-words text-lead font-bold text-ink-1">{headline}</h3>
-    <StateBadge label={availability.label} tone={tone} />
+    <div><StateBadge label={availability.label} tone={tone} /></div>
     <dl className="grid grid-cols-2 gap-x-3 gap-y-2">
       <CompactFact label="자료 구성" value={`${dataKindLabel(detail.kind)} · ${detail.declared.format}`} />
       <CompactFact label="관측 시점" value={captureLine} />

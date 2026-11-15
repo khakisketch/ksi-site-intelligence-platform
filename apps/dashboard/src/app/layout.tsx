@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { Suspense } from "react";
 import { Geist, Geist_Mono } from "next/font/google";
 import { headers } from "next/headers";
 
@@ -16,6 +17,7 @@ import { MobileBottomNav } from "@/components/nav/MobileBottomNav";
 import { MainPageTitle } from "@/components/nav/PageTitle";
 import { RouteFocusManager } from "@/components/nav/RouteFocusManager";
 import { ShellLayoutMode, ShellMain, ShellOnly, ShellViewport } from "@/components/nav/ShellPathBoundary";
+import { RailAccount } from "@/components/nav/RailAccount";
 import { TopBar } from "@/components/nav/TopBar";
 import { resolvePageTitle } from "@/components/nav/page-title";
 import { CommandPalette } from "@/components/console/CommandPalette";
@@ -114,7 +116,10 @@ export default async function RootLayout({
               <TopBar />
             </ShellOnly>
           )}
-          <DesktopSidebar counts={navCounts} />
+          <DesktopSidebar
+            counts={navCounts}
+            account={chromeless ? null : <Suspense fallback={null}><RailAccount /></Suspense>}
+          />
           <ShellViewport>
             <ShellMain>
               {!chromeless && <MainPageTitle fallback={currentPageTitle} />}

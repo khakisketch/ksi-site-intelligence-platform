@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 
+import { siteDataHref } from "@/components/nav/site-context";
 import type { SpatialAssetCatalogItem } from "@/lib/core-api/spatial-assets";
 import { listSpatialWorkspaceObservations } from "@/lib/core-api/spatial-workspace";
 import { listWorkAreas } from "@/lib/core-api/workAreas";
@@ -18,6 +19,18 @@ export default async function SpatialAssetsPage({
   searchParams: Promise<MaterialsSearchParams>;
 }) {
   const [{ siteId }, query] = await Promise.all([params, searchParams]);
+  // 시각 쌍(A/B) 요청이 아닌 옛 자료 주소는 자료 섹션으로 보낸다. 값은 자료 섹션이 다시 검증한다.
+  if (query.visualAAssetRef === undefined && query.visualBAssetRef === undefined) {
+    const one = (value: string | string[] | undefined) => (Array.isArray(value) ? value[0] : value);
+    redirect(siteDataHref(siteId, {
+      workAreaId: one(query.workAreaId),
+      assetRef: one(query.assetRef),
+      q: one(query.q),
+      kind: one(query.kind),
+      state: one(query.state),
+      cursor: one(query.cursor),
+    }));
+  }
   const target = new URLSearchParams({ panel: "materials" });
   for (const key of ["workAreaId", "assetRef", "q", "kind", "state", "cursor", "info"] as const) {
     const value = query[key];

@@ -33,7 +33,7 @@ export function AnalysisStartGuide({
         <p className="mt-1 text-caption leading-4 text-ink-2">구분 기준과 등록 버전·관측 기록 표시는 새 분석 요청에 있습니다. 이 목록은 작업구역 적합성을 미리 판정하지 않습니다.</p>
         {observationCount < 2 && <>
           <p className="mt-1 text-caption leading-5 text-ink-2">파일을 등록한 사실과 비교 후보 표시는 다릅니다. 촬영 날짜만 있거나 시각이 미상인 자료는 현재 시점 비교 후보에 포함되지 않습니다. 등록 자료에서 입력 정보와 검사 상태를 확인하세요.</p>
-          <Link className="mt-1 inline-flex min-h-11 items-center text-caption font-semibold text-accent-text hover:underline" href={`${sitePath}?panel=materials${workAreaId ? `&workAreaId=${encodeURIComponent(workAreaId)}` : ""}`}>등록 자료·촬영 정보 확인</Link>
+          <Link className="mt-1 inline-flex min-h-11 items-center text-caption font-semibold text-accent-text hover:underline" href={`${sitePath}/data${workAreaId ? `?workAreaId=${encodeURIComponent(workAreaId)}` : ""}`}>등록 자료·촬영 정보 확인</Link>
         </>}
       </li>
       <li className="min-w-0">

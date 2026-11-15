@@ -38,7 +38,7 @@ describe("AnalysisStartGuide", () => {
     expect(screen.getByText("등록된 작업구역 없음")).toBeTruthy();
     expect(screen.getByText("1개 표시됨")).toBeTruthy();
     expect(screen.getByRole("link", { name: "작업구역 현황 확인" }).getAttribute("href")).toBe("/sites/site-1/work-areas");
-    expect(screen.getByRole("link", { name: "등록 자료·촬영 정보 확인" }).getAttribute("href")).toBe("/sites/site-1?panel=materials");
+    expect(screen.getByRole("link", { name: "등록 자료·촬영 정보 확인" }).getAttribute("href")).toBe("/sites/site-1/data");
     expect(screen.queryByRole("link", { name: "변화 분석 요청으로 이동" })).toBeNull();
     expect(document.body.textContent).not.toContain("SITES_WRITE");
   });
@@ -54,7 +54,7 @@ describe("AnalysisStartGuide", () => {
       canCreate
     />);
     expect(screen.getByText(/촬영 날짜만 있거나 시각이 미상인 자료는 현재 시점 비교 후보에 포함되지 않습니다/)).toBeTruthy();
-    expect(screen.getByRole("link", { name: "등록 자료·촬영 정보 확인" }).getAttribute("href")).toBe("/sites/site-1?panel=materials&workAreaId=area-1");
+    expect(screen.getByRole("link", { name: "등록 자료·촬영 정보 확인" }).getAttribute("href")).toBe("/sites/site-1/data?workAreaId=area-1");
     expect(document.body.textContent).not.toContain("등록된 관측 자료가 없습니다");
     expect(screen.queryByRole("link", { name: "변화 분석 요청으로 이동" })).toBeNull();
   });

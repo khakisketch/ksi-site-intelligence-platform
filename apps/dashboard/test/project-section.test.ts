@@ -4,6 +4,7 @@ import {
   PROJECT_SECTIONS,
   projectSectionHref,
   projectSwitchHref,
+  siteDataHref,
   resolveProjectSection,
 } from "@/components/nav/site-context";
 
@@ -14,10 +15,11 @@ describe("프로젝트 섹션 해석 (ADR-KSI-043)", () => {
     expect(PROJECT_SECTIONS.map((section) => section.key)).toEqual(["space", "data", "analysis"]);
   });
 
-  it("프로젝트 루트는 공간이고 자료 패널(panel=materials|intake)은 자료다", () => {
+  it("프로젝트 루트는 공간이고 자료 패널(panel=materials|intake)과 자료 화면(/data)은 자료다", () => {
     expect(resolveProjectSection("/sites/s1", q(""))).toBe("space");
     expect(resolveProjectSection("/sites/s1", q("panel=materials"))).toBe("data");
     expect(resolveProjectSection("/sites/s1", q("panel=intake&workAreaId=w1"))).toBe("data");
+    expect(resolveProjectSection("/sites/s1/data", q("workAreaId=w1&assetRef=a"))).toBe("data");
     expect(resolveProjectSection("/sites/s1", q("mode=compare"))).toBe("space");
   });
 
@@ -43,9 +45,16 @@ describe("프로젝트 섹션 해석 (ADR-KSI-043)", () => {
 
   it("섹션 주소는 기존 라우트를 그대로 쓴다", () => {
     expect(projectSectionHref("s1", "space")).toBe("/sites/s1");
-    expect(projectSectionHref("s1", "data")).toBe("/sites/s1?panel=materials");
+    expect(projectSectionHref("s1", "data")).toBe("/sites/s1/data");
     expect(projectSectionHref("s1", "analysis")).toBe("/sites/s1/analysis");
     expect(projectSectionHref("s1", null)).toBe("/sites/s1");
-    expect(projectSwitchHref("s2", "data")).toBe("/sites/s2?panel=materials");
+    expect(projectSwitchHref("s2", "data")).toBe("/sites/s2/data");
+  });
+
+  it("자료 섹션 주소는 값이 있는 조건만 싣는다", () => {
+    expect(siteDataHref("s1")).toBe("/sites/s1/data");
+    expect(siteDataHref("s1", { workAreaId: "w1", assetRef: "ksa", q: "north map", kind: "dsm", state: "inspected", cursor: "a/b", progress: true }))
+      .toBe("/sites/s1/data?workAreaId=w1&assetRef=ksa&q=north+map&kind=dsm&state=inspected&cursor=a%2Fb&progress=1");
+    expect(siteDataHref("s 1", { workAreaId: null, q: "", progress: false })).toBe("/sites/s%201/data");
   });
 });

@@ -34,6 +34,7 @@ export function resolvePageTitle(pathname: string | null, search?: { get(key: st
   if (/^\/sites\/[^/]+\/observations\/[^/]+\/?$/.test(pathname)) return "외부 비교 결과";
   if (/^\/sites\/[^/]+\/observations\/?$/.test(pathname)) return "분석";
   if (/^\/sites\/[^/]+\/analysis\/?$/.test(pathname)) return "분석";
+  if (/^\/sites\/[^/]+\/data\/?$/.test(pathname)) return "자료";
   if (/^\/sites\/[^/]+\/spatial-assets\/?$/.test(pathname)) return "공간";
   if (/^\/sites\/[^/]+\/spatial-data-requests\/?$/.test(pathname)) return "구역 자료 준비";
   if (/^\/sites\/[^/]+\/work-areas\/?$/.test(pathname)) return "작업구역";

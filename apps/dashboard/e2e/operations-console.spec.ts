@@ -118,7 +118,7 @@ test("역할에 맞는 전역 메뉴와 반응형 셸을 유지한다", async ({
   });
   await expect(navigation).toBeVisible();
 
-  // 데스크톱 레일: 홈·프로젝트·작업·도움말(계정은 헤더 계정 메뉴). 모바일: 홈·프로젝트·작업·계정.
+  // 레일(768px 이상): 홈·프로젝트·작업·도움말 + 맨 아래 계정 메뉴. 하단 탭: 홈·프로젝트·작업·계정.
   const expectedLinks = isDesktop
     ? [["/", "홈"], ["/sites", "프로젝트"], ["/field", "작업"], ["/help", "도움말"]]
     : [["/", "홈"], ["/sites", "프로젝트"], ["/field", "작업"], ["/more", "계정"]];
@@ -128,7 +128,9 @@ test("역할에 맞는 전역 메뉴와 반응형 셸을 유지한다", async ({
     await expect(link).toContainText(label);
   }
   if (isDesktop) {
-    await expect(page.getByRole("button", { name: /^계정 메뉴/ })).toBeVisible();
+    // 계정 메뉴는 레일 맨 아래에 있고, 같은 이름의 좁은 화면용 헤더 버튼은 숨겨져 있다.
+    await expect(navigation.getByRole("button", { name: /^계정 메뉴/ })).toBeVisible();
+    await expect(page.getByRole("button", { name: /^계정 메뉴/ }).locator("visible=true")).toHaveCount(1);
     await expect(page.getByRole("button", { name: "프로젝트 선택" })).toBeVisible();
   }
   await expect(navigation.locator('a[href="/coming-soon/fleet"]')).toHaveCount(0);
@@ -413,15 +415,17 @@ test("현장의 공간과 분석 메뉴가 자료 패널, 비교, 설정과 옛 
   await page.getByRole("button", { name: "정보", exact: true }).click();
   await expect(info).toBeVisible();
 
+  // 옛 자료 주소는 자료 섹션(/data)으로 이관된다. 조건은 주소에 남고 같은 양식에 채워진다.
   await page.goto(`${sitePath}/spatial-assets?kind=dsm`);
-  await expect(page).toHaveURL(/panel=materials.*kind=dsm/);
-  await expect(catalog.getByRole("combobox", { name: "종류" })).toHaveValue("dsm");
+  await expect(page).toHaveURL(/\/data\?.*kind=dsm/);
+  await expect(page.getByRole("combobox", { name: "종류" }).locator("visible=true")).toHaveValue("dsm");
   await expectNoHorizontalOverflow(page);
 
+  // 옛 작업 원장 주소는 자료 섹션의 등록 진행 서랍을 연다.
   await page.goto(`${sitePath}?section=work-orders`);
-  await expect(page).toHaveURL(/panel=intake/);
-  await expect(catalog.getByRole("button", { name: "등록 진행", exact: true })).toHaveAttribute("aria-pressed", "true");
-  await expect(catalog.getByRole("region", { name: "등록 진행 중인 작업" }).getByRole("link", { name: "E2E 외부 산출물 등록", exact: true })).toBeVisible();
+  await expect(page).toHaveURL(/\/data\?.*progress=1/);
+  await expect(page.getByRole("region", { name: "등록 진행 중인 작업" }).getByRole("link", { name: "E2E 외부 산출물 등록", exact: true })).toBeVisible();
+  await expectNoHorizontalOverflow(page);
 
   await page.goto(`${sitePath}?section=manage`);
   await expect(page.getByRole("heading", { name: "현장 범위", exact: true })).toBeVisible();
@@ -439,6 +443,38 @@ test("현장의 공간과 분석 메뉴가 자료 패널, 비교, 설정과 옛 
   await expect(compareStage).toBeVisible();
   await expect(compareStage.getByRole("link", { name: "이 쌍으로 분석 조건 확인", exact: true })).toHaveCount(0);
   await expectNoHorizontalOverflow(page);
+});
+
+test("자료 섹션은 구역·표·상세·등록 진행을 한 화면에 두고 크기마다 넘치지 않는다", async ({ page }) => {
+  if (process.env.KSI_DASHBOARD_E2E_BASE_URL) test.skip(true, "이 테스트는 합성 현장과 작업을 사용합니다.");
+  const sitePath = `/sites/${encodeURIComponent(syntheticSiteId)}`;
+  await page.goto(`${sitePath}/data`);
+  // 스트리밍이 끝나기 전에는 숨은 조각이 같이 있을 수 있어 보이는 틀만 쓴다.
+  await page.waitForLoadState("networkidle");
+  await expect(page.getByRole("main").getByRole("heading", { level: 1, name: "자료", exact: true })).toHaveCount(1);
+  const frame = page.locator('[data-section-frame="true"]:visible');
+  await expect(frame).toBeVisible();
+  await expect(frame.getByRole("complementary", { name: "자료 보기 조건" })).toBeVisible();
+  await expect(frame.getByRole("complementary", { name: "선택한 자료 상세" })).toBeVisible();
+  await expect(frame.getByRole("link", { name: /E2E 작업구역 1/ }).first()).toHaveAttribute("aria-current", "true");
+
+  // 하단 서랍은 접혀 있다가 눌러서 연다.
+  const drawer = frame.locator('[data-section-drawer="true"]');
+  await expect(drawer).not.toHaveAttribute("open", "");
+  await drawer.getByText("등록 진행", { exact: true }).click();
+  await expect(frame.getByRole("region", { name: "등록 진행 중인 작업" })).toBeVisible();
+
+  // 섹션 입구: 폭이 있으면 레일, 없으면 하단 탭이 자료를 현재 위치로 가리킨다.
+  const entry = page.getByRole("navigation", { name: hasRail() ? "주 메뉴" : "하단 메뉴" });
+  await expect(entry.getByRole("link", { name: "자료" })).toHaveAttribute("aria-current", "page");
+  await expectNoHorizontalOverflow(page);
+
+  // 프로젝트를 바꿔도 보던 섹션을 유지한다(헤더 전환 메뉴는 768px 이상).
+  if (hasRail()) {
+    await page.getByRole("button", { name: /^프로젝트 변경/ }).click();
+    const other = page.getByRole("dialog", { name: "프로젝트 변경" }).getByRole("link").filter({ hasNotText: "전체 프로젝트" }).first();
+    await expect(other).toHaveAttribute("href", /\/sites\/[^/]+\/data$/);
+  }
 });
 
 test("전역 작업 화면은 결정·진행·완료 원장을 구분하고 모호한 뒤로가기를 두지 않는다", async ({ page }) => {
@@ -513,7 +549,7 @@ test("외부 재구성 작업은 승인·운영 중 상태와 등록 UI를 제�
   await expect(page.getByRole("main").getByText("등록된 작업명 · E2E 외부 산출물 등록", { exact: true })).toBeVisible();
   const operations = page.locator("#work-operations");
   await expect(operations.getByRole("heading", { name: "작업 운영" })).toBeVisible();
-  await expect(page.getByRole("link", { name: "공간의 등록 진행 보기" })).toContainText("등록 진행");
+  await expect(page.getByRole("link", { name: "자료의 등록 진행 보기" })).toContainText("등록 진행");
   await expect(main.getByText("운영 중", { exact: true })).toBeVisible();
   await expect(page.getByRole("heading", { name: "관측 자료 등록" })).toBeVisible();
   await expect(main.getByText("아직 등록된 관측 자료가 없습니다.", { exact: true })).toBeVisible();

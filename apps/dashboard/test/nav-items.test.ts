@@ -77,7 +77,7 @@ describe("projectMobileTabItems", () => {
     expect(tabs.map((item) => item.label)).toEqual(["공간", "자료", "분석", "작업"]);
     expect(tabs.map((item) => item.href)).toEqual([
       "/sites/site-1",
-      "/sites/site-1?panel=materials",
+      "/sites/site-1/data",
       "/sites/site-1/analysis",
       "/field",
     ]);

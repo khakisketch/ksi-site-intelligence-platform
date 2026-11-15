@@ -39,7 +39,7 @@ export function HomeSiteGrid({ sites }: { sites: readonly SiteView[] }) {
                   <div className="mt-auto flex flex-wrap items-center gap-x-3 gap-y-1 text-caption">
                     <Link href={`/sites/${encoded}`} aria-label={`${site.name} 열기`} className="tap-target font-semibold text-accent-text hover:underline">열기</Link>
                     <span aria-hidden="true" className="text-line-strong">·</span>
-                    <Link href={`/sites/${encoded}?panel=materials`} className="tap-target text-ink-2 hover:text-ink-1 hover:underline">자료</Link>
+                    <Link href={`/sites/${encoded}/data`} className="tap-target text-ink-2 hover:text-ink-1 hover:underline">자료</Link>
                     <span aria-hidden="true" className="text-line-strong">·</span>
                     <Link href={`/sites/${encoded}/analysis`} className="tap-target text-ink-2 hover:text-ink-1 hover:underline">분석</Link>
                   </div>

@@ -93,6 +93,18 @@ describe("console shell boundary", () => {
     expect(topbar).toContain('sessionState !== "expired"');
   });
 
+  it("puts the account menu at the bottom of the rail and does not repeat the page name beside it at md+", () => {
+    const layout = readSource("src/app/layout.tsx");
+    expect(layout).toContain("<RailAccount />");
+    expect(layout).toContain("account={");
+    const rail = readSource("src/components/nav/DesktopSidebar.tsx");
+    expect(rail).toContain("{account}");
+    // 현재 섹션은 레일의 선택 표시가 알려 준다 — 상단바 제목은 좁은 화면에서만 둔다.
+    expect(readSource("src/components/nav/PageTitle.tsx")).toContain("md:hidden");
+    // 헤더 계정 버튼은 레일 계정이 보이지 않는 좁은 화면 전용이다.
+    expect(readSource("src/components/nav/AccountMenu.tsx")).toContain("md:hidden");
+  });
+
   it("viewer frames keep the layer toggle in the toolbar and protect stage controls", () => {
     const frame = readSource("src/components/site/SpatialWorkbenchFrame.tsx");
     const css = readSource("src/app/globals.css");

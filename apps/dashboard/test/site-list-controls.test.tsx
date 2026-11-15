@@ -787,7 +787,7 @@ describe("sites page wiring", () => {
     expect(DIRECTORY_CARD).toContain("현장 열기");
     expect(DIRECTORY_CARD.match(/현장 열기/g)).toHaveLength(1);
     // 이웃은 조용한 텍스트 바로가기(자료·분석)다.
-    expect(DIRECTORY_CARD).toContain("panel=materials");
+    expect(DIRECTORY_CARD).toContain("/data");
     expect(DIRECTORY_CARD).toContain("/analysis");
     expect(DIRECTORY_CARD).not.toContain("btn btn-primary");
     expect(DIRECTORY_CARD).not.toContain("<img");

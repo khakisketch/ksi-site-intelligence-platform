@@ -63,11 +63,11 @@ describe("header project switcher", () => {
   });
 
   it("keeps the data section when switching", () => {
-    navigation.pathname = "/sites/site-1";
-    navigation.search = new URLSearchParams("panel=materials");
+    navigation.pathname = "/sites/site-1/data";
+    navigation.search = new URLSearchParams();
     renderSwitcher();
     fireEvent.click(trigger());
-    expect(screen.getByRole("link", { name: /Product Sample Field/ }).getAttribute("href")).toBe("/sites/site-2?panel=materials");
+    expect(screen.getByRole("link", { name: /Product Sample Field/ }).getAttribute("href")).toBe("/sites/site-2/data");
   });
 
   it("filters by name and says so when nothing matches", () => {

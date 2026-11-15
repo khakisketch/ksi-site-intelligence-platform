@@ -142,7 +142,7 @@ export function RegistrationProgressPanel({ siteId, orders }: {
             <Link className="tap-target break-words text-body font-semibold underline underline-offset-2" href={`/field/work-orders/${encodeURIComponent(order.workOrderId)}`}>
               {order.name || "작업명 확인 불가"}
             </Link>
-            <StateBadge label={status.label} tone={status.tone} />
+            <span className="justify-self-start"><StateBadge label={status.label} tone={status.tone} /></span>
             {current !== undefined && <StepIndicator steps={PROGRESS_STEPS} current={current} align="start" label="등록 단계" />}
           </li>;
         })}

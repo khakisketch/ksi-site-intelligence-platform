@@ -55,6 +55,38 @@ test("자료 패널은 등록된 관측 2건과 검사 기록을 보이고, 정�
   await expectNoHorizontalOverflow(page);
 });
 
+test("자료 섹션은 등록된 자료를 표로 보이고 선택·검색·등록 진행을 곁에 둔다", async ({ page }) => {
+  await login(page);
+  await page.goto(`/sites/${info!.siteId}/data?workAreaId=${info!.workAreaId}`);
+  await page.waitForLoadState("networkidle");
+  const rows = page.locator("[data-asset-row]");
+  await expect(rows.filter({ hasText: "dsm-analysis-local-baseline.bin" })).toHaveCount(1);
+  await expect(rows.filter({ hasText: "dsm-analysis-local-current.bin" })).toHaveCount(1);
+
+  // 한 건을 고르면 주소가 선택을 갖고, 상세가 인스펙터에 그려진다.
+  await rows.filter({ hasText: "dsm-analysis-local-baseline.bin" }).getByRole("link").click();
+  await expect(page).toHaveURL(/assetRef=ksa-v1-/);
+  await expect(page.getByRole("region", { name: "관측 자료 상세" })).toBeVisible();
+  await expect(rows.filter({ hasText: "dsm-analysis-local-baseline.bin" }).getByRole("link")).toHaveAttribute("aria-current", "true");
+
+  // 검색은 이미 불러온 목록 안에서 좁힌다(보이는 양식만 쓴다).
+  // 1280px 미만에서는 검색·필터가 접힘 안에 있어 먼저 연다.
+  const search = page.getByRole("searchbox", { name: "자료 검색" }).locator("visible=true");
+  if (!(await search.count())) await page.locator("summary", { hasText: "검색·필터" }).click();
+  await search.fill("current");
+  await page.getByRole("button", { name: "적용" }).locator("visible=true").click();
+  await expect(rows).toHaveCount(1);
+  await expect(page.locator("body")).toContainText("dsm-analysis-local-current.bin");
+
+  // 등록 진행 서랍은 접혀 있다가 열린다.
+  // 이동 직후에는 스트리밍 조각이 잠시 겹쳐 있을 수 있어 보이는 서랍만 쓴다.
+  const drawer = page.locator('[data-section-drawer="true"]:visible');
+  await expect(drawer).not.toHaveAttribute("open", "");
+  await drawer.getByText("등록 진행", { exact: true }).click();
+  await expect(page.getByRole("region", { name: "등록 진행 중인 작업" })).toBeVisible();
+  await expectNoHorizontalOverflow(page);
+});
+
 test("자료 검색은 파일명으로 목록을 좁힌다", async ({ page }) => {
   await login(page);
   await page.goto(`/sites/${info!.siteId}?panel=materials&workAreaId=${info!.workAreaId}`);

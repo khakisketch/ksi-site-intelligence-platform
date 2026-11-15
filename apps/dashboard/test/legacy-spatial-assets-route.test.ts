@@ -38,9 +38,9 @@ beforeEach(() => {
   core.asset.mockImplementation(async (_siteId: string, _areaId: string, ref: string) => pair.find((item) => item.assetRef === ref));
 });
 
-it("carries the legacy catalog selection, filters and cursor into the space materials panel", async () => {
+it("carries the legacy catalog selection, filters and cursor into the data section", async () => {
   await expect(legacy({ workAreaId, assetRef, q: "north map", kind: "ortho", state: "inspected", cursor: "next/+=", info: "1" }))
-    .rejects.toThrow(`/sites/site-1?panel=materials&workAreaId=north&assetRef=${assetRef}&q=north+map&kind=ortho&state=inspected&cursor=next%2F%2B%3D&info=1`);
+    .rejects.toThrow(`/sites/site-1/data?workAreaId=north&assetRef=${assetRef}&q=north+map&kind=ortho&state=inspected&cursor=next%2F%2B%3D`);
   expect(core.asset).not.toHaveBeenCalled();
 });
 

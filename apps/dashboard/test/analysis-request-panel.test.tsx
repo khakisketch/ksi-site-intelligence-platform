@@ -552,7 +552,7 @@ describe("analysis V2 panel", () => {
 
     expect(selected.getByText("높이 기준이 서로 다름 · 현재 관측")).toBeTruthy();
     expect(selected.getByText(/수직 기준과 단위를 담당자가 확인해야 합니다/)).toBeTruthy();
-    expect(selected.getByRole("link", { name: "공간 자산 기록 확인" }).getAttribute("href")).toBe("/sites/site-1?panel=materials&workAreaId=area-1");
+    expect(selected.getByRole("link", { name: "공간 자산 기록 확인" }).getAttribute("href")).toBe("/sites/site-1/data?workAreaId=area-1");
     const technical = selected.getByText("원문 코드 상세").closest("details");
     expect(technical?.hasAttribute("open")).toBe(false);
     fireEvent.click(selected.getByText("원문 코드 상세"));
@@ -1011,7 +1011,7 @@ describe("analysis V2 panel", () => {
     expect(screen.getByText(state === "denied" ? /관측 목록을 조회할 권한이 없습니다/ : state === "unconfirmed" ? /관측 목록을 확인할 수 없습니다/ : /관측 목록을 불러오지 못했습니다/)).toBeTruthy();
     expect(screen.queryByText("이 구역의 분석 후보가 없습니다")).toBeNull();
     expect(screen.queryByRole("button", { name: "변화 분석 요청" })).toBeNull();
-    expect(screen.getByRole("link", { name: "등록 자료와 검사 상태 확인" }).getAttribute("href")).toBe("/sites/site-1?panel=materials&workAreaId=area-1");
+    expect(screen.getByRole("link", { name: "등록 자료와 검사 상태 확인" }).getAttribute("href")).toBe("/sites/site-1/data?workAreaId=area-1");
     expect(screen.getByRole("link", { name: "공간으로 돌아가기" }).getAttribute("href")).toBe("/sites/site-1?workAreaId=area-1");
     fireEvent.click(screen.getByRole("button", { name: "목록 다시 불러오기" }));
     expect(router.refresh).toHaveBeenCalled();
@@ -1025,7 +1025,7 @@ describe("analysis V2 panel", () => {
     expect(screen.getAllByRole("button", { name: "이력 다시 불러오기" })).toHaveLength(1);
     const recovery = screen.getByRole("navigation", { name: "공통 범위 복구" });
     expect(within(recovery).getByRole("link", { name: "등록 자료 보기" }).getAttribute("href"))
-      .toBe("/sites/site-1?panel=materials&workAreaId=area-1");
+      .toBe("/sites/site-1/data?workAreaId=area-1");
     expect(within(recovery).getByRole("link", { name: "공간으로 돌아가기" }).getAttribute("href"))
       .toBe("/sites/site-1?workAreaId=area-1");
     expect(screen.getAllByRole("link", { name: "등록 자료 보기" })).toHaveLength(1);
@@ -1039,7 +1039,7 @@ describe("analysis V2 panel", () => {
     renderPanel({ openRequestOnEntry: true, canCreate: true, initialPage: listPage([]), initialSelectedDetail: null, initialAnalysisId: null,
       initialWorkAreaId: "", listsState: { workAreas: "denied", observations: "ready", workOrders: "ready", history: "ready" } });
     expect(screen.getByText(/작업구역 목록을 조회할 권한이 없습니다/)).toBeTruthy();
-    expect(screen.getByRole("link", { name: "등록 자료 보기" }).getAttribute("href")).toBe("/sites/site-1?panel=materials");
+    expect(screen.getByRole("link", { name: "등록 자료 보기" }).getAttribute("href")).toBe("/sites/site-1/data");
     expect(screen.getByRole("link", { name: "공간 보기" }).getAttribute("href")).toBe("/sites/site-1");
   });
 
@@ -1049,7 +1049,7 @@ describe("analysis V2 panel", () => {
     expect(screen.getByRole("alert").textContent).toContain("등록 자료의 상태를 판단하지 않습니다");
     expect(screen.queryByText(/아직 변화 분석 요청이 없습니다/)).toBeNull();
     const recovery = within(screen.getByRole("navigation", { name: "이력 범위 복구" }));
-    expect(recovery.getByRole("link", { name: "등록 자료 보기" }).getAttribute("href")).toBe("/sites/site-1?panel=materials&workAreaId=area-1");
+    expect(recovery.getByRole("link", { name: "등록 자료 보기" }).getAttribute("href")).toBe("/sites/site-1/data?workAreaId=area-1");
     expect(recovery.getByRole("link", { name: "공간 보기" }).getAttribute("href")).toBe("/sites/site-1?workAreaId=area-1");
     expect(screen.getAllByRole("link", { name: "등록 자료 보기" })).toHaveLength(1);
     expect(screen.getAllByRole("link", { name: "공간 보기" })).toHaveLength(1);
@@ -1488,7 +1488,7 @@ describe("newer observation notice", () => {
     expect(screen.queryByRole("button", { name: "변화 분석 요청" })).toBeNull();
     // 실제 다음 행동을 둔다.
     expect(screen.getByRole("link", { name: "등록 자료와 검사 상태 확인" }).getAttribute("href"))
-      .toBe("/sites/site-1?panel=materials&workAreaId=area-1");
+      .toBe("/sites/site-1/data?workAreaId=area-1");
     expect(screen.getByRole("link", { name: "공간으로 돌아가기" }).getAttribute("href"))
       .toBe("/sites/site-1?workAreaId=area-1");
   });
