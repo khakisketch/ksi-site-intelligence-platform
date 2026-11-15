@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "node scripts/run-local-oidc-stack.mjs --tailscale required",
     "dev:local": "node scripts/run-local-oidc-stack.mjs --tailscale disabled",
+    "dev:data-states": "node scripts/run-data-state-stack.mjs",
     "dev:dashboard": "next dev",
     "build": "next build",
     "package:standalone": "node scripts/package-standalone.mjs",
