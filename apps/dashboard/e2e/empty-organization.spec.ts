@@ -1,7 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 
 async function loginToEmptyOrganization(page: Page) {
-  await page.goto("/login");
+  await page.goto("/login?intent=role-test");
   await page.getByRole("button", { name: "다른 개발 계정 선택" }).click();
   await expect(page).toHaveURL(/\/authorize/);
   await page.getByText("권한별 화면 테스트(선택)", { exact: true }).click();

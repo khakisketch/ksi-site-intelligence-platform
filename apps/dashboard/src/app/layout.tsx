@@ -72,6 +72,9 @@ export default async function RootLayout({
     <html
       lang="ko"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
+      // 브라우저 확장(예: 한컴 확장)이 <html>에 속성을 끼워 넣어 hydration이
+      // 깨지는 경우를 무시한다. 앱이 그리는 요소의 불일치는 그대로 보고된다.
+      suppressHydrationWarning
     >
       {/* 앱 셸 — 시안(ink-mono)의 .shell 을 그대로 옮긴다.
           lg 이상에서 뷰포트 높이에 고정되고 **본문만 스크롤한다**. 이게 문서와 앱을
