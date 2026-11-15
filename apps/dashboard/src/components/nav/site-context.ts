@@ -16,6 +16,18 @@ export const SITE_CONTEXT_SECTIONS = SITE_TABS.map<{ key: SiteSection; label: st
   icon: tab.key === "space" ? "sites" : "chart",
 }));
 
+/**
+ * 프로젝트 안의 업무 섹션(ADR-KSI-043). 레일과 모바일 하단 탭이 같은 목록을 쓴다.
+ * "자료"는 아직 공간 워크벤치의 자료 패널(`?panel=materials`)이며, 독립 화면이 생기면
+ * `projectSectionHref`만 바꾼다.
+ */
+export type ProjectSection = "space" | "data" | "analysis";
+export const PROJECT_SECTIONS: ReadonlyArray<{ key: ProjectSection; label: string; icon: NavIconName }> = [
+  { key: "space", label: "공간", icon: "sites" },
+  { key: "data", label: "자료", icon: "layers" },
+  { key: "analysis", label: "분석", icon: "chart" },
+];
+
 const SITE_PATH = /^\/sites\/([^/]+)(\/.*)?$/;
 
 /** `/sites/{siteId}` 경로에서 사람이 읽는 siteId를 꺼낸다. 등록 화면(`/sites/new`)은 제외한다. */
@@ -81,4 +93,29 @@ export function siteShortName(name: string): string {
 /** 레일의 작은 사이트 표식 — 이름 첫 글자만 쓴다. 새 이미지·색을 만들지 않는다. */
 export function siteMark(name: string): string {
   return siteShortName(name).slice(0, 1) || "현";
+}
+
+/** 현재 위치가 프로젝트의 어느 업무 섹션인지. 설정(`section=manage`)이나 프로젝트 밖이면 null. */
+export function resolveProjectSection(
+  pathname: string,
+  search: QueryReader | null | undefined,
+): ProjectSection | null {
+  const section = resolveSiteSection(pathname, search);
+  if (section === "analysis") return "analysis";
+  if (section !== "space") return null;
+  const route = SITE_PATH.exec(pathname)?.[2]?.split("/")[1] ?? "";
+  const panel = search?.get("panel");
+  return route === "" && (panel === "materials" || panel === "intake") ? "data" : "space";
+}
+
+export function projectSectionHref(siteId: string, section: ProjectSection | null): string {
+  const base = `/sites/${encodeURIComponent(siteId)}`;
+  if (section === "analysis") return `${base}/analysis`;
+  if (section === "data") return `${base}?panel=materials`;
+  return base;
+}
+
+/** 다른 프로젝트로 전환할 때 지금 보던 섹션을 유지한다. 섹션을 모르면 공간으로 간다. */
+export function projectSwitchHref(siteId: string, section: ProjectSection | null): string {
+  return projectSectionHref(siteId, section);
 }

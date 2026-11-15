@@ -43,8 +43,16 @@ async function expectNoHorizontalOverflow(page: Page) {
   expect(overflow.documentWidth).toBeLessThanOrEqual(overflow.viewportWidth + 1);
 }
 
+// 데스크톱은 좌측 레일(공간·자료·분석), 좁은 화면은 현장 머리말의 영역 메뉴(공간·분석)가 섹션 입구다.
+// 768px 이상(태블릿 포함)은 좌측 레일, 그 미만은 하단 탭이 주 메뉴다.
+function hasRail(): boolean {
+  const name = test.info().project.name;
+  return name.startsWith("desktop") || name === "tablet-768";
+}
+
 async function openSiteMenu(page: Page) {
-  const menu = page.locator('nav[aria-label="현장 영역 메뉴"]:visible, nav[aria-label="현재 현장 메뉴"]:visible, [role="group"][aria-label="현재 현장 메뉴"]:visible');
+  const desktop = hasRail();
+  const menu = page.locator(desktop ? 'nav[aria-label="주 메뉴"]:visible' : 'nav[aria-label="현장 영역 메뉴"]:visible');
   await expect(menu).toBeVisible();
   return menu;
 }
@@ -104,22 +112,24 @@ test("계정 행동과 도움말을 분리해도 기존 지원 경계에 도달�
 });
 
 test("역할에 맞는 전역 메뉴와 반응형 셸을 유지한다", async ({ page }, testInfo) => {
-  const isDesktop = testInfo.project.name.startsWith("desktop");
+  const isDesktop = hasRail();
   const navigation = page.getByRole("navigation", {
     name: isDesktop ? "주 메뉴" : "하단 메뉴",
   });
   await expect(navigation).toBeVisible();
 
+  // 데스크톱 레일: 홈·프로젝트·작업·도움말(계정은 헤더 계정 메뉴). 모바일: 홈·프로젝트·작업·계정.
   const expectedLinks = isDesktop
-    ? [["/", "홈"], ["/sites", "현장"], ["/field", "작업"], ["/more", "계정"]]
-    : [["/", "홈"], ["/sites", "현장"], ["/field", "작업"], ["/more", "계정"]];
+    ? [["/", "홈"], ["/sites", "프로젝트"], ["/field", "작업"], ["/help", "도움말"]]
+    : [["/", "홈"], ["/sites", "프로젝트"], ["/field", "작업"], ["/more", "계정"]];
   for (const [href, label] of expectedLinks) {
-    // /more 는 레일 계정 항목과 하단 사용자 블록에 각각 있다 — 레일 항목만 본다.
-    const link = href === "/more" && isDesktop
-      ? navigation.getByRole("link", { name: "계정", exact: true })
-      : navigation.locator(`a[href="${href}"]`);
+    const link = navigation.locator(`a[href="${href}"]`);
     await expect(link).toBeVisible();
     await expect(link).toContainText(label);
+  }
+  if (isDesktop) {
+    await expect(page.getByRole("button", { name: /^계정 메뉴/ })).toBeVisible();
+    await expect(page.getByRole("button", { name: "프로젝트 선택" })).toBeVisible();
   }
   await expect(navigation.locator('a[href="/coming-soon/fleet"]')).toHaveCount(0);
 
@@ -297,7 +307,7 @@ test("키보드는 내비게이션을 건너뛰고 화면 전환 뒤 본문 맥�
   await expect(page.locator("#main-content")).toBeFocused();
 
   const navigation = page.getByRole("navigation", {
-    name: test.info().project.name.startsWith("desktop") ? "주 메뉴" : "하단 메뉴",
+    name: hasRail() ? "주 메뉴" : "하단 메뉴",
   });
   await navigation.locator('a[href="/sites"]').click();
   await expect(page).toHaveURL(/\/sites$/);
@@ -373,7 +383,7 @@ test("현장의 공간과 분석 메뉴가 자료 패널, 비교, 설정과 옛 
   }
   await page.goto(sitePath);
   const siteNavigation = await openSiteMenu(page);
-  await expect(siteNavigation.getByRole("link")).toHaveCount(2);
+  await expect(siteNavigation.getByRole("link")).toHaveCount(hasRail() ? 5 : 2);
   await expect(siteNavigation.getByRole("link", { name: "공간", exact: true })).toHaveAttribute("aria-current", "page");
   await expect(siteNavigation.getByRole("link", { name: "분석", exact: true })).toHaveAttribute("href", /\/analysis(?:\?|$)/);
   await expect(page.getByRole("main").getByRole("heading", { level: 1, name: "공간", exact: true })).toHaveCount(1);

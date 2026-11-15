@@ -219,8 +219,8 @@ describe("palette modal interaction", () => {
     expect(screen.queryByRole("dialog")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "검색 · 이동" }));
     expect(screen.getByRole("dialog", { name: "검색 및 이동" })).toBeTruthy();
-    // lg 미만 전용 래퍼 — 데스크톱 사이드바와 중복 노출되지 않는다.
-    expect(opener.container.querySelector(".lg\\:hidden")).toBeTruthy();
+    // 768px 미만 전용 래퍼 — 헤더의 검색 입구와 중복 노출되지 않는다.
+    expect(opener.container.querySelector(".md\\:hidden")).toBeTruthy();
     opener.unmount();
   });
 });

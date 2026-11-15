@@ -134,7 +134,7 @@ function renderResults(options: {
 describe("site workspace explicit result metrics", () => {
   it("orders the recorded pair, status, value and evidence under the analysis result title", () => {
     const html = renderResults({});
-    const sections = ["분석 결과", "원래 입력 2건", "계산 수치 있음", "절토", "자료·근거와 검토 보기"];
+    const sections = ["분석 결과", "기준 ", "절토", "순변화", "자료·근거와 검토 보기"];
     for (const [index, section] of sections.entries()) {
       expect(html.indexOf(section)).toBeGreaterThan(index === 0 ? -1 : html.indexOf(sections[index - 1]!));
     }
@@ -147,13 +147,17 @@ describe("site workspace explicit result metrics", () => {
     expect(html).toContain("절토");
     expect(html).toContain("성토");
     expect(html).toContain("순변화");
-    expect(html).toContain("계산 수치 있음");
+    // 크기를 판단하는 말은 쓰지 않고, 참고용임은 칩 하나로 말한다.
+    expect(html).not.toContain("거의 없");
+    expect(html).toContain("참고용 · 보증 아님");
+    expect(html).toContain("불확실성 미기록");
     // 잠정을 확정·보증으로 올리지 않는다.
     expect(html).not.toContain("확정된 수치");
     expect(html).toContain("정확도 평가는 아직 확인되지 않았습니다");
     expect(html).toContain("물량 정확도 보증·측량 승인·정산 근거가 아닙니다");
     // 같은 frozen 입력·날짜와 Core 근거 링크를 둔다.
-    expect(html).toContain("원래 입력 2건이 현재 관측 목록에 있습니다");
+    expect(html).toMatch(/기준 [^<]+ → 현재 /);
+    expect(html).not.toContain("원래 입력 일부");
     expect(html).toContain("analysisId=analysis-9");
     expect(html).toContain("자료·근거와 검토 보기");
   });
@@ -167,16 +171,16 @@ describe("site workspace explicit result metrics", () => {
         result: null,
       }),
     });
-    expect(html).toContain("계산 수치 없음");
     expect(html).not.toContain("확정된 수치");
     expect(html).toContain("이 기록에는 계산된 수치가 없습니다");
+    expect(html).toContain("확인된 조건 1건");
     // 결과가 없으면 수치를 두지 않는다 — 0 대체 금지.
     expect(html).not.toContain("m³");
     expect(html).not.toContain(">0<");
     // 다음 행동은 분석 기록 확인이다.
     expect(html).toContain("자료·근거와 검토 보기");
-    // frozen 기록 자체는 그대로 둔다.
-    expect(html).toContain("링크의 원래 기록을 그대로 보여줍니다");
+    // frozen 기록 자체는 그대로 둔다 — 최신 기록으로 바꾸지 않는다.
+    expect(html).toContain("analysisId=analysis-9");
   });
 
   it("does not substitute the latest result when the requested record cannot be resolved", () => {
@@ -204,7 +208,7 @@ describe("site workspace explicit result metrics", () => {
       visualContext: { workAreaId: "area-1", visualAAssetRef: "a-vis", visualBAssetRef: "b-vis" },
     });
     // frozen 입력(원래 기록 선택자)은 그대로 두고 탐색 쌍으로 바꾸지 않는다.
-    expect(html).toContain("원래 입력 2건이 현재 관측 목록에 있습니다");
+    expect(html).toMatch(/기준 [^<]+ → 현재 /);
     expect(html).toContain("이 결과의 계산 입력과는 다를 수 있습니다");
     expect(html).toContain("독립 보기로 돌아가기");
     expect(html).toContain("visualAAssetRef=a-vis");

@@ -74,8 +74,9 @@ export function SiteHeader({
         {/* 앱 셸의 sr-only h1이 현재 위치를 유일하게 소유한다. 여기 대상명은
             그 하위 맥락이므로 h2다 — 같은 상세 화면에서 h1이 두 번 읽히지 않게 한다.
             모바일에서는 order-3 + w-full로 이름이 자기 줄을 통째로 써서 중간에
-            잘리지 않고, 상태·설정은 첫 줄 오른쪽에 남는다. */}
-        <h2 className="order-3 w-full min-w-0 text-title font-bold tracking-[-0.02em] break-keep sm:order-none sm:w-auto sm:flex-1 sm:truncate">
+            잘리지 않고, 상태·설정은 첫 줄 오른쪽에 남는다. 화면 높이가 640px 이하이면
+            세로 공간이 아까우므로 이름을 첫 줄에 두고 말줄임한다. */}
+        <h2 className="order-3 w-full min-w-0 text-title font-bold tracking-[-0.02em] break-keep sm:order-none sm:w-auto sm:flex-1 sm:truncate [@media(max-height:640px)]:order-none [@media(max-height:640px)]:w-auto [@media(max-height:640px)]:flex-1 [@media(max-height:640px)]:truncate">
           {(() => {
             const match = /^(.*?)(\s*\([^()]+\))$/.exec(site.name);
             if (!match) return site.name;
@@ -95,7 +96,7 @@ export function SiteHeader({
             href={siteSettingsHref(site.siteId)}
             aria-label="현장 설정"
             aria-current={activeTab === "manage" ? "page" : undefined}
-            className="btn btn-quiet btn-sm tap-target lg:hidden"
+            className="btn btn-quiet btn-sm tap-target md:hidden"
           >
             설정
           </Link>
@@ -104,9 +105,10 @@ export function SiteHeader({
 
       {/* 현장 메뉴 — 제품 전체에서 같은 밑줄 탭 문법. 현재 영역은
           aria-current와 밑줄로 밝히고, 좁은 화면에서는 가로 스크롤로
-          두 줄로 깨지지 않게 한다. */}
+          두 줄로 깨지지 않게 한다. 하단 탭과 겹쳐 보여도 지우지 않는다 — 이 탭만이
+          탐색 중이던 구역·자료·시각 쌍 범위를 이동에 싣는다. */}
       <nav
-        className="mx-auto flex w-full max-w-[1440px] gap-1 overflow-x-auto px-3 sm:px-5 lg:hidden"
+        className="mx-auto flex w-full max-w-[1440px] gap-1 overflow-x-auto px-3 sm:px-5 md:hidden"
         aria-label="현장 영역 메뉴"
       >
         {SITE_TABS.map((option) => (

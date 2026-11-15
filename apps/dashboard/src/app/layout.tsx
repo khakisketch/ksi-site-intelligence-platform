@@ -15,7 +15,6 @@ import { readRootShellSnapshot } from "@/components/nav/root-shell-snapshot";
 import { MobileBottomNav } from "@/components/nav/MobileBottomNav";
 import { MainPageTitle } from "@/components/nav/PageTitle";
 import { RouteFocusManager } from "@/components/nav/RouteFocusManager";
-import { SidebarUserBlock } from "@/components/nav/SidebarUserBlock";
 import { ShellLayoutMode, ShellMain, ShellOnly, ShellViewport } from "@/components/nav/ShellPathBoundary";
 import { TopBar } from "@/components/nav/TopBar";
 import { resolvePageTitle } from "@/components/nav/page-title";
@@ -80,13 +79,13 @@ export default async function RootLayout({
           lg 이상에서 뷰포트 높이에 고정되고 **본문만 스크롤한다**. 이게 문서와 앱을
           가르는 가장 큰 한 가지다: 레일과 상단바가 스크롤에 딸려 올라가지 않으면
           화면은 "열어 둔 도구"로 읽히고, 같이 밀려 올라가면 "긴 페이지"로 읽힌다.
-          폭은 시안대로 1280+ 232px · 1024~1279 176px(Console v2 §0).
+          구조는 헤더 한 줄 + (레일 188px | 본문) 한 줄이며 레일은 56px 로 접을 수 있다(ADR-KSI-043).
           lg 미만에서는 하단 탭 + 일반 문서 흐름으로 떨어진다(PRD §7.1).
 
           /login 은 셸을 통째로 벗는다(isChromelessPath — 판정 근거는 그
           모듈 주석). 이 그리드는 첫 트랙이 사이드바라는 전제 위에 있는데, 셸을 벗는
           화면에서는 DesktopSidebar 와 MobileBottomNav 가 **둘 다** null 을 반환해 남는
-          자식이 본문 wrapper 하나뿐이다. 그러면 그 하나가 176px 트랙으로 들어가 로그인
+          자식이 본문 wrapper 하나뿐이다. 그러면 그 하나가 레일 폭 트랙으로 들어가 로그인
           카드가 레일 폭으로 눌린다. 자식 수에 의존하는 레이아웃이라 "사이드바가 없는
           화면"을 예외로 처리하지 않으면 조용히 깨진다.
 
@@ -97,25 +96,26 @@ export default async function RootLayout({
         className={
           chromeless
             ? "min-h-full"
-            : `min-h-full lg:grid lg:h-screen lg:grid-cols-[176px_1fr] lg:overflow-hidden xl:grid-cols-[232px_1fr]${viewerShell ? " viewer-shell" : ""}`
+            : `min-h-full md:grid md:h-screen md:grid-cols-[56px_1fr] md:grid-rows-[auto_minmax(0,1fr)] md:overflow-hidden lg:grid-cols-[188px_1fr]${viewerShell ? " viewer-shell" : ""}`
         }
       >
         <AccountDisplayBoundary fingerprint={shellFingerprint} bypass={chromeless} ownsFreshLoginMarker>
         <SiteListProvider sites={sidebarSites} fingerprint={shellFingerprint}>
           <ShellLayoutMode />
+          {!chromeless && (
+            <ShellOnly>
+              <a href="#main-content" className="skip-link">
+                본문으로 건너뛰기
+              </a>
+            </ShellOnly>
+          )}
+          {!chromeless && (
+            <ShellOnly>
+              <TopBar />
+            </ShellOnly>
+          )}
+          <DesktopSidebar counts={navCounts} />
           <ShellViewport>
-            {!chromeless && (
-              <ShellOnly>
-                <a href="#main-content" className="skip-link">
-                  본문으로 건너뛰기
-                </a>
-              </ShellOnly>
-            )}
-            {!chromeless && (
-              <ShellOnly>
-                <TopBar />
-              </ShellOnly>
-            )}
             <ShellMain>
               {!chromeless && <MainPageTitle fallback={currentPageTitle} />}
               {!chromeless && <ConnectivityNotice />}
@@ -123,7 +123,6 @@ export default async function RootLayout({
               <ToastProvider>{children}</ToastProvider>
             </ShellMain>
           </ShellViewport>
-          <DesktopSidebar counts={navCounts} sites={sidebarSites} userBlock={!chromeless && <SidebarUserBlock snapshot={shellSnapshot?.principal ?? null} />} />
           <MobileBottomNav />
           {!chromeless && <RouteFocusManager />}
           {!chromeless && <CommandPalette items={paletteItems} />}

@@ -1,13 +1,18 @@
 import { headers } from "next/headers";
 import Link from "next/link";
+import { Suspense } from "react";
 
 import { whoAmI } from "@/lib/core-api/auth";
 import { CoreApiError } from "@/lib/core-api/client";
 import { MissingSessionError } from "@/lib/core-api/session";
+import { ROLE_LABEL } from "@/lib/core-api/labels";
 import { PATHNAME_HEADER, RETURN_TO_HEADER, SEARCH_HEADER } from "@/lib/core-api/session-cookie";
 
+import { AccountMenu } from "./AccountMenu";
 import { BackButton } from "./BackButton";
+import { HeaderSearchTrigger } from "./HeaderSearchTrigger";
 import { PageTitle } from "./PageTitle";
+import { ProjectSwitcher } from "./ProjectSwitcher";
 import { TopBarSearchTrigger } from "./TopBarSearchTrigger";
 import { resolvePageTitle } from "./page-title";
 
@@ -18,16 +23,33 @@ function TopBarFrame({
 }: {
   title: string;
   children?: React.ReactNode;
-  /** Viewer 셸은 정상 세션의 전역 상단바를 숨긴다. 만료·확인 실패는 복구
-   *  동작이므로 숨기지 않는다 — CSS가 이 값을 본다. */
+  /** 만료·확인 실패는 복구 동작이라 프로젝트 전환 같은 정상 도구를 숨긴다 — CSS와 테스트가 이 값을 본다. */
   sessionState?: "ok" | "expired" | "unknown";
 }) {
   return (
     <header
       data-shell-topbar="true"
       data-session-state={sessionState}
-      className="print:hidden flex shrink-0 flex-wrap items-center gap-x-3.5 gap-y-2 border-b border-line bg-surface px-4 py-2.5 sm:px-5 lg:min-h-10 lg:py-1"
+      // 전역 헤더(ADR-KSI-043) — 768px 이상에서는 레일과 본문 위를 가로질러 한 줄로 놓인다.
+      // 팝오버(프로젝트 전환·계정)가 레일과 본문 위에 뜨도록 768px 이상에서만 레일(z-50)보다 한 층 위에 둔다.
+      // 좁은 화면에서는 위치·층을 주지 않아 하단 시트(고정 배치)가 헤더 위를 덮는다.
+      className="print:hidden flex shrink-0 flex-wrap items-center gap-x-3 gap-y-2 border-b border-line bg-surface px-4 py-2.5 sm:px-5 md:relative md:z-[55] md:col-span-2 md:row-start-1 md:min-h-12 md:flex-nowrap md:px-3 md:py-0"
     >
+      <Link
+        href="/"
+        aria-label="KSI Site Intelligence 홈"
+        className="hidden flex-none items-center gap-2 text-body font-bold tracking-tight md:flex"
+      >
+        <span aria-hidden="true" className="grid size-6 place-items-center rounded-md bg-accent text-micro font-extrabold text-accent-on">KSI</span>
+        <span className="hidden lg:inline">Site Intelligence</span>
+      </Link>
+      {sessionState !== "expired" && (
+        <span className="hidden md:block">
+          <Suspense fallback={null}>
+            <ProjectSwitcher />
+          </Suspense>
+        </span>
+      )}
       <BackButton />
       <PageTitle fallback={title} />
       <span className="flex-1" />
@@ -42,14 +64,12 @@ export async function TopBar() {
   const onLoginPage = currentPathname === "/login";
   const title = resolvePageTitle(currentPathname, new URLSearchParams(headerStore.get(SEARCH_HEADER) ?? ""));
 
-  // 신원·역할·로그아웃은 **레일 하단**(SidebarUserBlock)이 갖는다. 상단바에도 두면
-  // 같은 정보가 한 화면에 두 벌 뜨고, 좁은 폭에서 제목을 밀어낸다(디자인 §0).
-  //
-  // 그런데도 여기서 whoAmI() 를 부르는 이유는 **세션 만료를 알리는 자리**가 상단바이기
-  // 때문이다(아래 catch). 반환값은 쓰지 않는다 — 성공은 "만료가 아니다"라는 사실만
-  // 뜻한다. 레일이 401 을 조용히 비우는 것과 역할을 나눈 결과다(SidebarUserBlock).
+  // 신원·역할·로그아웃은 헤더의 계정 메뉴(AccountMenu)가 갖는다(ADR-KSI-043).
+  // 세션 만료를 알리는 자리도 이 헤더다(아래 catch). 만료·거절·확인 실패에서는 정상
+  // 도구(프로젝트 전환·검색·계정)를 그리지 않고 복구 안내만 둔다.
+  let principal: Awaited<ReturnType<typeof whoAmI>>;
   try {
-    await whoAmI();
+    principal = await whoAmI();
   } catch (error) {
     // 로그인 화면 자체에서는 "다시 로그인하세요" 문구가 중복이니 숨긴다. 그 외
     // 화면에서는 조용히 숨기지 않는다 — proxy.ts 는 쿠키 "존재"만 보고 페이지 접근을
@@ -97,7 +117,12 @@ export async function TopBar() {
   // 경로별 예외는 제품 셸의 일관성을 깨서 제거했다.
   return (
     <TopBarFrame title={title}>
+      <HeaderSearchTrigger />
       <TopBarSearchTrigger />
+      <AccountMenu
+        principalId={principal.principalId}
+        roleLabel={principal.role ? ROLE_LABEL[principal.role] : principal.kind}
+      />
     </TopBarFrame>
   );
 }

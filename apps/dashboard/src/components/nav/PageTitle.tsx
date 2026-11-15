@@ -19,7 +19,7 @@ export function PageTitle({ fallback }: { fallback: string }) {
   // 상세 화면의 대상 이름은 h2로 이어 붙인다. TopBar와 본문이 각각 h1이던 구조는
   // 스크린리더 heading 탐색에서 동일 레벨 제목 두 개를 만들었다.
   return (
-    <p className="text-title font-bold tracking-tight break-keep lg:text-body lg:font-medium lg:tracking-normal lg:text-ink-2">
+    <p className="text-title font-bold tracking-tight break-keep md:text-body md:font-medium md:tracking-normal md:text-ink-2">
       {pathname ? resolvePageTitle(pathname, search) : fallback}
     </p>
   );

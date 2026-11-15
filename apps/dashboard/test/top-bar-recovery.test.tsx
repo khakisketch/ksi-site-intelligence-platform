@@ -16,6 +16,9 @@ vi.mock("@/lib/core-api/session", () => ({ MissingSessionError: class MissingSes
 vi.mock("@/components/nav/BackButton", () => ({ BackButton: () => null }));
 vi.mock("@/components/nav/PageTitle", () => ({ PageTitle: ({ fallback }: { fallback: string }) => createElement("span", null, fallback) }));
 vi.mock("@/components/nav/TopBarSearchTrigger", () => ({ TopBarSearchTrigger: () => createElement("button", null, "검색 · 이동") }));
+vi.mock("@/components/nav/HeaderSearchTrigger", () => ({ HeaderSearchTrigger: () => createElement("button", null, "데스크톱 검색") }));
+vi.mock("@/components/nav/ProjectSwitcher", () => ({ ProjectSwitcher: () => createElement("button", null, "프로젝트 전환") }));
+vi.mock("@/components/nav/AccountMenu", () => ({ AccountMenu: ({ principalId, roleLabel }: { principalId: string; roleLabel: string }) => createElement("button", null, `계정 ${principalId} ${roleLabel}`) }));
 
 import { TopBar } from "@/components/nav/TopBar";
 import { CoreApiError } from "@/lib/core-api/client";
@@ -72,14 +75,37 @@ describe("TopBar distinguishes identity expiry from server recovery", () => {
     // The shell no longer has a path-based compact/focus mode: site workspace
     // and materials keep the same global top bar as every other console page.
     mocks.pathname = "/sites/site-1";
-    mocks.whoami.mockResolvedValueOnce({ kind: "OPERATOR" });
+    mocks.whoami.mockResolvedValueOnce({ kind: "OPERATOR", principalId: "op-1", role: "FIELD_OPERATOR" });
     expect(renderToStaticMarkup(await TopBar())).toContain("검색 · 이동");
     mocks.pathname = "/sites/site-1/spatial-assets";
-    mocks.whoami.mockResolvedValueOnce({ kind: "OPERATOR" });
+    mocks.whoami.mockResolvedValueOnce({ kind: "OPERATOR", principalId: "op-1", role: "FIELD_OPERATOR" });
     expect(renderToStaticMarkup(await TopBar())).toContain("검색 · 이동");
     mocks.pathname = "/login";
     mocks.whoami.mockRejectedValueOnce(new Error("network"));
     expect(renderToStaticMarkup(await TopBar())).toBe("");
+  });
+
+  it("shows the project switcher, search and the signed-in account on a healthy session", async () => {
+    mocks.whoami.mockResolvedValueOnce({ kind: "OPERATOR", principalId: "op-1", role: "ADMIN" });
+    const html = renderToStaticMarkup(await TopBar());
+    expect(html).toContain('data-session-state="ok"');
+    expect(html).toContain("프로젝트 전환");
+    expect(html).toContain("데스크톱 검색");
+    expect(html).toContain("계정 op-1");
+  });
+
+  it("falls back to the principal kind when the identity has no role", async () => {
+    mocks.whoami.mockResolvedValueOnce({ kind: "DEVICE", principalId: "dev-1", role: null });
+    expect(renderToStaticMarkup(await TopBar())).toContain("계정 dev-1 DEVICE");
+  });
+
+  it.each([new MissingSessionError(), new CoreApiError(403, { detail: "Forbidden" })])("hides every normal tool while the session needs recovery", async (error) => {
+    mocks.whoami.mockRejectedValueOnce(error);
+    const html = renderToStaticMarkup(await TopBar());
+    expect(html).not.toContain("프로젝트 전환");
+    expect(html).not.toContain("데스크톱 검색");
+    expect(html).not.toContain("계정 ");
+    expect(html).not.toContain("검색 · 이동");
   });
 
   it("keeps the auth alert visible on workspace and materials paths", async () => {

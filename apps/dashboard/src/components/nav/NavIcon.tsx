@@ -9,6 +9,7 @@ export type NavIconName =
   | "flight"
   | "connection"
   | "support"
+  | "help"
   | "settings";
 
 const PATHS: Record<NavIconName, React.ReactNode> = {
@@ -22,6 +23,7 @@ const PATHS: Record<NavIconName, React.ReactNode> = {
   flight: <><path d="M2 16 22 8l-8 14-2-8Z" /><path d="m12 14-4-3" /></>,
   connection: <><path d="M5 9a10 10 0 0 1 14 0M8 12a6 6 0 0 1 8 0M11 15a2 2 0 0 1 2 0" /><circle cx="12" cy="19" r="1" /></>,
   settings: <><circle cx="12" cy="12" r="3" /><path d="M10 3h4l.7 2.7 2 .9 2.5-1.1 2 3.5-2 1.9v2.2l2 1.9-2 3.5-2.5-1.1-2 .9L14 21h-4l-.7-2.7-2-.9-2.5 1.1-2-3.5 2-1.9v-2.2l-2-1.9 2-3.5 2.5 1.1 2-.9Z" /></>,
+  help: <><circle cx="12" cy="12" r="9" /><path d="M9.5 9a2.5 2.5 0 0 1 5 .5c0 1.5-2.5 1.5-2.5 3.5M12 16.5v.5" /></>,
   support: <><path d="M12 3a9 9 0 1 0 9 9" /><path d="M12 7v5l3 2M16 3h5v5" /></>,
 };
 

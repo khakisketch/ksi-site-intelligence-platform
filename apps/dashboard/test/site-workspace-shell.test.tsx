@@ -903,7 +903,7 @@ describe("workspace results mode", () => {
     await renderOverview({ mode: "results" });
     const filled = screen.getByText("성토").closest("div");
     expect(filled?.textContent).toContain("800 m³");
-    const net = screen.getByText("순변화").closest("div");
+    const net = screen.getByText(/계산상 순변화/).closest("div");
     expect(net?.textContent).toContain("800 m³");
     // 수치 옆에 한계가 함께 있어야 한다 — 값만 떼어 내지 않는다.
     expect(screen.getByText(/정확도 평가는 아직 확인되지 않았습니다/)).toBeTruthy();
@@ -937,8 +937,9 @@ describe("workspace results mode", () => {
     await renderOverview({ mode: "results", analysisId: "a9" });
     expect(mocked.detail).toHaveBeenCalledWith("site-1", "a9");
     expect(screen.queryByRole("alert")).toBeNull();
-    expect(screen.getByText(/링크의 원래 기록을 그대로 보여줍니다/)).toBeTruthy();
-    expect(screen.getByText(/원래 입력 2건이 현재 관측 목록에 있습니다/)).toBeTruthy();
+    // 관측일은 한 줄로 적고, 입력이 모두 확인되면 경고를 따로 두지 않는다.
+    expect(screen.getByText(/^기준 .+ → 현재 /)).toBeTruthy();
+    expect(screen.queryByText(/원래 입력 일부/)).toBeNull();
     expect(screen.getByRole("link", { name: "자료·근거와 검토 보기" }).getAttribute("href")).toBe(
       "/sites/site-1/analysis?analysisId=a9",
     );
@@ -964,7 +965,7 @@ describe("workspace results mode", () => {
     });
     await renderOverview({ mode: "results", analysisId: "a9" });
     expect(screen.queryByRole("alert")).toBeNull();
-    expect(screen.getByText(/원래 입력을 현재 목록에서 확인할 수 없습니다. 기록은 그대로 둡니다/)).toBeTruthy();
+    expect(screen.getByText(/원래 입력 일부를 현재 목록에서 확인할 수 없습니다/)).toBeTruthy();
   });
 
   it("fails closed on an unknown explicit result without substituting the latest", async () => {

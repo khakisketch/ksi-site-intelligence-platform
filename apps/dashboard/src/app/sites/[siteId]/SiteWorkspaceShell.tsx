@@ -36,7 +36,7 @@ import type { ExploreCaptureOption } from "./SiteExploreCanvas";
 import { SiteWorkspaceCompare, candidateLabel } from "./SiteWorkspaceCompare";
 import { WorkbenchMediaState, WorkbenchRefreshButton } from "./WorkbenchMediaState";
 import { SiteDisplayLegend } from "./SiteDisplayLegend";
-import { SiteWorkspaceResults } from "./SiteWorkspaceResults";
+import { SiteWorkspaceResults, type ResultReviewSummary } from "./SiteWorkspaceResults";
 import { SiteWindowedPixelViewer } from "./SiteWindowedPixelViewer";
 import {
   analysesForArea,
@@ -410,6 +410,8 @@ export function SiteWorkspaceShell({
   explicitResult,
   explicitDetail,
   leadDetail,
+  peerDetails,
+  reviewSummary,
   scopedCompareHref,
   inspectorStatus = null,
   preparedJobs,
@@ -458,6 +460,10 @@ export function SiteWorkspaceShell({
   explicitDetail: AnalysisView | null;
   /** 결과 목록 첫 기록의 상세(선택자 복원용, 1건만) — 없으면 조용히 둔다. */
   leadDetail?: AnalysisView | null;
+  /** 같은 구역의 다른 완료 결과 상세(추이용, 최대 5건). */
+  peerDetails?: readonly AnalysisView[];
+  /** 지금 보는 결과의 사람 검토 요약 — 조회하지 못하면 null. */
+  reviewSummary?: ResultReviewSummary | null;
   scopedCompareHref: string;
   inspectorStatus?: ReactNode;
   /** 현재 계정이 읽을 수 있는 준비 기록(범위 확인된 것만 호출자가 싣는다). */
@@ -1212,6 +1218,8 @@ export function SiteWorkspaceShell({
           explicitResult={explicitResult}
           explicitDetail={explicitDetail}
           leadDetail={leadDetail ?? null}
+          peerDetails={peerDetails ?? []}
+          reviewSummary={reviewSummary ?? null}
           facts={facts}
           canCreateAnalysis={canCreateAnalysis}
           scopedCompareHref={scopedCompareHref}
