@@ -22,7 +22,8 @@ import { hasAllPermissions } from "@/lib/core-api/permissions";
 import { whoAmI } from "@/lib/core-api/auth";
 import { getSite } from "@/lib/core-api/sites";
 import { listSpatialAssets } from "@/lib/core-api/spatial-assets";
-import { getAnalysis, listAnalyses, type AnalysisView } from "@/lib/core-api/analysis";
+import type { ResultReviewSummary } from "./SiteWorkspaceResults";
+import { getAnalysis, listAnalyses, listAnalysisReviews, type AnalysisView } from "@/lib/core-api/analysis";
 import { listSpatialDataRequests } from "@/lib/core-api/spatial-data-requests";
 import { listSpatialWorkspaceObservations, type SpatialWorkspacePage } from "@/lib/core-api/spatial-workspace";
 import {
@@ -394,6 +395,37 @@ export default async function SiteDetailPage({
     }
   }
 
+  // 추이와 검토 상태 — 지금 보는 결과(링크로 연 것 또는 목록 첫 기록)와 같은 구역의 완료 결과.
+  // 추이에 쓸 수 있는지는 화면이 정확한 선택자·관측일·조건으로 가린다. 읽지 못한 것은 조용히 뺀다.
+  const PEER_LIMIT = 5;
+  const focalDetail = explicitDetail ?? leadDetail;
+  let peerDetails: AnalysisView[] = [];
+  let reviewSummary: ResultReviewSummary | null = null;
+  if (facts && mode === "results" && focalDetail) {
+    const peerIds = (analysesPage?.items ?? [])
+      .filter((item) => item.workAreaId === focalDetail.workAreaId && item.executionState === "COMPLETED" && item.metrics
+        && item.analysisId !== focalDetail.analysisId)
+      .map((item) => item.analysisId)
+      .slice(0, PEER_LIMIT);
+    const [peerResults, reviewResult] = await Promise.all([
+      Promise.allSettled(peerIds.map((id) => getAnalysis(site.siteId, id))),
+      focalDetail.executionState === "COMPLETED" && focalDetail.result
+        ? listAnalysisReviews(site.siteId, focalDetail.analysisId, { limit: 50 }).then(
+          (reviews) => ({ ok: true as const, reviews }), () => ({ ok: false as const }))
+        : Promise.resolve({ ok: false as const }),
+    ]);
+    peerDetails = peerResults.flatMap((entry) => entry.status === "fulfilled"
+      && entry.value.siteId === site.siteId && entry.value.workAreaId === focalDetail.workAreaId ? [entry.value] : []);
+    if (reviewResult.ok) {
+      const latest = [...reviewResult.reviews.items].sort((a, b) => b.reviewedAt.localeCompare(a.reviewedAt))[0] ?? null;
+      reviewSummary = {
+        status: "ready",
+        count: reviewResult.reviews.items.length,
+        latest: latest ? { decision: latest.decision, reviewedAt: latest.reviewedAt } : null,
+      };
+    }
+  }
+
   const inspectedRefs = mode === "compare"
     ? visualPair.status === "ready" ? [visualPair.sideA.assetRef, visualPair.sideB.assetRef]
       : comparison.status === "ready" ? [comparison.baseline.assetRef, comparison.current.assetRef] : []
@@ -477,6 +509,8 @@ export default async function SiteDetailPage({
           explicitResult={explicitResult}
           explicitDetail={explicitDetail}
           leadDetail={leadDetail}
+          peerDetails={peerDetails}
+          reviewSummary={reviewSummary}
           scopedCompareHref={(() => {
             if (!selectedWorkAreaId || !activeWorkAreaIds.has(selectedWorkAreaId)) return `${sitePath}/analysis`;
             // 분석 인계는 정식으로 resolve된 한 쌍의 사실 그대로만 싣는다 —

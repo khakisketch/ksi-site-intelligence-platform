@@ -12,6 +12,7 @@ const info = infoFile
       siteId: string;
       workAreaId: string;
       analysisId: string;
+      analysisIds: string[];
       operatorToken: string;
     })
   : undefined;
@@ -93,9 +94,47 @@ test("분석 이력과 결과는 완료 상태·수치·정확도 미확인 고�
   await page.goto(
     `/sites/${info!.siteId}?mode=results&workAreaId=${info!.workAreaId}&analysisId=${info!.analysisId}`,
   );
-  await expect(main).toContainText("절토");
-  await expect(main).toContainText("성토");
+  await expect(main).toContainText("깎임");
+  await expect(main).toContainText("쌓임");
   await expect(main).toContainText("순변화");
-  await expect(main).toContainText("정확도 평가는 아직 확인되지 않았습니다");
+  await expect(main).toContainText("불확실성 미기록");
+  await expect(main).toContainText("참고용 · 보증 아님");
   await expectNoHorizontalOverflow(page);
+});
+
+test("두 주기 결과는 관측일 순으로 비교되고, 검토를 남기면 결과 화면에 반영된다", async ({ page }) => {
+  await login(page);
+  const [first, second] = info!.analysisIds;
+  const results = (id: string) =>
+    `/sites/${info!.siteId}?mode=results&workAreaId=${info!.workAreaId}&analysisId=${id}`;
+  const main = page.getByRole("main");
+
+  // t1→t2 결과에서 t0→t1 결과가 같은 구역·임계값·셀 크기이므로 한 차트에 함께 놓인다.
+  await page.goto(results(second!));
+  await expect(main).toContainText("이전 결과와 비교");
+  await expect(main).toContainText("비교 조건");
+    await expect(main.getByRole("table", { name: /관측일별 깎임과 쌓임/ }).getByRole("row")).toHaveCount(3);
+  await expectNoHorizontalOverflow(page);
+
+  // 지도 타일(제3자)을 요청하지 않고 계산 격자만 연다.
+  const tileRequests: string[] = [];
+  page.on("request", (request) => { if (request.url().includes("openstreetmap")) tileRequests.push(request.url()); });
+  await main.getByRole("button", { name: "계산·제외 영역 보기" }).click();
+  await expect(main.getByRole("img", { name: /계산 범위 격자/ })).toBeVisible();
+  await expect(main.getByRole("button", { name: /지도에서 계산 범위 보기/ })).toHaveCount(0);
+  expect(tileRequests).toEqual([]);
+
+  // 검토를 남기면 같은 결과의 화면 상태가 바뀐다. 다른 결과에는 번지지 않는다.
+  await page.goto(`/sites/${info!.siteId}/analysis?workAreaId=${info!.workAreaId}&analysisId=${second!}`);
+  const form = page.getByRole("group", { name: "검토 결정 선택" });
+  await form.getByLabel("추가 확인·조치 필요").check();
+  await page.getByLabel(/검토 의견/).fill(`e2e 합성 검토 ${test.info().project.name}: 입력 시점 재확인 필요`);
+  await page.getByRole("button", { name: "검토 기록 추가" }).click();
+  await expect(page.getByText(`e2e 합성 검토 ${test.info().project.name}: 입력 시점 재확인 필요`)).toBeVisible();
+
+  await page.goto(results(second!));
+  await expect(main).toContainText("검토됨 · 추가 확인 필요");
+  // 검토는 그 결과에만 붙는다 — 이 시험은 첫 결과를 검토하지 않는다.
+  await page.goto(results(first!));
+  await expect(main).toContainText("검토 기록 없음");
 });

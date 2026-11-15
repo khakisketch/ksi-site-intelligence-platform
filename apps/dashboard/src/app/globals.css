@@ -377,6 +377,9 @@
   --text-title--line-height: 24px;
   --text-display: 22px;
   --text-display--line-height: 30px;
+  /* 결과 화면의 핵심 수치 한 개에만 쓴다(순변화). 화면에서 가장 먼저 읽혀야 하는 값이다. */
+  --text-hero: 36px;
+  --text-hero--line-height: 40px;
 
   /* — 높이(그림자) — 두 단만 둔다. 1은 면에서 살짝 뜬 패널, 2는 팝오버·시트. */
   --shadow-elev-1: 0 1px 2px rgb(16 20 24 / 0.06), 0 2px 8px -2px rgb(16 20 24 / 0.08);

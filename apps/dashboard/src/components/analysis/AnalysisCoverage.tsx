@@ -14,7 +14,7 @@ function failure(status: number): string {
   return "계산 범위를 불러오지 못했습니다. 연결을 확인하고 다시 시도하세요. 수치 결과는 별도로 유지됩니다.";
 }
 
-function CoverageReader({ detail }: { detail: AnalysisView }) {
+function CoverageReader({ detail, allowMap, terse }: { detail: AnalysisView; allowMap: boolean; terse: boolean }) {
   const [resource, setResource] = useState<AnalysisCoverageResource | null>(null);
   const [busy, setBusy] = useState(false), [error, setError] = useState("");
   const [mapOpen, setMapOpen] = useState(false);
@@ -42,18 +42,23 @@ function CoverageReader({ detail }: { detail: AnalysisView }) {
       <button type="button" className="btn min-h-11" disabled={busy} onClick={() => void load()}>{resource ? "계산 범위 다시 확인" : "계산·제외 영역 보기"}</button>
       {busy && <button type="button" className="btn min-h-11" onClick={() => { controller.current?.abort(); setBusy(false); }}>불러오기 취소</button>}
     </div>
-    <p role="status" className="mt-2 text-xs leading-5 text-ink-2">{busy ? "Core에 보관된 범위 근거를 확인하고 있습니다." : "등록된 구역 경계와 실제 계산 셀은 다를 수 있습니다. 저장된 셀 근거를 확인하세요."}</p>
+    <p role="status" className="mt-2 text-xs leading-5 text-ink-2">{busy ? "Core에 보관된 범위 근거를 확인하고 있습니다." : terse ? "" : "등록된 구역 경계와 실제 계산 셀은 다를 수 있습니다. 저장된 셀 근거를 확인하세요."}</p>
     <div role="alert" className="mt-1 text-sm leading-6 text-high-ink">{error}</div>
-    {resource && <CoverageGridView witness={resource.coverage} />}
-    {resource?.gridReference && <>
+    {resource && <CoverageGridView witness={resource.coverage} terse={terse} />}
+    {allowMap && resource?.gridReference && <>
       <button type="button" className="btn mt-3 min-h-11" aria-expanded={mapOpen} onClick={() => setMapOpen((value) => !value)}>{mapOpen ? "위치 지도 닫기" : "지도에서 계산 범위 보기"}</button>
       {mapOpen && <AnalysisCoverageMap witness={resource.coverage} reference={resource.gridReference} />}
     </>}
-    {resource && !resource.gridReference && <p className="mt-2 text-xs leading-5 text-ink-2">이 결과의 위치 근거를 연결하지 못해 지도에는 그리지 않습니다. 계산 격자 보기는 유지됩니다.</p>}
+    {allowMap && resource && !resource.gridReference && <p className="mt-2 text-xs leading-5 text-ink-2">이 결과의 위치 근거를 연결하지 못해 지도에는 그리지 않습니다. 계산 격자 보기는 유지됩니다.</p>}
   </div>;
 }
 
-export function AnalysisCoverage({ detail }: { detail: AnalysisView }) {
+/**
+ * `terse`이면 반복되는 안내 문단을 접어 두고 격자와 범례만 앞에 둔다. 안내 내용은 그대로 보존된다.
+ * `allowMap`이 false이면 배경 지도(제3자 타일 요청)를 열 수 없고 계산 격자만 보인다.
+ * 지도 반출 결정(BETA_PROGRAM G4) 전의 화면은 false로 둔다.
+ */
+export function AnalysisCoverage({ detail, allowMap = true, terse = false }: { detail: AnalysisView; allowMap?: boolean; terse?: boolean }) {
   if (!detail.result || detail.executionState !== "COMPLETED" || !["PROVISIONAL_ACCURACY_UNVERIFIED", "EVALUATED"].includes(detail.suitabilityState)) {
     return <p className="mt-2 text-xs leading-5 text-ink-2">현재 제공할 수 있는 계산 범위 근거가 없습니다. 자료 없음이나 0으로 해석하지 마세요.</p>;
   }
@@ -61,5 +66,5 @@ export function AnalysisCoverage({ detail }: { detail: AnalysisView }) {
     return <p className="mt-2 text-xs leading-5 text-ink-2">계산 격자가 화면 표시 한도를 넘었습니다. 수치·근거 기록은 별도로 유지되며 빈 영역으로 바꾸지 않습니다.</p>;
   }
   return <CoverageReader key={[detail.siteId, detail.analysisId, detail.result.reportDigest,
-    detail.result.coverage.coverageWitnessDigest, detail.evidenceDigest].join(":")} detail={detail} />;
+    detail.result.coverage.coverageWitnessDigest, detail.evidenceDigest].join(":")} detail={detail} allowMap={allowMap} terse={terse} />;
 }

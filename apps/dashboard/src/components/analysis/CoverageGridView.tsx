@@ -2,6 +2,7 @@
 
 import { useId, useMemo, useState } from "react";
 import { coverageCell, decodeAnalysisCoverage, type CoverageGrid, type CoverageState } from "@/lib/analysis-coverage";
+import { Disclosure } from "@/components/ui/Disclosure";
 import { formatCountKo } from "@/lib/number-format";
 
 const labels: Record<CoverageState, string> = {
@@ -30,7 +31,7 @@ function paths(grid: CoverageGrid): Record<CoverageState, string> {
   return Object.fromEntries(Object.entries(parts).map(([state, runs]) => [state, runs.join("")])) as Record<CoverageState, string>;
 }
 
-function Grid({ grid }: { grid: CoverageGrid }) {
+function Grid({ grid, terse }: { grid: CoverageGrid; terse: boolean }) {
   const id = useId().replaceAll(":", "");
   const geometry = useMemo(() => paths(grid), [grid]);
   const [row, setRow] = useState("1"), [column, setColumn] = useState("1");
@@ -71,8 +72,11 @@ function Grid({ grid }: { grid: CoverageGrid }) {
           </svg>{labels[item]} · {formatCountKo(grid.counts[item])}개
         </li>)}
       </ul>
-      <p className="mt-2">기준 관측의 행·열 순서로 그린 계산 격자입니다. 현장 영상이나 배경지도 위의 위치·정확도를 나타내지 않습니다. 색과 무늬는 물량의 크기가 아닌 셀의 사용 상태입니다.</p>
+      {!terse && <p className="mt-2">기준 관측의 행·열 순서로 그린 계산 격자입니다. 현장 영상이나 배경지도 위의 위치·정확도를 나타내지 않습니다. 색과 무늬는 물량의 크기가 아닌 셀의 사용 상태입니다.</p>}
     </figcaption>
+    {terse && <Disclosure label="읽는 법" className="mt-2 text-xs text-ink-2">
+      <p className="mt-1 leading-5">기준 관측의 행·열 순서로 그린 계산 격자입니다. 현장 영상이나 배경지도 위의 위치·정확도를 나타내지 않습니다. 색과 무늬는 물량의 크기가 아닌 셀의 사용 상태입니다.</p>
+    </Disclosure>}
     <section className="mt-2 text-xs text-ink-2"><h4 className="font-semibold">셀 위치 확인</h4>
       <div className="mt-2 flex flex-wrap items-end gap-3">
         <label htmlFor={`${id}-row`} className="block">확인할 행
@@ -88,8 +92,8 @@ function Grid({ grid }: { grid: CoverageGrid }) {
   </figure>;
 }
 
-export function CoverageGridView({ witness }: { witness: unknown }) {
+export function CoverageGridView({ witness, terse = false }: { witness: unknown; terse?: boolean }) {
   const grid = useMemo(() => { try { return decodeAnalysisCoverage(witness); } catch { return null; } }, [witness]);
   if (!grid) return <p className="mt-2 text-sm leading-6 text-high-ink">계산 범위 근거를 표시할 수 없습니다. 화면 표시 한도 또는 근거 연결을 확인하세요. 빈 영역이나 0으로 대체하지 않습니다.</p>;
-  return <Grid grid={grid} />;
+  return <Grid grid={grid} terse={terse} />;
 }
