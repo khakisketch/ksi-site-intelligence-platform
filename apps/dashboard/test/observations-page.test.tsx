@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 const mocked = vi.hoisted(() => ({
@@ -39,20 +39,12 @@ beforeEach(() => {
 afterEach(cleanup);
 
 function expectKnownContext() {
-  expect(screen.getAllByText("권한 확인된 현장").length).toBeGreaterThan(0);
-  expect(screen.getByRole("heading", { name: "분석" })).toBeTruthy();
+  // 분석 섹션 틀 — 컨텍스트 패널의 분석 종류와 본문 제목. 현장 이름은 셸의 헤더가 맡는다.
+  const views = screen.getByRole("navigation", { name: "분석 보기" });
+  expect(views).toBeTruthy();
+  expect(within(views).getByRole("link", { name: "외부 비교" }).getAttribute("aria-current")).toBe("page");
+  expect(within(views).getByRole("link", { name: "변화 분석" }).getAttribute("href")).toBe("/sites/site-1/analysis");
   expect(screen.getByRole("heading", { name: "외부 비교 이력" })).toBeTruthy();
-  expect(screen.getByRole("link", { name: "외부 비교" }).getAttribute("aria-current")).toBe("page");
-  const menu = screen.getByRole("navigation", { name: "현장 영역 메뉴" });
-  expect(menu).toBeTruthy();
-  for (const [label, href] of [
-    ["공간", "/sites/site-1"],
-    ["분석", "/sites/site-1/analysis"],
-  ] as const) {
-    const links = screen.getAllByRole("link", { name: label });
-    expect(links.length).toBeGreaterThan(0);
-    expect(links.every((link) => link.getAttribute("href") === href)).toBe(true);
-  }
   expect(screen.queryByRole("link", { name: "현장으로 돌아가기" })).toBeNull();
 }
 

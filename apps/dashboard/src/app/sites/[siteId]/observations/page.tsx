@@ -4,8 +4,7 @@ import { notFound } from "next/navigation";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { InlineNotice } from "@/components/ui/InlineNotice";
-import { PageHeader } from "@/components/ui/PageHeader";
-import { ConsolePage } from "@/components/nav/ConsolePage";
+import { SectionFrame } from "@/components/section/SectionFrame";
 import { CoreApiError } from "@/lib/core-api/client";
 import { listSiteExternalVolumeHistory } from "@/lib/core-api/external-result-workflow";
 import { listObservationWorkOrders } from "@/lib/core-api/observation-work-orders";
@@ -14,8 +13,7 @@ import { listWorkAreas } from "@/lib/core-api/workAreas";
 
 import { OperationsSessionFailure } from "@/app/field/OperationsSessionFailure";
 import { resolveFieldSession } from "@/app/field/resolve-session";
-import { SiteHeader } from "@/app/sites/[siteId]/SiteHeader";
-import { AnalysisTabs } from "@/app/sites/[siteId]/analysis/AnalysisTabs";
+import { AnalysisContextPanel } from "@/app/sites/[siteId]/analysis/AnalysisContextPanel";
 
 import { ExternalObservationHistory } from "./ExternalObservationHistory";
 
@@ -58,9 +56,8 @@ export default async function SiteObservationHistoryPage({
   }
   // Establish Site access before dependent reads. Their absence/denial cannot
   // establish Site absence, and a faster child error must not mask a scoped404.
-  let site: Awaited<ReturnType<typeof getSite>>;
   try {
-    site = await getSite(siteId);
+    await getSite(siteId);
   } catch (error) {
     if (error instanceof CoreApiError && error.status === 404) notFound();
     return <div className="mx-auto max-w-5xl p-4 sm:p-5"><ErrorState message="외부 비교 기록을 불러오지 못했습니다." retryable /></div>;
@@ -68,19 +65,20 @@ export default async function SiteObservationHistoryPage({
   const sitePath = `/sites/${encodeURIComponent(siteId)}`;
   const canRegister = session.principal.permissions.includes("SITES_WRITE") && session.principal.registryScoped !== true;
   const registering = register === "1" && canRegister;
-  const siteHeader = <SiteHeader
-    site={site}
-    selectedEpochId={null}
-    tab="analysis"
-  />;
-  if (registering) return <>
-    {siteHeader}
-    <ConsolePage density="dense">
-      <PageHeader title="분석" headingLevel={2} actions={<Link className="btn" href={`${sitePath}/observations`}>외부 비교 이력으로 돌아가기</Link>} />
-      <AnalysisTabs siteId={siteId} active="external" />
-      {await ExternalComparisonRegistration({ siteId, organizationId: session.principal.organizationId })}
-    </ConsolePage>
-  </>;
+  const frame = (main: React.ReactNode) => (
+    <div className="flex min-w-0 flex-1 flex-col xl:h-full xl:min-h-0">
+      <SectionFrame contextLabel="분석 종류" context={<AnalysisContextPanel siteId={siteId} active="external" />}>
+        {main}
+      </SectionFrame>
+    </div>
+  );
+  if (registering) return frame(<>
+    <div className="flex flex-wrap items-center justify-between gap-2">
+      <h3 className="text-lead font-bold">외부 비교 등록</h3>
+      <Link className="btn" href={`${sitePath}/observations`}>외부 비교 이력으로 돌아가기</Link>
+    </div>
+    {await ExternalComparisonRegistration({ siteId, organizationId: session.principal.organizationId })}
+  </>);
   // 작업구역 이름은 표시 보조일 뿐이다. 이름 조회가 실패해도 이력은 가리지
   // 않는다 — 이름 없는 행은 '작업구역'으로 표시하고, 이름 실패만 따로 알린다.
   // 이름 목록에는 권한 없는 자료가 담기지 않으므로(실패 시 빈 목록) 노출이 없다.
@@ -107,11 +105,7 @@ export default async function SiteObservationHistoryPage({
   }
   const loaded = history !== null ? { history, areas } : null;
   const names = new Map(loaded?.areas?.workAreas.map((area) => [area.workAreaId, area.name]) ?? []);
-  return <>
-    {siteHeader}
-    <ConsolePage density="dense">
-      <PageHeader title="분석" headingLevel={2} />
-      <AnalysisTabs siteId={siteId} active="external" />
+  return frame(<>
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h3 className="text-lead font-bold">외부 비교 이력</h3>
         {canRegister && <Link className="btn btn-primary" href={`${sitePath}/observations?register=1`}>외부 비교 등록</Link>}
@@ -120,6 +114,5 @@ export default async function SiteObservationHistoryPage({
       {loaded ? <ExternalObservationHistory siteId={siteId} items={loaded.history.items} workAreaNames={names} /> :
         <ErrorState message={denied ? "외부 비교 기록을 조회할 권한이 없습니다. 현장 담당자에게 조회 권한을 요청하세요." : "외부 비교 기록을 불러오지 못했습니다."} tone={denied ? "high" : "crit"} retryable={!denied} retryAfterSeconds={retryAfterSeconds} />}
       {loaded?.history.nextCursor && <Link className="btn w-fit" href={`/sites/${encodeURIComponent(siteId)}/observations?after=${encodeURIComponent(loaded.history.nextCursor)}`}>이전 결과 더 보기</Link>}
-    </ConsolePage>
-  </>;
+  </>);
 }

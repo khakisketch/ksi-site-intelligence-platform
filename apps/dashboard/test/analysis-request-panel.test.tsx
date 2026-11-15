@@ -131,6 +131,11 @@ function json(value: unknown, status = 200) {
   return new Response(JSON.stringify(value), { status, headers: { "content-type": "application/json" } });
 }
 
+/** 이력 한 줄과 그 상세(Inspector)를 함께 담는 섹션 틀 — 선택한 분석의 내용은 줄 밖 Inspector에 나온다. */
+const frameOf = (analysisId: string) => screen.getByText(`분석 ID · ${analysisId}`).closest("[data-section-frame]") as HTMLElement;
+const detailEl = () => document.querySelector("[data-analysis-detail]") as HTMLElement;
+const inspectorEl = () => document.querySelector("[data-section-inspector]") as HTMLElement;
+
 function renderPanel(
   overrides: Partial<Parameters<typeof AnalysisRequestPanel>[0]> = {},
   reviewFetch?: (url: string, init?: RequestInit) => Promise<Response>,
@@ -237,7 +242,9 @@ describe("analysis V2 panel", () => {
     const history = screen.getByRole("region", { name: "변화 분석 이력" });
     expect(screen.queryByRole("region", { name: "새 분석 요청" })).toBeNull();
     expect(screen.getByRole("button", { name: "새 분석 요청" })).toBeTruthy();
-    const resultRegion = within(history).getByRole("region", { name: /계산 결과/ });
+    // 계산 결과는 이력 줄이 아니라 선택한 분석의 상세(Inspector)에 나온다.
+    expect(within(history).queryByRole("region", { name: /계산 결과/ })).toBeNull();
+    const resultRegion = within(inspectorEl()).getByRole("region", { name: /계산 결과/ });
     expect(within(resultRegion).getByText(/독립 정확도 평가는 아직 확인되지 않았습니다/)).toBeTruthy();
     expect(within(resultRegion).getByText("절토")).toBeTruthy();
     expect(within(history).getByText("실행 상태")).toBeTruthy();
@@ -548,7 +555,7 @@ describe("analysis V2 panel", () => {
     page.items[0] = { ...page.items[0]!, suitabilityState: "BLOCKED", resultId: null, metrics: null, limitationCount: 1 };
 
     renderPanel({ initialPage: page, initialSelectedDetail: blocked });
-    const selected = within(screen.getByText("분석 ID · analysis-1").closest("article")!);
+    const selected = within(frameOf("analysis-1"));
 
     expect(selected.getByText("높이 기준이 서로 다름 · 현재 관측")).toBeTruthy();
     expect(selected.getByText(/수직 기준과 단위를 담당자가 확인해야 합니다/)).toBeTruthy();
@@ -575,7 +582,7 @@ describe("analysis V2 panel", () => {
     page.items[0] = { ...page.items[0]!, suitabilityState: "BLOCKED", resultId: null, metrics: null, limitationCount: 1 };
 
     renderPanel({ initialPage: page, initialSelectedDetail: blocked });
-    const selected = within(screen.getByText("분석 ID · analysis-1").closest("article")!);
+    const selected = within(frameOf("analysis-1"));
     expect(selected.getByText(/산출물 제공자가 직접 할 수 있는 것/)).toBeTruthy();
     expect(selected.getByText(/높이 기준이 기록된 값과 같은지 확인하세요/)).toBeTruthy();
 
@@ -587,7 +594,7 @@ describe("analysis V2 panel", () => {
       result: null,
     };
     renderPanel({ initialPage: page, initialSelectedDetail: operatorOnly });
-    const other = within(screen.getByText("분석 ID · analysis-1").closest("article")!);
+    const other = within(frameOf("analysis-1"));
     expect(other.queryByText(/산출물 제공자가 직접 할 수 있는 것/)).toBeNull();
   });
 
@@ -601,7 +608,7 @@ describe("analysis V2 panel", () => {
     page.items[0] = { ...page.items[0]!, suitabilityState: "BLOCKED", resultId: null, metrics: null, limitationCount: 1 };
 
     renderPanel({ initialPage: page, initialSelectedDetail: blocked });
-    const selected = within(screen.getByText("분석 ID · analysis-1").closest("article")!);
+    const selected = within(frameOf("analysis-1"));
     expect(selected.getByText("세부 원인 확인 필요")).toBeTruthy();
     expect(selected.getByText(/이 사유에 대한 화면 안내가 없습니다/)).toBeTruthy();
     expect(selected.getByText(/반복 요청하지 마세요/)).toBeTruthy();
@@ -620,7 +627,7 @@ describe("analysis V2 panel", () => {
 
     renderPanel({ initialPage: page, initialSelectedDetail: current });
 
-    const selected = within(screen.getByText("분석 ID · analysis-1").closest("article")!);
+    const selected = within(frameOf("analysis-1"));
     expect(selected.getByText("실행 완료")).toBeTruthy();
     expect(selected.getByText("재평가 필요")).toBeTruthy();
     expect(selected.getByText("계산은 완료됐습니다. 현장 적합성은 재평가가 필요합니다.")).toBeTruthy();
@@ -637,17 +644,18 @@ describe("analysis V2 panel", () => {
       .mockResolvedValueOnce(json(other))
       .mockImplementationOnce(() => new Promise<Response>((resolve) => { finish = resolve; })));
     renderPanel({ initialPage: listPage(["analysis-1", "analysis-2"]) });
-    await waitFor(() => expect(within(screen.getByText("분석 ID · analysis-1").closest("article")!).getByText("result-core-1")).toBeTruthy());
+    await waitFor(() => expect(within(detailEl()).getByText("result-core-1")).toBeTruthy());
     fireEvent.click(screen.getAllByRole("button", { name: "이 변화 분석 보기" })[1]!);
-    await waitFor(() => expect(within(screen.getByText("분석 ID · analysis-2").closest("article")!).getByText("other-result")).toBeTruthy());
+    await waitFor(() => expect(within(detailEl()).getByText("other-result")).toBeTruthy());
     fireEvent.click(screen.getAllByRole("button", { name: "이 변화 분석 보기" })[0]!);
-    const selected = within(screen.getByText("분석 ID · analysis-1").closest("article")!);
-    expect(selected.queryByText("result-core-1")).toBeNull();
-    expect(selected.queryByText("계산 결과")).toBeNull();
+    // 다시 읽는 동안 캐시된 수치는 Inspector에서 거둔다.
+    expect(within(inspectorEl()).queryByText("result-core-1")).toBeNull();
+    expect(within(inspectorEl()).queryByText("계산 결과")).toBeNull();
     const current = { ...detail(), suitabilityState: "REASSESSMENT_REQUIRED" as const, result: null };
     finish(json(current));
-    await waitFor(() => expect(selected.getByText("재평가 필요")).toBeTruthy());
-    expect(selected.queryByText("계산 결과")).toBeNull();
+    const row = within(screen.getByText("분석 ID · analysis-1").closest("article")!);
+    await waitFor(() => expect(row.getByText("재평가 필요")).toBeTruthy());
+    expect(within(inspectorEl()).queryByText("계산 결과")).toBeNull();
   });
 
   it("hides numeric detail and summary fallback when current detail refresh fails", async () => {
@@ -691,7 +699,7 @@ describe("analysis V2 panel", () => {
     renderPanel();
     expect(screen.getByText("분석 ID · analysis-1")).toBeTruthy();
     expect(screen.getByRole("region", { name: /^계산 결과/ })).toBeTruthy();
-    expect(within(screen.getByText("분석 ID · analysis-1").closest("article")!).getByText("result-core-1")).toBeTruthy();
+    expect(within(detailEl()).getByText("result-core-1")).toBeTruthy();
     expect(screen.getByText("정확도 평가 미확인")).toBeTruthy();
     expect(screen.getByText("자료 검사에 제한 있음")).toBeTruthy();
     expect(screen.getByText("정확도 미확인")).toBeTruthy();
@@ -711,7 +719,7 @@ describe("analysis V2 panel", () => {
     renderPanel({ initialPage: page, initialSelectedDetail: current });
 
     // 상태별 한 줄은 다르지만 수치는 그대로 둔다 — 문구가 수치를 바꾸지 않는다.
-    const card = within(screen.getByText("분석 ID · analysis-1").closest("article")!);
+    const card = within(detailEl());
     expect(card.getByText(pattern)).toBeTruthy();
     expect(card.getByText("result-core-1")).toBeTruthy();
   });
@@ -1395,7 +1403,7 @@ describe("newer observation notice", () => {
       initialAnalysisId: "analysis-1",
     });
 
-    const selected = within(screen.getByText("분석 ID · analysis-1").closest("article")!);
+    const selected = within(detailEl());
     expect(selected.getByText(/이 작업구역에 더 새 관측이 있습니다/)).toBeTruthy();
     expect(selected.getByText(/새 관측 시각 2026\. 9\. 15\. 09:30/)).toBeTruthy();
     expect(selected.getByText(/2026\. 9\. 8\. 09:30 관측 기준 기록/)).toBeTruthy();
@@ -1404,7 +1412,7 @@ describe("newer observation notice", () => {
     expect(selected.queryByText(/대체됨|구버전/)).toBeNull();
     // 이전 결과의 수치·적합성은 알림과 무관하게 그대로 둔다.
     expect(selected.getByText("12 m³")).toBeTruthy();
-    expect(selected.getByText("정확도 미확인")).toBeTruthy();
+    expect(within(screen.getByText("분석 ID · analysis-1").closest("article")!).getByText("정확도 미확인")).toBeTruthy();
   });
 
   it("links to the newer analysis only when its result was actually loaded", async () => {
@@ -1422,7 +1430,7 @@ describe("newer observation notice", () => {
 
     fireEvent.click(screen.getAllByRole("button", { name: "이 변화 분석 보기" })[1]!);
     const notice = await screen.findByText(/이 작업구역에 더 새 관측이 있습니다/);
-    const olderCard = within(notice.closest("article")!);
+    const olderCard = within(notice.closest("[data-section-inspector]") as HTMLElement);
     const link = olderCard.getByRole("link", { name: "새 분석 결과 보기" });
     expect(link.getAttribute("href")).toBe("/sites/site-1/analysis?analysisId=analysis-new");
     expect(notice.textContent).toContain("2026. 9. 15. 09:30");
@@ -1453,7 +1461,7 @@ describe("newer observation notice", () => {
       initialAnalysisId: "analysis-1",
     });
 
-    const selected = within(screen.getByText("분석 ID · analysis-1").closest("article")!);
+    const selected = within(frameOf("analysis-1"));
     expect(selected.getByText(/이 작업구역에 더 새 관측이 있습니다/)).toBeTruthy();
     expect(selected.getByText(/새 관측 시각 2026\. 9\. 15\. 09:30/)).toBeTruthy();
     expect(selected.getByText(/2026\. 9\. 8\. 09:30 관측 기준 기록/)).toBeTruthy();

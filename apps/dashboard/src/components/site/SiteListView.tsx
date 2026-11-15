@@ -108,11 +108,13 @@ export function SiteListView({
     if (href) router.replace(href, { scroll: false });
   }
 
-  const active = (mode: SiteListViewMode) =>
-    `btn tap-target px-3 text-body ${
+  // 보기 방식은 한 덩어리의 분할 토글이다 — 아이콘과 이름을 함께 두고, 고른 쪽이 떠 있게 그려
+  // 아래 필터 탭·일반 버튼과 한눈에 구분되게 한다.
+  const segment = (mode: SiteListViewMode) =>
+    `inline-flex min-h-9 items-center gap-1.5 rounded-md px-3 text-body transition-colors tap-target ${
       view === mode
-        ? "border-line-strong bg-sunk font-bold"
-        : "border-line bg-surface hover:border-line-strong"
+        ? "bg-surface font-bold text-ink-1 shadow-sm ring-1 ring-line"
+        : "text-ink-2 hover:text-ink-1"
     }`;
 
   return (
@@ -120,11 +122,13 @@ export function SiteListView({
       <div className="flex w-full flex-wrap items-center gap-3 border-t border-line pt-3">
         <div className="min-w-0 flex-1">{toolbar}</div>
         {mounted && (
-          <div role="group" aria-label="현장 보기 방식" className="flex shrink-0 items-center gap-1.5">
-            <button type="button" aria-pressed={view === "cards"} onClick={() => select("cards")} className={active("cards")}>
+          <div role="group" aria-label="현장 보기 방식" className="inline-flex shrink-0 items-center gap-0.5 rounded-lg border border-line bg-sunk p-0.5">
+            <button type="button" aria-pressed={view === "cards"} onClick={() => select("cards")} className={segment("cards")}>
+              <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" className="size-4 flex-none"><rect x="3.5" y="3.5" width="7" height="7" rx="1.5" /><rect x="13.5" y="3.5" width="7" height="7" rx="1.5" /><rect x="3.5" y="13.5" width="7" height="7" rx="1.5" /><rect x="13.5" y="13.5" width="7" height="7" rx="1.5" /></svg>
               카드
             </button>
-            <button type="button" aria-pressed={view === "list"} onClick={() => select("list")} className={active("list")}>
+            <button type="button" aria-pressed={view === "list"} onClick={() => select("list")} className={segment("list")}>
+              <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" className="size-4 flex-none"><path d="M8 6h13M8 12h13M8 18h13" /><circle cx="3.5" cy="6" r="0.8" /><circle cx="3.5" cy="12" r="0.8" /><circle cx="3.5" cy="18" r="0.8" /></svg>
               목록
             </button>
           </div>

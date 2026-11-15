@@ -58,8 +58,8 @@ function RailLink({
 /**
  * 좌측 주 메뉴 — 접을 수 있는 아이콘 레일(ADR-KSI-043).
  *
- * 프로젝트 안에서는 공간·자료·분석을, 밖에서는 홈·프로젝트를 위쪽에 두고 작업·도움말은
- * 어디서나 아래쪽에 둔다. 섹션 안의 세부 메뉴는 여기에 펼치지 않는다 — 화면 안의 컨텍스트
+ * 홈·프로젝트는 어디서나 위쪽에 두고, 프로젝트 안에서는 그 아래에 현재 프로젝트의 공간·자료·분석을
+ * 더한다. 작업·도움말은 어디서나 아래쪽에 둔다. 섹션 안의 세부 메뉴는 여기에 펼치지 않는다 — 화면 안의 컨텍스트
  * 패널이 맡는다. 접힘은 사용자가 고른 것이며 경로가 바뀌어도 폭을 바꾸지 않는다.
  * 계정·로그아웃은 레일 맨 아래의 계정 메뉴(`account`)가 맡는다. 현재 어느 섹션인지는 레일의 선택 표시가
  * 알려 주므로 상단바는 페이지 이름을 되풀이하지 않는다.
@@ -99,9 +99,15 @@ export function DesktopSidebar({ counts, account }: { counts?: NavCounts; accoun
       data-compact-rail={collapsed ? "true" : undefined}
       className="print:hidden relative z-50 hidden gap-0.5 border-r border-line bg-rail py-2 text-rail-text md:col-start-1 md:row-start-2 md:flex md:flex-col"
     >
-      {siteId ? (
+      {/* 홈·프로젝트 목록은 프로젝트 안에서도 그대로 둔다 — 다른 프로젝트나 홈으로 가는 길이 사라지지 않게. */}
+      <RailLink href={SHELL_HOME_ITEM.href} label={SHELL_HOME_ITEM.label} icon={SHELL_HOME_ITEM.icon}
+        active={!siteId && active(SHELL_HOME_ITEM.href)} collapsed={collapsed} />
+      <RailLink href={SHELL_PROJECTS_ITEM.href} label={SHELL_PROJECTS_ITEM.label} icon={SHELL_PROJECTS_ITEM.icon}
+        active={!siteId && active(SHELL_PROJECTS_ITEM.href)} collapsed={collapsed} count={siteCount} />
+      {siteId && (
         <>
-          <div className="rail-group">프로젝트</div>
+          <div className="rail-sep" aria-hidden="true" />
+          <div className="rail-group">현재 프로젝트</div>
           {PROJECT_SECTIONS.map((item) => (
             <RailLink
               key={item.key}
@@ -112,13 +118,6 @@ export function DesktopSidebar({ counts, account }: { counts?: NavCounts; accoun
               collapsed={collapsed}
             />
           ))}
-        </>
-      ) : (
-        <>
-          <RailLink href={SHELL_HOME_ITEM.href} label={SHELL_HOME_ITEM.label} icon={SHELL_HOME_ITEM.icon}
-            active={active(SHELL_HOME_ITEM.href)} collapsed={collapsed} />
-          <RailLink href={SHELL_PROJECTS_ITEM.href} label={SHELL_PROJECTS_ITEM.label} icon={SHELL_PROJECTS_ITEM.icon}
-            active={active(SHELL_PROJECTS_ITEM.href)} collapsed={collapsed} count={siteCount} />
         </>
       )}
 

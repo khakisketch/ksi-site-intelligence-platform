@@ -23,7 +23,7 @@ export function HomeSiteGrid({ sites }: { sites: readonly SiteView[] }) {
           <Link href="/field" className="tap-target inline-flex items-center text-ink-2 hover:text-ink-1 hover:underline">작업 목록</Link>
         </div>
       </div>
-      <ul className="grid min-w-0 grid-cols-2 gap-3 sm:gap-4 md:grid-cols-3 xl:grid-cols-4">
+      <ul className="grid min-w-0 grid-cols-2 gap-3 sm:gap-4 md:grid-cols-[repeat(auto-fill,minmax(calc(220px*var(--ui-scale,1)),1fr))]">
         {sites.map((site) => {
           const encoded = encodeURIComponent(site.siteId);
           const status = SITE_STATUS_LABEL[site.status];

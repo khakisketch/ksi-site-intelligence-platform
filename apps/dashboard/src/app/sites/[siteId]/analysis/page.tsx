@@ -4,10 +4,7 @@ import { notFound } from "next/navigation";
 import { OperationsSessionFailure } from "@/app/field/OperationsSessionFailure";
 import { resolveFieldSession } from "@/app/field/resolve-session";
 import type { Metadata } from "next";
-import { SiteHeader } from "@/app/sites/[siteId]/SiteHeader";
-import { ConsolePage } from "@/components/nav/ConsolePage";
 import { ErrorState } from "@/components/ui/ErrorState";
-import { PageHeader } from "@/components/ui/PageHeader";
 import { CoreApiError } from "@/lib/core-api/client";
 import { getAnalysis, listAnalyses, listAnalysisObservations } from "@/lib/core-api/analysis";
 import { getSpatialAsset, type SpatialAssetCatalogItem } from "@/lib/core-api/spatial-assets";
@@ -18,8 +15,8 @@ import { resolveMaskUploadConfig } from "@/lib/mask-upload-config";
 import { listWorkAreas } from "@/lib/core-api/workAreas";
 
 import { AnalysisStartGuide } from "./AnalysisStartGuide";
-import { AnalysisTabs } from "./AnalysisTabs";
-import { resolveAnalysisCurrentHint, resolveAnalysisScope, resolveExactAnalysisSelectorHints, parseVisualBrowsingContext, visualBrowsingReturnHref } from "@/lib/operator-journey";
+import { AnalysisContextPanel } from "./AnalysisContextPanel";
+import { siteTabHref, resolveAnalysisCurrentHint, resolveAnalysisScope, resolveExactAnalysisSelectorHints, parseVisualBrowsingContext, visualBrowsingReturnHref } from "@/lib/operator-journey";
 import { AnalysisRequestPanel, type CatalogInspectPair } from "./AnalysisRequestPanel";
 import { parseScopeId } from "../site-spatial";
 
@@ -35,12 +32,11 @@ export default async function SiteAnalysisPage({ params, searchParams }: {
   const analysisId = single(query.analysisId);
   const session = await resolveFieldSession();
   if (session.kind === "blocked") return <OperationsSessionFailure verdict={session.verdict} next={`/sites/${encodeURIComponent(siteId)}/analysis`} />;
-  let site: Awaited<ReturnType<typeof getSite>>;
   try {
     // A Site 404 is the only response that establishes this route as unavailable.
     // Child analysis routes can be absent in a local graph while the Site itself
     // remains readable; resolve the scoped Site before asking for those children.
-    site = await getSite(siteId);
+    await getSite(siteId);
   } catch (error) {
     if (error instanceof CoreApiError && error.status === 404) notFound();
     return <div className="mx-auto max-w-5xl p-4 sm:p-5"><ErrorState message="현장 접근을 확인하지 못했습니다." retryable /></div>;
@@ -287,31 +283,28 @@ export default async function SiteAnalysisPage({ params, searchParams }: {
   // 다듬은 단일 쿼리 값으로 복귀한다 — 받는 목록 화면이 범위를 다시 검증한다.
   const fallbackScope = effectiveWorkAreaId
     || (parseScopeId(typeof query.workAreaId === "string" ? query.workAreaId : undefined) ?? "");
-  // 탐색에서 들고 온 관측 참조는 헤더 복귀용으로만 둔다. 분석 선택
+  // 탐색에서 들고 온 관측 참조는 공간으로 돌아가는 링크에만 싣는다. 분석 선택
   // (analysisId·currentWorkOrderId)과 frozen 결과 입력은 이 값을 읽지 않는다.
-  // 현황으로 돌아가면 탐색 진입이 카탈로그와 재대조해 모르는 참조를 공지만 둔다.
+  // 공간으로 돌아가면 탐색 진입이 카탈로그와 재대조해 모르는 참조를 공지만 둔다.
   const headerAssetRef = effectiveWorkAreaId
     ? parseScopeId(typeof query.assetRef === "string" ? query.assetRef : undefined)
     : null;
-  return <>
-    <SiteHeader
-      site={site}
-      selectedEpochId={null}
-      tab="analysis"
-      scopedWorkAreaId={effectiveWorkAreaId || null}
-      scopedAssetRef={headerAssetRef}
-      visualContext={visualContext && visualContext.workAreaId === effectiveWorkAreaId ? visualContext : null}
-    />
-    <ConsolePage density="dense">
-      <PageHeader title="분석" headingLevel={2} />
-      <AnalysisTabs siteId={siteId} active="change" />
+  const returnVisual = visualContext && visualContext.workAreaId === effectiveWorkAreaId ? visualContext : null;
+  const spaceHref = (() => {
+    const href = siteTabHref(siteId, "space", {}, { workAreaId: effectiveWorkAreaId || null, assetRef: headerAssetRef });
+    if (!returnVisual || !effectiveWorkAreaId) return href;
+    const params = new URLSearchParams({ visualAAssetRef: returnVisual.visualAAssetRef, visualBAssetRef: returnVisual.visualBAssetRef });
+    return `${href}${href.includes("?") ? "&" : "?"}${params}`;
+  })();
+  return <div className="flex min-w-0 flex-1 flex-col xl:h-full xl:min-h-0">
       {/* 기록 구역·요청 구역은 서로의 실패에 닫히지 않는다. 각 구역이
           확인할 수 없었던 목록을 밝히고, unavailable을 empty로 두지 않는다. */}
-      {missingDetail && <div className="flex flex-col gap-3">
+      {missingDetail && <div className="flex flex-col gap-3 px-4 pt-4 sm:px-5">
         <ErrorState message="선택한 분석 기록을 찾을 수 없거나 접근할 수 없습니다. 분석 목록에서 다른 기록을 확인하세요." tone="idle" />
         <Link className="btn w-fit" href={fallbackScope ? `/sites/${encodeURIComponent(siteId)}/analysis?workAreaId=${encodeURIComponent(fallbackScope)}` : `/sites/${encodeURIComponent(siteId)}/analysis`}>분석 목록 보기</Link>
       </div>}
       <AnalysisRequestPanel
+          contextPanel={<AnalysisContextPanel siteId={siteId} active="change" spaceHref={spaceHref} />}
           openRequestOnEntry={!hasDeepLink && (query.request === "new" || query.currentWorkOrderId !== undefined || hintModeSupplied)}
           emptyHistoryGuide={historyState === "ready" && !areasUnavailable && !observationsUnavailable && !attributionUnavailable && loaded.analyses.items.length === 0 ? <AnalysisStartGuide
             workAreaId={effectiveWorkAreaId || null}
@@ -359,6 +352,5 @@ export default async function SiteAnalysisPage({ params, searchParams }: {
               : null,
           }}
       />
-    </ConsolePage>
-  </>;
+  </div>;
 }

@@ -1,6 +1,7 @@
 export type NavIconName =
   | "home"
   | "sites"
+  | "projects"
   | "work"
   | "review"
   | "layers"
@@ -15,6 +16,8 @@ export type NavIconName =
 const PATHS: Record<NavIconName, React.ReactNode> = {
   home: <><path d="M3 10.5 12 3l9 7.5" /><path d="M5.5 9.5V21h13V9.5" /></>,
   sites: <><path d="m3 6 6-3 6 3 6-3v15l-6 3-6-3-6 3Z" /><path d="M9 3v15M15 6v15" /></>,
+  // 프로젝트 목록 — 지도 모양("sites")은 공간 섹션이 쓰므로 타일 격자로 구분한다.
+  projects: <><rect x="3.5" y="3.5" width="7" height="7" rx="1.5" /><rect x="13.5" y="3.5" width="7" height="7" rx="1.5" /><rect x="3.5" y="13.5" width="7" height="7" rx="1.5" /><rect x="13.5" y="13.5" width="7" height="7" rx="1.5" /></>,
   work: <><rect x="4" y="5" width="16" height="16" rx="2" /><path d="M9 5V3h6v2M8 11h8M8 15h6" /></>,
   review: <><circle cx="12" cy="12" r="9" /><path d="m8 12 2.5 2.5L16 9" /></>,
   layers: <><path d="m12 3 9 5-9 5-9-5Z" /><path d="m3 12 9 5 9-5M3 16l9 5 9-5" /></>,

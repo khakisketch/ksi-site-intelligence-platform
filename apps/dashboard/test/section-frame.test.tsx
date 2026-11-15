@@ -48,4 +48,13 @@ describe("SectionFrame (3단 탐색의 2·3단 배치)", () => {
     expect(closed).not.toContain('open=""');
     expect(frame({ drawer: true, drawerOpen: true })).toContain('open=""');
   });
+
+  it("상세가 없는 보기는 오른쪽 열을 그리지 않는다", () => {
+    const html = renderToStaticMarkup(
+      <SectionFrame contextLabel="분석 종류" context={<p>컨텍스트</p>}><p>본문</p></SectionFrame>,
+    );
+    expect(html).toContain("본문");
+    expect(html).not.toContain("data-section-inspector");
+    expect(html).not.toContain('id="section-inspector"');
+  });
 });

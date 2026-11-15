@@ -55,7 +55,7 @@ export const SHELL_PROJECTS_ITEM: NavItem = {
   label: "프로젝트",
   href: "/sites",
   implemented: true,
-  icon: "sites",
+  icon: "projects",
   mobile: true,
 };
 export const SHELL_WORK_ITEM: NavItem = NAV_ITEMS.find((item) => item.key === "work")!;
