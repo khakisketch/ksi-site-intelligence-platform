@@ -26,7 +26,7 @@ test("빈 조직은 Home에서 거짓 운영 안건 없이 프로젝트 목록�
   await expect(page.getByRole("main").getByText("찾는 프로젝트가 이미 있다면 관리자에게 이 계정의 프로젝트 접근 권한을 확인해 주세요.", { exact: true })).toBeVisible();
   await expect(page.getByRole("main").getByRole("link", { name: "프로젝트 목록", exact: true })).toHaveAttribute("href", "/sites");
   await expect(page.getByRole("main").getByRole("link", { name: "프로젝트 등록", exact: true })).toHaveCount(0);
-  await expect(page.getByRole("region", { name: "확인 필요 프로젝트 목록" })).toHaveCount(0);
+  await expect(page.getByRole("region", { name: "확인할 것 목록" })).toHaveCount(0);
   await expectNoHorizontalOverflow(page);
 });
 

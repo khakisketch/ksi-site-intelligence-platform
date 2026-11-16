@@ -36,44 +36,58 @@ describe("승인된 Home 표시 계약(D7·D8)", () => {
     expect(adr).toContain("D3의 이미지 권리/출처 제한은 유지한다");
   });
 
-  it("구현이 큰 장식 커버 없이 책임·순서를 유지한다", () => {
-    const home = repositorySource("apps/dashboard/src/app/page.tsx");
-    const carousel = repositorySource("apps/dashboard/src/app/HomeAttentionList.tsx");
+  it("D10: 확인할 것을 먼저, 프로젝트는 옆에 두고, 큰 장식 없이 책임을 유지한다", () => {
+    const adr = repositorySource("docs/architecture/ADR-KSI-025-evidence-first-portfolio-home.md");
+    expect(adr).toContain("D10 — 2026-11-16 Home은 \"확인할 것\"을 먼저, 프로젝트는 옆에 둔다");
+    expect(adr).toContain("D1의 첫 줄·본문 첫 영역을 대체한다");
+    expect(adr).toContain("모름을 0이라 말하지 않는다");
 
-    // D1: 포트폴리오 요약 → 확인할 현장 → 초기 설정 → 최근 업데이트.
-    expect(home).toContain("attentionItems.length > 0");
-    expect(home).toContain("recentSiteItems.length > 0");
-    expect(home).toContain('regionLabel="최근 프로젝트 목록"');
-    expect(home).toContain("초기 설정이 필요한 프로젝트");
-    expect(home).toContain("프로젝트 전체를 열어 직접 확인하세요.");
-    expect(home).toContain('<Link href="/sites"');
-    expect(home.indexOf("<HomeAttentionList")).toBeLessThan(home.indexOf("<HomeSituationList"));
-    // D7: 고정 큰 시각·거대 장식 커버 금지 — 높이는 내용이 정한다.
-    for (const source of [home, carousel]) {
+    const home = repositorySource("apps/dashboard/src/app/page.tsx");
+    const inbox = repositorySource("apps/dashboard/src/app/HomeInbox.tsx");
+    const projects = repositorySource("apps/dashboard/src/app/HomeProjects.tsx");
+    const recent = repositorySource("apps/dashboard/src/app/HomeRecentUpdates.tsx");
+
+    // D1: 안건 선정·프로젝트별 중복 방지는 선정 코드가 그대로 맡는다. 홈은 읽은 결과를 그대로 목록에 올린다.
+    expect(home).toContain("selectHomeAttentionSources");
+    expect(home).toContain("프로젝트 전체 열기");
+    expect(home).toContain("일부를 확인하지 못했습니다");
+    // D10: 확인할 것(안건 → 초기 설정) 다음에 프로젝트·최근 소식. 확인할 것이 DOM에서 먼저다.
+    expect(home.indexOf("<HomeInbox")).toBeLessThan(home.indexOf("<HomeProjects"));
+    expect(home.indexOf("<HomeProjects")).toBeLessThan(home.indexOf("<HomeRecentUpdates"));
+    expect(home.indexOf("...operationalAttention.map")).toBeLessThan(home.indexOf("...setupItems"));
+    // 넓은 화면은 왼쪽 목록 폭을 묶고 남는 폭을 프로젝트가 쓴다 — 한 줄이 화면 폭만큼 늘어나지 않는다.
+    expect(home).toContain("lg:grid-cols-[minmax(320px,560px)_minmax(0,1fr)]");
+    expect(home).toContain("2xl:grid-cols-[minmax(0,640px)_minmax(0,1fr)]");
+    // D7·D9: 고정 큰 시각·거대 장식 커버·기본 표지 금지 — 높이는 내용이 정한다.
+    for (const source of [home, inbox, projects, recent]) {
       expect(source).not.toContain("min-h-[208px]");
       expect(source).not.toContain("lg:min-h-[330px]");
       expect(source).not.toContain("aspect-[16/7]");
       expect(source).not.toContain("DefaultSiteVisual");
       expect(source).not.toContain("기본 표지");
+      expect(source).not.toContain('size="card"');
     }
-    expect(carousel).not.toContain("lg:grid-cols-[minmax(0,1.25fr)_minmax(300px,0.75fr)]");
-    // 조회하지 않은 미리보기의 부재를 등록 자료의 부재로 말하지 않는다.
-    expect(home).not.toContain("표시할 관측 이미지 없음");
-    expect(carousel).not.toContain("imageFallbackLabel");
-    // D3: 허용된 실제 이미지만 — 합성·고정 placeholder·타 현장 사진 금지 문구 유지.
-    expect(carousel).toContain("합성·고정");
+    // D9: 경계 도형은 작은 표지로만(등록 사실, 영상 아님). 배경 지도 타일은 G4 전까지 쓰지 않는다.
+    expect(projects).toContain('size="row"');
+    for (const source of [home, inbox, projects, recent]) {
+      expect(source).not.toMatch(/tile\.openstreetmap|TileLayer/);
+    }
     // 시점 라벨은 구조화된 출처 분기가 정한다 — 문자열 추론·촬영일 오독 금지.
-    expect(carousel).toContain("timeLabel");
-    expect(carousel).not.toMatch(/촬영일|촬영 시각|관측일시/);
+    expect(inbox).toContain("timeLabel");
+    expect(inbox).not.toMatch(/촬영일|촬영 시각|관측일시/);
     for (const label of ['timeLabel: "결과 보고"', 'timeLabel: "분석 생성"', 'timeLabel: "작업 갱신"', 'timeLabel: "프로젝트 갱신"']) {
       expect(home).toContain(label);
     }
     // D8: 가로로 넘기는 캐러셀 없이 모든 폭에서 세로 목록으로 읽는다.
-    expect(carousel).not.toContain("이전 현장");
-    expect(carousel).not.toContain("다음 현장");
-    expect(carousel).not.toContain("snap-x");
-    expect(carousel).not.toContain("overflow-x-auto");
-    expect(carousel).not.toContain("scrollTo");
+    for (const source of [inbox, projects, recent]) {
+      expect(source).not.toContain("이전 현장");
+      expect(source).not.toContain("다음 현장");
+      expect(source).not.toContain("snap-x");
+      expect(source).not.toContain("overflow-x-auto");
+      expect(source).not.toContain("scrollTo");
+    }
+    // 조회하지 않은 미리보기의 부재를 등록 자료의 부재로 말하지 않는다.
+    expect(home).not.toContain("표시할 관측 이미지 없음");
   });
 
   it("4개 viewport 기준 이미지가 D7 변경 전 증거로 보존된다", () => {

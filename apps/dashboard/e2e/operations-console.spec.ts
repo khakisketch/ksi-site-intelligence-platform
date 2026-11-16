@@ -235,18 +235,21 @@ test("모바일 하단 내비는 안전영역을 포함해 마지막 내용을 �
 test("Home은 합성 운영 원장의 작업·현장 우선순위를 보여 준다", async ({ page }) => {
   test.skip(Boolean(process.env.KSI_DASHBOARD_E2E_BASE_URL), "외부 원장은 읽기 전용이며 fixture를 전제하지 않습니다.");
   await page.goto("/");
-  const attentionList = page.getByRole("region", { name: "확인 필요 프로젝트 목록" });
+  const attentionList = page.getByRole("region", { name: "확인할 것 목록" });
   await expect(attentionList).toBeVisible();
   // The four historical records are excluded unless they need a decision. The
   // only two decision candidates are the awaiting-approval and review-ready rows.
   await expect(attentionList.getByRole("article")).toHaveCount(2);
-  await expect(attentionList.getByRole("heading", { name: "E2E 과거 읽기 전용 · 작업 범위 승인" })).toBeVisible();
-  await expect(attentionList.getByRole("heading", { name: "E2E 과거 읽기 전용 · 결과 검토 기록" })).toBeVisible();
+  await expect(attentionList.getByRole("heading", { name: "작업 범위를 승인하세요" })).toBeVisible();
+  await expect(attentionList.getByRole("heading", { name: "작업 결과를 검토하세요" })).toBeVisible();
+  await expect(attentionList).toContainText("E2E 과거 읽기 전용 · 작업 범위 승인");
+  await expect(attentionList).toContainText("E2E 과거 읽기 전용 · 결과 검토 기록");
 
-  const initialSetup = page.getByRole("region", { name: "초기 설정이 필요한 프로젝트" });
   // All seeded Sites already have a work order. Legacy UNMAPPED state must not
   // turn an in-use Site into an instruction to configure its optional AOI.
-  await expect(initialSetup).toHaveCount(0);
+  await expect(attentionList.getByText("첫 관측 자료를 연결하세요")).toHaveCount(0);
+  // 프로젝트는 확인할 것에 나온 것과 무관하게 모두 한 번씩 나온다.
+  await expect(page.getByRole("region", { name: "프로젝트", exact: false }).first()).toBeVisible();
 });
 
 test("핵심 전역 화면은 populated 상태에서도 막히거나 가로로 넘치지 않는다", async ({ page }) => {
@@ -293,7 +296,7 @@ test("현장 분석 목적지는 Site 접근은 유지하고 미구성 분석 AP
 
 test("키보드는 내비게이션을 건너뛰고 화면 전환 뒤 본문 맥락을 이어 간다", async ({ page }) => {
   await page.goto("/");
-  await expect(page.getByRole("region", { name: "확인 필요 프로젝트 목록" })).toBeVisible();
+  await expect(page.getByRole("region", { name: "확인할 것 목록" })).toBeVisible();
   await page.keyboard.press("Tab");
   const skipLink = page.getByRole("link", { name: "본문으로 건너뛰기" });
   await expect(skipLink).toBeFocused();

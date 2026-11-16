@@ -129,3 +129,26 @@ export function formatKoreanDateTime(
   if (date && time) return `${date} ${time}`;
   return date || time || `${parts.year}. ${parts.month}. ${parts.day}. ${parts.hour}:${parts.minute}:${parts.second}`;
 }
+
+/**
+ * 짧은 상대 시각 — 홈 목록처럼 "언제쯤인지"만 필요한 자리용이다.
+ * 날짜 경계는 서버 시간대가 아니라 서울 달력으로 센다(어제·N일 전). 정확한 시각은 호출자가 툴팁에 싣는다.
+ * 일주일이 지나면 날짜로 바꾼다(같은 해는 연도 생략).
+ */
+export function formatRelativeKo(iso: string, now: Date = new Date()): string {
+  const when = new Date(iso);
+  if (Number.isNaN(when.getTime())) return iso;
+  const elapsedMs = now.getTime() - when.getTime();
+  if (elapsedMs < 60_000) return "방금";
+  const w = seoulParts(when);
+  const n = seoulParts(now);
+  const dayOf = (parts: Record<DatePart, string>) => Date.UTC(Number(parts.year), Number(parts.month) - 1, Number(parts.day));
+  const days = Math.round((dayOf(n) - dayOf(w)) / 86_400_000);
+  if (days <= 0) {
+    const minutes = Math.floor(elapsedMs / 60_000);
+    return minutes < 60 ? `${minutes}분 전` : `${Math.floor(elapsedMs / 3_600_000)}시간 전`;
+  }
+  if (days === 1) return "어제";
+  if (days < 7) return `${days}일 전`;
+  return w.year === n.year ? `${w.month}. ${w.day}.` : `${w.year}. ${w.month}. ${w.day}.`;
+}
