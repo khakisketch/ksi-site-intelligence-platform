@@ -19,13 +19,13 @@ export function SiteOnboarding({
     <section className="mx-auto flex min-h-[50vh] w-full max-w-3xl flex-col items-center justify-center gap-5 py-10 text-center">
       <div className="flex flex-col items-center gap-1.5">
         <h2 className="text-display font-bold tracking-tight break-keep">
-          현재 계정에서 볼 수 있는 프로젝트이 없습니다
+          현재 계정에서 볼 수 있는 프로젝트가 없습니다
         </h2>
         <p className="max-w-xl text-body break-keep text-ink-2">
-          찾는 프로젝트이 이미 있다면 관리자에게 이 계정의 프로젝트 접근 권한을 확인해 주세요.
+          찾는 프로젝트가 이미 있다면 관리자에게 이 계정의 프로젝트 접근 권한을 확인해 주세요.
         </p>
         <p className="max-w-xl text-body break-keep text-ink-2">
-          새 현장이 필요하면 프로젝트을 등록한 뒤 영역과 관측 자료를 확인할 수 있습니다.
+          새 현장이 필요하면 프로젝트를 등록한 뒤 영역과 관측 자료를 확인할 수 있습니다.
         </p>
       </div>
 
@@ -42,7 +42,7 @@ export function SiteOnboarding({
       ) : (
         <ActionUnavailable
           label="프로젝트 등록하기"
-          description="현재 계정으로는 프로젝트을 등록할 수 없습니다. 관리자에게 문의하세요."
+          description="현재 계정으로는 프로젝트를 등록할 수 없습니다. 관리자에게 문의하세요."
         />
       )}
     </section>

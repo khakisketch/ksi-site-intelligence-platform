@@ -245,7 +245,7 @@ describe("프로젝트 등록 계정 연속성 (사용자 이벤트)", () => {
     const issued = "site-12345678-1234-1234-1234-123456789012";
     requestMock.mockResolvedValueOnce(jsonResponse(echoSite(issued, "현장 A"), 201));
     fireEvent.click(screen.getByRole("button", { name: "프로젝트 등록" }));
-    expect(await screen.findByText("프로젝트이 등록되었습니다.")).toBeTruthy();
+    expect(await screen.findByText("프로젝트가 등록되었습니다.")).toBeTruthy();
     expect(sentHeaders(0).get("x-ksi-continuity-fingerprint")).toBe(ALICE);
   });
 
@@ -259,7 +259,7 @@ describe("프로젝트 등록 계정 연속성 (사용자 이벤트)", () => {
     const issued = "site-12345678-1234-1234-1234-123456789012";
     requestMock.mockResolvedValueOnce(jsonResponse(echoSite(issued, "현장 A"), 201));
     fireEvent.click(screen.getByRole("button", { name: "다시 시도" }));
-    expect(await screen.findByText("프로젝트이 등록되었습니다.")).toBeTruthy();
+    expect(await screen.findByText("프로젝트가 등록되었습니다.")).toBeTruthy();
     expect(sentBody(1).bootstrapRequestId).toBe(firstKey);
     expect(sentHeaders(1).get("x-ksi-continuity-fingerprint")).toBe(ALICE);
   });
@@ -273,7 +273,7 @@ describe("프로젝트 등록 계정 연속성 (사용자 이벤트)", () => {
 
     expect(await screen.findByText(/입력은 그대로 있습니다/)).toBeTruthy();
     expect(screen.getByRole("button", { name: "계정 정보 새로고침" })).toBeTruthy();
-    expect(screen.queryByText("프로젝트이 등록되었습니다.")).toBeNull();
+    expect(screen.queryByText("프로젝트가 등록되었습니다.")).toBeNull();
     expect(mocked.push).not.toHaveBeenCalled();
     // 입력과 요청 키는 그대로 — 다음 행동(원래 계정 복귀·목록 확인)이 가능하다.
     expect(window.sessionStorage.getItem("ksi-wizard-site-registration-only")).toContain("현장 A");
@@ -298,13 +298,13 @@ describe("프로젝트 등록 계정 연속성 (사용자 이벤트)", () => {
     const issued = "site-12345678-1234-1234-1234-123456789012";
     requestMock.mockResolvedValueOnce(jsonResponse(echoSite(issued, "현장 A"), 201));
     fireEvent.click(screen.getByRole("button", { name: "프로젝트 등록" }));
-    expect(await screen.findByText("프로젝트이 등록되었습니다.")).toBeTruthy();
+    expect(await screen.findByText("프로젝트가 등록되었습니다.")).toBeTruthy();
 
     cleanup();
     requestMock.mockClear();
     render(<SiteRegistrationOnlyWizard mode="MAPPED_BOOTSTRAP" accountFingerprint={BOB} />);
     await waitFor(() => {
-      expect(screen.queryByText("프로젝트이 등록되었습니다.")).toBeNull();
+      expect(screen.queryByText("프로젝트가 등록되었습니다.")).toBeNull();
     });
     expect(requestMock).not.toHaveBeenCalled();
   });
@@ -318,7 +318,7 @@ describe("프로젝트 등록 계정 연속성 (사용자 이벤트)", () => {
     requestMock.mockResolvedValueOnce(jsonResponse({ message: "세션이 만료되었습니다." }, 401));
     fireEvent.click(screen.getByRole("button", { name: "다시 시도" }));
     expect(await screen.findByText(/이전 요청의 결과는 여전히/)).toBeTruthy();
-    expect(screen.queryByText("프로젝트이 등록되었습니다.")).toBeNull();
+    expect(screen.queryByText("프로젝트가 등록되었습니다.")).toBeNull();
   });
 
   it("지문을 얻지 못한 새 초안은 POST하지 않고 계정 확인으로 fail-closed한다", async () => {
@@ -380,7 +380,7 @@ describe("프로젝트 등록 계정 연속성 (사용자 이벤트)", () => {
     const issued = "site-12345678-1234-1234-1234-123456789012";
     requestMock.mockResolvedValueOnce(jsonResponse(echoSite(issued, "현장 A"), 201));
     fireEvent.click(retryButton);
-    expect(await screen.findByText("프로젝트이 등록되었습니다.")).toBeTruthy();
+    expect(await screen.findByText("프로젝트가 등록되었습니다.")).toBeTruthy();
     expect(sentBody(1).bootstrapRequestId).toBe(blockedKey);
     expect(sentHeaders(1).get("x-ksi-continuity-fingerprint")).toBe(ALICE);
   });
@@ -418,7 +418,7 @@ describe("프로젝트 등록 계정 연속성 (사용자 이벤트)", () => {
     const issued = "site-bbbbbbbb-1234-1234-1234-123456789012";
     requestMock.mockResolvedValueOnce(jsonResponse(echoSite(issued, "현장 A"), 201));
     fireEvent.click(screen.getByRole("button", { name: "프로젝트 등록" }));
-    expect(await screen.findByText("프로젝트이 등록되었습니다.")).toBeTruthy();
+    expect(await screen.findByText("프로젝트가 등록되었습니다.")).toBeTruthy();
     const lastCall = requestMock.mock.calls.length - 1;
     expect(sentHeaders(lastCall).get("x-ksi-continuity-fingerprint")).toBe(ALICE);
   });
@@ -445,7 +445,7 @@ describe("프로젝트 등록 계정 연속성 (사용자 이벤트)", () => {
     const issued = "site-12345678-1234-1234-1234-123456789012";
     requestMock.mockResolvedValueOnce(jsonResponse(echoSite(issued, "현장 A"), 201));
     fireEvent.click(screen.getByRole("button", { name: "프로젝트 등록" }));
-    expect(await screen.findByText("프로젝트이 등록되었습니다.")).toBeTruthy();
+    expect(await screen.findByText("프로젝트가 등록되었습니다.")).toBeTruthy();
     const lastCall = requestMock.mock.calls.length - 1;
     expect(sentBody(lastCall).bootstrapRequestId).toBe(firstKey);
     expect(sentHeaders(lastCall).get("x-ksi-continuity-fingerprint")).toBe(ALICE);
@@ -499,7 +499,7 @@ describe("프로젝트 등록 계정 연속성 (사용자 이벤트)", () => {
     const issued = "site-12345678-1234-1234-1234-123456789012";
     requestMock.mockResolvedValueOnce(jsonResponse(echoSite(issued, "현장 A"), 201));
     fireEvent.click(screen.getByRole("button", { name: "다시 시도" }));
-    expect(await screen.findByText("프로젝트이 등록되었습니다.")).toBeTruthy();
+    expect(await screen.findByText("프로젝트가 등록되었습니다.")).toBeTruthy();
     expect(screen.getByText(/확인되지 않은 이전 요청이 4건 있습니다/)).toBeTruthy();
 
     // 성공 후 이동해도 미해결 4건은 남는다.
@@ -537,7 +537,7 @@ describe("프로젝트 등록 계정 연속성 (사용자 이벤트)", () => {
     const issued = "site-12345678-1234-1234-1234-123456789012";
     requestMock.mockResolvedValueOnce(jsonResponse(echoSite(issued, "현장 A"), 201));
     fireEvent.click(screen.getByRole("button", { name: "프로젝트 등록" }));
-    expect(await screen.findByText("프로젝트이 등록되었습니다.", { selector: "p" })).toBeTruthy();
+    expect(await screen.findByText("프로젝트가 등록되었습니다.", { selector: "p" })).toBeTruthy();
 
     // prototype spy는 jsdom 26 저장소에 닿지 않으므로 가짜 저장소로 1회 실패를 건다.
     let moveWrites = 0;
@@ -551,7 +551,7 @@ describe("프로젝트 등록 계정 연속성 (사용자 이벤트)", () => {
     fireEvent.click(screen.getByRole("button", { name: "현장 브리핑으로 이동" }));
     expect(await screen.findByText(/이동 전 정리를 브라우저에 저장하지 못했습니다/)).toBeTruthy();
     expect(mocked.push).not.toHaveBeenCalled();
-    expect(screen.queryByText("프로젝트이 등록되었습니다.")).toBeNull();
+    expect(screen.queryByText("프로젝트가 등록되었습니다.")).toBeNull();
   });
 
   it("legacy도 지문이 없으면 POST하지 않는다", async () => {
@@ -570,7 +570,7 @@ describe("프로젝트 등록 계정 연속성 (사용자 이벤트)", () => {
     requestMock.mockResolvedValueOnce(jsonResponse({ message: "세션이 만료되었습니다." }, 401));
     fireEvent.click(screen.getByRole("button", { name: "다시 시도" }));
     expect(await screen.findByText(/이전 요청의 결과는 여전히/)).toBeTruthy();
-    expect(screen.queryByText("프로젝트이 등록되었습니다.")).toBeNull();
+    expect(screen.queryByText("프로젝트가 등록되었습니다.")).toBeNull();
   });
 });
 
@@ -647,13 +647,13 @@ describe("프로젝트 등록 계정 게이트·상세 비공개·라이브 확�
     const issued = "site-12345678-1234-1234-1234-123456789012";
     requestMock.mockResolvedValueOnce(jsonResponse(echoSite(issued, "현장 A"), 201));
     fireEvent.click(screen.getByRole("button", { name: "프로젝트 등록" }));
-    expect(await screen.findByText("프로젝트이 등록되었습니다.")).toBeTruthy();
+    expect(await screen.findByText("프로젝트가 등록되었습니다.")).toBeTruthy();
 
     cleanup();
     requestMock.mockClear();
     render(<SiteRegistrationOnlyWizard mode="MAPPED_BOOTSTRAP" accountFingerprint={BOB} />);
     await waitFor(() => {
-      expect(screen.queryByText("프로젝트이 등록되었습니다.")).toBeNull();
+      expect(screen.queryByText("프로젝트가 등록되었습니다.")).toBeNull();
     });
     // B에게 보여주지 않되 원본 영수증은 보존한다.
     const kept = JSON.parse(
@@ -663,7 +663,7 @@ describe("프로젝트 등록 계정 게이트·상세 비공개·라이브 확�
 
     cleanup();
     render(<SiteRegistrationOnlyWizard mode="MAPPED_BOOTSTRAP" accountFingerprint={ALICE} />);
-    expect(await screen.findByText("프로젝트이 등록되었습니다.")).toBeTruthy();
+    expect(await screen.findByText("프로젝트가 등록되었습니다.")).toBeTruthy();
     expect(screen.getByText(issued)).toBeTruthy();
   });
 
@@ -715,7 +715,7 @@ describe("프로젝트 등록 계정 게이트·상세 비공개·라이브 확�
     const issued = "site-12345678-1234-1234-1234-123456789012";
     requestMock.mockResolvedValueOnce(jsonResponse(echoSite(issued, "현장 A"), 201));
     fireEvent.click(screen.getByRole("button", { name: "프로젝트 등록" }));
-    expect(await screen.findByText("프로젝트이 등록되었습니다.", { selector: "p" })).toBeTruthy();
+    expect(await screen.findByText("프로젝트가 등록되었습니다.", { selector: "p" })).toBeTruthy();
     const lastCall = requestMock.mock.calls.length - 1;
     expect(sentBody(lastCall).bootstrapRequestId).toBe(unknownKey);
     expect(sentHeaders(lastCall).get("x-ksi-continuity-fingerprint")).toBe(ALICE);
@@ -772,7 +772,7 @@ describe("프로젝트 등록 계정 게이트·상세 비공개·라이브 확�
     const issued = "site-12345678-1234-1234-1234-123456789012";
     requestMock.mockResolvedValueOnce(jsonResponse(echoSite(issued, "현장 A"), 201));
     fireEvent.click(screen.getByRole("button", { name: "프로젝트 등록" }));
-    expect(await screen.findByText("프로젝트이 등록되었습니다.")).toBeTruthy();
+    expect(await screen.findByText("프로젝트가 등록되었습니다.")).toBeTruthy();
     expect(screen.getByText(/이 확인은 이 화면에서만 유지됩니다/)).toBeTruthy();
   });
 });
@@ -883,7 +883,7 @@ describe("동일 키 충돌 기록의 신원 결속 (저장→복원)", () => {
     const issued = "site-12345678-1234-1234-1234-123456789012";
     requestMock.mockResolvedValueOnce(jsonResponse(echoSite(issued, "현장 A"), 201));
     fireEvent.click(screen.getByRole("button", { name: "프로젝트 등록" }));
-    expect(await screen.findByText("프로젝트이 등록되었습니다.")).toBeTruthy();
+    expect(await screen.findByText("프로젝트가 등록되었습니다.")).toBeTruthy();
     const afterSuccess = readDraft().priorUnknowns as Array<Record<string, unknown>>;
     expect(afterSuccess).toHaveLength(1);
     expect(afterSuccess[0]).toMatchObject({ key: COLLISION_KEY, originFingerprint: BOB });
@@ -929,11 +929,11 @@ describe("동일 키 충돌 기록의 신원 결속 (저장→복원)", () => {
     await screen.findByRole("button", { name: "프로젝트 등록" });
     requestMock.mockResolvedValueOnce(jsonResponse(echoSite("site-12345678-1234-1234-1234-123456789012", "현장 A"), 201));
     fireEvent.click(screen.getByRole("button", { name: "프로젝트 등록" }));
-    await screen.findByText("프로젝트이 등록되었습니다.");
+    await screen.findByText("프로젝트가 등록되었습니다.");
     cleanup();
     expect(readDraft().priorUnknowns).toEqual([expect.objectContaining({ originFingerprint: BOB, key: COLLISION_KEY })]);
     render(<SiteRegistrationOnlyWizard mode="MAPPED_BOOTSTRAP" accountFingerprint={ALICE} />);
-    await screen.findByText("프로젝트이 등록되었습니다.");
+    await screen.findByText("프로젝트가 등록되었습니다.");
     expect(readDraft().priorUnknowns).toEqual([expect.objectContaining({ originFingerprint: BOB, key: COLLISION_KEY })]);
     expect(screen.queryByText("현장 B")).toBeNull();
   });
@@ -965,7 +965,7 @@ describe("동일 키 충돌 기록의 신원 결속 (저장→복원)", () => {
       },
     });
       await act(async () => resolve(jsonResponse(echoSite("site-12345678-1234-1234-1234-123456789012", "현장 A"), 201)));
-      expect(await screen.findByText("프로젝트이 등록되었습니다.")).toBeTruthy();
+      expect(await screen.findByText("프로젝트가 등록되었습니다.")).toBeTruthy();
       expect(screen.getByText(/초안 또는 영수증 저장·정리를 확인하지 못했습니다/)).toBeTruthy();
       expect(screen.getByText(/남은 백업은 자동으로 복구하거나 삭제하지 않습니다/)).toBeTruthy();
       expect(screen.queryByText(/요청 결과가 확정되는 것은 아닙니다/)).toBeNull();
@@ -1027,7 +1027,7 @@ describe("동일 키 충돌 기록의 신원 결속 (저장→복원)", () => {
     resolvePost!(jsonResponse(echoSite(issued, "현장 A"), 201));
     // A 응답이 와도 성공으로 단정하지 않는다 — 불명 안내 + B에게 A 이름 비공개.
     expect(await screen.findByText(/등록 결과를 확인하지 못했습니다/)).toBeTruthy();
-    expect(screen.queryByText("프로젝트이 등록되었습니다.")).toBeNull();
+    expect(screen.queryByText("프로젝트가 등록되었습니다.")).toBeNull();
     expect(screen.queryByDisplayValue("현장 A")).toBeNull();
     const draft = readDraft();
     expect(
@@ -1140,7 +1140,7 @@ describe("동일 키 충돌 기록의 신원 결속 (저장→복원)", () => {
     // legacy: 서버 발급이 아니라 요청한 siteId 그대로 돌려받아야 성공이다.
     requestMock.mockResolvedValueOnce(jsonResponse(echoSite("site-A", "현장 B"), 201));
     fireEvent.click(screen.getByRole("button", { name: "프로젝트 등록" }));
-    expect(await screen.findByText("프로젝트이 등록되었습니다.", { selector: "p" })).toBeTruthy();
+    expect(await screen.findByText("프로젝트가 등록되었습니다.", { selector: "p" })).toBeTruthy();
     const afterSuccess = readDraft().priorUnknowns as Array<Record<string, unknown>>;
     expect(afterSuccess).toHaveLength(1);
     expect(afterSuccess[0]).toMatchObject({ key: "site-A", name: "현장 A" });
@@ -1158,7 +1158,7 @@ describe("동일 인스턴스 영수증 계정 복귀", () => {
     expect(screen.queryByText("A 영수증 현장")).toBeNull();
     currentIdentity = ALICE;
     await act(async () => window.dispatchEvent(new Event("focus")));
-    expect(await screen.findByText("프로젝트이 등록되었습니다.")).toBeTruthy();
+    expect(await screen.findByText("프로젝트가 등록되었습니다.")).toBeTruthy();
     expect(screen.getByText("A 영수증 현장")).toBeTruthy();
     expect(screen.getByText("site-receipt-a")).toBeTruthy();
     currentIdentity = BOB;
@@ -1190,7 +1190,7 @@ describe("동일 인스턴스 영수증 계정 복귀", () => {
     currentIdentity = ALICE;
     await act(async () => window.dispatchEvent(new Event("focus")));
     expect(await screen.findByText("다른 계정의 입력입니다")).toBeTruthy();
-    expect(screen.queryByText("프로젝트이 등록되었습니다.")).toBeNull();
+    expect(screen.queryByText("프로젝트가 등록되었습니다.")).toBeNull();
     expect(screen.queryByText("A 영수증 현장")).toBeNull();
     expect(sessionStorage.getItem("ksi-wizard-site-registration-only")).toBe(before);
     currentIdentity = BOB;
@@ -1208,7 +1208,7 @@ describe("손상된 영수증 원문 보존", () => {
     await goToConfirmMapped(ALICE);
     requestMock.mockResolvedValueOnce(jsonResponse(echoSite("site-12345678-1234-1234-1234-123456789012", "현장 A"), 201));
     fireEvent.click(screen.getByRole("button", { name: "프로젝트 등록" }));
-    expect(await screen.findByText("프로젝트이 등록되었습니다.")).toBeTruthy();
+    expect(await screen.findByText("프로젝트가 등록되었습니다.")).toBeTruthy();
     expect(sessionStorage.getItem(key)).toBe(raw);
     expect(screen.getByText(/이 확인은 이 화면에서만 유지됩니다/)).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "이전" }));
@@ -1223,7 +1223,7 @@ it("같은 계정의 다른 mode 영수증도 삭제하거나 새 영수증으�
   await goToConfirmMapped(ALICE);
   requestMock.mockResolvedValueOnce(jsonResponse(echoSite("site-12345678-1234-1234-1234-123456789012", "현장 A"), 201));
   fireEvent.click(screen.getByRole("button", { name: "프로젝트 등록" }));
-  expect(await screen.findByText("프로젝트이 등록되었습니다.")).toBeTruthy();
+  expect(await screen.findByText("프로젝트가 등록되었습니다.")).toBeTruthy();
   expect(screen.getByText(/이 확인은 이 화면에서만 유지됩니다/)).toBeTruthy();
   expect(sessionStorage.getItem(key)).toBe(raw);
   fireEvent.click(screen.getByRole("button", { name: "이전" }));

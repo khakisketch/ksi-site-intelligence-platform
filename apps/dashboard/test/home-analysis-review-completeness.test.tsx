@@ -165,17 +165,17 @@ describe("Home 현장 조회 범위", () => {
     mockWorld([]);
     render(await HomePage());
     expect(summaryValue("볼 수 있는 프로젝트")).toBe("0곳");
-    expect(screen.getByText("현재 계정에서 볼 수 있는 프로젝트이 없습니다")).toBeTruthy();
-    expect(screen.getByText("찾는 프로젝트이 이미 있다면 관리자에게 이 계정의 프로젝트 접근 권한을 확인해 주세요.")).toBeTruthy();
+    expect(screen.getByText("현재 계정에서 볼 수 있는 프로젝트가 없습니다")).toBeTruthy();
+    expect(screen.getByText("찾는 프로젝트가 이미 있다면 관리자에게 이 계정의 프로젝트 접근 권한을 확인해 주세요.")).toBeTruthy();
     expect(screen.getByRole("link", { name: "프로젝트 목록" }).getAttribute("href")).toBe("/sites");
-    expect(screen.queryByText("아직 등록된 프로젝트이 없습니다")).toBeNull();
+    expect(screen.queryByText("아직 등록된 프로젝트가 없습니다")).toBeNull();
   });
 
   it("목록 조회 오류는 빈 목록으로 표시하지 않는다", async () => {
     mockWorld([]);
     mockedCore.listSitesCached.mockRejectedValue(new Error("Core unavailable"));
     render(await HomePage());
-    expect(screen.queryByText("현재 계정에서 볼 수 있는 프로젝트이 없습니다")).toBeNull();
+    expect(screen.queryByText("현재 계정에서 볼 수 있는 프로젝트가 없습니다")).toBeNull();
     expect(summaryValue("볼 수 있는 프로젝트")).toBe("—");
   });
 

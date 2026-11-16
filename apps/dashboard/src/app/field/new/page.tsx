@@ -44,7 +44,7 @@ export default async function FieldNewObservationPage() {
         <p className="console-page-description">현장을 고른 뒤 영역을 선택합니다.</p>
       </div>
       {sites.length === 0 ? (
-        <EmptyState title="현재 계정에서 선택할 수 있는 프로젝트이 없습니다" description="찾는 프로젝트이 이미 있다면 관리자에게 이 계정의 프로젝트 접근 권한을 확인해 주세요." action={{ label: "프로젝트 목록", href: "/sites" }} />
+        <EmptyState title="현재 계정에서 선택할 수 있는 프로젝트가 없습니다" description="찾는 프로젝트가 이미 있다면 관리자에게 이 계정의 프로젝트 접근 권한을 확인해 주세요." action={{ label: "프로젝트 목록", href: "/sites" }} />
       ) : (
         <ul className="flex flex-col divide-y divide-line rounded-lg border border-line bg-surface px-4">
           {sites.map((site) => <li key={site.siteId}>

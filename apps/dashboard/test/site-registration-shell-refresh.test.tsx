@@ -104,7 +104,7 @@ it("successful mapped registration refreshes only on explicit briefing click", a
  const issued="site-12345678-1234-1234-1234-123456789012";
  requestMock.mockImplementation(async (input: RequestInfo | URL) => String(input)==="/api/sites" ? jsonResponse(echoSite(issued,"현장 A"),201) : jsonResponse({fingerprint:FINGERPRINT,sites:[{siteId:issued,name:"현장 A",status:"UNMAPPED"}]},200));
  await goToConfirmMapped(); fireEvent.click(screen.getByRole("button",{name:"프로젝트 등록"}));
- await screen.findByText("프로젝트이 등록되었습니다.");
+ await screen.findByText("프로젝트가 등록되었습니다.");
  expect(requestMock.mock.calls.filter(x=>String(x[0])==="/api/shell-sites")).toHaveLength(0);
  fireEvent.click(screen.getByRole("button",{name:"현장 브리핑으로 이동"}));
  await waitFor(()=>expect(screen.getByTestId("summary").textContent).toBe("현장 A"));

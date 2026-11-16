@@ -22,8 +22,8 @@ test("빈 조직은 Home에서 거짓 운영 안건 없이 프로젝트 목록�
   test.skip(Boolean(process.env.KSI_DASHBOARD_E2E_BASE_URL), "외부 IdP에는 로컬 빈 조직 계정이 없습니다.");
   await loginToEmptyOrganization(page);
 
-  await expect(page.getByText("현재 계정에서 볼 수 있는 프로젝트이 없습니다", { exact: true })).toBeVisible();
-  await expect(page.getByRole("main").getByText("찾는 프로젝트이 이미 있다면 관리자에게 이 계정의 프로젝트 접근 권한을 확인해 주세요.", { exact: true })).toBeVisible();
+  await expect(page.getByText("현재 계정에서 볼 수 있는 프로젝트가 없습니다", { exact: true })).toBeVisible();
+  await expect(page.getByRole("main").getByText("찾는 프로젝트가 이미 있다면 관리자에게 이 계정의 프로젝트 접근 권한을 확인해 주세요.", { exact: true })).toBeVisible();
   await expect(page.getByRole("main").getByRole("link", { name: "프로젝트 목록", exact: true })).toHaveAttribute("href", "/sites");
   await expect(page.getByRole("main").getByRole("link", { name: "프로젝트 등록", exact: true })).toHaveCount(0);
   await expect(page.getByRole("region", { name: "확인 필요 프로젝트 목록" })).toHaveCount(0);
@@ -35,13 +35,13 @@ test("빈 프로젝트 목록은 현재 계정의 범위와 프로젝트 등록 
   await loginToEmptyOrganization(page);
 
   await page.goto("/sites");
-  await expect(page.getByRole("heading", { name: "현재 계정에서 볼 수 있는 프로젝트이 없습니다" })).toBeVisible();
-  await expect(page.getByRole("main").getByText("찾는 프로젝트이 이미 있다면 관리자에게 이 계정의 프로젝트 접근 권한을 확인해 주세요.")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "현재 계정에서 볼 수 있는 프로젝트가 없습니다" })).toBeVisible();
+  await expect(page.getByRole("main").getByText("찾는 프로젝트가 이미 있다면 관리자에게 이 계정의 프로젝트 접근 권한을 확인해 주세요.")).toBeVisible();
   const main = page.getByRole("main");
   await expect(main.locator('a[href="/sites/new"]')).toHaveCount(0);
   const register = main.getByRole("button", { name: "프로젝트 등록하기", exact: true });
   await register.click();
-  await expect(main.getByText("현재 계정으로는 프로젝트을 등록할 수 없습니다. 관리자에게 문의하세요.")).toBeVisible();
+  await expect(main.getByText("현재 계정으로는 프로젝트를 등록할 수 없습니다. 관리자에게 문의하세요.")).toBeVisible();
   await expect(page.getByText(/DJI Pilot|KMZ|초기 매핑 비행|두 번째 조사부터 분석/)).toHaveCount(0);
   await expectNoHorizontalOverflow(page);
 });

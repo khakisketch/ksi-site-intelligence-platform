@@ -110,7 +110,7 @@ test("잘못된 페이지는 실제 범위로 보정하고 등록 권한 없는 
   const trigger = page.getByRole("button", { name: "프로젝트 등록", exact: true });
   await trigger.focus();
   await page.keyboard.press("Enter");
-  await expect(page.getByText("현재 계정으로는 프로젝트을 등록할 수 없습니다. 관리자에게 문의하세요.", { exact: true })).toBeVisible();
+  await expect(page.getByText("현재 계정으로는 프로젝트를 등록할 수 없습니다. 관리자에게 문의하세요.", { exact: true })).toBeVisible();
   expect(new URL(page.url()).pathname).toBe("/sites");
   await page.keyboard.press("Escape");
   await expect(trigger).toBeFocused();

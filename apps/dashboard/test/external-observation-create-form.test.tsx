@@ -72,7 +72,7 @@ describe("ExternalObservationCreateForm", () => {
     expect(screen.queryByRole("heading", { name: "외부 산출물 등록" })).toBeNull();
     expect(screen.getByText("등록할 자료의 작업 이름과 범위를 선택하세요.")).toBeTruthy();
     expect(screen.getByRole("list", { name: "자료 등록 흐름" }).querySelector('[aria-current="step"]')?.textContent).toBe("1. 영역");
-    expect(screen.getByRole("link", { name: "프로젝트으로 돌아가기" }).getAttribute("href")).toBe("/sites/site-1");
+    expect(screen.getByRole("link", { name: "프로젝트로 돌아가기" }).getAttribute("href")).toBe("/sites/site-1");
     expect(screen.getByLabelText("작업 이름").getAttribute("maxlength")).toBe("200");
     fireEvent.change(screen.getByLabelText("작업 이름"), { target: { value: "9월 6일 현황 비교" } });
     fireEvent.click(screen.getByLabelText("동측 절토면"));
@@ -170,7 +170,7 @@ describe("ExternalObservationCreateForm", () => {
     expect(screen.getAllByText(/선택한 영역에서 시작합니다/)).toHaveLength(2);
     expect(screen.getAllByText(/파일은 다음 화면에서 제출합니다/)).toHaveLength(2);
     // 하나 고른 범위는 돌아가기 링크에 싣는다.
-    expect(screen.getByRole("link", { name: "프로젝트으로 돌아가기" }).getAttribute("href")).toBe("/sites/site-1?workAreaId=wa-1");
+    expect(screen.getByRole("link", { name: "프로젝트로 돌아가기" }).getAttribute("href")).toBe("/sites/site-1?workAreaId=wa-1");
   });
 
   it.each([
@@ -561,10 +561,10 @@ describe("ExternalObservationCreateForm", () => {
       siteName="서쪽 현장"
       workAreas={[{ workAreaId: "wa-1", name: "A영역" }, { workAreaId: "wa-2", name: "B영역" }]}
     />);
-    expect(screen.getByRole("link", { name: "프로젝트으로 돌아가기" }).getAttribute("href")).toBe("/sites/site-1");
+    expect(screen.getByRole("link", { name: "프로젝트로 돌아가기" }).getAttribute("href")).toBe("/sites/site-1");
     fireEvent.click(screen.getByLabelText("A영역"));
     fireEvent.click(screen.getByLabelText("B영역"));
-    expect(screen.getByRole("link", { name: "프로젝트으로 돌아가기" }).getAttribute("href")).toBe("/sites/site-1");
+    expect(screen.getByRole("link", { name: "프로젝트로 돌아가기" }).getAttribute("href")).toBe("/sites/site-1");
   });
 
   it("shows the repeat template notice only when an actual repeat template is provided", () => {

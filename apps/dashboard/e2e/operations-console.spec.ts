@@ -333,7 +333,7 @@ test("프로젝트 목록은 폭에 맞는 비교 표현과 현장 진입을 유
     .then(() => true)
     .catch(() => false);
   if (!hasSite && process.env.KSI_DASHBOARD_E2E_BASE_URL) {
-    test.skip(true, "읽기 전용 외부 원장에 표시할 프로젝트이 없습니다.");
+    test.skip(true, "읽기 전용 외부 원장에 표시할 프로젝트가 없습니다.");
   }
   if (!hasSite) await expect(siteLink).toBeVisible();
 
@@ -363,7 +363,7 @@ test("프로젝트 목록은 폭에 맞는 비교 표현과 현장 진입을 유
     // that the exact registration-mode check rejects after navigation.
     await expect(page.getByRole("link", { name: "프로젝트 등록", exact: true })).toHaveCount(0);
     const unavailableAction = page.getByRole("button", { name: /프로젝트 등록/ });
-    const reason = page.getByText("현재 계정으로는 프로젝트을 등록할 수 없습니다. 관리자에게 문의하세요.", { exact: true });
+    const reason = page.getByText("현재 계정으로는 프로젝트를 등록할 수 없습니다. 관리자에게 문의하세요.", { exact: true });
     await expect(reason).toBeHidden();
     await unavailableAction.click();
     await expect(reason).toBeVisible();

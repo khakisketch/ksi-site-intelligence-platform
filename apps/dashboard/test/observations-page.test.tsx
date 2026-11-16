@@ -45,7 +45,7 @@ function expectKnownContext() {
   expect(within(views).getByRole("link", { name: "외부 비교" }).getAttribute("aria-current")).toBe("page");
   expect(within(views).getByRole("link", { name: "변화 분석" }).getAttribute("href")).toBe("/sites/site-1/analysis");
   expect(screen.getByRole("heading", { name: "외부 비교 이력" })).toBeTruthy();
-  expect(screen.queryByRole("link", { name: "프로젝트으로 돌아가기" })).toBeNull();
+  expect(screen.queryByRole("link", { name: "프로젝트로 돌아가기" })).toBeNull();
 }
 
 it("keeps verified Site context and does not offer futile retry for denied history", async () => {
@@ -124,7 +124,7 @@ it("does not disclose a Site name when Site lookup fails transiently", async () 
   mocked.site.mockRejectedValue(new CoreApiError(503, { detail: "unavailable" }));
   render(await callPage());
   expect(screen.queryByText("권한 확인된 현장")).toBeNull();
-  expect(screen.queryByRole("link", { name: "프로젝트으로 돌아가기" })).toBeNull();
+  expect(screen.queryByRole("link", { name: "프로젝트로 돌아가기" })).toBeNull();
   expect(screen.getByRole("alert")).toBeTruthy();
 });
 

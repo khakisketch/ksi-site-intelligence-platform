@@ -298,7 +298,7 @@ export function SitePreviewThumb({
     phase.name === "refused"
       ? "미리보기만 볼 수 없는 상태이며, 등록 자료가 없다는 뜻이 아닙니다. 영역·자료는 프로젝트 열기에서 확인하세요."
       : phase.name === "unknown"
-        ? "미리보기를 불러오지 못했습니다. 등록 자료가 없다는 뜻이 아닙니다. 프로젝트을 열어 자료와 준비 상태를 다시 확인하세요."
+        ? "미리보기를 불러오지 못했습니다. 등록 자료가 없다는 뜻이 아닙니다. 프로젝트를 열어 자료와 준비 상태를 다시 확인하세요."
         : "등록 자료 현황을 뜻하지 않습니다. 영역·자료는 프로젝트 열기에서 확인하세요.";
   const emptyTone = phase.name === "refused" ? "refused" : phase.name === "unknown" ? "unknown" : "empty";
   return (

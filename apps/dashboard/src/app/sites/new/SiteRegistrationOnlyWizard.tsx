@@ -604,7 +604,7 @@ export function SiteRegistrationOnlyWizard({
       candidates.find((entry) => entry.originFingerprint === effectiveIdentity) ?? candidates[0];
     if (recorded?.originFingerprint) return { origin: recorded.originFingerprint };
     // 구 초안에 키만 있고 지문이 없으면 그 키의 원래 신원을 알 수 없다 —
-    // 현재 값으로 추측해 POST하면 계정 교체 시 별도 프로젝트을 만든다.
+    // 현재 값으로 추측해 POST하면 계정 교체 시 별도 프로젝트를 만든다.
     if (input.priorKey !== null) return { blocked: "old-attempt" };
     // 새 미시도 초안만 현재 확인된 신원으로 시작할 수 있다. live 확인값이
     // 있으면 그걸 우선하고, 없으면 마운트 시점 prop을 쓴다.
@@ -787,7 +787,7 @@ export function SiteRegistrationOnlyWizard({
     function failUnknown() {
       // Core bootstrap 멱등 namespace는 (organizationId, actor, requestKey)다.
       // 응답 유실 뒤 계정이 바뀌면 같은 키·같은 원본이어도 B namespace에서 별도
-      // 프로젝트을 만든다 — 그래서 "다시 시도해도 중복 등록이 되지 않는다"는 원래
+      // 프로젝트를 만든다 — 그래서 "다시 시도해도 중복 등록이 되지 않는다"는 원래
       // 계정에서 같은 키로 재시도할 때만 참이다.
       recordUnknown();
       setSubmitError(
@@ -861,9 +861,9 @@ export function SiteRegistrationOnlyWizard({
         }
         failDefinite(
           body.code === "BOOTSTRAP_REQUEST_CONFLICT"
-            ? "같은 등록 요청 키가 다른 내용으로 사용되어 프로젝트을 등록하지 못했습니다. 내용을 확인한 뒤 다시 시도하세요."
+            ? "같은 등록 요청 키가 다른 내용으로 사용되어 프로젝트를 등록하지 못했습니다. 내용을 확인한 뒤 다시 시도하세요."
             : body.code === "SITE_BOOTSTRAP_LIMIT_REACHED"
-              ? "조직의 프로젝트 등록 한도에 도달해 프로젝트을 등록하지 못했습니다. 관리자에게 문의하세요."
+              ? "조직의 프로젝트 등록 한도에 도달해 프로젝트를 등록하지 못했습니다. 관리자에게 문의하세요."
               : "프로젝트 등록 요청이 충돌했습니다. 내용을 확인한 뒤 다시 시도하세요.",
         );
         return;
@@ -1690,10 +1690,10 @@ export function SiteRegistrationOnlyWizard({
     <div hidden={preservePendingMap} inert={preservePendingMap || !supportedDraftShape(form)}>
     <div role="status" aria-live="polite" aria-atomic="true" className="sr-only">
       {!accountMismatch && currentStep === 2 && submitPhase === "pending"
-        ? "프로젝트을 등록하는 중입니다."
+        ? "프로젝트를 등록하는 중입니다."
         : !accountMismatch && currentStep === 2 && submitPhase === "success"
           ? receiptPersisted
-            ? "프로젝트이 등록되었습니다. 현장 브리핑으로 이동할 수 있습니다."
+            ? "프로젝트가 등록되었습니다. 현장 브리핑으로 이동할 수 있습니다."
             : "등록은 확인됐지만 저장을 확인하지 못했습니다. 이 탭을 유지하고 프로젝트 목록에서 확인하세요."
           : ""}
     </div>
@@ -1948,12 +1948,12 @@ export function SiteRegistrationOnlyWizard({
             </section>
           )}
           {submitPhase === "pending" && (
-            <p className="text-sm break-keep text-ink-2 sm:col-span-2">프로젝트을 등록하는 중입니다…</p>
+            <p className="text-sm break-keep text-ink-2 sm:col-span-2">프로젝트를 등록하는 중입니다…</p>
           )}
           {submitPhase === "success" && (
             <div className="flex flex-col gap-3 rounded-lg border border-safe/30 bg-safe-bg p-4 text-sm sm:col-span-2">
               <p className="font-medium break-keep text-safe-ink">
-                프로젝트이 등록되었습니다.
+                프로젝트가 등록되었습니다.
               </p>
               {/* 확인된 등록의 식별자 — 새로고침 뒤 셸이 늦게 반영되거나 권한·조회
                   실패로 이 화면이 사라져도, 이 ID·이름이 다음 행동의 기준점이다. */}

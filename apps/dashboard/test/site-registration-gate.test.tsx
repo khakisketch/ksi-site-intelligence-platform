@@ -39,7 +39,7 @@ describe("RegisterSiteAction", () => {
     expect((trigger as HTMLButtonElement).disabled).toBe(false);
     fireEvent.click(trigger);
     expect(
-      screen.getByText("현재 계정으로는 프로젝트을 등록할 수 없습니다. 관리자에게 문의하세요."),
+      screen.getByText("현재 계정으로는 프로젝트를 등록할 수 없습니다. 관리자에게 문의하세요."),
     ).toBeTruthy();
     expect(screen.queryByRole("button", { name: "권한 다시 확인" })).toBeNull();
   });
@@ -110,8 +110,8 @@ describe("SiteOnboarding", () => {
     { status: "unavailable" as const },
   ])("빈 목록은 등록 권한 $status에서도 현재 계정의 조회 범위만 설명한다", (availability) => {
     render(<SiteOnboarding availability={availability} />);
-    expect(screen.getByRole("heading", { name: "현재 계정에서 볼 수 있는 프로젝트이 없습니다" })).toBeTruthy();
-    expect(screen.getByText("찾는 프로젝트이 이미 있다면 관리자에게 이 계정의 프로젝트 접근 권한을 확인해 주세요.")).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "현재 계정에서 볼 수 있는 프로젝트가 없습니다" })).toBeTruthy();
+    expect(screen.getByText("찾는 프로젝트가 이미 있다면 관리자에게 이 계정의 프로젝트 접근 권한을 확인해 주세요.")).toBeTruthy();
     expect(screen.queryByText(/첫 실행|등록된 현장 0곳|첫 현장/)).toBeNull();
   });
 
@@ -126,7 +126,7 @@ describe("SiteOnboarding", () => {
     expect(screen.queryByRole("link", { name: "프로젝트 등록하기" })).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "프로젝트 등록하기" }));
     expect(
-      screen.getByText("현재 계정으로는 프로젝트을 등록할 수 없습니다. 관리자에게 문의하세요."),
+      screen.getByText("현재 계정으로는 프로젝트를 등록할 수 없습니다. 관리자에게 문의하세요."),
     ).toBeTruthy();
     expect(screen.queryByRole("button", { name: "권한 다시 확인" })).toBeNull();
   });

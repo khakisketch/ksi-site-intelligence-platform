@@ -114,7 +114,7 @@ function errorView(error: unknown, scope: "areas" | "list" | "detail", siteId: s
   if (error instanceof CoreApiError) {
     if (error.status === 404) {
       if (scope === "areas") {
-        return <ErrorState message="영역 목록을 확인할 수 없습니다." tone="high" action={{ label: "프로젝트으로 돌아가기", href: `/sites/${encodeURIComponent(siteId)}` }} />;
+        return <ErrorState message="영역 목록을 확인할 수 없습니다." tone="high" action={{ label: "프로젝트로 돌아가기", href: `/sites/${encodeURIComponent(siteId)}` }} />;
       }
       return <ErrorState
         message={scope === "list" ? "영역을 확인할 수 없거나 요청 목록을 조회할 수 없습니다." : "요청을 찾을 수 없거나 현재 조회할 수 없습니다."}

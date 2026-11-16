@@ -596,9 +596,9 @@ describe("sites page initial view", () => {
   it("조회된 프로젝트 목록이 비면 조직 전체 부재 대신 현재 계정의 범위를 설명한다", async () => {
     mockedSites.items = [];
     render(await SitesPage({ searchParams: Promise.resolve({}) }));
-    expect(screen.getByRole("heading", { name: "현재 계정에서 볼 수 있는 프로젝트이 없습니다" })).toBeTruthy();
-    expect(screen.getByText("찾는 프로젝트이 이미 있다면 관리자에게 이 계정의 프로젝트 접근 권한을 확인해 주세요.")).toBeTruthy();
-    expect(screen.queryByText("조건에 맞는 프로젝트이 없습니다")).toBeNull();
+    expect(screen.getByRole("heading", { name: "현재 계정에서 볼 수 있는 프로젝트가 없습니다" })).toBeTruthy();
+    expect(screen.getByText("찾는 프로젝트가 이미 있다면 관리자에게 이 계정의 프로젝트 접근 권한을 확인해 주세요.")).toBeTruthy();
+    expect(screen.queryByText("조건에 맞는 프로젝트가 없습니다")).toBeNull();
   });
 
   it("쿠키 list 면 밀도표로 시작한다", async () => {
@@ -652,8 +652,8 @@ describe("sites page initial view", () => {
     mockSites();
     render(await SitesPage({ searchParams: Promise.resolve({ q: "없는현장" }) }));
     expect(screen.queryByRole("heading", { name: "프로젝트 상태" })).toBeNull();
-    expect(screen.getAllByText("조건에 맞는 프로젝트이 없습니다")).toHaveLength(1);
-    expect(screen.queryByRole("heading", { name: "현재 계정에서 볼 수 있는 프로젝트이 없습니다" })).toBeNull();
+    expect(screen.getAllByText("조건에 맞는 프로젝트가 없습니다")).toHaveLength(1);
+    expect(screen.queryByRole("heading", { name: "현재 계정에서 볼 수 있는 프로젝트가 없습니다" })).toBeNull();
     // 도구모음·전환기는 그대로 쓸 수 있다(반응형 두 벌 중 보이는 쪽).
     expect(screen.getAllByRole("searchbox", { name: "현장 찾기" }).length).toBeGreaterThanOrEqual(1);
     expect(screen.getByRole("group", { name: "프로젝트 보기 방식" })).toBeTruthy();
@@ -772,7 +772,7 @@ describe("SiteListCreateTile", () => {
     const trigger = screen.getByRole("button", { name: "새 프로젝트 추가" });
     expect(trigger.querySelector('[data-site-create-card="new"]')).toBeTruthy();
     fireEvent.click(trigger);
-    expect(screen.getByText(/현재 계정으로는 프로젝트을 등록할 수 없습니다/)).toBeTruthy();
+    expect(screen.getByText(/현재 계정으로는 프로젝트를 등록할 수 없습니다/)).toBeTruthy();
     expect(document.querySelector('a[href="/sites/new"]')).toBeNull();
     expect(trigger.textContent).toContain("새 프로젝트 추가");
   });
@@ -864,7 +864,7 @@ describe("sites desktop pagination", () => {
     mockFiveSites();
     render(await SitesPage({ searchParams: Promise.resolve({ q: "없는현장" }) }));
     expect(screen.queryByText("기본 표지")).toBeNull();
-    expect(screen.getAllByText("조건에 맞는 프로젝트이 없습니다")).toHaveLength(1);
+    expect(screen.getAllByText("조건에 맞는 프로젝트가 없습니다")).toHaveLength(1);
     expect(screen.getByRole("group", { name: "프로젝트 보기 방식" })).toBeTruthy();
   });
 

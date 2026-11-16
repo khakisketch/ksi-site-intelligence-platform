@@ -157,7 +157,7 @@ test("한글 조합 중에는 검색하지 않고 빈 결과에서도 입력과 
   expect(new URL(page.url()).searchParams.has("q")).toBe(false);
   await search.dispatchEvent("compositionend");
   await expect.poll(() => new URL(page.url()).searchParams.get("q")).toBe("검색 검증용 없는 현장");
-  await expect(page.getByRole("main").getByText("조건에 맞는 프로젝트이 없습니다", { exact: true })).toBeVisible();
+  await expect(page.getByRole("main").getByText("조건에 맞는 프로젝트가 없습니다", { exact: true })).toBeVisible();
   await expect(search).toBeEnabled();
   await page.getByRole("link", { name: "필터 초기화", exact: true }).click();
   await expect(page).toHaveURL(/\/sites$/);
@@ -211,7 +211,7 @@ test("느린 필터 응답 중 이전 검색 타이머가 선택한 묶음을 �
 test("빈 결과의 초기화도 아직 적용되지 않은 검색을 취소한다", async ({ page }) => {
   await page.goto("/sites?q=처음부터 없는 현장");
   const search = page.getByRole("searchbox", { name: "현장 찾기" });
-  await expect(page.getByRole("main").getByText("조건에 맞는 프로젝트이 없습니다", { exact: true })).toBeVisible();
+  await expect(page.getByRole("main").getByText("조건에 맞는 프로젝트가 없습니다", { exact: true })).toBeVisible();
   await page.route((url) => url.pathname === "/sites" && !url.searchParams.has("q"), async (route) => {
     await new Promise((resolve) => setTimeout(resolve, 700));
     await route.continue();

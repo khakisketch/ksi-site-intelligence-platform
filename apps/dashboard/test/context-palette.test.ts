@@ -196,7 +196,7 @@ describe("palette modal interaction", () => {
     openPalette();
     const input = screen.getByLabelText("화면 또는 프로젝트 검색");
     fireEvent.change(input, { target: { value: "ㅁㅁㅁㅁㅁ" } });
-    expect(screen.getByText("일치하는 화면이나 프로젝트이 없습니다.")).toBeTruthy();
+    expect(screen.getByText("일치하는 화면이나 프로젝트가 없습니다.")).toBeTruthy();
     expect(screen.getByRole("listbox")).toBeTruthy();
     expect(screen.queryByRole("option")).toBeNull();
     expect(document.getElementById(input.getAttribute("aria-controls") ?? "")).toBeTruthy();

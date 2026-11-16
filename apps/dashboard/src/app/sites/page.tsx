@@ -200,7 +200,7 @@ export default async function SitesPage({
     <ConsolePage>
       <PageHeader
         title="프로젝트 목록"
-        description="프로젝트을 선택해 관측 자료와 분석 기록을 확인하세요."
+        description="프로젝트를 선택해 관측 자료와 분석 기록을 확인하세요."
         headingLevel={2}
         actions={<RegisterSiteAction availability={registrationAvailability} />}
       />
@@ -332,7 +332,7 @@ export default async function SitesPage({
       ) : visibleSites.length === 0 ? (
         <SiteListCancelBoundary>
           <EmptyState
-            title="조건에 맞는 프로젝트이 없습니다"
+            title="조건에 맞는 프로젝트가 없습니다"
             description="검색어나 상태 묶음을 바꿔 다시 확인하세요."
             action={hasFilter ? { label: "필터 초기화", href: "/sites" } : undefined}
           />

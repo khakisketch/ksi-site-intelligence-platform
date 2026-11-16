@@ -258,7 +258,7 @@ test("owner probe: desktop registration creates a work order and submits a synth
   await page.keyboard.type("프로브 1차 관측");
   await expect(submit).toBeEnabled();
   // 단일 영역 선택 시 돌아가기 링크가 승인 범위를 싣는다.
-  await expect(page.getByRole("link", { name: "프로젝트으로 돌아가기" })).toHaveAttribute("href", /workAreaId=/);
+  await expect(page.getByRole("link", { name: "프로젝트로 돌아가기" })).toHaveAttribute("href", /workAreaId=/);
   // 키보드 해제 → 필수 안내 + 제출 잠금, 다시 선택 → 복구
   await page.keyboard.press("Tab");
   await page.keyboard.press("Space");

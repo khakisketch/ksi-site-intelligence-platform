@@ -36,7 +36,7 @@ export async function POST(request: NextRequest) {
   }
   if (continuity.status === "present") {
     // Core bootstrap 멱등 namespace는 (organizationId, actor, requestKey)다.
-    // 응답 유실 뒤 계정이 바뀌면 같은 키 재시도가 별도 프로젝트을 만든다 — Core
+    // 응답 유실 뒤 계정이 바뀌면 같은 키 재시도가 별도 프로젝트를 만든다 — Core
     // POST 없이 여기서 끊는다. 헤더 없는 호출자는 이전 계약 그대로 두며
     // 보호하지 않는다고 명시한다(아래 else 없음 = 통과).
     let current;

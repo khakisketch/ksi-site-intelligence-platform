@@ -23,8 +23,8 @@ export function SiteAreaPicker({
       </div>
       {sites.length === 0 ? (
         <EmptyState
-          title="등록된 프로젝트이 없습니다"
-          description="먼저 프로젝트을 등록하면 이 영역의 데이터와 결과를 현장별로 확인할 수 있습니다."
+          title="등록된 프로젝트가 없습니다"
+          description="먼저 프로젝트를 등록하면 이 영역의 데이터와 결과를 현장별로 확인할 수 있습니다."
           action={{ label: "프로젝트 등록", href: "/sites/new" }}
         />
       ) : (

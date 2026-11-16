@@ -28,7 +28,7 @@ afterEach(() => {
 describe("ActionUnavailable", () => {
   it("막힌 이유를 상시 노출하지 않고 클릭 가능한 버튼만 둔다", () => {
     render(
-      <ActionUnavailable label="프로젝트 등록" description="현재 계정으로는 프로젝트을 등록할 수 없습니다." />,
+      <ActionUnavailable label="프로젝트 등록" description="현재 계정으로는 프로젝트를 등록할 수 없습니다." />,
     );
     const trigger = screen.getByRole("button", { name: "프로젝트 등록" });
     expect((trigger as HTMLButtonElement).disabled).toBe(false);
@@ -38,7 +38,7 @@ describe("ActionUnavailable", () => {
 
   it("클릭해야 사유와 안내 닫기가 열리고 설명 클릭은 쓰기를 일으키지 않는다", () => {
     render(
-      <ActionUnavailable label="프로젝트 등록" description="현재 계정으로는 프로젝트을 등록할 수 없습니다." />,
+      <ActionUnavailable label="프로젝트 등록" description="현재 계정으로는 프로젝트를 등록할 수 없습니다." />,
     );
     fireEvent.click(screen.getByRole("button", { name: "프로젝트 등록" }));
     expect(screen.getByText(/현재 계정으로는/)).toBeTruthy();

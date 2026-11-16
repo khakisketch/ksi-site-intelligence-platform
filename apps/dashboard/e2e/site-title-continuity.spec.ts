@@ -111,7 +111,7 @@ test("site client navigation never leaves an empty document title (synthetic-onl
     });
     await siteLink.click();
     await expect(page).toHaveURL(/\/sites\/e2e-site-workspace\/observations\/new$/);
-    await page.getByRole("link", { name: "프로젝트으로 돌아가기" }).click();
+    await page.getByRole("link", { name: "프로젝트로 돌아가기" }).click();
     await expect(page).toHaveURL(/\/sites\/e2e-site-workspace\?/);
     await expect(page).toHaveTitle("프로젝트 상세 · KSI");
     const samples = await page.evaluate(() => (window as unknown as { titleSamples: { path: string; title: string; at: number }[] }).titleSamples);

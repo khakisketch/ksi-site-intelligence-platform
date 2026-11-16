@@ -122,7 +122,7 @@ test("보기 전환은 입력 중 검색과 정렬을 유지하고 한 현장 �
   await views.list.click();
   await search.fill("목록 보기에서 없는 현장");
   await search.press("Enter");
-  await expect(page.getByRole("main").getByText("조건에 맞는 프로젝트이 없습니다", { exact: true })).toHaveCount(1);
+  await expect(page.getByRole("main").getByText("조건에 맞는 프로젝트가 없습니다", { exact: true })).toHaveCount(1);
   await expect(page.getByRole("main").getByText("프로젝트 상태", { exact: true })).toBeHidden();
   await expect(views.list).toHaveAttribute("aria-pressed", "true");
 });

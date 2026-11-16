@@ -119,7 +119,7 @@ describe("레거시 프로젝트 등록 409·불명 (사용자 이벤트)", () =
     await goToConfirm();
     requestMock.mockResolvedValueOnce(jsonResponse(fullEchoSite(), 201));
     fireEvent.click(screen.getByRole("button", { name: "프로젝트 등록" }));
-    await screen.findByText("프로젝트이 등록되었습니다.");
+    await screen.findByText("프로젝트가 등록되었습니다.");
 
     fireEvent.click(screen.getByRole("button", { name: "이전" }));
     fireEvent.click(screen.getByRole("button", { name: "다음" }));
@@ -141,7 +141,7 @@ describe("레거시 프로젝트 등록 409·불명 (사용자 이벤트)", () =
     await goToConfirm();
     requestMock.mockResolvedValueOnce(jsonResponse(fullEchoSite(), 201));
     fireEvent.click(screen.getByRole("button", { name: "프로젝트 등록" }));
-    await screen.findByText("프로젝트이 등록되었습니다.");
+    await screen.findByText("프로젝트가 등록되었습니다.");
 
     fireEvent.click(screen.getByRole("button", { name: "이전" }));
     fireEvent.click(screen.getByRole("button", { name: "이전" }));

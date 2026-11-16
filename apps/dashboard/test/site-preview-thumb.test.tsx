@@ -321,7 +321,7 @@ describe("SitePreviewThumb", () => {
     expect(document.querySelector("canvas")).toBeNull();
     expect(document.body.textContent).not.toMatch(/자료 없음|등록된 자료가 없|관측자료 없음|보유 자료 없음/);
     expect(document.body.textContent).toMatch(/등록 자료가 없다는 뜻이 아닙니다/);
-    expect(document.body.textContent).toContain("프로젝트을 열어 자료와 준비 상태를 다시 확인하세요.");
+    expect(document.body.textContent).toContain("프로젝트를 열어 자료와 준비 상태를 다시 확인하세요.");
     expect(screen.queryByRole("link")).toBeNull();
   });
 

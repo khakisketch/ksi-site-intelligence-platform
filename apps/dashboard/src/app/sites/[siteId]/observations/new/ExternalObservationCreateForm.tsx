@@ -259,7 +259,7 @@ export function ExternalObservationCreateForm({
       <div>
         <div className="mt-1 flex flex-wrap items-center justify-between gap-2">
           <h2 className="console-page-title">관측 자료 등록</h2>
-          <Link href={returnHref} className="text-body font-semibold text-accent-text hover:underline">프로젝트으로 돌아가기</Link>
+          <Link href={returnHref} className="text-body font-semibold text-accent-text hover:underline">프로젝트로 돌아가기</Link>
         </div>
         <p className="console-page-description">{siteName}</p>
         <ol aria-label="자료 등록 흐름" className="mt-5 grid grid-cols-3 gap-3 text-caption"><li aria-current="step" className="border-b-2 border-accent pb-3 font-semibold">1. 영역</li><li className="border-b-2 border-line pb-3 text-ink-muted">2. 파일 제출</li><li className="border-b-2 border-line pb-3 text-ink-muted">3. 검사 확인</li></ol>

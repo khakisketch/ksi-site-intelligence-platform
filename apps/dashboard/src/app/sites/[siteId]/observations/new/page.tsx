@@ -160,7 +160,7 @@ export default async function NewObservationPage({
     return <div className="mx-auto flex max-w-2xl flex-col gap-4 p-4 sm:p-5"><ErrorState message="계정을 확인하지 못해 관측 자료 등록을 시작할 수 없습니다. 연결과 로그인 상태를 확인한 뒤 다시 시도하세요." retryable /></div>;
   }
   if (!result.canCreate) {
-    return <div className="mx-auto flex max-w-2xl flex-col gap-4 p-4 sm:p-5"><EmptyState title="관측 자료를 등록할 권한이 없습니다" description="작업 등록 권한이 있는 계정으로 다시 시도하세요." action={{ label: "프로젝트으로 돌아가기", href: `/sites/${encodeURIComponent(siteId)}` }} /></div>;
+    return <div className="mx-auto flex max-w-2xl flex-col gap-4 p-4 sm:p-5"><EmptyState title="관측 자료를 등록할 권한이 없습니다" description="작업 등록 권한이 있는 계정으로 다시 시도하세요." action={{ label: "프로젝트로 돌아가기", href: `/sites/${encodeURIComponent(siteId)}` }} /></div>;
   }
   const activeAreaIds = new Set(result.areas.workAreas.map((area) => area.workAreaId));
   const repeatTemplate = await resolveRepeatObservationTemplate({

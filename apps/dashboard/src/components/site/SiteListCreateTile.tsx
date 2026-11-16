@@ -35,7 +35,7 @@ function TileFace() {
     </>
   );
 }
-const DENIED_DESCRIPTION = "현재 계정으로는 프로젝트을 등록할 수 없습니다. 관리자에게 문의하세요.";
+const DENIED_DESCRIPTION = "현재 계정으로는 프로젝트를 등록할 수 없습니다. 관리자에게 문의하세요.";
 const UNAVAILABLE_DESCRIPTION = "등록 권한을 확인할 수 없었습니다. 잠시 후 다시 확인하세요.";
 
 /**

@@ -424,7 +424,7 @@ export function CommandPalette({ items }: { items: PaletteItem[] }) {
             >
               {results.length === 0 ? (
                 <li role="presentation" className="px-4 py-8 text-center text-body break-keep text-ink-muted">
-                  일치하는 화면이나 프로젝트이 없습니다.
+                  일치하는 화면이나 프로젝트가 없습니다.
                 </li>
               ) : (
                 results.map((item, index) => (
