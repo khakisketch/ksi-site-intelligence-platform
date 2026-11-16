@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-// F-01 U5: 현장 등록 모드 판정과 두 identity 형태의 전달 계약. 화면(wizard)은
+// F-01 U5: 프로젝트 등록 모드 판정과 두 identity 형태의 전달 계약. 화면(wizard)은
 // 이 계약을 소비하는 쪽이고, 여기서는 Build 소유 표면(BFF·client lib)을 고정한다.
 
 const mocked = vi.hoisted(() => {

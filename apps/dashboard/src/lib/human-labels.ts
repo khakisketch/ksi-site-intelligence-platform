@@ -139,7 +139,7 @@ export function formatAssetCaptureWindow(
   return "촬영 구간 미기재";
 }
 
-/** 자산 목록·상세의 사람용 맥락 한 줄: 작업명 + 구역명 + 촬영 구간 + 등록 버전. */
+/** 자산 목록·상세의 사람용 맥락 한 줄: 작업명 + 영역명 + 촬영 구간 + 등록 버전. */
 export function assetContextLine(parts: {
   workName: string | null;
   areaName: string;
@@ -168,7 +168,7 @@ export function spatialAssetKindLabel(kind: string): string {
 }
 
 export interface RequestRowPresentation {
-  /** 행의 주 링크 문구: 구역명 · 요청 시각 · 원본 종류와 촬영 구간. */
+  /** 행의 주 링크 문구: 영역명 · 요청 시각 · 원본 종류와 촬영 구간. */
   title: string;
   /** 원본 파일 한 줄. 카탈로그를 못 읽으면 그 사실만 말한다. */
   sourceLine: string;
@@ -179,7 +179,7 @@ export interface RequestRowPresentation {
 }
 
 /**
- * 공간 데이터 요청 행의 사람용 표시. 제목은 구역명·요청 시각·원본 종류·
+ * 공간 데이터 요청 행의 사람용 표시. 제목은 영역명·요청 시각·원본 종류·
  * 촬영 구간으로 만들고, 원본 파일명은 바로 아래 줄에 둔다. 충돌은 전체
  * 의미 제목으로만 판정한다. 호출자는 초 단위 시각(timeStyle medium)을
  * 넘겨 분만 같은 요청을 먼저 가르고, 그래도 제목이 겹치는 행에만 원문

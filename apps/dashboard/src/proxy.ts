@@ -8,7 +8,7 @@ import { AUTH_SESSION_COOKIE_NAME } from "@/lib/auth/auth-cookie";
 // Next.js 16: middleware.ts → proxy.ts 로 개명(node_modules/next/dist/docs 확인).
 //
 // 쿠키 존재는 낙관적 라우팅 체크이고, OIDC 세션 갱신은 응답을 쓸 수 있는 여기서 수행한다.
-// 토큰 유효성과 조직·현장·구역 권한은 여전히 Core 가 매 요청 검증한다.
+// 토큰 유효성과 조직·현장·영역 권한은 여전히 Core 가 매 요청 검증한다.
 // Route Handler·Server Component 는 이 proxy 를 신뢰하지 않고 각자 세션을 다시
 // 확인한다(Next 공식 문서: "Always verify authentication ... rather than relying
 // on Proxy alone" — matcher 변경이 조용히 보호를 없앨 수 있어서다).

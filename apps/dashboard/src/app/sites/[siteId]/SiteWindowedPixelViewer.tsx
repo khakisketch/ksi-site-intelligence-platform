@@ -73,7 +73,7 @@ import { SpatialDataReceiptPreview } from "./spatial-data-requests/SpatialDataRe
  * - 실제 파일의 준비된 창만 그린다. Core 준비 기록의 요청 식별자·출력 크기·
  *   전체 SHA-256이 모두 일치할 때만 디코딩한다(기존 guarded-GET + 검증 경로).
  * - 원본 좌표 평면 그대로 둔다. WGS84 재해석·외부 타일·좌표 변환을 하지
- *   않으며, EPSG:7850 같은 비-WGS84 평면도 같은 네이티브 평면의 작업구역
+ *   않으며, EPSG:7850 같은 비-WGS84 평면도 같은 네이티브 평면의 영역
  *   링과 함께 그린다(지리 지도인 척하지 않는다).
  * - 브라우저 연산(확대·이동·상대 음영)은 화면 표시용이며 측정값이 아니다.
  * - 진입 시 자동으로 준비 요청을 만들지 않는다. 모든 쓰기는 작업자의 명시적
@@ -91,7 +91,7 @@ export interface WindowedPixelViewerProps {
   jobsState: "ready" | "denied" | "unavailable";
   canRead: boolean;
   canRequest: boolean;
-  /** 기존 구역 자료 준비 화면으로 가는 링크 — 상태 확인·다운로드의 정로다. */
+  /** 기존 영역 자료 준비 화면으로 가는 링크 — 상태 확인·다운로드의 정로다. */
   requestsHref: string;
   /**
    * 자료 탐색처럼 준비 요청 폼이 정보 서랍에 있을 때 그 자리로 가는 링크.
@@ -100,7 +100,7 @@ export interface WindowedPixelViewerProps {
   prepareHref?: string;
   /** 자료 탐색의 큰 무대에서 만료·미준비 상태도 실제 범위 캔버스로 보여 준다. */
   showAbsentExtentCanvas?: boolean;
-  /** 같은 네이티브 평면의 작업구역 링 — 좌표 변환 없이 겹쳐 그린다. */
+  /** 같은 네이티브 평면의 영역 링 — 좌표 변환 없이 겹쳐 그린다. */
   workAreaRing: Array<[number, number]> | null;
   workAreaCrs: string;
   /** 관측 표제 — 서버 사실의 정밀도 그대로(호출자가 만든다). */
@@ -122,7 +122,7 @@ export interface WindowedPixelViewerProps {
   layerControlsTargetId?: string;
   /**
    * 시각 탐색 기본 본문용 — 새 창 준비 요청 UI를 숨긴다. 읽기(준비 상태 다시
-   * 확인·구역 자료 준비 길)와 접힌 진단(details)은 그대로 둔다. 기본 false로
+   * 확인·영역 자료 준비 길)와 접힌 진단(details)은 그대로 둔다. 기본 false로
    * 기존 호출의 동작을 바꾸지 않는다.
    */
   hidePrepareActions?: boolean;
@@ -146,18 +146,18 @@ type PaintPhase =
 
 function paintFailureMessage(error: unknown): string {
   if (!(error instanceof SpatialDataPreviewError)) {
-    return "미리보기를 표시하지 못했습니다. 구역 자료 준비에서 준비된 파일 다운로드로 받으세요.";
+    return "미리보기를 표시하지 못했습니다. 영역 자료 준비에서 준비된 파일 다운로드로 받으세요.";
   }
   switch (error.kind) {
     case "CANCELLED":
       return "불러오기를 취소했습니다.";
     case "TIMEOUT":
-      return "준비된 파일을 받을 수 있는 시간을 넘겨 중단했습니다. 구역 자료 준비에서 다운로드로 받으세요.";
+      return "준비된 파일을 받을 수 있는 시간을 넘겨 중단했습니다. 영역 자료 준비에서 다운로드로 받으세요.";
     case "TOO_LARGE":
-      return "준비된 출력이 브라우저 표시 한계를 넘어 미리보기를 표시하지 않습니다. 구역 자료 준비에서 다운로드로 받으세요.";
+      return "준비된 출력이 브라우저 표시 한계를 넘어 미리보기를 표시하지 않습니다. 영역 자료 준비에서 다운로드로 받으세요.";
     case "SIZE_MISMATCH":
     case "HASH_MISMATCH":
-      return "받은 바이트가 Core 준비 기록(출력 크기·파일 확인값)과 달라 화면에 표시하지 않습니다. 구역 자료 준비에서 다운로드로 다시 받으세요.";
+      return "받은 바이트가 Core 준비 기록(출력 크기·파일 확인값)과 달라 화면에 표시하지 않습니다. 영역 자료 준비에서 다운로드로 다시 받으세요.";
     case "BAD_RECEIPT":
     case "UNSUPPORTED":
       return error.message;
@@ -318,7 +318,7 @@ function WindowedLayerView({
         }
         const record = body as Record<string, unknown>;
         if (typeof record.jobId !== "string" || typeof record.executionState !== "string") {
-          throw new DisplayPrepareIssueError("Core 응답의 요청 식별자 또는 상태를 확인할 수 없습니다. 구역 자료 준비에서 확인하세요.");
+          throw new DisplayPrepareIssueError("Core 응답의 요청 식별자 또는 상태를 확인할 수 없습니다. 영역 자료 준비에서 확인하세요.");
         }
         return { jobId: record.jobId, executionState: record.executionState };
       },
@@ -461,26 +461,26 @@ function WindowedLayerView({
       if (already && !scheduler.join(target.key)) {
         setAccepted({ jobId: already.jobId, state: already.executionState });
         setRequestMessage(
-          `같은 창의 준비 요청이 이미 있습니다 · 상태 ${already.executionState}. 처리가 끝나면 아래 목록 또는 구역 자료 준비에서 받을 수 있습니다.`,
+          `같은 창의 준비 요청이 이미 있습니다 · 상태 ${already.executionState}. 처리가 끝나면 아래 목록 또는 영역 자료 준비에서 받을 수 있습니다.`,
         );
         return;
       }
       const joined = scheduler.join(target.key);
       if (!joined) {
-        setRequestMessage("창 준비 요청 상태를 확인할 수 없습니다. 구역 자료 준비에서 확인하세요.");
+        setRequestMessage("창 준비 요청 상태를 확인할 수 없습니다. 영역 자료 준비에서 확인하세요.");
         return;
       }
       const result = await joined;
       setAccepted({ jobId: result.jobId, state: result.executionState });
       setRequestMessage(
-        `받기 요청을 만들었습니다 · 상태 ${result.executionState}. 처리가 끝나면 아래 목록 또는 구역 자료 준비에서 받을 수 있습니다.`,
+        `받기 요청을 만들었습니다 · 상태 ${result.executionState}. 처리가 끝나면 아래 목록 또는 영역 자료 준비에서 받을 수 있습니다.`,
       );
     } catch (error) {
       if (error instanceof DisplayPrepareIssueError) {
         setRequestMessage(error.message);
         return;
       }
-      setRequestMessage("Core 응답을 받지 못했습니다. 구역 자료 준비에서 현재 상태를 다시 확인하세요.");
+      setRequestMessage("Core 응답을 받지 못했습니다. 영역 자료 준비에서 현재 상태를 다시 확인하세요.");
     } finally {
       setRequestBusy(false);
       setLane(scheduler.snapshot());
@@ -507,7 +507,7 @@ function WindowedLayerView({
       <h4 className="text-body font-bold">{WINDOWED_VIEWER_READ_LABEL}</h4>
       {readable.length === 0 && pending.length === 0 && (
         <p className="text-body leading-5 text-ink-2">
-          이 층에서 현재 계정이 볼 수 있는 준비된 창이 없습니다. 아래에서 새 창 준비를 요청하거나, 구역 자료 준비에서 이력을 확인하세요.
+          이 층에서 현재 계정이 볼 수 있는 준비된 창이 없습니다. 아래에서 새 창 준비를 요청하거나, 영역 자료 준비에서 이력을 확인하세요.
         </p>
       )}
       {pending.length > 0 && (
@@ -546,7 +546,7 @@ function WindowedLayerView({
               선택 자료 정보에서 준비 요청
             </Link>
           : <Link href={requestsHref} className="btn min-h-11">
-              구역 자료 준비에서 확인
+              영역 자료 준비에서 확인
             </Link>}
       </p>
       <p className="text-caption leading-5 text-ink-muted">
@@ -604,8 +604,8 @@ function WindowedLayerView({
           <p className="text-caption leading-5 text-ink-muted">
             파일 자체의 해상도·범위를 그대로 둡니다. 지도 재투영이 아닙니다.
             {ringPoints && samePlane
-              ? " 점선은 같은 좌표 평면의 작업구역 경계입니다."
-              : " 작업구역 경계를 겹쳐 표시하지 않았습니다(같은 평면이 아니거나 범위를 확인하지 못했습니다)."}
+              ? " 점선은 같은 좌표 평면의 영역 경계입니다."
+              : " 영역 경계를 겹쳐 표시하지 않았습니다(같은 평면이 아니거나 범위를 확인하지 못했습니다)."}
           </p>
           {!phase.color && (
             <>
@@ -634,7 +634,7 @@ function WindowedLayerView({
         <p className="text-caption leading-5 text-ink-2">
           새 창 준비 요청은{" "}
           <Link href={prepareHref ?? requestsHref} className="tap-target underline">
-            {prepareHref ? "선택 자료 정보" : "구역 자료 준비"}
+            {prepareHref ? "선택 자료 정보" : "영역 자료 준비"}
           </Link>
           에서 합니다. 이 화면에서는 준비 요청을 만들지 않습니다.
         </p>
@@ -690,7 +690,7 @@ function WindowedLayerView({
           <div className="mt-1">
             <ActionUnavailable
               label={WINDOWED_VIEWER_REQUEST_LABEL}
-              description="이 구역의 창 준비 요청은 권한 있는 담당자가 만들 수 있습니다. 필요한 창과 용도를 담당자에게 알려 주세요."
+              description="이 영역의 창 준비 요청은 권한 있는 담당자가 만들 수 있습니다. 필요한 창과 용도를 담당자에게 알려 주세요."
             />
           </div>
         ) : (
@@ -720,7 +720,7 @@ function WindowedLayerView({
         {requestMessage && <p role="status" aria-live="polite" className="mt-1 rounded-md border border-line bg-surface px-3 py-2 text-caption leading-5 text-ink-2">{requestMessage}</p>}
         {accepted && (
           <p className="text-caption leading-5 text-ink-2">
-            처리가 끝나면 <Link href={requestsHref} className="tap-target underline">구역 자료 준비</Link> 또는 위의 준비 상태 다시 확인에서 받을 수 있습니다. 준비 완료는 정확도나 분석 사용 가능 여부를 보증하지 않습니다.
+            처리가 끝나면 <Link href={requestsHref} className="tap-target underline">영역 자료 준비</Link> 또는 위의 준비 상태 다시 확인에서 받을 수 있습니다. 준비 완료는 정확도나 분석 사용 가능 여부를 보증하지 않습니다.
           </p>
         )}
       </div>
@@ -866,12 +866,11 @@ export function SiteWindowedPixelViewer({
   ) : jobsState === "denied" ? (
     <WorkbenchMediaState
       headline="준비 기록을 조회할 권한이 없습니다."
-      hint="담당자에게 조회 권한을 요청하세요. 권한이 없어 빈 목록으로 단정하지 않습니다."
+      hint="담당자에게 조회 권한을 요청하세요."
     />
   ) : jobsState === "unavailable" ? (
     <WorkbenchMediaState
       headline="준비 기록을 불러오지 못했습니다."
-      detail="빈 목록으로 단정하지 않습니다."
       action={<WorkbenchRefreshButton />}
     />
   ) : jobsState === "ready" && !canRead ? (
@@ -934,12 +933,12 @@ export function SiteWindowedPixelViewer({
 
       {!canvasMode && layer && jobsState === "denied" && (
         <p className="rounded-lg border border-line bg-sunk px-3 py-2 text-body leading-5 text-ink-2">
-          준비 기록을 조회할 권한이 없습니다. 담당자에게 조회 권한을 요청하세요. 권한이 없어 빈 목록으로 단정하지 않습니다.
+          준비 기록을 조회할 권한이 없습니다. 담당자에게 조회 권한을 요청하세요.
         </p>
       )}
       {!canvasMode && layer && jobsState === "unavailable" && (
         <p className="rounded-lg border border-line bg-sunk px-3 py-2 text-body leading-5 text-ink-2">
-          준비 기록을 불러오지 못했습니다. 잠시 후 다시 확인하세요. 빈 목록으로 단정하지 않습니다.
+          준비 기록을 불러오지 못했습니다. 잠시 후 다시 확인하세요.
         </p>
       )}
 
@@ -991,7 +990,7 @@ export function SiteWindowedPixelViewer({
 /**
  * 두 시점 나란히 보기 — 각 칸은 독립된 임시 시각화 어댑터다.
  *
- * 같은 화면 평면에 있을 때만 같은 작업구역 링과 나란히 두며, 위치 맞춤
+ * 같은 화면 평면에 있을 때만 같은 영역 링과 나란히 두며, 위치 맞춤
  * (정합)이 확인된 것이 아니므로 동기화된 공간 비교로 말하지 않는다.
  * 평면이 다르면 각자 보기만 두고 이유를 밝힌다.
  */
@@ -1076,7 +1075,7 @@ export function SiteWindowedPixelCompare({
           <h3 className="text-body font-bold">{baselineRoleLabel === "관측 A" ? "독립 보기 — 정합 근거 없음" : "나란히 보기 안내(창 단위 픽셀 보기)"}</h3>
           {verdict.ok ? (
             <p className="mt-1 text-body leading-5 text-ink-2">
-              두 칸은 같은 위치 기준({verdict.crs})의 작업구역 경계와 함께 둡니다. 화면 맞춤이 실제 지형 일치를 뜻하지 않으며,
+              두 칸은 같은 위치 기준({verdict.crs})의 영역 경계와 함께 둡니다. 화면 맞춤이 실제 지형 일치를 뜻하지 않으며,
               동기화된 공간 비교(같은 범위 맞춤·같은 색 눈금)는 지원하지 않습니다. 화면을 겹쳐도 분석 근거가 되지 않습니다.
             </p>
           ) : (

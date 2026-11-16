@@ -49,18 +49,18 @@ describe("result-bound export source", () => {
   );
 
   it("shows honest unconfigured delivery without requesting anything", () => {
-    render(<AnalysisDeltaPublication detail={detail} workAreaLabel="구역" canRequest delivery={null}
+    render(<AnalysisDeltaPublication detail={detail} workAreaLabel="영역" canRequest delivery={null}
       reviewAnalysisId="analysis-1" target={target} sourceLoading={false} />);
     expect(screen.getByText(/이 환경에는 차분 파일 내보내기가 연결되지 않았습니다/)).toBeTruthy();
     expect(shown).not.toHaveBeenCalled();
   });
 
   it("does not display a configured export until the result's exact target is available", () => {
-    const view = render(<AnalysisDeltaPublication detail={detail} workAreaLabel="구역" canRequest
+    const view = render(<AnalysisDeltaPublication detail={detail} workAreaLabel="영역" canRequest
       delivery={delivery} reviewAnalysisId={null} target={null} sourceLoading />);
     expect(screen.getByText(/결과 출처를 확인하고 있습니다/)).toBeTruthy();
     expect(shown).not.toHaveBeenCalled();
-    view.rerender(<AnalysisDeltaPublication detail={detail} workAreaLabel="구역" canRequest
+    view.rerender(<AnalysisDeltaPublication detail={detail} workAreaLabel="영역" canRequest
       delivery={delivery} reviewAnalysisId="analysis-1" target={target} sourceLoading={false} />);
     expect(shown).toHaveBeenLastCalledWith(expect.objectContaining({
       siteId: "site-a", workAreaId: "area-a", lifetimeSeconds: 120, downloadBudgetBytes: 1_000_000,

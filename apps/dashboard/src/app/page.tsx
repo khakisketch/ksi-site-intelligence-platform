@@ -99,9 +99,9 @@ async function loadHomeAnalysisReviewSources(siteIds: readonly string[]): Promis
 }
 
 /**
- * 검토 대기 분석이 가리키는 실제 작업구역 이름. 검토 대상은 최대 3개 현장으로
- * 한정되어 있어 현장별 한 번씩만 읽는다(보관 구역 포함 — 과거 분석 맥락용).
- * 구역 ID는 현장 안에서만 유일하므로 현장별로 나눠 둔다.
+ * 검토 대기 분석이 가리키는 실제 영역 이름. 검토 대상은 최대 3개 현장으로
+ * 한정되어 있어 현장별 한 번씩만 읽는다(보관 영역 포함 — 과거 분석 맥락용).
+ * 영역 ID는 현장 안에서만 유일하므로 현장별로 나눠 둔다.
  * 실패는 이름 확인 불가로 접고 Home을 깨뜨리지 않는다.
  */
 async function loadReviewWorkAreaNames(siteIds: readonly string[]): Promise<ReadonlyMap<string, ReadonlyMap<string, string>>> {
@@ -124,7 +124,7 @@ function attentionWorkOrderDetail(source: Extract<HomeAttentionSource, { kind: "
   const order = source.workOrder;
   if (order.statusReason) return order.statusReason;
   if (order.status === "BLOCKED") return "작업 진행을 막은 사유와 복구 경로를 확인해야 합니다.";
-  if (order.status === "DRAFT" || order.status === "AWAITING_APPROVAL") return `조사 범위 ${order.workAreaIds.length}개 구역과 목적을 검토해야 합니다.`;
+  if (order.status === "DRAFT" || order.status === "AWAITING_APPROVAL") return `조사 범위 ${order.workAreaIds.length}개 영역과 목적을 검토해야 합니다.`;
   if (order.status === "REOBSERVATION_PENDING") return "부족한 근거와 추가 관측 범위를 확인한 뒤 사람이 결정합니다.";
   if (order.status === "REVIEW_READY") return "외부 결과와 보관 근거를 검토합니다.";
   return "현재 작업 상태와 확인 근거를 살펴봅니다.";
@@ -160,14 +160,14 @@ function attentionView(source: HomeAttentionSource, siteById: ReadonlyMap<string
     return { key: source.key, siteName, label: presentation.label, title: order.name, detail: attentionWorkOrderDetail(source), timeLabel: "작업 갱신", observedAt: observedAt(source.observedAt), href: `/field/work-orders/${encodeURIComponent(order.workOrderId)}`, actionLabel: order.status === "REVIEW_READY" ? "결과와 근거 보기" : "작업 맥락 보기", image: null };
   }
   const status = SITE_STATUS_LABEL[source.site.status];
-  const title = source.site.status === "UNMAPPED" ? "초기 관측 범위를 준비해야 합니다." : source.site.status === "REMAP_REQUIRED" ? "새 기준 관측이 필요합니다." : "최근 현장 상태를 다시 관측해야 합니다.";
-  return { key: source.key, siteName, label: status.label, title, detail: "현장 상태와 조사할 공사 구역을 확인한 뒤 필요한 관측 범위를 결정할 수 있습니다.", timeLabel: "현장 갱신", observedAt: observedAt(source.observedAt), href: `/sites/${encodeURIComponent(source.siteId)}`, actionLabel: "현장 맥락 보기", image: null };
+  const title = source.site.status === "UNMAPPED" ? "초기 관측 범위를 준비해야 합니다." : source.site.status === "REMAP_REQUIRED" ? "새 기준 관측이 필요합니다." : "최근 프로젝트 상태를 다시 관측해야 합니다.";
+  return { key: source.key, siteName, label: status.label, title, detail: "프로젝트 상태와 조사할 공사 영역을 확인한 뒤 필요한 관측 범위를 결정할 수 있습니다.", timeLabel: "프로젝트 갱신", observedAt: observedAt(source.observedAt), href: `/sites/${encodeURIComponent(source.siteId)}`, actionLabel: "현장 맥락 보기", image: null };
 }
 
 function recentUpdateView(source: HomeRecentUpdateSource, siteById: ReadonlyMap<string, SiteView>): HomeRecentUpdateView {
   const siteName = siteById.get(source.siteId)?.name ?? "이름을 확인할 수 없는 현장";
   if ("site" in source) {
-    return { key: source.key, siteName, label: "현재 등록 상태", title: "등록된 대기 작업 없음", detail: "현재 조회된 작업 기준입니다. 현장 전체의 정상이나 안전을 의미하지 않습니다.", observedAt: `현장 갱신 ${observedAt(source.observedAt)}`, href: `/sites/${encodeURIComponent(source.site.siteId)}`, image: null, imageFallbackLabel: "연결된 미리보기 없음" };
+    return { key: source.key, siteName, label: "현재 등록 상태", title: "등록된 대기 작업 없음", detail: "현재 조회된 작업 기준입니다. 현장 전체의 정상이나 안전을 의미하지 않습니다.", observedAt: `프로젝트 갱신 ${observedAt(source.observedAt)}`, href: `/sites/${encodeURIComponent(source.site.siteId)}`, image: null, imageFallbackLabel: "연결된 미리보기 없음" };
   }
   if (source.kind === "RESULT_READY" || source.kind === "OBSERVATION_COMPLETED") {
     return { key: source.key, siteName, label: source.kind === "RESULT_READY" ? "새 결과" : "최근 관측", title: source.workOrder.name, detail: source.kind === "RESULT_READY" ? "외부 결과와 보관 근거를 검토합니다." : "관측 결과가 작업 기록에 등록되었습니다.", observedAt: observedAt(source.observedAt), href: `/field/work-orders/${encodeURIComponent(source.workOrder.workOrderId)}`, image: null, imageFallbackLabel: "연결된 미리보기 없음" };
@@ -177,7 +177,7 @@ function recentUpdateView(source: HomeRecentUpdateSource, siteById: ReadonlyMap<
 
 function recentSiteView(source: HomeRecentSiteSource): HomeAttentionCardView {
   const status = SITE_STATUS_LABEL[source.site.status];
-  return { key: source.key, siteName: source.site.name, label: source.site.status === "UNMAPPED" ? "등록 자료 확인" : `현장 관리 상태 · ${status.label}`, title: "현장의 자료와 분석 기록을 확인하세요.", detail: "현장을 열어 작업구역·등록 자료·분석 기록을 확인하세요.", timeLabel: "현장 갱신", observedAt: observedAt(source.site.updatedAt), href: `/sites/${encodeURIComponent(source.siteId)}`, actionLabel: "현장 보기", image: null };
+  return { key: source.key, siteName: source.site.name, label: source.site.status === "UNMAPPED" ? "등록 자료 확인" : `프로젝트 관리 상태 · ${status.label}`, title: "현장의 자료와 분석 기록을 확인하세요.", detail: "프로젝트을 열어 영역·등록 자료·분석 기록을 확인하세요.", timeLabel: "프로젝트 갱신", observedAt: observedAt(source.site.updatedAt), href: `/sites/${encodeURIComponent(source.siteId)}`, actionLabel: "프로젝트 보기", image: null };
 }
 
 export default async function HomePage() {
@@ -226,9 +226,9 @@ export default async function HomePage() {
   const siteActionPermissions = { canEditSite: permissions.includes("SITES_WRITE"), canCreateWorkOrder: permissions.includes("WORK_ORDERS_WRITE") };
   const initialSetupItems: HomeSituationItem[] = initialSetupSites.map((site) => {
     const nextAction = resolveSiteOperatorNextAction(site, siteActionPermissions);
-    return { key: `initial-setup:${site.siteId}`, siteId: site.siteId, siteName: site.name, statusLabel: SITE_STATUS_LABEL[site.status].label, statusTone: SITE_STATUS_LABEL[site.status].tone, title: "작업구역에 첫 관측 자료를 연결하세요.", detail: "관측 자료 등록에서 작업구역을 선택합니다. 현장 전체 경계는 선택 설정입니다.", href: nextAction?.href ?? `/sites/${encodeURIComponent(site.siteId)}`, actionLabel: nextAction?.label ?? "현장 맥락 보기" };
+    return { key: `initial-setup:${site.siteId}`, siteId: site.siteId, siteName: site.name, statusLabel: SITE_STATUS_LABEL[site.status].label, statusTone: SITE_STATUS_LABEL[site.status].tone, title: "영역에 첫 관측 자료를 연결하세요.", detail: "관측 자료 등록에서 영역을 선택합니다. 프로젝트 전체 경계는 선택 설정입니다.", href: nextAction?.href ?? `/sites/${encodeURIComponent(site.siteId)}`, actionLabel: nextAction?.label ?? "현장 맥락 보기" };
   });
-  // 대기열에 오르지 않은 실제 현장 바로가기 — 확인 목록·초기 설정에 이미 나온
+  // 대기열에 오르지 않은 실제 프로젝트 바로가기 — 확인 목록·초기 설정에 이미 나온
   // 현장은 빼고, 남는 현장이 있을 때만 한 줄씩 둔다. 장식 이미지·가짜 요약은 두지 않는다.
   // 확인 안건이 없어 "최근 현장" 목록이 그 자리를 대신하면 그 현장도 이미 나온 것이다 — 같은 현장이 두 번 나오지 않게 뺀다.
   const surfacedSiteIds = new Set([
@@ -271,7 +271,7 @@ export default async function HomePage() {
     </header>
 
     {!sitesResult.ok && <ErrorState message={sitesResult.message} retryable />}
-    {sitesResult.ok && sites.length === 0 && <EmptyState title="현재 계정에서 볼 수 있는 현장이 없습니다" description="찾는 현장이 이미 있다면 관리자에게 이 계정의 현장 접근 권한을 확인해 주세요." action={canRegisterSite ? { label: "현장 등록", href: "/sites/new" } : { label: "현장 목록", href: "/sites" }} />}
+    {sitesResult.ok && sites.length === 0 && <EmptyState title="현재 계정에서 볼 수 있는 프로젝트이 없습니다" description="찾는 프로젝트이 이미 있다면 관리자에게 이 계정의 프로젝트 접근 권한을 확인해 주세요." action={canRegisterSite ? { label: "프로젝트 등록", href: "/sites/new" } : { label: "프로젝트 목록", href: "/sites" }} />}
     {sites.length > 0 && !portfolioComplete && <section aria-label="일부 정보를 확인하지 못했습니다">
       <InlineNotice action={<Link href="/sites" className="tap-target inline-flex items-center underline underline-offset-2">현장 전체를 열어 직접 확인하세요.</Link>}>
         <p>일부 현장 또는 작업 원장을 불러오지 못해 확인 필요 건수를 추측하지 않습니다.</p>
@@ -285,8 +285,8 @@ export default async function HomePage() {
 
     {sites.length > 0 && (
       <div className="flex min-w-0 flex-col gap-6">
-          {attentionItems.length > 0 ? <HomeAttentionList items={attentionItems} /> : recentSiteItems.length > 0 ? <HomeAttentionList items={recentSiteItems} title={portfolioComplete ? "조회된 범위에 새 운영 안건이 없습니다." : "최근 현장을 직접 확인하세요."} description={portfolioComplete ? "현재 조회된 현장·작업과 최근 분석 기록 기준입니다. 전체 기록의 확인 완료나 현장의 정상·안전을 뜻하지 않습니다. 현장을 선택해 자료와 작업 이력을 확인하세요." : "일부 원장을 불러오지 못해 새 안건 여부를 판단하지 않습니다. 현장을 선택해 상태를 직접 확인하세요."} regionLabel="최근 현장 목록" /> : null}
-          {initialSetupItems.length > 0 && <HomeSituationList title="초기 설정이 필요한 현장" description="작업구역을 확인하고 고객이 준비한 관측 자료를 등록하세요." items={initialSetupItems} emptyMessage="초기 설정이 필요한 현장이 없습니다." allHref="/sites" allLabel="현장 전체" />}
+          {attentionItems.length > 0 ? <HomeAttentionList items={attentionItems} /> : recentSiteItems.length > 0 ? <HomeAttentionList items={recentSiteItems} title={portfolioComplete ? "조회된 범위에 새 운영 안건이 없습니다." : "최근 현장을 직접 확인하세요."} description={portfolioComplete ? "현재 조회된 현장·작업과 최근 분석 기록 기준입니다. 전체 기록의 확인 완료나 현장의 정상·안전을 뜻하지 않습니다. 프로젝트을 선택해 자료와 작업 이력을 확인하세요." : "일부 원장을 불러오지 못해 새 안건 여부를 판단하지 않습니다. 프로젝트을 선택해 상태를 직접 확인하세요."} regionLabel="최근 프로젝트 목록" /> : null}
+          {initialSetupItems.length > 0 && <HomeSituationList title="초기 설정이 필요한 현장" description="영역을 확인하고 고객이 준비한 관측 자료를 등록하세요." items={initialSetupItems} emptyMessage="초기 설정이 필요한 프로젝트이 없습니다." allHref="/sites" allLabel="현장 전체" />}
           <HomeSiteGrid sites={otherSites} />
           <HomeRecentUpdates items={recentItems} />
       </div>

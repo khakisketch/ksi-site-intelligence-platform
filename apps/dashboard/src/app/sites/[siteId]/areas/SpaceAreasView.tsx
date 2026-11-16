@@ -74,13 +74,13 @@ export function SpaceAreasView({ siteId, sitePath, areas, areasState, selectedId
             <Link href={manageHref} className="tap-target hidden items-center text-caption font-semibold underline lg:inline-flex">+ 추가</Link>
           )}
         </div>
-        <p className="px-1 text-caption text-ink-2">자료를 붙여 비교하는 구역입니다. 고르면 지도에서 강조됩니다.</p>
+        <p className="px-1 text-caption text-ink-2">자료를 붙여 비교하는 영역입니다. 고르면 지도에서 강조됩니다.</p>
         {areasState === "denied" && <InlineNotice tone="high">영역 목록을 조회할 권한이 없습니다. 프로젝트 담당자에게 문의하세요.</InlineNotice>}
         {areasState === "unavailable" && <InlineNotice tone="high">영역 목록을 불러오지 못했습니다. 잠시 후 다시 열어 보세요.</InlineNotice>}
         {areasState === "ready" && areas.length === 0 && (
           <div className="flex flex-col gap-2 rounded-md border border-dashed border-line-strong px-3 py-4">
             <p className="text-body font-bold">등록된 영역이 없습니다</p>
-            <p className="text-caption text-ink-2">자료를 등록하고 비교하려면 먼저 대상 구역이 필요합니다.</p>
+            <p className="text-caption text-ink-2">자료를 등록하고 비교하려면 먼저 대상 영역이 필요합니다.</p>
             {canWrite
               ? <Link href={manageHref} className="btn btn-primary hidden w-fit lg:inline-flex">영역 추가</Link>
               : <p className="text-caption text-ink-muted">영역은 프로젝트 쓰기 권한이 있는 담당자가 등록합니다.</p>}

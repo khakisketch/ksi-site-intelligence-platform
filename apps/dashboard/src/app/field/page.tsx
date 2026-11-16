@@ -67,7 +67,7 @@ export default async function FieldWorkListPage({ searchParams }: {
   const byId = new Map((operations ?? []).map((item) => [item.workOrderId, item]));
   const summary = summarizeWorkQueue(workOrders, byId);
   // 행 맥락용 이름은 이미 권한이 확인된 목록 API로 현장별 한 번씩만 읽는다
-  // (보관 구역 포함 — 과거 작업 맥락용). 구역 ID는 현장 안에서만 유일하므로
+  // (보관 영역 포함 — 과거 작업 맥락용). 영역 ID는 현장 안에서만 유일하므로
   // 현장별로 나눠 둔다. 실패는 확인 불가로 접고 큐를 깨뜨리지 않는다.
   const siteIds = [...new Set(workOrders.map((order) => order.siteId))];
   const [sites, areaPages] = await Promise.all([
@@ -135,7 +135,7 @@ export default async function FieldWorkListPage({ searchParams }: {
         />
         <WorkQueueOperationsNotices notices={notices} />
         {workOrders.length === 0 ? (
-          <EmptyState title="등록된 작업이 없습니다" description="현장 화면에서 작업구역을 확인하고 관측 자료 등록을 시작할 수 있습니다." action={{ label: "현장 보기", href: "/sites" }} />
+          <EmptyState title="등록된 작업이 없습니다" description="현장 화면에서 영역을 확인하고 관측 자료 등록을 시작할 수 있습니다." action={{ label: "프로젝트 보기", href: "/sites" }} />
         ) : (
           <>
             <nav className="flex flex-wrap items-center gap-x-1 gap-y-2 border-b border-line pb-3 sm:flex-nowrap sm:gap-1 sm:overflow-x-auto" aria-label="작업 요약">
@@ -146,7 +146,7 @@ export default async function FieldWorkListPage({ searchParams }: {
             </nav>
             <form action="/field" className="flex flex-wrap items-end gap-3" role="search" aria-label="작업 검색">
               {groupKey && <input type="hidden" name="group" value={groupKey} />}
-              <label className="grid min-w-0 flex-1 basis-56 gap-1.5 text-caption font-medium sm:max-w-md">작업 검색<input className="input w-full" type="search" name="q" defaultValue={query} placeholder="작업명 또는 현장명" /></label>
+              <label className="grid min-w-0 flex-1 basis-56 gap-1.5 text-caption font-medium sm:max-w-md">작업 검색<input className="input w-full" type="search" name="q" defaultValue={query} placeholder="작업명 또는 프로젝트명" /></label>
               <label className="grid min-w-0 gap-1.5 text-caption font-medium">현장<select className="input w-full sm:max-w-64" name="site" defaultValue={params.site ?? ""}><option value="">전체 현장</option>{[...siteById.values()].filter((site) => siteIds.includes(site.siteId)).map((site) => <option key={site.siteId} value={site.siteId}>{site.name}</option>)}</select></label>
               <button className="btn" type="submit">검색</button>
               {(query || params.site || groupKey) && <Link href="/field" className="tap-target inline-flex items-center px-2 text-caption underline">필터 초기화</Link>}
@@ -182,7 +182,7 @@ export default async function FieldWorkListPage({ searchParams }: {
                               </span>
                             </Link>
                             {rowsNeedingTechnicalRef.has(order.workOrderId) && <Disclosure label="식별 상세" className="px-4 pb-2 text-caption text-ink-muted">
-                              <p className="mt-1 break-all">작업 {order.workOrderId} · 현장 {siteName ?? SITE_NAME_UNAVAILABLE} ({order.siteId}) · 구역 {formatWorkAreaTechnicalRefs(order.workAreaIds)} · {formatKoreanDateTime(order.updatedAt, { dateStyle: "medium", timeStyle: "short" })} 갱신</p>
+                              <p className="mt-1 break-all">작업 {order.workOrderId} · 현장 {siteName ?? SITE_NAME_UNAVAILABLE} ({order.siteId}) · 영역 {formatWorkAreaTechnicalRefs(order.workAreaIds)} · {formatKoreanDateTime(order.updatedAt, { dateStyle: "medium", timeStyle: "short" })} 갱신</p>
                             </Disclosure>}
                           </li>
                         );

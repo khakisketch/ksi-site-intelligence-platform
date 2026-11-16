@@ -26,7 +26,7 @@ function ReadableBackground() {
 export function WorkAreaChoiceMapInner({ shapes, selectedId, onSelect, disabled }: {
   shapes: SupportedWorkAreaShape[]; selectedId: string; onSelect: (id: string) => void; disabled: boolean;
 }) {
-  if (!shapes.length) return <p className="p-5 text-sm text-ink-2">지도에 표시할 수 있는 구역이 없습니다. 등록된 이름으로 선택할 수 있으며, 좌표를 추정해 그리지 않습니다.</p>;
+  if (!shapes.length) return <p className="p-5 text-sm text-ink-2">지도에 표시할 수 있는 영역이 없습니다. 등록된 이름으로 선택할 수 있으며, 좌표를 추정해 그리지 않습니다.</p>;
   return <MapContainer center={shapes[0].positions[0]} zoom={16} maxZoom={26} style={{ height: "100%", width: "100%" }}>
     <ReadableBackground />
     <FitAreas shapes={shapes} />

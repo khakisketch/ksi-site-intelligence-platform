@@ -4,7 +4,7 @@ import Link from "next/link";
 import type { MouseEvent, ReactNode } from "react";
 
 /**
- * 기준 이동 의도 알림 — 현장 목록 칩·상태 되돌리기가 누르기 전에 보낸다.
+ * 기준 이동 의도 알림 — 프로젝트 목록 칩·상태 되돌리기가 누르기 전에 보낸다.
  *
  * 검색 컨트롤의 대기 타이머(300ms)는 주소창·props가 늦게 오는 공백에
  * 옛 기준으로 replace 할 수 있다(느린 RSC 응답). 이동 자체는 Link가 맡고,

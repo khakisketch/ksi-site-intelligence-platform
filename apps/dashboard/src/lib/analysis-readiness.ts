@@ -113,7 +113,7 @@ function sameSelector(left: AnalysisSelector, right: AnalysisSelector): boolean 
 }
 
 /**
- * Core 판독이 요청한 쌍을 그대로 되돌렸는지 확인한다. 사이트·구역·
+ * Core 판독이 요청한 쌍을 그대로 되돌렸는지 확인한다. 사이트·영역·
  * 기준·현재 선택자가 하나라도 다르면 현재 쌍의 조건으로 보여주지 않는다.
  */
 export function isAnalysisReadinessViewFor(

@@ -79,8 +79,8 @@ export default async function SiteObservationHistoryPage({
     </div>
     {await ExternalComparisonRegistration({ siteId, organizationId: session.principal.organizationId })}
   </>);
-  // 작업구역 이름은 표시 보조일 뿐이다. 이름 조회가 실패해도 이력은 가리지
-  // 않는다 — 이름 없는 행은 '작업구역'으로 표시하고, 이름 실패만 따로 알린다.
+  // 영역 이름은 표시 보조일 뿐이다. 이름 조회가 실패해도 이력은 가리지
+  // 않는다 — 이름 없는 행은 '영역'으로 표시하고, 이름 실패만 따로 알린다.
   // 이름 목록에는 권한 없는 자료가 담기지 않으므로(실패 시 빈 목록) 노출이 없다.
   let history: Awaited<ReturnType<typeof listSiteExternalVolumeHistory>> | null = null;
   let areas: Awaited<ReturnType<typeof listWorkAreas>> | null = null;
@@ -110,9 +110,9 @@ export default async function SiteObservationHistoryPage({
         <h3 className="text-lead font-bold">외부 비교 이력</h3>
         {canRegister && <Link className="btn btn-primary" href={`${sitePath}/observations?register=1`}>외부 비교 등록</Link>}
       </div>
-      {areaNamesUnavailable && <InlineNotice>작업구역 이름을 불러오지 못했습니다. 이름이 없는 행은 작업구역으로 표시됩니다.</InlineNotice>}
+      {areaNamesUnavailable && <InlineNotice>영역 이름을 불러오지 못했습니다. 이름이 없는 행은 영역으로 표시됩니다.</InlineNotice>}
       {loaded ? <ExternalObservationHistory siteId={siteId} items={loaded.history.items} workAreaNames={names} /> :
-        <ErrorState message={denied ? "외부 비교 기록을 조회할 권한이 없습니다. 현장 담당자에게 조회 권한을 요청하세요." : "외부 비교 기록을 불러오지 못했습니다."} tone={denied ? "high" : "crit"} retryable={!denied} retryAfterSeconds={retryAfterSeconds} />}
+        <ErrorState message={denied ? "외부 비교 기록을 조회할 권한이 없습니다. 프로젝트 담당자에게 조회 권한을 요청하세요." : "외부 비교 기록을 불러오지 못했습니다."} tone={denied ? "high" : "crit"} retryable={!denied} retryAfterSeconds={retryAfterSeconds} />}
       {loaded?.history.nextCursor && <Link className="btn w-fit" href={`/sites/${encodeURIComponent(siteId)}/observations?after=${encodeURIComponent(loaded.history.nextCursor)}`}>이전 결과 더 보기</Link>}
   </>);
 }

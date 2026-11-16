@@ -54,9 +54,9 @@ beforeEach(() => {
   });
   mocked.permissions.mockResolvedValue(false);
   mocked.areas.mockResolvedValue({ workAreas: [
-    area("area-1", "1구역 북측"),
-    area("area-2", "2구역 성토부", { supersedes: "area-0", createdAt: "2026-11-09T00:00:00Z" }),
-    area("area-0", "옛 1구역", { status: "ARCHIVED", createdAt: "2026-10-01T00:00:00Z" }),
+    area("area-1", "1영역 북측"),
+    area("area-2", "2영역 성토부", { supersedes: "area-0", createdAt: "2026-11-09T00:00:00Z" }),
+    area("area-0", "옛 1영역", { status: "ARCHIVED", createdAt: "2026-10-01T00:00:00Z" }),
   ] });
   mocked.orders.mockResolvedValue([]);
 });
@@ -75,9 +75,9 @@ describe("공간 영역 보기", () => {
 
     const list = within(screen.getByRole("region", { name: "영역 목록" }));
     expect(list.getByText("영역 2개")).toBeTruthy();
-    expect(list.getByRole("link", { name: /2구역 성토부/ }).getAttribute("aria-current")).toBe("true");
-    expect(list.getByRole("link", { name: /1구역 북측/ }).getAttribute("aria-current")).toBeNull();
-    expect(list.getByText(/이전 범위\(옛 1구역\)를 대체/)).toBeTruthy();
+    expect(list.getByRole("link", { name: /2영역 성토부/ }).getAttribute("aria-current")).toBe("true");
+    expect(list.getByRole("link", { name: /1영역 북측/ }).getAttribute("aria-current")).toBeNull();
+    expect(list.getByText(/이전 범위\(옛 1영역\)를 대체/)).toBeTruthy();
 
     // 지도는 사용 중인 영역만 올린다 — 보관된 영역은 골랐을 때만 올라간다.
     const map = await screen.findByTestId("map-inner");

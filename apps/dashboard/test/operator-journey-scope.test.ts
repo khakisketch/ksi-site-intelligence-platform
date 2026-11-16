@@ -10,9 +10,9 @@ import {
 } from "@/lib/operator-journey";
 
 const areas = [
-  { workAreaId: "wa-a", name: "A구역", status: "ACTIVE" },
-  { workAreaId: "wa-b", name: "B구역", status: "ACTIVE" },
-  { workAreaId: "wa-old", name: "보관 구역", status: "ARCHIVED" },
+  { workAreaId: "wa-a", name: "A영역", status: "ACTIVE" },
+  { workAreaId: "wa-b", name: "B영역", status: "ACTIVE" },
+  { workAreaId: "wa-old", name: "보관 영역", status: "ARCHIVED" },
 ];
 
 describe("operator journey scope", () => {
@@ -107,18 +107,18 @@ describe("operator journey scope", () => {
   it("work order continuation only for exact one active scope", () => {    expect(resolveWorkOrderContinuation({ areas, workAreaIds: ["wa-a"] }).workAreaId).toBe("wa-a");
     expect(resolveWorkOrderContinuation({ areas, workAreaIds: ["wa-a", "wa-b"] }).workAreaId).toBeNull();
     expect(resolveWorkOrderContinuation({ areas, workAreaIds: ["wa-old"] }).workAreaId).toBeNull();
-    // 비활성·모르는 연결을 걸러내고 하나로 만들지 않는다 — 다구역 작업은 목록 선택으로 둔다.
+    // 비활성·모르는 연결을 걸러내고 하나로 만들지 않는다 — 다영역 작업은 목록 선택으로 둔다.
     expect(resolveWorkOrderContinuation({ areas, workAreaIds: ["wa-a", "wa-old"] }).workAreaId).toBeNull();
     expect(resolveWorkOrderContinuation({ areas, workAreaIds: ["wa-a", "wa-foreign"] }).workAreaId).toBeNull();
     expect(resolveWorkOrderContinuation({ areas, workAreaIds: [] }).workAreaId).toBeNull();
-    // 같은 구역의 중복 기록은 숨은 다구역이 아니므로 그대로 둔다.
+    // 같은 영역의 중복 기록은 숨은 다영역이 아니므로 그대로 둔다.
     expect(resolveWorkOrderContinuation({ areas, workAreaIds: ["wa-a", "wa-a"] }).workAreaId).toBe("wa-a");
   });
 });
 
 describe("operator journey long known IDs", () => {
   const longAreaId = `wa-long-${"x".repeat(250)}`;
-  const longAreas = [...areas, { workAreaId: longAreaId, name: "긴 구역", status: "ACTIVE" }];
+  const longAreas = [...areas, { workAreaId: longAreaId, name: "긴 영역", status: "ACTIVE" }];
   const unknownLong = `wa-unknown-${"y".repeat(250)}`;
 
   it("accepts an exact known long area ID without truncation or substitution", () => {
@@ -171,7 +171,7 @@ describe("scoped nav query", () => {
     expect(parseScopedNavQuery("?workAreaId=wa-a")).toEqual({ workAreaId: "wa-a", assetRef: null });
   });
   it("fails closed on malformed, multi-valued or foreign input without throwing", () => {
-    // 자산 참조가 깨졌어도 작업구역까지 버리지 않는다 — 참조만 뺀다.
+    // 자산 참조가 깨졌어도 영역까지 버리지 않는다 — 참조만 뺀다.
     expect(parseScopedNavQuery("?workAreaId=wa-a&assetRef=nope")).toEqual({ workAreaId: "wa-a", assetRef: null });
     expect(parseScopedNavQuery("?workAreaId=wa-a&assetRef=ksa-v1-short")).toEqual({ workAreaId: "wa-a", assetRef: null });
     for (const search of [

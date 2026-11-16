@@ -73,7 +73,7 @@ const area = {
   schemaVersion: "1.0",
   siteId: "site-1",
   workAreaId: "tiny-1",
-  name: "구역",
+  name: "영역",
   polygon: { type: "Polygon", coordinates: [[[[0, 0], [1, 0], [1, 1], [0, 0]]]] },
   crs: "EPSG:5186",
   status: "ACTIVE",
@@ -167,7 +167,7 @@ describe("site workspace SSR paragraph nesting", () => {
     const results = renderToStaticMarkup(
       <SiteWorkspaceResults
         sitePath="/sites/site-1"
-        areaLabel="구역"
+        areaLabel="영역"
         areaAnalyses={[{
           analysisId: "a1",
           siteId: "site-1",

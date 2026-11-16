@@ -130,7 +130,7 @@ describe("deriveNewerObservationNotice", () => {
     const notice = deriveNewerObservationNotice({
       ...baseArgs,
       observations: [observation(NEWER, "2026-09-15T00:30:00Z")],
-      // 같은 구역의 완료 분석이지만 현재 관측이 더 새 관측이 아니다.
+      // 같은 영역의 완료 분석이지만 현재 관측이 더 새 관측이 아니다.
       analyses: [analysis("analysis-other", BASELINE, true)],
     });
     expect(notice?.analysisId).toBeNull();
@@ -205,8 +205,8 @@ describe("deriveNewerObservationNotice", () => {
   });
 
   it("does not require the current epoch to sit in the area-attributed candidate list", () => {
-    // 실제 재현 귀속(F-03): 결과의 현재 epoch은 구역 귀속 목록에 없고,
-    // 구역에는 더 늦은 관측이 있다. 시각만 알면 알림은 나와야 한다.
+    // 실제 재현 귀속(F-03): 결과의 현재 epoch은 영역 귀속 목록에 없고,
+    // 영역에는 더 늦은 관측이 있다. 시각만 알면 알림은 나와야 한다.
     const notice = deriveNewerObservationNotice({
       ...baseArgs,
       observations: [observation(NEWER, "2026-09-15T00:30:00Z")],

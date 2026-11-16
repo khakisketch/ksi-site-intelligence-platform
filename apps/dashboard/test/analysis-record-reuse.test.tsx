@@ -46,7 +46,7 @@ describe("record lineage and reuse disclosure", () => {
     expect(href).toBe("/sites/site-1/analysis?workAreaId=area-1&analysisId=analysis-1");
     expect(href).not.toMatch(/visual|hint|token|returnTo/);
     expect(container.querySelector("form,button")).toBeNull();
-    expect(screen.getByText(/로그인과 현장 접근 권한을 확인합니다/)).toBeTruthy();
+    expect(screen.getByText(/로그인과 프로젝트 접근 권한을 확인합니다/)).toBeTruthy();
     expect(screen.getByText(/기록된 계산 결과와 현재 활용 가능 여부는 별개/)).toBeTruthy();
   });
 

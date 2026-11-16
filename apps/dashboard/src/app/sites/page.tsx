@@ -88,11 +88,11 @@ function hrefWith(
 }
 
 /**
- * 현장 목록 — 데스크톱 비교표와 모바일 현장 카드의 같은 projection.
+ * 프로젝트 목록 — 데스크톱 비교표와 모바일 현장 카드의 같은 projection.
  *
  * 넓은 화면에서는 여러 현장을 같은 열에서 비교하는 표가 맞다. 그러나 그 표를 폰에
  * 가로 스크롤로 남기면 이름·다음 행동이 서로 떨어져 실제 일을 시작하기 어렵다. 모바일은
- * 같은 사실을 `현장명 → 상태 → 확인할 내용 → 현장 열기` 순서의 카드로 다시 읽는다.
+ * 같은 사실을 `프로젝트명 → 상태 → 확인할 내용 → 프로젝트 열기` 순서의 카드로 다시 읽는다.
  *
  * 필터는 **링크**다(JS 없이 동작하고, 그대로 공유되며, 뒤로가기가 필터를 되감는다).
  * 시안의 상태 칩 4개는 10개 상태를 낱개로 고르는 대신 운영자가 실제로 묻는 묶음으로
@@ -199,8 +199,8 @@ export default async function SitesPage({
     // 화면 이름은 topbar 가 이미 '현장'을 찍는다 — 본문에서 h1 을 또 찍지 않는다.
     <ConsolePage>
       <PageHeader
-        title="현장 목록"
-        description="현장을 선택해 관측 자료와 분석 기록을 확인하세요."
+        title="프로젝트 목록"
+        description="프로젝트을 선택해 관측 자료와 분석 기록을 확인하세요."
         headingLevel={2}
         actions={<RegisterSiteAction availability={registrationAvailability} />}
       />
@@ -214,7 +214,7 @@ export default async function SitesPage({
                 <input type="hidden" name="sort" value={sort} />
                 {status && <input type="hidden" name="status" value={status} />}
                 <label className="grid gap-1 text-caption font-medium text-ink-2">
-                  현장 상태
+                  프로젝트 상태
                   <select key={group} name="group" defaultValue={group} className="input tap-target text-body">
                     {SITE_GROUPS.map((option) => (
                       <option key={option.key} value={option.key}>{option.label}</option>
@@ -243,7 +243,7 @@ export default async function SitesPage({
             </div>
 
             <div className="hidden w-full flex-col gap-3 lg:flex">
-              <div className="flex flex-wrap items-center gap-1" role="group" aria-label="현장 상태 필터">
+              <div className="flex flex-wrap items-center gap-1" role="group" aria-label="프로젝트 상태 필터">
               {SITE_GROUPS.map((option) => {
                 const active = option.key === group;
                 const count =
@@ -332,14 +332,14 @@ export default async function SitesPage({
       ) : visibleSites.length === 0 ? (
         <SiteListCancelBoundary>
           <EmptyState
-            title="조건에 맞는 현장이 없습니다"
+            title="조건에 맞는 프로젝트이 없습니다"
             description="검색어나 상태 묶음을 바꿔 다시 확인하세요."
             action={hasFilter ? { label: "필터 초기화", href: "/sites" } : undefined}
           />
         </SiteListCancelBoundary>
       ) : (
         <>
-          <section className="flex flex-col gap-2 lg:hidden" aria-label="현장 목록">
+          <section className="flex flex-col gap-2 lg:hidden" aria-label="프로젝트 목록">
             {/* 폰에서는 검색 아래 건수+필터 행이 수를 말하므로 제목 줄을 두지 않는다. */}
             <div className="hidden items-baseline gap-2 px-1 sm:flex">
               <h2 className="text-lead font-bold">현장</h2>

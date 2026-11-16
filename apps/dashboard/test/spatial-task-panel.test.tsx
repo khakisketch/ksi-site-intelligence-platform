@@ -14,7 +14,7 @@ const base: SpatialTaskView = {
   readiness: null, analysis: null,
 };
 const options: SpatialTaskOptions = {
-  siteId: "site-a", areas: [{ workAreaId: "area-a", name: "동측 구역" }], nextOffset: null,
+  siteId: "site-a", areas: [{ workAreaId: "area-a", name: "동측 영역" }], nextOffset: null,
   observations: ["a", "b"].map((letter, index) => ({
     selector: { workOrderId: `order-${letter}`, submissionRef: `ers-v1-${letter.repeat(64)}`, revision: 1 },
     observationEpochId: `epoch-${letter}`, captureStartedAt: `2026-10-${20 + index}T00:00:00Z`,
@@ -47,7 +47,7 @@ describe("external spatial task selection", () => {
       task: { ...base.task, revision: 2, selection: { ...base.task.selection, workAreaId: "area-a" } },
       state: "OBSERVATIONS_REQUIRED" }))); vi.stubGlobal("fetch", fetch);
     render(<SpatialTaskPanel initialView={base} initialOptions={options} siteName="테스트 현장" areas={[]} canWrite />);
-    fireEvent.click(screen.getByLabelText("동측 구역"));
+    fireEvent.click(screen.getByLabelText("동측 영역"));
     fireEvent.click(screen.getByRole("button", { name: "이 선택으로 계속" }));
     await waitFor(() => expect(screen.getByRole("status").textContent).toContain("같은 작업"));
     expect(fetch.mock.calls[0][0]).toBe(`/api/sites/site-a/spatial-tasks/${taskId}/selection`);
@@ -67,17 +67,17 @@ describe("external spatial task selection", () => {
   it("keeps unsaved choice on conflict and offers saved-selection reload", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({ code: "SPATIAL_TASK_REVISION_CONFLICT" }), { status: 409 })));
     render(<SpatialTaskPanel initialView={base} initialOptions={options} siteName="테스트 현장" areas={[]} canWrite />);
-    fireEvent.click(screen.getByLabelText("동측 구역"));
+    fireEvent.click(screen.getByLabelText("동측 영역"));
     fireEvent.click(screen.getByRole("button", { name: "이 선택으로 계속" }));
     await waitFor(() => expect(screen.getByRole("alert").textContent).toContain("다른 화면"));
-    expect((screen.getByLabelText("동측 구역") as HTMLInputElement).checked).toBe(true);
+    expect((screen.getByLabelText("동측 영역") as HTMLInputElement).checked).toBe(true);
     expect(screen.getByRole("button", { name: "저장된 선택 불러오기" })).toBeTruthy();
   });
 
   it("requires paired observation choices without losing the selected area", async () => {
     const fetch = vi.fn(); vi.stubGlobal("fetch", fetch);
     render(<SpatialTaskPanel initialView={base} initialOptions={options} siteName="테스트 현장" areas={[]} canWrite />);
-    fireEvent.click(screen.getByLabelText("동측 구역"));
+    fireEvent.click(screen.getByLabelText("동측 영역"));
     const previous = screen.getByLabelText("이전 관측") as HTMLSelectElement;
     fireEvent.change(previous, { target: { value: previous.options[1].value } });
     fireEvent.click(screen.getByRole("button", { name: "이 선택으로 계속" }));
@@ -89,7 +89,7 @@ describe("external spatial task selection", () => {
   it("does not expose mutation actions to a read-only human", () => {
     render(<SpatialTaskPanel initialView={base} initialOptions={options} siteName="테스트 현장" areas={[]} canWrite={false} />);
     expect(screen.queryByRole("button", { name: "이 선택으로 계속" })).toBeNull();
-    expect(screen.getByLabelText("동측 구역").matches(":disabled")).toBe(true);
+    expect(screen.getByLabelText("동측 영역").matches(":disabled")).toBe(true);
   });
 
   it("shows the exact Core result beside the retained map context, with limitations", () => {
@@ -206,10 +206,10 @@ describe("external spatial task selection", () => {
       vi.stubGlobal("fetch", fetch);
       Object.defineProperty(document, "visibilityState", { value: "visible", configurable: true });
       render(<SpatialTaskPanel initialView={base} initialOptions={options} siteName="테스트 현장" areas={[]} canWrite />);
-      fireEvent.click(screen.getByLabelText("동측 구역"));
+      fireEvent.click(screen.getByLabelText("동측 영역"));
       await act(async () => { window.dispatchEvent(new Event("focus")); });
       await waitFor(() => expect(screen.getByText(/현재 편집은 유지/)).toBeTruthy());
-      expect((screen.getByLabelText("동측 구역") as HTMLInputElement).checked).toBe(true);
+      expect((screen.getByLabelText("동측 영역") as HTMLInputElement).checked).toBe(true);
       expect(fetch.mock.calls.every((call) => (call[1] as { method?: string } | undefined)?.method === "GET")).toBe(true);
       expect(screen.getByRole("button", { name: "저장된 선택 불러오기" })).toBeTruthy();
     });
@@ -273,13 +273,13 @@ describe("external spatial task selection", () => {
       vi.stubGlobal("fetch", fetch);
       render(<SpatialTaskPanel initialView={base} initialOptions={options} siteName="테스트 현장" areas={[]} canWrite />);
       await act(async () => { window.dispatchEvent(new Event("focus")); });
-      fireEvent.click(screen.getByLabelText("동측 구역"));
+      fireEvent.click(screen.getByLabelText("동측 영역"));
       fireEvent.click(screen.getByRole("button", { name: "이 선택으로 계속" }));
       await waitFor(() => expect(screen.getByText(/선택을 저장했습니다/)).toBeTruthy());
-      expect((screen.getByLabelText("동측 구역") as HTMLInputElement).checked).toBe(true);
+      expect((screen.getByLabelText("동측 영역") as HTMLInputElement).checked).toBe(true);
       await act(async () => { resolveOld(new Response(JSON.stringify(base))); });
       await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
-      expect((screen.getByLabelText("동측 구역") as HTMLInputElement).checked).toBe(true);
+      expect((screen.getByLabelText("동측 영역") as HTMLInputElement).checked).toBe(true);
       expect(screen.getByText(/선택을 저장했습니다/)).toBeTruthy();
       expect(screen.queryByText(/최신 상태를 불러왔습니다/)).toBeNull();
       expect(screen.queryByText(/분석이 완료되었습니다/)).toBeNull();
@@ -316,7 +316,7 @@ describe("external spatial task selection", () => {
       Object.defineProperty(document, "visibilityState", { value: "visible", configurable: true });
       render(<SpatialTaskPanel initialView={done} initialOptions={options} siteName="테스트 현장" areas={[]} canWrite />);
       await act(async () => { window.dispatchEvent(new Event("focus")); });
-      const region = screen.getByRole("region", { name: "같은 구역의 분석 결과" });
+      const region = screen.getByRole("region", { name: "같은 영역의 분석 결과" });
       await waitFor(() => expect(within(region).getByText(/새로 확인되지 않았습니다/)).toBeTruthy());
       expect(within(region).getByText("5 m³")).toBeTruthy();
       expect(within(region).getByRole("button", { name: "최신 상태 다시 확인" })).toBeTruthy();
@@ -326,7 +326,7 @@ describe("external spatial task selection", () => {
       fetch.mockImplementation(async (...args: unknown[]) => { void args; return new Response(JSON.stringify(updated)); });
       fireEvent.click(within(region).getByRole("button", { name: "최신 상태 다시 확인" }));
       await waitFor(() => expect(screen.getByText("9 m³")).toBeTruthy());
-      expect(within(screen.getByRole("region", { name: "같은 구역의 분석 결과" })).queryByText(/새로 확인되지 않았습니다/)).toBeNull();
+      expect(within(screen.getByRole("region", { name: "같은 영역의 분석 결과" })).queryByText(/새로 확인되지 않았습니다/)).toBeNull();
       expect(fetch.mock.calls.every((call) => (call[1] as { method?: string } | undefined)?.method === "GET")).toBe(true);
     });
 

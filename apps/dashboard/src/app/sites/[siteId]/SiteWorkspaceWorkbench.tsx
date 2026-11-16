@@ -31,9 +31,9 @@ export function SiteWorkspaceWorkbench({
   detailsHostId,
   viewerMode = false,
 }: {
-  /** 구역·방식 등 서버가 만든 맥락 노드 — 목록 토글·검색은 래퍼가 앞에 둔다. */
+  /** 영역·방식 등 서버가 만든 맥락 노드 — 목록 토글·검색은 래퍼가 앞에 둔다. */
   contextControls: ReactNode;
-  /** 왼쪽 목록 드로어 내용(구역·관측 선택·다음 행동). 열렸을 때만 렌더된다. */
+  /** 왼쪽 목록 드로어 내용(영역·관측 선택·다음 행동). 열렸을 때만 렌더된다. */
   catalog: ReactNode;
   /** 목록 드로어 이름. */
   catalogLabel: string;

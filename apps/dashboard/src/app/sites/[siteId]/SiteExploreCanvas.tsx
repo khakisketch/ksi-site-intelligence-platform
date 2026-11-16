@@ -19,7 +19,7 @@ export interface ExploreCaptureOption {
 /**
  * Shared viewer frame: selection rail, mode toolbar, spatial content and optional detail.
  *
- * - 구역이 하나면 사실 한 줄(선택 상자 없음). 여러 개일 때만 고르는 상자를 둔다.
+ * - 영역이 하나면 사실 한 줄(선택 상자 없음). 여러 개일 때만 고르는 상자를 둔다.
  * - 관측 시점은 고르는 상자로 둔다. 선택하면 같은 GET 경로의 정확한
  *   `assetRef`로 돌아오며, 층(정사영상/DSM)은 같은 레일에서 전환한다. 최신 단언·
  *   날짜 추측을 하지 않으며, 날짜만 아는 관측은 '날짜만 확인 · 시각 미상' 그대로 둔다.
@@ -45,13 +45,13 @@ export function SiteExploreCanvas({
   sitePath: string;
   areas: readonly WorkArea[];
   selectedWorkAreaId: string | null;
-  /** 같은 구역 관측들의 정확한 선택지 — 없으면 선택 상자를 두지 않는다. */
+  /** 같은 영역 관측들의 정확한 선택지 — 없으면 선택 상자를 두지 않는다. */
   captureOptions: readonly ExploreCaptureOption[];
   /** 선택 중인 관측·층·등록 버전 한 줄 — title hover 없이 그대로 읽힌다. */
   selectedCaption: string | null;
   /** 부분 보기 등 범위 한계 한 줄 — 없으면 null. */
   coverageNote: string | null;
-  /** 같은 구역의 두 시점을 나란히 보는 곳으로 가는 주소 — 없으면 두지 않는다. */
+  /** 같은 영역의 두 시점을 나란히 보는 곳으로 가는 주소 — 없으면 두지 않는다. */
   compareHref?: string | null;
   mode?: "explore" | "compare" | "results";
   layers?: React.ReactNode;
@@ -66,7 +66,7 @@ export function SiteExploreCanvas({
   const activeCount = areas.filter((area) => area.status === "ACTIVE").length;
   const selectedOption = captureOptions.find((option) => option.selected) ?? null;
   const selectedName = selected ? (names.get(selected.workAreaId)?.label ?? selected.name) : null;
-  // 긴 구역 이름은 두 줄까지만 둔다. 잘린 전체 이름은 같은 자리 펼침에 둔다.
+  // 긴 영역 이름은 두 줄까지만 둔다. 잘린 전체 이름은 같은 자리 펼침에 둔다.
   const showFullName = selectedName !== null && [...selectedName].length > 80;
   return <section aria-label="선택 관측 화면" className="grid min-w-0 items-start gap-3 lg:grid-cols-[260px_minmax(0,1fr)] xl:has-[>details[open]]:grid-cols-[260px_minmax(0,1fr)_320px]">
     <aside aria-label="작업공간 선택" className="grid min-w-0 content-start items-start gap-3 rounded-lg border border-line bg-surface p-3 sm:grid-cols-2 lg:sticky lg:top-3 lg:grid-cols-1">
@@ -75,7 +75,7 @@ export function SiteExploreCanvas({
           <SiteSelectionForm action={sitePath} className="flex w-full min-w-0 flex-col gap-2">
             {mode !== "explore" && <input type="hidden" name="mode" value={mode} />}
             <div className="min-w-0 flex-1">
-              <label htmlFor="explore-canvas-area" className="block text-caption font-semibold">작업구역</label>
+              <label htmlFor="explore-canvas-area" className="block text-caption font-semibold">영역</label>
               <select
                 id="explore-canvas-area"
                 name="workAreaId"
@@ -91,25 +91,25 @@ export function SiteExploreCanvas({
               </select>
             </div>
             {activeCount === 0 && (
-              <p className="w-full text-caption text-ink-2">고를 수 있는(사용 중) 구역이 없습니다. 보관된 구역의 기록은 그대로 둡니다.</p>
+              <p className="w-full text-caption text-ink-2">고를 수 있는(사용 중) 영역이 없습니다. 보관된 영역의 기록은 그대로 둡니다.</p>
             )}
           </SiteSelectionForm>
         ) : selected && selectedName ? (
           <div className="min-w-0 flex-1">
             <p className={`${showFullName ? "line-clamp-2 " : ""}break-words text-body font-semibold`}>
-              작업구역 · {selectedName}
+              영역 · {selectedName}
               {selected.status === "ARCHIVED" ? " (보관됨)" : ""}
             </p>
             {showFullName && (
-              <Disclosure label="구역 이름 상세" className="text-caption text-ink-2">
+              <Disclosure label="영역 이름 상세" className="text-caption text-ink-2">
                 <p className="mt-1 break-words">{selectedName}</p>
               </Disclosure>
             )}
           </div>
         ) : (
-          <p className="text-body text-ink-2" role="status">작업구역을 확인할 수 없습니다. 아래 상세에서 목록을 확인하세요.</p>
+          <p className="text-body text-ink-2" role="status">영역을 확인할 수 없습니다. 아래 상세에서 목록을 확인하세요.</p>
         )}
-        <Link href={siteAreasHrefAt(sitePath, selected?.workAreaId, { manage: true })} className="tap-target w-fit shrink-0 text-caption underline">작업구역 관리</Link>
+        <Link href={siteAreasHrefAt(sitePath, selected?.workAreaId, { manage: true })} className="tap-target w-fit shrink-0 text-caption underline">영역 관리</Link>
       </div>
       <div className="flex min-w-0 flex-col gap-2">
         {observationControls ?? (mode === "explore" && captureOptions.length > 0 && selected ? (
@@ -143,7 +143,7 @@ export function SiteExploreCanvas({
       {compareHref && !toolbar && (
         <p className="hidden text-caption lg:block">
           <Link href={compareHref} className="tap-target underline">이전 촬영과 비교</Link>
-          <span className="sr-only text-ink-muted lg:not-sr-only"> · 같은 구역의 두 시점을 나란히 봅니다</span>
+          <span className="sr-only text-ink-muted lg:not-sr-only"> · 같은 영역의 두 시점을 나란히 봅니다</span>
         </p>
       )}
       </div>

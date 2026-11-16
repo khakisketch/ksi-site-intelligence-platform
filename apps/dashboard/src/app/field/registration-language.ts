@@ -1,5 +1,5 @@
 /**
- * 현장 등록 흐름의 실무 표시 문구. 업무 규칙은 `@/lib/operator-language`와
+ * 프로젝트 등록 흐름의 실무 표시 문구. 업무 규칙은 `@/lib/operator-language`와
  * 같은 것을 쓰고, 현장 흐름에서만 필요한 판정·선택 문구를 덧붙인다.
  *
  * - revision은 등록된 제출의 순서(등록 버전)일 뿐 촬영 횟수·이벤트 횟수가 아니다.
@@ -49,11 +49,11 @@ export function submissionStateLabel(state: "REGISTERED" | "SEALED"): string {
 }
 
 /**
- * 구역 스냅샷의 버전. 제출 revision('등록 버전')과 다른 계열이므로
+ * 영역 스냅샷의 버전. 제출 revision('등록 버전')과 다른 계열이므로
  * '등록 버전'으로 부르지 않는다. 결과·근거 버전도 같은 이유로 별도 이름을 쓴다.
  */
 export function zoneVersionLabel(revision: number): string {
-  return `구역 버전 ${revision}`;
+  return `영역 버전 ${revision}`;
 }
 
 /** '정사영상 + DSM · 등록 버전 N · 파일 제출 완료' — 종류 우선, 버전·상태 뒤. 파일명은 별도 줄에 둔다. */

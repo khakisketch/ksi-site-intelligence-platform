@@ -30,7 +30,7 @@ export async function GET(
     const workAreaId = decodeURIComponent(rawWorkAreaId);
     const sourceCalculationIdentityDigest = request.nextUrl.searchParams.get("source_calculation_identity_digest");
     if (!isScopeId(siteId) || !isScopeId(workAreaId)) {
-      return NextResponse.json({ message: "현장 또는 작업구역 식별자가 올바르지 않습니다." }, { status: 400 });
+      return NextResponse.json({ message: "현장 또는 영역 식별자가 올바르지 않습니다." }, { status: 400 });
     }
     if (!sourceCalculationIdentityDigest || !digestPattern.test(sourceCalculationIdentityDigest)) {
       return NextResponse.json({ message: "원본 계산 신원 확인값 형식이 올바르지 않습니다." }, { status: 400 });

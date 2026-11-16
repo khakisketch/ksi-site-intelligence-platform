@@ -1,12 +1,12 @@
 /**
- * 현장 목록 대체 타일(합성 도식)의 순수 선택·조립·검증 규칙.
+ * 프로젝트 목록 대체 타일(합성 도식)의 순수 선택·조립·검증 규칙.
  *
  * 실제 픽셀이 없을 때 카드가 빈 칸이 되지 않게, 요청자가 이미 등록한 실제
- * 기록만으로 작은 도식을 꾸민다 — 등록된 작업구역 경계 1개(원본 좌표 평면
- * 그대로)와 그 구역의 등록 자료 사실(종류·촬영 구간·등록 상태) 최대 8건이다.
+ * 기록만으로 작은 도식을 꾸민다 — 등록된 영역 경계 1개(원본 좌표 평면
+ * 그대로)와 그 영역의 등록 자료 사실(종류·촬영 구간·등록 상태) 최대 8건이다.
  * 합성·플레이스홀더·장식 지형·타 현장 기록은 절대 쓰지 않는다.
  *
- * - 읽지 않는다(fetch 없음, Core import 없음). 서버(현장 목록 페이지)가 같은
+ * - 읽지 않는다(fetch 없음, Core import 없음). 서버(프로젝트 목록 페이지)가 같은
  *   세션 BFF 집계로 읽은 기술서를 prop·컨텍스트로 내려주면, 클라이언트는
  *   `sanitizeSiteVisualTileDescriptor` 로 다시 검증한 것만 그린다.
  * - 좌표 변환을 하지 않는다. 링은 원본 평면의 숫자 그대로 SVG viewBox에
@@ -24,10 +24,10 @@ import {
   dataKindLabel,
 } from "@/lib/operator-language";
 
-/** 한 번의 목록 진입에서 훑는 작업구역 수 상한 — 미리보기 경로와 같은 bound. */
+/** 한 번의 목록 진입에서 훑는 영역 수 상한 — 미리보기 경로와 같은 bound. */
 export const SITE_VISUAL_TILE_MAX_AREAS = 6;
 
-/** 구역당 읽는 카탈로그 상한(메타데이터만, 바이트 없음) — 미리보기보다 넓지 않다. */
+/** 영역당 읽는 카탈로그 상한(메타데이터만, 바이트 없음) — 미리보기보다 넓지 않다. */
 export const SITE_VISUAL_TILE_ITEMS_PER_AREA = 50;
 
 /** 타일에 올리는 등록 자료 사실 상한 — 넘치면 "외 N건"으로만 말한다. */
@@ -114,9 +114,9 @@ export interface PickedVisualTileArea {
 }
 
 /**
- * 합성에 쓸 구역 1개 — Core 반환 순서 안에서 첫 ACTIVE 그리기 가능 구역이다.
- * 보관 구역은 고르지 않고, 시간으로 재정렬하지 않으며, 그릴 수 없으면
- * null이다(없음이지, 다른 구역의 모양을 빌려오지 않는다).
+ * 합성에 쓸 영역 1개 — Core 반환 순서 안에서 첫 ACTIVE 그리기 가능 영역이다.
+ * 보관 영역은 고르지 않고, 시간으로 재정렬하지 않으며, 그릴 수 없으면
+ * null이다(없음이지, 다른 영역의 모양을 빌려오지 않는다).
  */
 export function pickVisualTileArea(
   areas: readonly VisualTileAreaInput[],
@@ -217,7 +217,7 @@ function toVisualTileFact(item: unknown): SiteVisualTileAssetFact | null {
 }
 
 /**
- * 고른 구역의 카탈로그 페이지에서 타일에 올릴 사실만 추린다.
+ * 고른 영역의 카탈로그 페이지에서 타일에 올릴 사실만 추린다.
  *
  * Core 반환 순서를 유지하고 시간으로 다시 정렬하지 않는다. 앞의 최대 8건만
  * 올리고 나머지는 건수로만 말한다(조용히 합치거나 버리지 않는다).
@@ -252,11 +252,11 @@ export interface SiteVisualTileDescriptor {
   vertexCount: number;
   /** 올린 등록 자료 사실 — 최대 8건, Core 반환 순서. */
   facts: SiteVisualTileAssetFact[];
-  /** 고른 구역에서 읽은 카탈로그 건수(≤50). */
+  /** 고른 영역에서 읽은 카탈로그 건수(≤50). */
   scannedAssetCount: number;
   /** 카탈로그에 더 있으면 true — 전체 건수를 단정하지 않는다. */
   hasMoreAssets: boolean;
-  /** 타일이 여는 정확한 현장 주소(구역 고정, 바이트·서명 없음). */
+  /** 타일이 여는 정확한 현장 주소(영역 고정, 바이트·서명 없음). */
   siteHref: string;
 }
 
@@ -265,7 +265,7 @@ export type SiteVisualTileLookup =
   | { available: false; reason: "no-geometry" | "no-records" | "unknown" };
 
 /**
- * BFF 집계(서버)가 읽은 구역·카탈로그 사실을 표시 기술서로 접는다.
+ * BFF 집계(서버)가 읽은 영역·카탈로그 사실을 표시 기술서로 접는다.
  * 파일명·revision·해시·바이트 자격은 담지 않는다 — 타일은 모양+사실만 말한다.
  */
 export function buildSiteVisualTileDescriptor(input: {
@@ -393,7 +393,7 @@ export function visualTileFactLine(tile: SiteVisualTileDescriptor): string {
   return head;
 }
 
-/** 타일 출처 줄 — 어느 구역의 등록 범위와 몇 건의 등록 자료인지 말한다. */
+/** 타일 출처 줄 — 어느 영역의 등록 범위와 몇 건의 등록 자료인지 말한다. */
 export function visualTileCountLine(tile: SiteVisualTileDescriptor): string {
   const total = tile.hasMoreAssets
     ? `${tile.scannedAssetCount}건 이상`

@@ -111,9 +111,9 @@ test("site client navigation never leaves an empty document title (synthetic-onl
     });
     await siteLink.click();
     await expect(page).toHaveURL(/\/sites\/e2e-site-workspace\/observations\/new$/);
-    await page.getByRole("link", { name: "현장으로 돌아가기" }).click();
+    await page.getByRole("link", { name: "프로젝트으로 돌아가기" }).click();
     await expect(page).toHaveURL(/\/sites\/e2e-site-workspace\?/);
-    await expect(page).toHaveTitle("현장 상세 · KSI");
+    await expect(page).toHaveTitle("프로젝트 상세 · KSI");
     const samples = await page.evaluate(() => (window as unknown as { titleSamples: { path: string; title: string; at: number }[] }).titleSamples);
     expect(samples.length).toBeGreaterThan(0);
     expect(samples.some((sample) => sample.path === "/sites/e2e-site-workspace")).toBe(true);

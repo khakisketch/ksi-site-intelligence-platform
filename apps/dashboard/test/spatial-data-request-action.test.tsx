@@ -68,7 +68,7 @@ describe("spatial data request action", () => {
     expect(key).toMatch(/^sdreq-[0-9a-f-]{36}$/);
     // 같은 요청을 다시 만들지 않는다 — 성공 뒤 버튼은 잠긴다.
     expect(screen.getByRole("button", { name: "요청 만듦" }).hasAttribute("disabled")).toBe(true);
-    expect(screen.getByRole("link", { name: "구역 자료 준비에서 확인" }).getAttribute("href"))
+    expect(screen.getByRole("link", { name: "영역 자료 준비에서 확인" }).getAttribute("href"))
       .toBe("/sites/site-1/spatial-data-requests?workAreaId=area-1");
   });
 

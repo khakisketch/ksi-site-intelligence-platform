@@ -51,7 +51,7 @@ function ClearIcon() {
 }
 
 /**
- * 현장 목록 검색·정렬 — 보이는 검색 버튼 없는 돋보기 내장 입력 + 네이티브 정렬.
+ * 프로젝트 목록 검색·정렬 — 보이는 검색 버튼 없는 돋보기 내장 입력 + 네이티브 정렬.
  * 정렬 아이콘도 셀 안에 둔다(밖 라벨·바깥 여백 없음 — 두 컨트롤의 언어가 같다).
  *
  * - 입력과 정렬은 같은 높이(`input tap-target` — 조밀 36 / coarse·좁은 폭 44).
@@ -336,7 +336,7 @@ export function SiteListControls({
       method="get"
       onSubmit={handleSubmit}
       role="search"
-      aria-label="현장 검색과 정렬"
+      aria-label="프로젝트 검색과 정렬"
       className={`flex flex-wrap items-center gap-2 ${className}`}
     >
       {group && <input type="hidden" name="group" value={group} />}
@@ -352,7 +352,7 @@ export function SiteListControls({
           name="q"
           type="search"
           value={draft}
-          placeholder="현장명 또는 ID"
+          placeholder="프로젝트명 또는 ID"
           autoComplete="off"
           onChange={(event) => handleSearchChange(event.target.value)}
           onCompositionStart={() => {
@@ -441,7 +441,7 @@ export function SiteListControls({
         {committedQuery && <input type="hidden" name="q" value={committedQuery} />}
         {status && <input type="hidden" name="status" value={status} />}
         <label htmlFor={phoneGroupId} className="grid gap-1 text-caption font-medium text-ink-2">
-          현장 상태
+          프로젝트 상태
           <select
             ref={phoneGroupRef}
             key={committedGroup}

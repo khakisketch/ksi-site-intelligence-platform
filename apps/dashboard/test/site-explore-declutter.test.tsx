@@ -202,7 +202,7 @@ beforeEach(() => {
     updatedAt: "2026-10-01T00:00:00Z",
   });
   mocked.permissions.mockResolvedValue(true);
-  mocked.areas.mockResolvedValue({ workAreas: [areaFixture("tiny-1", "미세 분석 구역")] });
+  mocked.areas.mockResolvedValue({ workAreas: [areaFixture("tiny-1", "미세 분석 영역")] });
   mocked.orders.mockResolvedValue([]);
   mocked.history.mockResolvedValue({ items: [], nextCursor: null });
   mocked.analyses.mockResolvedValue({ siteId: "site-1", items: [], nextCursor: null });
@@ -253,7 +253,7 @@ describe("explore declutter: identity and three-area navigation stay reachable",
     await renderOverview({});
     expect(screen.getAllByRole("heading", { name: "현장 하나" })).toHaveLength(1);
     expect(screen.queryByText("현장 정보·범위")).toBeNull();
-    expect(screen.getByRole("link", { name: "현장 설정" })).toBeTruthy();
+    expect(screen.getByRole("link", { name: "프로젝트 설정" })).toBeTruthy();
     const menu = screen.getByRole("navigation", { name: "현장 영역 메뉴" });
     const links = within(menu).getAllByRole("link");
     expect(links).toHaveLength(2);
@@ -266,12 +266,12 @@ describe("explore declutter: identity and three-area navigation stay reachable",
 
 describe("explore declutter: decision limits stay visible next to what they constrain", () => {
   it("keeps the footprint-mismatch notice outside any disclosure", async () => {
-    mocked.areas.mockResolvedValue({ workAreas: [areaFixture("tiny-1", "미세 분석 구역", { crs: "EPSG:9999" })] });
+    mocked.areas.mockResolvedValue({ workAreas: [areaFixture("tiny-1", "미세 분석 영역", { crs: "EPSG:9999" })] });
     await renderOverview({});
     // 정보 서랍의 한 면에서 한 번만 말한다 — 카드 안 펼침에 묻지 않는다.
     fireEvent.click(screen.getByRole("button", { name: "정보" }));
     const inspector = screen.getByRole("region", { name: "자료 정보" });
-    const notice = within(inspector).getByText(/위치 기준이 달라 파일 범위와 작업구역 경계를 함께 표시할 수 없습니다/);
+    const notice = within(inspector).getByText(/위치 기준이 달라 파일 범위와 영역 경계를 함께 표시할 수 없습니다/);
     expect(notice.closest("details")).toBeNull();
   });
 });
@@ -305,15 +305,15 @@ describe("explore declutter: failed reads stay failures, never empty", () => {
     await renderOverview({});
     // 무대 1차 영역에 조회 실패를 둔다 — 빈 목록으로 단정하지 않는다.
     expect(screen.getByText(/등록 자료 목록을 불러오지 못했습니다/)).toBeTruthy();
-    expect(screen.queryByText("이 구역에 조회된 등록 자료가 없습니다.")).toBeNull();
+    expect(screen.queryByText("이 영역에 조회된 등록 자료가 없습니다.")).toBeNull();
   });
 });
 
 describe("explore declutter: selectors keep exact values and routes", () => {
   it("submits the same workAreaId and assetRef through the same GET path", () => {
     const areas = [
-      areaFixture("w-1", "구역 가"),
-      areaFixture("w-2", "구역 나"),
+      areaFixture("w-1", "영역 가"),
+      areaFixture("w-2", "영역 나"),
     ] as never;
     render(
       <SiteExploreCanvas
@@ -330,7 +330,7 @@ describe("explore declutter: selectors keep exact values and routes", () => {
         <div>canvas</div>
       </SiteExploreCanvas>,
     );
-    const areaSelect = screen.getByLabelText("작업구역") as HTMLSelectElement;
+    const areaSelect = screen.getByLabelText("영역") as HTMLSelectElement;
     expect(Array.from(areaSelect.options).map((o) => o.value)).toEqual(["w-1", "w-2"]);
     expect(areaSelect.closest("form")?.getAttribute("action")).toBe("/sites/site-1");
     expect(areaSelect.closest("form")?.getAttribute("method")).toBe("get");
@@ -347,7 +347,7 @@ describe("explore declutter: no duplicated titles in the default view", () => {
   it("prints the site name and the explore mode once each", async () => {
     await renderOverview({});
     expect(screen.getAllByRole("heading", { name: "현장 하나" })).toHaveLength(1);
-    expect(screen.getAllByRole("link", { name: "현장 설정" })).toHaveLength(1);
+    expect(screen.getAllByRole("link", { name: "프로젝트 설정" })).toHaveLength(1);
     const modeNav = screen.getByRole("navigation", { name: "보기 방식" });
     const labels = within(modeNav).getAllByRole("link").map((link) => link.textContent);
     expect(new Set(labels).size).toBe(labels.length);

@@ -31,7 +31,7 @@ const reportRef = `external-relative-volume-report-${"a".repeat(32)}`;
 
 beforeEach(() => {
   mocked.site.mockResolvedValue({ siteId: "site-1", name: "현장 A" });
-  mocked.areas.mockResolvedValue({ workAreas: [{ workAreaId: "area-1", name: "절성토 구역" }] });
+  mocked.areas.mockResolvedValue({ workAreas: [{ workAreaId: "area-1", name: "절성토 영역" }] });
   mocked.identity.mockResolvedValue({ organizationId: "org-a", principalId: "operator@example.com", permissions: ["WORK_ORDERS_WRITE"] });
   mocked.workOrder.mockResolvedValue({ workOrderId: "legacy-work-1", siteId: "site-1", name: "1차 관측", cycleNumber: 1, executionMode: "EXTERNAL_RECONSTRUCTION", workAreaIds: ["area-1"], temporalPolicy: { schemaVersion: "1.0", maxCaptureSpanSeconds: 600 } });
   mocked.report.mockResolvedValue({ state: "AVAILABLE", result: { reportRef, currentWorkOrderId: "legacy-work-1", workAreaId: "area-1" } });

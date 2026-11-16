@@ -67,10 +67,10 @@ function available(overrides: Partial<NonNullable<ExternalResultProjectionView["
 
 describe("ExternalSiteResultSummary", () => {
   it("shows a retained successful result with its resolved work-area name and exact work-report link", () => {
-    render(<ExternalSiteResultSummary externalResult={available()} workAreaName="동측 절성토 구역" />);
+    render(<ExternalSiteResultSummary externalResult={available()} workAreaName="동측 절성토 영역" />);
 
     expect(screen.getByRole("heading", { name: "외부 관측 비교 결과" })).toBeTruthy();
-    expect(screen.getByText(/작업구역\s+동측 절성토 구역/)).toBeTruthy();
+    expect(screen.getByText(/영역\s+동측 절성토 영역/)).toBeTruthy();
     expect(screen.getByText("절토")).toBeTruthy();
     expect(screen.getByText("13 m³")).toBeTruthy();
     expect(screen.getByText("성토")).toBeTruthy();
@@ -86,7 +86,7 @@ describe("ExternalSiteResultSummary", () => {
   });
 
   it("renders the baseline date range for a relative-volume result (unchanged behavior)", () => {
-    const { container } = render(<ExternalSiteResultSummary externalResult={available()} workAreaName="동측 절성토 구역" />);
+    const { container } = render(<ExternalSiteResultSummary externalResult={available()} workAreaName="동측 절성토 영역" />);
     const copy = container.querySelector("h3 + p")?.textContent ?? "";
     expect(copy).toContain("와");
     expect(copy).not.toContain("1970");
@@ -109,7 +109,7 @@ describe("ExternalSiteResultSummary", () => {
       },
     });
     const { container } = render(
-      <ExternalSiteResultSummary externalResult={zeroish} workAreaName="동측 절성토 구역" />,
+      <ExternalSiteResultSummary externalResult={zeroish} workAreaName="동측 절성토 영역" />,
     );
     expect(screen.getAllByText("0 m³").length).toBeGreaterThanOrEqual(3);
     expect(container.textContent).not.toContain("-0");
@@ -144,7 +144,7 @@ describe("ExternalSiteResultSummary", () => {
     const text = container.textContent ?? "";
     expect(screen.getByRole("heading", { name: "단일 시점 체적 결과" })).toBeTruthy();
     expect(screen.getByText("단일 시점 체적")).toBeTruthy();
-    expect(screen.getByText(/작업구역\s+야적장 1/)).toBeTruthy();
+    expect(screen.getByText(/영역\s+야적장 1/)).toBeTruthy();
     expect(screen.getByText("체적")).toBeTruthy();
     expect(screen.getByText("1,234.5 m³")).toBeTruthy();
     expect(screen.getByText("±12.25 m³")).toBeTruthy();

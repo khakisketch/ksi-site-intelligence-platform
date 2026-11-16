@@ -152,8 +152,8 @@ it("announces decision validation failures as alerts with visible field labels",
   fireEvent.click(await screen.findByRole("button", { name: /current\.tif/ }));
   // 보이는 라벨이 그대로 라벨 연결된다.
   expect(screen.getByLabelText("비교할 이전 등록 버전")).toBeTruthy();
-  expect(screen.getByLabelText("변화 분석 구역")).toBeTruthy();
-  expect(screen.getByLabelText("한 시점 측정 구역")).toBeTruthy();
+  expect(screen.getByLabelText("변화 분석 영역")).toBeTruthy();
+  expect(screen.getByLabelText("한 시점 측정 영역")).toBeTruthy();
   expect(screen.getByLabelText("과거 판정 기록 참조")).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "변화 분석 다시 확인" }));
   const missing = await screen.findByText("비교할 이전 등록 버전을 선택하세요.");
@@ -272,7 +272,7 @@ it("keeps same-work-order and cross-work-order baselines human-readable, sends a
   fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
     if (url.endsWith("/evidence")) return response({ items: [] });
     if (url === "/api/sites/site-1/work-areas") {
-      return response({ workAreas: [{ workAreaId: "area-1", name: "A구역", status: "ACTIVE" }] });
+      return response({ workAreas: [{ workAreaId: "area-1", name: "A영역", status: "ACTIVE" }] });
     }
     if (url === "/api/sites/site-1/observation-work-orders") {
       return response({
@@ -311,7 +311,7 @@ it("keeps same-work-order and cross-work-order baselines human-readable, sends a
   fireEvent.change(screen.getByLabelText("비교할 이전 등록 버전"), {
     target: { value: `current:${sameWorkOrderBaseline.submissionRef}:2` },
   });
-  fireEvent.change(screen.getByLabelText("변화 분석 구역"), { target: { value: "area-1" } });
+  fireEvent.change(screen.getByLabelText("변화 분석 영역"), { target: { value: "area-1" } });
   fireEvent.click(screen.getByRole("button", { name: "화면 표시 다시 확인" }));
   expect(await screen.findByText(/현재 분석 시스템 판정: 화면 표시/)).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "높이 다시 확인" }));
@@ -596,8 +596,8 @@ it("shows the ordered pair and zone bindings returned by an immutable historical
   expect(screen.getByText(`증거 기록 확인값(해시): ${pairDecision.evidenceRecordDigests.join(", ")}`)).toBeTruthy();
   expect(screen.getByText(`기준 표시 영수증 확인값(해시): ${pairDecision.baselineSanitizedDisplayReceiptDigest}`)).toBeTruthy();
   expect(screen.getByText(`현재 표시 영수증 확인값(해시): ${pairDecision.currentSanitizedDisplayReceiptDigest}`)).toBeTruthy();
-  expect(screen.getByText("비교 구역: area-1 · 구역 버전 3")).toBeTruthy();
-  expect(screen.getByText(`작업구역 정의 확인값(해시): ${pairDecision.zone.definitionDigest}`)).toBeTruthy();
+  expect(screen.getByText("비교 영역: area-1 · 영역 버전 3")).toBeTruthy();
+  expect(screen.getByText(`영역 정의 확인값(해시): ${pairDecision.zone.definitionDigest}`)).toBeTruthy();
   expect(screen.getByText(`관측 좌표계 확인값(해시): ${pairDecision.zone.observedCrsDigest}`)).toBeTruthy();
   expect(screen.getByText(`관측 수직 기준 확인값(해시): ${pairDecision.zone.observedVerticalReferenceDigest}`)).toBeTruthy();
   expect(screen.getByText(`호환성 매핑 확인값(해시): ${pairDecision.compatibilityMappingDigest}`)).toBeTruthy();
@@ -648,8 +648,8 @@ it("holds a pending pair request across baseline and zone changes so no second s
     if (url.endsWith("/evidence")) return Promise.resolve(response({ items: [] }));
     if (url === "/api/sites/site-1/work-areas") {
       return Promise.resolve(response({ workAreas: [
-        { workAreaId: "area-a", name: "A구역", status: "ACTIVE" },
-        { workAreaId: "area-b", name: "B구역", status: "ACTIVE" },
+        { workAreaId: "area-a", name: "A영역", status: "ACTIVE" },
+        { workAreaId: "area-b", name: "B영역", status: "ACTIVE" },
       ] }));
     }
     if (url === "/api/sites/site-1/observation-work-orders") return Promise.resolve(response({ workOrders: [{ workOrderId: "current", name: "현재 작업" }] }));
@@ -666,7 +666,7 @@ it("holds a pending pair request across baseline and zone changes so no second s
   fireEvent.click(await screen.findByRole("button", { name: /current\.tif/ }));
   await waitFor(() => expect(screen.getByLabelText("비교할 이전 등록 버전").querySelectorAll("option")).toHaveLength(3));
   fireEvent.change(screen.getByLabelText("비교할 이전 등록 버전"), { target: { value: `current:${sameWorkOrderBaseline.submissionRef}:2` } });
-  fireEvent.change(screen.getByLabelText("변화 분석 구역"), { target: { value: "area-a" } });
+  fireEvent.change(screen.getByLabelText("변화 분석 영역"), { target: { value: "area-a" } });
   fireEvent.click(screen.getByRole("button", { name: "눈으로 비교 다시 확인" }));
   await waitFor(() => expect(pairAttempts).toBe(1));
 
@@ -680,7 +680,7 @@ it("holds a pending pair request across baseline and zone changes so no second s
 
   fireEvent.click(screen.getByRole("button", { name: "변화 분석 다시 확인" }));
   await waitFor(() => expect(pairAttempts).toBe(1));
-  fireEvent.change(screen.getByLabelText("변화 분석 구역"), { target: { value: "area-b" } });
+  fireEvent.change(screen.getByLabelText("변화 분석 영역"), { target: { value: "area-b" } });
   expect(signals[0].aborted).toBe(false);
   fireEvent.click(screen.getByRole("button", { name: "변화 분석 다시 확인" }));
   await waitFor(() => expect(pairAttempts).toBe(1));
@@ -771,13 +771,13 @@ describe("SINGLE_VOLUME decision", () => {
 
     render(<ExternalEvidencePanel workOrderId="current" siteId="site-1" revisions={[current]} canWrite accountIdentity={fp()} onSingleVolumeDecisionChange={onSingleVolumeDecisionChange} onRelativeVolumeDecisionChange={onRelativeVolumeDecisionChange} />);
     fireEvent.click(await screen.findByRole("button", { name: /current\.tif/ }));
-    await waitFor(() => expect(screen.getByLabelText("한 시점 측정 구역").querySelectorAll("option")).toHaveLength(2));
+    await waitFor(() => expect(screen.getByLabelText("한 시점 측정 영역").querySelectorAll("option")).toHaveLength(2));
 
     fireEvent.click(screen.getByRole("button", { name: "한 시점 측정 다시 확인" }));
-    expect(await screen.findByText("한 시점 측정 구역을 선택하세요.")).toBeTruthy();
+    expect(await screen.findByText("한 시점 측정 영역을 선택하세요.")).toBeTruthy();
     expect(bodies).toHaveLength(0);
 
-    fireEvent.change(screen.getByLabelText("한 시점 측정 구역"), { target: { value: "pile-1" } });
+    fireEvent.change(screen.getByLabelText("한 시점 측정 영역"), { target: { value: "pile-1" } });
     fireEvent.click(screen.getByRole("button", { name: "한 시점 측정 다시 확인" }));
     expect(await screen.findByText(/응답을 확인하지 못했습니다/)).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "한 시점 측정 다시 확인" }));
@@ -800,8 +800,8 @@ describe("SINGLE_VOLUME decision", () => {
     fetchMock.mockImplementation(singleVolumeFetch(["eligible"], bodies, []));
     render(<ExternalEvidencePanel workOrderId="current" siteId="site-1" revisions={[orthoOnly]} canWrite />);
     fireEvent.click(await screen.findByRole("button", { name: /ortho-only\.tif/ }));
-    await waitFor(() => expect(screen.getByLabelText("한 시점 측정 구역").querySelectorAll("option")).toHaveLength(2));
-    fireEvent.change(screen.getByLabelText("한 시점 측정 구역"), { target: { value: "pile-1" } });
+    await waitFor(() => expect(screen.getByLabelText("한 시점 측정 영역").querySelectorAll("option")).toHaveLength(2));
+    fireEvent.change(screen.getByLabelText("한 시점 측정 영역"), { target: { value: "pile-1" } });
     fireEvent.click(screen.getByRole("button", { name: "한 시점 측정 다시 확인" }));
     expect(await screen.findByText("DSM이 없어 이 확인을 요청할 수 없습니다.")).toBeTruthy();
     expect(bodies).toHaveLength(0);
@@ -812,11 +812,11 @@ describe("SINGLE_VOLUME decision", () => {
     fetchMock.mockImplementation(singleVolumeFetch(["blocked"], [], []));
     render(<ExternalEvidencePanel workOrderId="current" siteId="site-1" revisions={[current]} canWrite accountIdentity={fp()} onSingleVolumeDecisionChange={onSingleVolumeDecisionChange} />);
     fireEvent.click(await screen.findByRole("button", { name: /current\.tif/ }));
-    await waitFor(() => expect(screen.getByLabelText("한 시점 측정 구역").querySelectorAll("option")).toHaveLength(2));
-    fireEvent.change(screen.getByLabelText("한 시점 측정 구역"), { target: { value: "pile-1" } });
+    await waitFor(() => expect(screen.getByLabelText("한 시점 측정 영역").querySelectorAll("option")).toHaveLength(2));
+    fireEvent.change(screen.getByLabelText("한 시점 측정 영역"), { target: { value: "pile-1" } });
     fireEvent.click(screen.getByRole("button", { name: "한 시점 측정 다시 확인" }));
     expect(await screen.findByText("단일 시점 체적 매핑이 없습니다")).toBeTruthy();
-    expect(screen.getByText("관리자에게 이 산출물과 구역에 대한 단일 시점 체적 매핑 등록을 요청하세요.")).toBeTruthy();
+    expect(screen.getByText("관리자에게 이 산출물과 영역에 대한 단일 시점 체적 매핑 등록을 요청하세요.")).toBeTruthy();
     expect(onSingleVolumeDecisionChange).toHaveBeenLastCalledWith(expect.objectContaining({ verdict: "BLOCKED" }));
   });
 });
@@ -1073,8 +1073,8 @@ describe("use-decision retry refusal honesty", () => {
       fireEvent.change(screen.getByLabelText("비교할 이전 등록 버전"), { target: { value: `current:${sameWorkOrderBaseline.submissionRef}:2` } });
     }
     if (button === "한 시점 측정 다시 확인") {
-      await waitFor(() => expect(screen.getByLabelText("한 시점 측정 구역").querySelectorAll("option")).toHaveLength(2));
-      fireEvent.change(screen.getByLabelText("한 시점 측정 구역"), { target: { value: "pile-1" } });
+      await waitFor(() => expect(screen.getByLabelText("한 시점 측정 영역").querySelectorAll("option")).toHaveLength(2));
+      fireEvent.change(screen.getByLabelText("한 시점 측정 영역"), { target: { value: "pile-1" } });
     }
     fireEvent.click(screen.getByRole("button", { name: button }));
     expect(await screen.findByText(/응답을 확인하지 못했습니다/)).toBeTruthy();
@@ -1101,8 +1101,8 @@ describe("use-decision retry refusal honesty", () => {
       fireEvent.change(screen.getByLabelText("비교할 이전 등록 버전"), { target: { value: `current:${sameWorkOrderBaseline.submissionRef}:2` } });
     }
     if (button === "한 시점 측정 다시 확인") {
-      await waitFor(() => expect(screen.getByLabelText("한 시점 측정 구역").querySelectorAll("option")).toHaveLength(2));
-      fireEvent.change(screen.getByLabelText("한 시점 측정 구역"), { target: { value: "pile-1" } });
+      await waitFor(() => expect(screen.getByLabelText("한 시점 측정 영역").querySelectorAll("option")).toHaveLength(2));
+      fireEvent.change(screen.getByLabelText("한 시점 측정 영역"), { target: { value: "pile-1" } });
     }
     fireEvent.click(screen.getByRole("button", { name: button }));
     expect(await screen.findByText(/기록되었는지 확인할 수 없으니/)).toBeTruthy();
@@ -1303,7 +1303,7 @@ describe("scoped decision closure and issuance synchronizer", () => {
     fetchMock.mockImplementation(async (url: string) => {
       if (url.endsWith("/evidence")) return response({ items: [] });
       if (url === "/api/sites/site-1/work-areas") {
-        return response({ workAreas: [{ workAreaId: "area-1", name: "A구역", status: "ACTIVE" }] });
+        return response({ workAreas: [{ workAreaId: "area-1", name: "A영역", status: "ACTIVE" }] });
       }
       if (url === "/api/sites/site-1/observation-work-orders") {
         return response({
@@ -1336,7 +1336,7 @@ describe("scoped decision closure and issuance synchronizer", () => {
     fireEvent.change(screen.getByLabelText("비교할 이전 등록 버전"), {
       target: { value: `current:${sameWorkOrderBaseline.submissionRef}:2` },
     });
-    fireEvent.change(screen.getByLabelText("변화 분석 구역"), { target: { value: "area-1" } });
+    fireEvent.change(screen.getByLabelText("변화 분석 영역"), { target: { value: "area-1" } });
     fireEvent.click(screen.getByRole("button", { name: "변화 분석 다시 확인" }));
     await waitFor(() => expect(onRelativeVolumeDecisionChange).toHaveBeenLastCalledWith(
       expect.objectContaining({ decisionId, decisionDigest: `sha256:${"a".repeat(64)}`, verdict: "ELIGIBLE" }),
@@ -1871,7 +1871,7 @@ describe("decision frozen path, response binding, and read-only discoverability"
     async (url: string, init?: RequestInit) => {
       if (url.endsWith("/evidence")) return response({ items: [] });
       if (url === "/api/sites/site-1/work-areas") {
-        return response({ workAreas: [{ workAreaId: "pile-1", name: "야적장 1", status: "ACTIVE" }, { workAreaId: "area-1", name: "A구역", status: "ACTIVE" }] });
+        return response({ workAreas: [{ workAreaId: "pile-1", name: "야적장 1", status: "ACTIVE" }, { workAreaId: "area-1", name: "A영역", status: "ACTIVE" }] });
       }
       if (url === "/api/sites/site-1/observation-work-orders") {
         return response({
@@ -1948,7 +1948,7 @@ describe("decision frozen path, response binding, and read-only discoverability"
     await selectCurrentTarget();
     await waitFor(() => expect(screen.getByLabelText("비교할 이전 등록 버전").querySelectorAll("option")).toHaveLength(3));
     fireEvent.change(screen.getByLabelText("비교할 이전 등록 버전"), { target: { value: `current:${sameWorkOrderBaseline.submissionRef}:2` } });
-    fireEvent.change(screen.getByLabelText("변화 분석 구역"), { target: { value: "area-1" } });
+    fireEvent.change(screen.getByLabelText("변화 분석 영역"), { target: { value: "area-1" } });
     fireEvent.click(screen.getByRole("button", { name: "변화 분석 다시 확인" }));
     expect(await screen.findByText(/현재 분석 시스템 판정: 변화 분석/)).toBeTruthy();
     await waitFor(() => expect(onRelativeVolumeDecisionChange).toHaveBeenLastCalledWith(expect.objectContaining({ verdict: "RESTRICTED" })));
@@ -2005,7 +2005,7 @@ describe("decision frozen path, response binding, and read-only discoverability"
   });
 
   it("rejects a same-use pair decision whose baseline subject is bound to another site", async () => {
-    // 동결 siteId는 두 subject 모두의 실제 증인이다(현장 범위 목록에서 얼리고,
+    // 동결 siteId는 두 subject 모두의 실제 증인이다(프로젝트 범위 목록에서 얼리고,
     // Core도 쌍의 조직·현장 일치를 강제한다). 기준만 다른 현장이면 같은
     // workOrderId·revision이라도 현재 요청의 권한이 될 수 없다.
     const calls: DecisionCall[] = [];
@@ -2021,7 +2021,7 @@ describe("decision frozen path, response binding, and read-only discoverability"
     await selectCurrentTarget();
     await waitFor(() => expect(screen.getByLabelText("비교할 이전 등록 버전").querySelectorAll("option")).toHaveLength(3));
     fireEvent.change(screen.getByLabelText("비교할 이전 등록 버전"), { target: { value: `current:${sameWorkOrderBaseline.submissionRef}:2` } });
-    fireEvent.change(screen.getByLabelText("변화 분석 구역"), { target: { value: "area-1" } });
+    fireEvent.change(screen.getByLabelText("변화 분석 영역"), { target: { value: "area-1" } });
     fireEvent.click(screen.getByRole("button", { name: "변화 분석 다시 확인" }));
     expect(await screen.findByText(/응답을 확인하지 못했습니다/)).toBeTruthy();
     expect(screen.queryByText(/현재 분석 시스템 판정: 변화 분석/)).toBeNull();
@@ -2048,7 +2048,7 @@ describe("decision frozen path, response binding, and read-only discoverability"
     await selectCurrentTarget();
     await waitFor(() => expect(screen.getByLabelText("비교할 이전 등록 버전").querySelectorAll("option")).toHaveLength(3));
     fireEvent.change(screen.getByLabelText("비교할 이전 등록 버전"), { target: { value: `current:${sameWorkOrderBaseline.submissionRef}:2` } });
-    fireEvent.change(screen.getByLabelText("변화 분석 구역"), { target: { value: "area-1" } });
+    fireEvent.change(screen.getByLabelText("변화 분석 영역"), { target: { value: "area-1" } });
     fireEvent.click(screen.getByRole("button", { name: "변화 분석 다시 확인" }));
     expect(await screen.findByText(/응답을 확인하지 못했습니다/)).toBeTruthy();
     expect(screen.queryByText(/현재 분석 시스템 판정: 변화 분석/)).toBeNull();
@@ -2086,7 +2086,7 @@ describe("decision frozen path, response binding, and read-only discoverability"
     await selectCurrentTarget();
     await waitFor(() => expect(screen.getByLabelText("비교할 이전 등록 버전").querySelectorAll("option")).toHaveLength(3));
     fireEvent.change(screen.getByLabelText("비교할 이전 등록 버전"), { target: { value: `current:${sameWorkOrderBaseline.submissionRef}:2` } });
-    fireEvent.change(screen.getByLabelText("변화 분석 구역"), { target: { value: "area-1" } });
+    fireEvent.change(screen.getByLabelText("변화 분석 영역"), { target: { value: "area-1" } });
     fireEvent.click(screen.getByRole("button", { name: "변화 분석 다시 확인" }));
     expect(await screen.findByText(/응답을 확인하지 못했습니다/)).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "변화 분석 다시 확인" }));
@@ -2102,8 +2102,8 @@ describe("decision frozen path, response binding, and read-only discoverability"
     fetchMock.mockImplementation(trackDecisions(calls, [{ status: 201, decision: contractDecision("DISPLAY", "ELIGIBLE") }]));
     render(<ExternalEvidencePanel workOrderId="current" siteId="site-1" revisions={[current]} canWrite accountIdentity={fp()} />);
     await selectCurrentTarget();
-    await waitFor(() => expect(screen.getByLabelText("한 시점 측정 구역").querySelectorAll("option")).toHaveLength(3));
-    fireEvent.change(screen.getByLabelText("한 시점 측정 구역"), { target: { value: "pile-1" } });
+    await waitFor(() => expect(screen.getByLabelText("한 시점 측정 영역").querySelectorAll("option")).toHaveLength(3));
+    fireEvent.change(screen.getByLabelText("한 시점 측정 영역"), { target: { value: "pile-1" } });
     fireEvent.click(screen.getByRole("button", { name: "한 시점 측정 다시 확인" }));
     expect(await screen.findByText(/응답을 확인하지 못했습니다/)).toBeTruthy();
     expect(screen.queryByText(/현재 분석 시스템 판정: 한 시점 측정/)).toBeNull();

@@ -6,13 +6,13 @@ import { Disclosure } from "@/components/ui/Disclosure";
 import { formatCountKo } from "@/lib/number-format";
 
 const labels: Record<CoverageState, string> = {
-  COMMON_VALID: "두 관측 유효", UNAVAILABLE: "자료 없음", MASK_EXCLUDED: "마스크 제외", OUTSIDE: "구역 밖·구멍",
+  COMMON_VALID: "두 관측 유효", UNAVAILABLE: "자료 없음", MASK_EXCLUDED: "마스크 제외", OUTSIDE: "영역 밖·구멍",
 };
 const descriptions: Record<CoverageState, string> = {
   COMMON_VALID: "두 관측에서 유효한 값이 있는 계산 셀입니다. 정확도 보증을 뜻하지 않습니다.",
   UNAVAILABLE: "0으로 계산한 셀이 아닙니다. 두 관측의 유효한 값을 함께 확인할 수 없습니다.",
   MASK_EXCLUDED: "등록된 독립 마스크로 계산에서 제외한 셀입니다. 제외 전 물량을 0으로 해석하지 마세요.",
-  OUTSIDE: "작업구역의 선택 셀이 아닙니다. 구역 밖 또는 구역의 구멍이며 자료 없음과 다릅니다.",
+  OUTSIDE: "영역의 선택 셀이 아닙니다. 영역 밖 또는 영역의 구멍이며 자료 없음과 다릅니다.",
 };
 
 /** Compact row runs draw the exact witness bits, without polygon interpolation or invented imagery. */

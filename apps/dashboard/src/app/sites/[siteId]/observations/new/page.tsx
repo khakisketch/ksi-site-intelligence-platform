@@ -76,25 +76,25 @@ async function resolveRepeatObservationTemplate({
 }): Promise<RepeatObservationTemplate> {
   if (repeatReportRef !== undefined) {
     if (!isExternalRelativeVolumeReportReference(repeatReportRef)) {
-      return { initialWorkAreaIds: [], temporalPolicy: null, suggestedName: null, notice: "선택한 이전 비교 결과 주소를 확인하지 못했습니다. 관측 자료를 등록하려면 작업구역을 직접 선택하세요." };
+      return { initialWorkAreaIds: [], temporalPolicy: null, suggestedName: null, notice: "선택한 이전 비교 결과 주소를 확인하지 못했습니다. 관측 자료를 등록하려면 영역을 직접 선택하세요." };
     }
     const projection = await getSiteExternalRelativeVolumeReport(siteId, repeatReportRef).catch(() => null);
     const result = projection?.state === "AVAILABLE" ? projection.result ?? null : null;
     if (!result || result.reportRef !== repeatReportRef) {
-      return { initialWorkAreaIds: [], temporalPolicy: null, suggestedName: null, notice: "선택한 이전 비교 결과를 확인하지 못했습니다. 관측 자료를 등록하려면 작업구역을 직접 선택하세요." };
+      return { initialWorkAreaIds: [], temporalPolicy: null, suggestedName: null, notice: "선택한 이전 비교 결과를 확인하지 못했습니다. 관측 자료를 등록하려면 영역을 직접 선택하세요." };
     }
     const source = await getObservationWorkOrder(result.currentWorkOrderId).catch(() => null);
     if (!source || source.workOrderId !== result.currentWorkOrderId || source.siteId !== siteId || !source.workAreaIds.includes(result.workAreaId)) {
-      return { initialWorkAreaIds: [], temporalPolicy: null, suggestedName: null, notice: "선택한 이전 비교의 작업 범위를 확인하지 못했습니다. 관측 자료를 등록하려면 작업구역을 직접 선택하세요." };
+      return { initialWorkAreaIds: [], temporalPolicy: null, suggestedName: null, notice: "선택한 이전 비교의 작업 범위를 확인하지 못했습니다. 관측 자료를 등록하려면 영역을 직접 선택하세요." };
     }
     if (!activeAreaIds.has(result.workAreaId)) {
-      return { initialWorkAreaIds: [], temporalPolicy: null, suggestedName: null, notice: "이전 비교의 작업구역이 현재 활성 상태가 아닙니다. 관측 자료 등록에 사용할 작업구역을 직접 선택하세요." };
+      return { initialWorkAreaIds: [], temporalPolicy: null, suggestedName: null, notice: "이전 비교의 영역이 현재 활성 상태가 아닙니다. 관측 자료 등록에 사용할 영역을 직접 선택하세요." };
     }
     return {
       initialWorkAreaIds: [result.workAreaId],
       temporalPolicy: source.temporalPolicy ?? null,
       suggestedName: suggestedRepeatName(source.name, source.cycleNumber),
-      notice: "이전 비교에 사용한 활성 작업구역과 촬영 간격 기준을 미리 골랐습니다. 관측 자료를 등록하기 전에 범위를 확인하세요.",
+      notice: "이전 비교에 사용한 활성 영역과 촬영 간격 기준을 미리 골랐습니다. 관측 자료를 등록하기 전에 범위를 확인하세요.",
     };
   }
 
@@ -109,7 +109,7 @@ async function resolveRepeatObservationTemplate({
         initialWorkAreaIds: [],
         temporalPolicy: null,
         suggestedName: null,
-        notice: "이전 작업의 범위를 확인하지 못했습니다. 관측 자료를 등록하려면 작업구역을 직접 선택하세요.",
+        notice: "이전 작업의 범위를 확인하지 못했습니다. 관측 자료를 등록하려면 영역을 직접 선택하세요.",
       };
     }
     const initialWorkAreaIds = repeat.workAreaIds.filter((workAreaId) => activeAreaIds.has(workAreaId));
@@ -118,7 +118,7 @@ async function resolveRepeatObservationTemplate({
         initialWorkAreaIds: [],
         temporalPolicy: null,
         suggestedName: null,
-        notice: "이전 관측의 작업구역이 현재 활성 상태가 아닙니다. 관측 자료 등록에 사용할 작업구역을 직접 선택하세요.",
+        notice: "이전 관측의 영역이 현재 활성 상태가 아닙니다. 관측 자료 등록에 사용할 영역을 직접 선택하세요.",
       };
     }
     const allAreasActive = initialWorkAreaIds.length === repeat.workAreaIds.length;
@@ -127,8 +127,8 @@ async function resolveRepeatObservationTemplate({
       temporalPolicy: repeat.temporalPolicy ?? null,
       suggestedName: null,
       notice: allAreasActive
-        ? "이전 관측의 활성 작업구역과 촬영 간격 기준을 미리 골랐습니다. 관측 자료를 등록하기 전에 범위를 확인하세요."
-        : "이전 관측에서 현재 활성인 작업구역과 촬영 간격 기준을 미리 골랐습니다. 비활성 작업구역은 제외했으니 범위를 확인하세요.",
+        ? "이전 관측의 활성 영역과 촬영 간격 기준을 미리 골랐습니다. 관측 자료를 등록하기 전에 범위를 확인하세요."
+        : "이전 관측에서 현재 활성인 영역과 촬영 간격 기준을 미리 골랐습니다. 비활성 영역은 제외했으니 범위를 확인하세요.",
     };
   }
 
@@ -160,7 +160,7 @@ export default async function NewObservationPage({
     return <div className="mx-auto flex max-w-2xl flex-col gap-4 p-4 sm:p-5"><ErrorState message="계정을 확인하지 못해 관측 자료 등록을 시작할 수 없습니다. 연결과 로그인 상태를 확인한 뒤 다시 시도하세요." retryable /></div>;
   }
   if (!result.canCreate) {
-    return <div className="mx-auto flex max-w-2xl flex-col gap-4 p-4 sm:p-5"><EmptyState title="관측 자료를 등록할 권한이 없습니다" description="작업 등록 권한이 있는 계정으로 다시 시도하세요." action={{ label: "현장으로 돌아가기", href: `/sites/${encodeURIComponent(siteId)}` }} /></div>;
+    return <div className="mx-auto flex max-w-2xl flex-col gap-4 p-4 sm:p-5"><EmptyState title="관측 자료를 등록할 권한이 없습니다" description="작업 등록 권한이 있는 계정으로 다시 시도하세요." action={{ label: "프로젝트으로 돌아가기", href: `/sites/${encodeURIComponent(siteId)}` }} /></div>;
   }
   const activeAreaIds = new Set(result.areas.workAreas.map((area) => area.workAreaId));
   const repeatTemplate = await resolveRepeatObservationTemplate({

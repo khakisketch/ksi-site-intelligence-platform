@@ -9,7 +9,7 @@ export interface HomeAttentionCardView {
   label: string;
   title: string;
   detail: string;
-  /** 표시 시점의 실제 의미(분석 생성·작업 갱신·현장 갱신·결과 보고).
+  /** 표시 시점의 실제 의미(분석 생성·작업 갱신·프로젝트 갱신·결과 보고).
    *  원장 필드마다 뜻이 달라 라벨 없이 시각만 두면 다른 시점으로 오독된다 —
    *  page.tsx가 구조화된 출처 분기로 정하고 문자열 추론은 하지 않는다. */
   timeLabel: string;
@@ -23,7 +23,7 @@ export interface HomeAttentionCardView {
    * 아니라 텍스트 브리핑이며, 등록 자료의 부재를 뜻하지 않는다.
    */
   image: { src: string; alt: string } | null;
-  /** 접어 두는 기술 참조(분석·구역 ID 등). 있을 때만 키보드로 펼칠 수 있게 둔다. */
+  /** 접어 두는 기술 참조(분석·영역 ID 등). 있을 때만 키보드로 펼칠 수 있게 둔다. */
   technicalRef?: string;
 }
 
@@ -38,7 +38,7 @@ function ArrowIcon() {
 /**
  * 확인할 현장 브리핑 — 세로 목록(ADR-KSI-025 D8).
  *
- * 한 행은 현장 표식 · (현장명·안건 종류·근거 시점) · 제목 · 세부 · 다음 행동이다.
+ * 한 행은 현장 표식 · (프로젝트명·안건 종류·근거 시점) · 제목 · 세부 · 다음 행동이다.
  * 가로로 넘기는 캐러셀은 두지 않는다 — 안건이 몇 개인지 한눈에 보이고, 모바일에서도
  * 넘기기 없이 위에서 아래로 읽는다. 순서는 호출자가 정한 우선순위 그대로다.
  *
@@ -50,7 +50,7 @@ export function HomeAttentionList({
   items,
   title = "확인이 필요한 현장",
   description,
-  regionLabel = "확인 필요 현장 목록",
+  regionLabel = "확인 필요 프로젝트 목록",
 }: {
   items: HomeAttentionCardView[];
   title?: string;

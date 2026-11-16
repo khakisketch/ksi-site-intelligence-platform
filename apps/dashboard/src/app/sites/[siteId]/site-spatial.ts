@@ -9,7 +9,7 @@ import type { WorkArea } from "@/lib/core-api/types";
 import { assetBusinessTitle, assetLifecycleLabel, capturePeriodTitle } from "@/lib/operator-language";
 
 /**
- * 현장 상세 기본 탭(읽기 전용 공간 확인)의 순수 선택·요약 규칙.
+ * 프로젝트 상세 기본 탭(읽기 전용 공간 확인)의 순수 선택·요약 규칙.
  *
  * 서버 컴포넌트(`page.tsx`, `SiteSpatialOverview.tsx`)와 vitest가 함께 쓴다.
  * 판정·재계산은 하지 않는다 — Core가 준 목록에서 "무엇을 보여줄지"만 고른다.
@@ -30,11 +30,11 @@ export function parseScopeId(raw: unknown): string | null {
 }
 
 /**
- * 선택 구역 id — 정확히 아는 구역만 받는다.
+ * 선택 영역 id — 정확히 아는 영역만 받는다.
  *
  * 모르는 값이면 아는 묶임 순서대로 고른다: 작업 묶임이 먼저, 분석 묶임이
- * 다음, 그 다음이 최신 등록이다. 새로 만든 빈 구역이 실제 자료가 있는 구역을
- * 가리지 않게 한다. ACTIVE이 하나도 없으면 가장 최근 보관 구역, 없으면 null이다.
+ * 다음, 그 다음이 최신 등록이다. 새로 만든 빈 영역이 실제 자료가 있는 영역을
+ * 가리지 않게 한다. ACTIVE이 하나도 없으면 가장 최근 보관 영역, 없으면 null이다.
  * 오류를 내지 않는다 — 이 파라미터는 보기 상태이지 명령이 아니다.
  */
 export function resolveSelectedWorkAreaId(
@@ -233,7 +233,7 @@ export function formatPlaneValue(value: number, unit: PlaneUnit): string {
  * 자른 표시에 "…"를 붙이고, 자르지 않았으면 원문을 그대로 돌린다.
  */
 /**
- * 충돌하는 구역 이름에만 전체 workAreaId를 덧붙인다 — 번호를 지어내지 않는다.
+ * 충돌하는 영역 이름에만 전체 workAreaId를 덧붙인다 — 번호를 지어내지 않는다.
  * 겹치지 않는 이름은 그대로 둔다.
  */
 export function disambiguatedAreaNames(
@@ -243,7 +243,7 @@ export function disambiguatedAreaNames(
   const counts = new Map<string, number>();
   for (const area of areas) {
     const raw = (area as { name?: unknown }).name;
-    const name = typeof raw === "string" && raw.trim().length > 0 ? raw : "이름을 확인할 수 없는 구역";
+    const name = typeof raw === "string" && raw.trim().length > 0 ? raw : "이름을 확인할 수 없는 영역";
     base.set(area.workAreaId, name);
     counts.set(name, (counts.get(name) ?? 0) + 1);
   }
@@ -278,7 +278,7 @@ export function disambiguatedAssetHeadlines(
 
 export function displayName(name: string, maxLength = 40): string {
   const trimmed = name.trim();
-  if (trimmed.length === 0) return "이름을 확인할 수 없는 구역";
+  if (trimmed.length === 0) return "이름을 확인할 수 없는 영역";
   if (trimmed.length <= maxLength || maxLength < 2) return trimmed;
   return `${trimmed.slice(0, maxLength - 1)}…`;
 }
@@ -299,7 +299,7 @@ export function analysesForArea(
   return items.filter((item) => item.workAreaId === workAreaId);
 }
 
-/** 외부 비교 이력(legacy) 중 이 구역의 행 — V2 분석 기록과 합치지 않는다. */
+/** 외부 비교 이력(legacy) 중 이 영역의 행 — V2 분석 기록과 합치지 않는다. */
 export function legacyRowsForArea(
   items: readonly ExternalRelativeVolumeHistoryItem[] | null,
   workAreaId: string,
@@ -311,7 +311,7 @@ export function legacyRowsForArea(
 /**
  * 겹침 표시용 검사 footprint — 선택 자산 우선, 없으면 첫 측정 자산.
  *
- * 그리는 것은 `footprintWkt` 단일 링뿐이며, 구역과 같은 좌표계 표기일 때만
+ * 그리는 것은 `footprintWkt` 단일 링뿐이며, 영역과 같은 좌표계 표기일 때만
  * 같은 평면에 올린다(판단은 호출자가 `sameDisplayPlane`으로 한다).
  */
 export function pickFootprintAsset(
@@ -339,7 +339,7 @@ export interface AreaCaptureEntry {
 }
 
 /**
- * 선택 구역의 실제 관측 시점·출처 목록 — 새로 계산하지 않고 신고·관측 값만 옮긴다.
+ * 선택 영역의 실제 관측 시점·출처 목록 — 새로 계산하지 않고 신고·관측 값만 옮긴다.
  * 자산 신고와 legacy 행을 한 줄에 합치지 않고 출처별로 그대로 둔다.
  * 어느 한쪽 조회가 실패해도 아는 쪽은 그대로 둔다(unknown은 별도 공지로만 둔다).
  */

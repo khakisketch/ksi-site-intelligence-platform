@@ -117,7 +117,7 @@ test("자료 검색은 파일명으로 목록을 좁힌다", async ({ page }) =>
 test("두 시점 비교는 A·B를 주소에 남기고, 준비 기록을 못 읽으면 빈 목록으로 단정하지 않는다", async ({ page }) => {
   await login(page);
   await page.goto(`/sites/${info!.siteId}?mode=compare&workAreaId=${info!.workAreaId}`);
-  // 선택 상자는 작업구역(0), A(1), B(2) 순서다.
+  // 선택 상자는 영역(0), A(1), B(2) 순서다.
   await page.locator("select").nth(1).selectOption({ index: 1 });
   // A 선택의 이동이 끝나야 B 칸이 A를 주소에 싣는다. 사람이 두 칸을 고르는 속도로 맞춘다.
   await expect(page).toHaveURL(/visualAAssetRef=/);
@@ -157,7 +157,7 @@ test("두 주기 결과는 관측일 순으로 비교되고, 검토를 남기면
     `/sites/${info!.siteId}?mode=results&workAreaId=${info!.workAreaId}&analysisId=${id}`;
   const main = page.getByRole("main");
 
-  // t1→t2 결과에서 t0→t1 결과가 같은 구역·임계값·셀 크기이므로 한 차트에 함께 놓인다.
+  // t1→t2 결과에서 t0→t1 결과가 같은 영역·임계값·셀 크기이므로 한 차트에 함께 놓인다.
   await page.goto(results(second!));
   await expect(main).toContainText("이전 결과와 비교");
   await expect(main).toContainText("비교 조건");

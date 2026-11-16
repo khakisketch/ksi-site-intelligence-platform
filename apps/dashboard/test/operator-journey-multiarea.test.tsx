@@ -13,12 +13,12 @@ describe("registration multi-area catalog notice", () => {
     render(<ExternalObservationCreateForm
       siteId="site-1"
       siteName="서쪽 현장"
-      workAreas={[{ workAreaId: "wa-1", name: "A구역" }, { workAreaId: "wa-2", name: "B구역" }]}
+      workAreas={[{ workAreaId: "wa-1", name: "A영역" }, { workAreaId: "wa-2", name: "B영역" }]}
     />);
     expect(screen.queryByRole("status")).toBeNull();
-    fireEvent.click(screen.getByLabelText("A구역"));
+    fireEvent.click(screen.getByLabelText("A영역"));
     expect(screen.queryByRole("status")).toBeNull();
-    fireEvent.click(screen.getByLabelText("B구역"));
-    expect(screen.getByRole("status")?.textContent).toMatch(/구역별 자료 목록/);
+    fireEvent.click(screen.getByLabelText("B영역"));
+    expect(screen.getByRole("status")?.textContent).toMatch(/영역별 자료 목록/);
   });
 });

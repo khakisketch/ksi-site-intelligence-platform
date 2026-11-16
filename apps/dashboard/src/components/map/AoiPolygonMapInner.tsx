@@ -484,7 +484,7 @@ export function evaluateRingGeometry(
  *
  * 포인터 emit와 같은 공통 경계(`evaluateRingGeometry`)를 쓴다: 형식(십진수)·
  * 3점 미만·256점 초과·유한하지 않음·위경도 범위 밖·정확 중복점·확실한
- * 자기교차·확실한 퇴화(면적 정확 0)는 막는다. 작업구역 계약과 포인터
+ * 자기교차·확실한 퇴화(면적 정확 0)는 막는다. 영역 계약과 포인터
  * 그리기에 면적 하한이 없으므로 임계값을 새로 정하지 않는다 — 정확히 0일
  * 때만 퇴화로 막고, 십진 입력과 제출 좌표가 엇갈리는 머리털 끝 차이에서는
  * 교차라고도 등록 가능하다고도 말하지 않고 판단 보류로 막는다. 어느 쪽도
@@ -515,20 +515,20 @@ export function validateKeyboardVertices(rows: readonly KeyboardVertexRow[]): Va
   if (verdict.kind === "duplicate") {
     return {
       ok: false,
-      reason: `꼭짓점 ${verdict.i + 1}과 ${verdict.j + 1}이 같은 점입니다 — 같은 점을 두 번 지나면 구역이 될 수 없습니다.`,
+      reason: `꼭짓점 ${verdict.i + 1}과 ${verdict.j + 1}이 같은 점입니다 — 같은 점을 두 번 지나면 영역이 될 수 없습니다.`,
       rowIndex: verdict.j,
     };
   }
   if (verdict.kind === "intersect") {
     return {
       ok: false,
-      reason: `선이 서로 교차합니다(변 ${verdict.i + 1}↔${verdict.j + 1}). 현장 범위는 선이 서로 교차하지 않도록 그려야 합니다.`,
+      reason: `선이 서로 교차합니다(변 ${verdict.i + 1}↔${verdict.j + 1}). 프로젝트 범위는 선이 서로 교차하지 않도록 그려야 합니다.`,
     };
   }
   if (verdict.kind === "degenerate") {
     return {
       ok: false,
-      reason: "입력한 점이 정확히 한 직선 위에 있어 면적이 0입니다 — 구역이 아닙니다.",
+      reason: "입력한 점이 정확히 한 직선 위에 있어 면적이 0입니다 — 영역이 아닙니다.",
     };
   }
   if (verdict.kind === "range") {
@@ -715,7 +715,7 @@ function replaceGroupPolygon(group: L.FeatureGroup, map: L.Map, vertices: readon
   }
 }
 
-/** 편집 컨트롤 없이 폴리곤만 그린다 — 현장 상세 화면처럼 "보여주기만" 하는 자리용. */
+/** 편집 컨트롤 없이 폴리곤만 그린다 — 프로젝트 상세 화면처럼 "보여주기만" 하는 자리용. */
 function ReadOnlyPolygon({ value }: { value: AoiVertex[] }) {
   const map = useMap();
 
@@ -795,7 +795,7 @@ export function DrawControl({
         polygon: {
           allowIntersection: false,
           showArea: true,
-          drawError: { message: "현장 범위는 선이 서로 교차하지 않도록 그려야 합니다." },
+          drawError: { message: "프로젝트 범위는 선이 서로 교차하지 않도록 그려야 합니다." },
         },
         // AOI 는 폴리곤 하나만 필요 — 나머지 도형 도구는 노출하지 않는다(스코프 축소).
         polyline: false,
@@ -856,20 +856,20 @@ export function DrawControl({
       const verdict = evaluateRingGeometry(vertices, null);
       if (verdict.kind === "duplicate") {
         rejectRing(
-          `꼭짓점 ${verdict.i + 1}과 ${verdict.j + 1}이 같은 점입니다 — 같은 점을 두 번 지나면 구역이 될 수 없습니다.`,
+          `꼭짓점 ${verdict.i + 1}과 ${verdict.j + 1}이 같은 점입니다 — 같은 점을 두 번 지나면 영역이 될 수 없습니다.`,
           last,
         );
         return;
       }
       if (verdict.kind === "intersect") {
         rejectRing(
-          `선이 서로 교차합니다(변 ${verdict.i + 1}↔${verdict.j + 1}). 현장 범위는 선이 서로 교차하지 않도록 그려야 합니다.`,
+          `선이 서로 교차합니다(변 ${verdict.i + 1}↔${verdict.j + 1}). 프로젝트 범위는 선이 서로 교차하지 않도록 그려야 합니다.`,
           last,
         );
         return;
       }
       if (verdict.kind === "degenerate") {
-        rejectRing("입력한 점이 정확히 한 직선 위에 있어 면적이 0입니다 — 구역이 아닙니다.", last);
+        rejectRing("입력한 점이 정확히 한 직선 위에 있어 면적이 0입니다 — 영역이 아닙니다.", last);
         return;
       }
       if (verdict.kind === "range") {
@@ -1339,7 +1339,7 @@ export function AoiKeyboardEditor({
       </div>
       <p className="text-caption break-keep text-ink-muted">
         형식·점 수·범위·확실한 교차·정확한 퇴화(면적 0)는 여기서도 막지만, 그 밖의
-        판정(극지·범위·볼록 등)은 서버와 각 화면(현장 등록·작업구역)이 그대로 맡습니다.
+        판정(극지·범위·볼록 등)은 서버와 각 화면(프로젝트 등록·영역)이 그대로 맡습니다.
         통과가 서버 판정을 대신하지 않습니다. 입력이 반영된 값과 다르면 등록이
         막힙니다. 경도가 ±180을 넘으면 감싸지 않고 범위로 막으며, 극지·날짜변경선
         부근의 정확도는 주장하지 않습니다 — 지도 타일은 배경일 뿐, 판정은 유한한
@@ -1355,18 +1355,18 @@ export function AoiPolygonMapInner({
   onPendingChange,
   initialSnapshot,
   onSnapshotChange,
-  center = [37.5665, 126.978], // 서울 — 현장 등록 전 기본 시야일 뿐 데이터 아님.
+  center = [37.5665, 126.978], // 서울 — 프로젝트 등록 전 기본 시야일 뿐 데이터 아님.
   readOnly = false,
 }: {
   value: AoiVertex[];
-  /** readOnly 가 아니면 필수 — 서버 컴포넌트(현장 상세)에서 readOnly 로 쓸 땐 함수를 넘기지 않는다. */
+  /** readOnly 가 아니면 필수 — 서버 컴포넌트(프로젝트 상세)에서 readOnly 로 쓸 땐 함수를 넘기지 않는다. */
   onChange?: (vertices: AoiVertex[]) => void;
   /** 미반영 키보드 입력이 있으면 부모 제출을 막는 알림 — 선택, 없으면 오늘과 같다. */
   onPendingChange?: (pending: AoiMapPendingState) => void;
   initialSnapshot?: AoiRawSnapshot;
   onSnapshotChange?: (snapshot: AoiRawSnapshot) => void;
   center?: [number, number];
-  /** true 면 편집 컨트롤 없이 폴리곤만 표시한다(현장 상세처럼 보여주기 전용 자리). */
+  /** true 면 편집 컨트롤 없이 폴리곤만 표시한다(프로젝트 상세처럼 보여주기 전용 자리). */
   readOnly?: boolean;
 }) {
   const editable = !readOnly && typeof onChange === "function";

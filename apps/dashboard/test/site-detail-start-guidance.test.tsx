@@ -50,7 +50,7 @@ beforeEach(() => {
     updatedAt: "2026-10-01T00:00:00Z",
   });
   mocked.permissions.mockResolvedValue(false);
-  mocked.areas.mockResolvedValue({ workAreas: [{ workAreaId: "area-1", name: "구역 1", status: "ACTIVE", createdAt: "2026-10-01T00:00:00Z" }] });
+  mocked.areas.mockResolvedValue({ workAreas: [{ workAreaId: "area-1", name: "영역 1", status: "ACTIVE", createdAt: "2026-10-01T00:00:00Z" }] });
   mocked.orders.mockResolvedValue([{ workOrderId: "work-1" }]);
   mocked.history.mockResolvedValue({ items: [{ reportRef: "report-1", result: null }], nextCursor: null });
   mocked.analyses.mockResolvedValue({ siteId: "site-1", items: [], nextCursor: null });
@@ -72,9 +72,9 @@ describe("Site detail start guidance", () => {
       params: Promise.resolve({ siteId: "site-1" }),
       searchParams: Promise.resolve({ tab: "manage" }),
     }));
-    expect(screen.queryByText(/현재 계정으로는 현장 상태를 변경할 수 없습니다/)).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: /현장 상태 변경/ }));
-    expect(screen.getByText(/현재 계정으로는 현장 상태를 변경할 수 없습니다/)).toBeTruthy();
+    expect(screen.queryByText(/현재 계정으로는 프로젝트 상태를 변경할 수 없습니다/)).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /프로젝트 상태 변경/ }));
+    expect(screen.getByText(/현재 계정으로는 프로젝트 상태를 변경할 수 없습니다/)).toBeTruthy();
     expect(screen.queryByRole("button", { name: "상태 전이" })).toBeNull();
   });
   const openSite = (query: Record<string, string>) => SiteDetailPage({
@@ -121,18 +121,18 @@ describe("Site detail start guidance", () => {
     mocked.areas.mockRejectedValue(new CoreApiError(503, {}));
     render(await openSite({ panel: "intake" }));
     expect(screen.getByText(/등록 진행 상태를 확인하지 못했습니다/)).toBeTruthy();
-    expect(screen.getByText(/작업구역 목록을 불러오지 못했습니다/)).toBeTruthy();
+    expect(screen.getByText(/영역 목록을 불러오지 못했습니다/)).toBeTruthy();
     expect(screen.queryByText("진행 중인 작업이 없습니다.")).toBeNull();
-    expect(screen.queryByText("등록된 작업구역이 없습니다")).toBeNull();
+    expect(screen.queryByText("등록된 영역이 없습니다")).toBeNull();
   });
 
   it("keeps the settings page to extent and state, and points area management to the space area tab", async () => {
     render(await openSite({ section: "manage" }));
-    expect(screen.getByRole("heading", { name: "현장 설정" })).toBeTruthy();
-    expect(screen.getByRole("heading", { name: "현장 범위" })).toBeTruthy();
-    expect(screen.getByRole("heading", { name: /^현장 상태/ })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "프로젝트 설정" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "프로젝트 범위" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: /^프로젝트 상태/ })).toBeTruthy();
     expect(screen.getByRole("link", { name: "영역 탭" }).getAttribute("href")).toBe("/sites/site-1?panel=areas");
-    expect(screen.queryByRole("link", { name: "작업구역 관리" })).toBeNull();
+    expect(screen.queryByRole("link", { name: "영역 관리" })).toBeNull();
     expect(screen.queryByText("자료 보기")).toBeNull();
   });
 });

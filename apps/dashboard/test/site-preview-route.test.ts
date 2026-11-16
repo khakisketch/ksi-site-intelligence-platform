@@ -233,7 +233,7 @@ describe("site preview BFF aggregate", () => {
 
   it("treats unscanned areas beyond the bound as unknown, not no-output", async () => {
     mocked.listWorkAreas.mockResolvedValue({
-      workAreas: Array.from({ length: 8 }, (_, index) => ({ workAreaId: `area-${index + 1}`, name: `구역 ${index + 1}` })),
+      workAreas: Array.from({ length: 8 }, (_, index) => ({ workAreaId: `area-${index + 1}`, name: `영역 ${index + 1}` })),
     });
     mocked.listSpatialDataRequests.mockResolvedValue({ items: [], nextCursor: null });
 

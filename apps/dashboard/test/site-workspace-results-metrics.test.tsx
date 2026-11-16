@@ -117,7 +117,7 @@ function renderResults(options: {
   return renderToStaticMarkup(
     <SiteWorkspaceResults
       sitePath="/sites/site-1"
-      areaLabel="1구역"
+      areaLabel="1영역"
       areaAnalyses={options.areaAnalyses ?? []}
       analysesKnown
       explicitResult={options.explicit ?? explicitResult}

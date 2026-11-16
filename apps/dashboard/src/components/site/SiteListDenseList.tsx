@@ -18,9 +18,9 @@ const DENSE_MIN_WIDTH = 762;
 /**
  * 데스크톱 밀도 표(≥1024px) — 장식 미리보기 없는 텍스트 전용 대비표.
  *
- * 예전 64px 썸네일 열을 없애고 그 폭을 현장 이름에 돌렸다. 이름·상태·
+ * 예전 64px 썸네일 열을 없애고 그 폭을 프로젝트 이름에 돌렸다. 이름·상태·
  * 관리·갱신·다음 할 일을 같은 열에서 비교하고, 행 동작은 열람 하나만
- * 둔다(F08 — 다음 행동 CTA는 현장 상세 헤더가 이미 1차로 보여준다).
+ * 둔다(F08 — 다음 행동 CTA는 프로젝트 상세 헤더가 이미 1차로 보여준다).
  */
 export function SiteListDenseList({
   rows,
@@ -32,7 +32,7 @@ export function SiteListDenseList({
   sameNameSites: ReadonlySet<string>;
 }) {
   return (
-    <TableShell title="현장 상태" meta={meta}>
+    <TableShell title="프로젝트 상태" meta={meta}>
       <TableRow columns={DENSE_COLUMNS} minWidth={DENSE_MIN_WIDTH} head>
         <span>현장</span>
         <span>상태</span>
@@ -77,14 +77,14 @@ export function SiteListDenseList({
               {primaryAction?.label ?? next.label}
             </span>
 
-            {/* 현장별 다음 행동 CTA는 SiteHeader.tsx가 현장 상세에서 이미 1차
+            {/* 현장별 다음 행동 CTA는 SiteHeader.tsx가 프로젝트 상세에서 이미 1차
                 액션으로 보여준다(primaryAction/preparationAction) — 표 행에
                 같은 버튼을 또 두면 좁은 열에서 줄바꿈된다(F08). 이 열은
                 열람 동작 하나만 남긴다. */}
             <span className="flex justify-end">
               <TableAction
                 href={`/sites/${encodeURIComponent(site.siteId)}`}
-                label="현장 열기"
+                label="프로젝트 열기"
                 primary
               />
             </span>

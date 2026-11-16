@@ -47,7 +47,7 @@ export function describePairSelection(input: {
   sameSelection: boolean;
 }): PairIssue {
   if (!input.workAreaId) {
-    return { kind: "missing-area", message: "작업구역을 먼저 선택하세요." };
+    return { kind: "missing-area", message: "영역을 먼저 선택하세요." };
   }
   if (!input.baseline) {
     return { kind: "missing-baseline", message: "기준 관측을 선택하세요. 현재 관측보다 먼저 끝난 관측이어야 합니다." };

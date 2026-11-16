@@ -469,7 +469,7 @@ function isDetailShape(value: unknown): value is DeltaPublicationDetail {
 }
 
 /**
- * Core 응답의 범위·출처 메아리를 닫힌 형태로 검증한다. 현장·구역·식별자·
+ * Core 응답의 범위·출처 메아리를 닫힌 형태로 검증한다. 현장·영역·식별자·
  * 세 출처 확인값 중 하나라도 요청과 다르면 모르는 응답으로 버린다.
  * 수치 상태는 이 판정에 관여하지 않는다.
  */

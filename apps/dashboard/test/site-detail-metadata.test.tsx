@@ -37,10 +37,10 @@ import { renderToStaticMarkup } from "react-dom/server";
 describe("Site document metadata boundary", () => {
   it("exports a route-local static neutral title without reading any site", () => {
     const page = SitePage as typeof SitePage & { metadata?: { title?: string }; generateMetadata?: unknown };
-    expect(page.metadata).toEqual({ title: "현장 상세 · KSI" });
+    expect(page.metadata).toEqual({ title: "프로젝트 상세 · KSI" });
     expect(page.generateMetadata).toBeUndefined();
     expect(mocked.site).not.toHaveBeenCalled();
     const html = renderToStaticMarkup(<title>{page.metadata?.title}</title>);
-    expect(html).toBe("<title>현장 상세 · KSI</title>");
+    expect(html).toBe("<title>프로젝트 상세 · KSI</title>");
   });
 });

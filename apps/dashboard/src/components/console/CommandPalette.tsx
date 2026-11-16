@@ -40,7 +40,7 @@ export function CommandPalette({ items }: { items: PaletteItem[] }) {
   const [helpOpen, setHelpOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [active, setActive] = useState(0);
-  // 현재 현장 범위(작업구역·관측)는 열 때마다 주소창에서 읽는다. 브라우저
+  // 현재 프로젝트 범위(영역·관측)는 열 때마다 주소창에서 읽는다. 브라우저
   // 기록·localStorage에 남기지 않으며, 받는 화면이 서버 목록과 재대조한다.
   const [scopeSearch, setScopeSearch] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
@@ -96,10 +96,10 @@ export function CommandPalette({ items }: { items: PaletteItem[] }) {
     const explicitAssets = params.getAll("assetRef");
     const urlScope = parseScopedNavQuery(search);
     // 명시된 URL 범위를 조용히 덮어쓰지 않는다 — 브리지는 빈칸만 메운다.
-    // - bare deep link(구역 없음): 서버 확인 브리지가 구역·관측을 모두 메운다.
-    // - 구역만 있고 관측 없음: 같은 구역의 헤더 확인 관측만 메운다. 명시된
+    // - bare deep link(영역 없음): 서버 확인 브리지가 영역·관측을 모두 메운다.
+    // - 영역만 있고 관측 없음: 같은 영역의 헤더 확인 관측만 메운다. 명시된
     //   관측(깨진 값·빈값·복수 포함)이 있으면 손대지 않고 도착 화면이 닫는다.
-    // - 다른 구역·사이트의 관측은 절대 가져오지 않는다.
+    // - 다른 영역·사이트의 관측은 절대 가져오지 않는다.
     const bridge = readSiteNavBridge();
     const path = pathname ?? "";
     const bridgeUsable = (() => {
@@ -373,8 +373,8 @@ export function CommandPalette({ items }: { items: PaletteItem[] }) {
                   setActive(0);
                 }}
                 onKeyDown={onInputKeyDown}
-                placeholder="화면 · 현장 검색"
-                aria-label="화면 또는 현장 검색"
+                placeholder="화면 · 프로젝트 검색"
+                aria-label="화면 또는 프로젝트 검색"
                 role="combobox"
                 aria-expanded={results.length > 0}
                 aria-controls={listboxId}
@@ -404,12 +404,12 @@ export function CommandPalette({ items }: { items: PaletteItem[] }) {
                 </svg>
               </button>
             </div>
-            {/* 정직한 범위 — 팔레트는 셸이 쥔 화면·현장 이름만 찾는다. 파일·작업
+            {/* 정직한 범위 — 팔레트는 셸이 쥔 화면·프로젝트 이름만 찾는다. 파일·작업
                 기록은 각 현장 화면에서 확인한다(없는 범위를 암시하지 않는다).
-                현재 현장 범위(작업구역·관측)가 있으면 같은 범위로 이동한다. */}
+                현재 프로젝트 범위(영역·관측)가 있으면 같은 범위로 이동한다. */}
             <p className="border-b border-line bg-sunk px-3.5 py-1.5 text-caption break-keep text-ink-muted">
-              화면·현장 이름 검색이며 파일·작업 기록은 각 현장에서 확인
-              {scopedSite?.workAreaId ? " · 현재 현장 범위를 함께 이동합니다" : ""}
+              화면·프로젝트 이름 검색이며 파일·작업 기록은 각 현장에서 확인
+              {scopedSite?.workAreaId ? " · 현재 프로젝트 범위를 함께 이동합니다" : ""}
             </p>
 
             {/* 결과 목록은 항상 렌더한다 — 0건일 때 목록을 치워버리면 입력창의
@@ -424,7 +424,7 @@ export function CommandPalette({ items }: { items: PaletteItem[] }) {
             >
               {results.length === 0 ? (
                 <li role="presentation" className="px-4 py-8 text-center text-body break-keep text-ink-muted">
-                  일치하는 화면이나 현장이 없습니다.
+                  일치하는 화면이나 프로젝트이 없습니다.
                 </li>
               ) : (
                 results.map((item, index) => (

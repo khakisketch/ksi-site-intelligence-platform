@@ -92,9 +92,9 @@ export interface MosaicViewportProps {
   prepareHref?: string;
   /** 자료 탐색의 큰 무대에서 만료·미준비 상태도 실제 범위 캔버스로 보여 준다. */
   showAbsentExtentCanvas?: boolean;
-  /** 같은 네이티브 평면의 작업구역 링 — 같은 평면일 때만 범위 도식에 겹친다. */
+  /** 같은 네이티브 평면의 영역 링 — 같은 평면일 때만 범위 도식에 겹친다. */
   workAreaRing?: Array<[number, number]> | null;
-  /** 작업구역 링의 위치 기준 표기 — observedCrsIdentifier와 같을 때만 겹친다. */
+  /** 영역 링의 위치 기준 표기 — observedCrsIdentifier와 같을 때만 겹친다. */
   workAreaCrs?: string | null;
   /**
    * 시각 탐색 무대용 — 큰 픽셀을 먼저 두고 긴 안내·범례·진단은 펼침에 둔다.
@@ -109,7 +109,7 @@ export interface MosaicViewportProps {
   detailsTargetId?: string | null;
   /**
    * 시각 탐색 기본 본문용 — 미리보기 준비/다시 준비 요청 버튼을 숨긴다.
-   * 읽기(준비 상태 다시 확인·구역 자료 준비 길)와 접힌 진단은 그대로 둔다.
+   * 읽기(준비 상태 다시 확인·영역 자료 준비 길)와 접힌 진단은 그대로 둔다.
    */
   hidePrepareActions?: boolean;
 }
@@ -132,7 +132,7 @@ function mosaicFailureMessage(error: unknown): MosaicFailure {
       case "TIMEOUT":
         return { reason: "PREPARE_FAILED", message: "준비된 파일을 받을 수 있는 시간을 넘겨 중단했습니다. 준비 상태 다시 확인 뒤에 다시 시도하세요." };
       case "TOO_LARGE":
-        return { reason: "PREPARE_FAILED", message: "준비된 출력이 브라우저 표시 한계를 넘어 그리지 않습니다. 구역 자료 준비에서 다운로드로 받으세요." };
+        return { reason: "PREPARE_FAILED", message: "준비된 출력이 브라우저 표시 한계를 넘어 그리지 않습니다. 영역 자료 준비에서 다운로드로 받으세요." };
       case "SIZE_MISMATCH":
       case "HASH_MISMATCH":
       case "BAD_RECEIPT":
@@ -282,7 +282,7 @@ export function SiteMosaicViewport({
         }
         const record = body as Record<string, unknown>;
         if (typeof record.jobId !== "string" || typeof record.executionState !== "string") {
-          throw new DisplayPrepareIssueError("Core 응답의 요청 식별자 또는 상태를 확인할 수 없습니다. 구역 자료 준비에서 확인하세요.");
+          throw new DisplayPrepareIssueError("Core 응답의 요청 식별자 또는 상태를 확인할 수 없습니다. 영역 자료 준비에서 확인하세요.");
         }
         return { jobId: record.jobId, executionState: record.executionState };
       },
@@ -596,7 +596,7 @@ export function SiteMosaicViewport({
 
 
   // 픽셀이 없을 때의 범위 도식 사실 — Core 검사 격자에서 유도한 파일 전체
-  // 사각형과 같은 평면의 작업구역 링만 둔다. 재투영·유효 픽셀 단정을 하지
+  // 사각형과 같은 평면의 영역 링만 둔다. 재투영·유효 픽셀 단정을 하지
   // 않으며, 사각형은 파일 끝을 잰 값일 뿐 빈틈 없는 범위가 아니다.
   const absentFileBounds = nativeBoundsFromInspection(grid);
   const absentFileRing: Array<[number, number]> | null = absentFileBounds
@@ -614,11 +614,11 @@ export function SiteMosaicViewport({
     workAreaCrs !== null &&
     sameDisplayPlane(workAreaCrs, observedCrsIdentifier);
   const absentOverlayNote = !workAreaRing || workAreaRing.length < 3
-    ? "작업구역 경계를 확인하지 못해 파일 범위만 단독으로 둡니다."
+    ? "영역 경계를 확인하지 못해 파일 범위만 단독으로 둡니다."
     : !observedCrsIdentifier || !workAreaCrs
-      ? "위치 기준을 확인하지 못해 작업구역 경계를 겹쳐 표시하지 않았습니다. 파일 범위만 단독으로 둡니다."
+      ? "위치 기준을 확인하지 못해 영역 경계를 겹쳐 표시하지 않았습니다. 파일 범위만 단독으로 둡니다."
       : !absentOverlaid
-        ? "위치 기준이 달라 작업구역 경계를 겹쳐 표시하지 않았습니다. 파일 범위만 단독으로 둡니다."
+        ? "위치 기준이 달라 영역 경계를 겹쳐 표시하지 않았습니다. 파일 범위만 단독으로 둡니다."
         : null;
   const absentCrsLabel = observedCrsIdentifier ?? "확인 불가";
 
@@ -667,7 +667,7 @@ export function SiteMosaicViewport({
           headline: "미리보기 보관 기간이 끝났습니다.",
           recovery: hidePrepareActions && prepareHref
             ? "선택 자료 정보에서 다시 요청하거나, 준비 상태 다시 확인을 누르세요."
-            : "구역 자료 준비에서 다시 요청하거나, 준비 상태 다시 확인을 누르세요.",
+            : "영역 자료 준비에서 다시 요청하거나, 준비 상태 다시 확인을 누르세요.",
         }
       : absentKind === "rights"
         ? {
@@ -677,28 +677,28 @@ export function SiteMosaicViewport({
         : absentKind === "failed"
           ? {
               headline: "창 준비에 실패했습니다.",
-              recovery: "구역 자료 준비에서 사유를 확인한 뒤 다시 준비하세요.",
+              recovery: "영역 자료 준비에서 사유를 확인한 뒤 다시 준비하세요.",
             }
           : absentKind === "canceled"
             ? {
                 headline: "표시 준비 요청이 취소됐습니다.",
-                recovery: "다시 준비하거나, 구역 자료 준비에서 요청 이력을 확인하세요.",
+                recovery: "다시 준비하거나, 영역 자료 준비에서 요청 이력을 확인하세요.",
               }
           : absentKind === "deadline"
             ? {
                   headline: "표시 준비 요청이 기한을 넘겼습니다.",
-                  recovery: "다시 준비하거나, 구역 자료 준비에서 요청 이력을 확인하세요.",
+                  recovery: "다시 준비하거나, 영역 자료 준비에서 요청 이력을 확인하세요.",
                 }
           : absentKind === "unavailable"
             ? {
                 headline: "준비된 출력 상태를 확인할 수 없습니다.",
-                recovery: "준비 상태 다시 확인을 누르거나 구역 자료 준비에서 확인하세요.",
+                recovery: "준비 상태 다시 확인을 누르거나 영역 자료 준비에서 확인하세요.",
               }
             : {
                 headline: "준비된 표시 자료가 없습니다.",
                  recovery: canRequest
                    ? hidePrepareActions
-                     ? "구역 자료 준비에서 미리보기 준비 상태와 요청 이력을 확인하세요."
+                     ? "영역 자료 준비에서 미리보기 준비 상태와 요청 이력을 확인하세요."
                      : "아래에서 미리보기를 준비할 수 있습니다."
                   : "표시 준비는 권한 있는 담당자에게 요청하세요.",
               };
@@ -763,7 +763,7 @@ export function SiteMosaicViewport({
                     currentFailedKeys.length > 1
                       ? `창 ${currentFailedKeys.length}개를 표시하지 않습니다.`
                       : "창을 표시하지 않습니다.",
-                  recovery: "받은 자료가 준비 기록과 다릅니다. 구역 자료 준비에서 다운로드로 다시 받으세요.",
+                  recovery: "받은 자료가 준비 기록과 다릅니다. 영역 자료 준비에서 다운로드로 다시 받으세요.",
                   detail: firstReadFailure.message,
                 }
               : {
@@ -784,7 +784,7 @@ export function SiteMosaicViewport({
 
   const hasActiveWait = fetchingKeys.length > 0 || (lane?.queuedCount ?? 0) > 0;
   const supportCopy = requestNote ?? (failedJobs.length > 0
-    ? `준비에 실패한 요청 ${failedJobs.length}개가 있습니다. 사유는 구역 자료 준비에서 확인하세요.`
+    ? `준비에 실패한 요청 ${failedJobs.length}개가 있습니다. 사유는 영역 자료 준비에서 확인하세요.`
     : null);
 
   // 무대용 간결 상태 — 사유 한 줄과 하나의 1차 회복만 둔다. 진입·읽기 흐름은
@@ -799,7 +799,7 @@ export function SiteMosaicViewport({
       href={requestsHref}
       className="btn min-h-11 border-white/25 bg-sidebar-active font-semibold text-sidebar-active-ink"
     >
-      구역 자료 준비에서 확인
+      영역 자료 준비에서 확인
     </a>
   );
   const canvasExpiredAction = (
@@ -837,7 +837,7 @@ export function SiteMosaicViewport({
     (compactKind === "readFailure" && firstReadFailure?.reason === "RIGHTS_UNAVAILABLE") || (compactKind === "absent" && absentKind === "rights")
       ? compactCopy.recovery
       : compactKind === "absent" && absentKind === "expired"
-        ? "요청 이력은 구역 자료 준비에서 확인합니다."
+        ? "요청 이력은 영역 자료 준비에서 확인합니다."
         : null;
   const canvasMediaAlert = compactKind !== "loading" && compactKind !== "preparing" && !(compactKind === "absent" && absentKind === "empty");
 
@@ -891,7 +891,7 @@ export function SiteMosaicViewport({
           )}
           <p className="leading-5">
             {"같은 계정이 준비한 창만 봅니다. "}
-            <a href={requestsHref} className="tap-target underline">구역 자료 준비</a>
+            <a href={requestsHref} className="tap-target underline">영역 자료 준비</a>
             {" · 준비 상태 다시 확인은 읽기만 하며 새 요청을 만들지 않습니다."}
           </p>
           <p className="font-bold">{MOSAIC_ASSEMBLY_HEADING}</p>
@@ -992,7 +992,7 @@ export function SiteMosaicViewport({
           )}
           {compactCopy.recovery && <p className="text-caption leading-5 text-ink-2">{compactCopy.recovery}</p>}
           <div className="flex flex-wrap gap-2">
-            {hidePrepareActions && <a href={requestsHref} className="btn min-h-11">구역 자료 준비</a>}
+            {hidePrepareActions && <a href={requestsHref} className="btn min-h-11">영역 자료 준비</a>}
             {canFillNow && (
               <ResponsiveActionBoundary
                 action="SPATIAL_DATA_REQUEST"
@@ -1054,7 +1054,7 @@ export function SiteMosaicViewport({
               )}
               <p className="leading-5">
                 {"같은 계정이 준비한 창만 봅니다. "}
-                <a href={requestsHref} className="tap-target underline">구역 자료 준비에서 확인</a>
+                <a href={requestsHref} className="tap-target underline">영역 자료 준비에서 확인</a>
                 {" · 준비 상태 다시 확인은 읽기만 하며 새 요청을 만들지 않습니다."}
               </p>
               <p className="font-bold">{MOSAIC_ASSEMBLY_HEADING}</p>
@@ -1177,7 +1177,7 @@ export function SiteMosaicViewport({
               )}
               <p className="leading-5 text-ink-muted">
                 {"같은 계정이 준비한 창만 봅니다. "}
-                <a href={requestsHref} className="tap-target underline">구역 자료 준비에서 확인</a>
+                <a href={requestsHref} className="tap-target underline">영역 자료 준비에서 확인</a>
                 {" · 준비 상태 다시 확인은 읽기만 하며 새 요청을 만들지 않습니다."}
               </p>
               <p className="font-bold">{MOSAIC_ASSEMBLY_HEADING}</p>

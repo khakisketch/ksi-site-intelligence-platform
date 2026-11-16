@@ -9,7 +9,7 @@ async function login(page: Page) {
 }
 
 function viewButtons(page: Page) {
-  const group = page.getByRole("group", { name: "현장 보기 방식" });
+  const group = page.getByRole("group", { name: "프로젝트 보기 방식" });
   return {
     group,
     cards: group.getByRole("button", { name: "카드", exact: true }),
@@ -27,7 +27,7 @@ test("데스크톱은 실제 미리보기 카드가 기본, 밀도표는 명시�
   const views = viewButtons(page);
   if (!testInfo.project.name.startsWith("desktop")) {
     await expect(views.group).toBeHidden();
-    await expect(page.getByRole("region", { name: "현장 목록" })).toBeVisible();
+    await expect(page.getByRole("region", { name: "프로젝트 목록" })).toBeVisible();
     return;
   }
   // 기본값: 실제 준비된 출력 미리보기가 있는 비주얼 카드 — 합성 표지가 아니다.
@@ -48,7 +48,7 @@ test("데스크톱은 실제 미리보기 카드가 기본, 밀도표는 명시�
   await expect(page.getByText("기본 이미지", { exact: true })).toHaveCount(0);
   const firstCard = cards.first();
   await expect(firstCard.getByRole("heading", { level: 3 })).toBeVisible();
-  await expect(firstCard.getByRole("link", { name: "현장 열기", exact: true })).toBeVisible();
+  await expect(firstCard.getByRole("link", { name: "프로젝트 열기", exact: true })).toBeVisible();
   // 격리 seed profile은 spatial-data 요청 목록을 마운트하지 않는다(404).
   // 조회 불가를 성공한 빈 목록으로 바꾸면 안 된다. 실제 BFF의 unknown과
   // 같은 카드의 안내를 함께 대조하고, 가짜 픽셀/확정 없음은 허용하지 않는다.
@@ -74,7 +74,7 @@ test("데스크톱은 실제 미리보기 카드가 기본, 밀도표는 명시�
   await expect(views.list).toBeFocused();
   await expect(page.getByRole("main").getByText("관리 단계", { exact: true })).toBeVisible();
   const totalRows = Number(await page.getByRole("main").locator('[data-site-list-view="list"]').getAttribute("data-site-total"));
-  await expect(page.getByRole("link", { name: "현장 열기", exact: true })).toHaveCount(Math.min(totalRows, 10));
+  await expect(page.getByRole("link", { name: "프로젝트 열기", exact: true })).toHaveCount(Math.min(totalRows, 10));
   await capture(page, `multiple-list-${testInfo.project.name}`);
   expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1)).toBe(false);
 });
@@ -88,10 +88,10 @@ test("보기 전환은 입력 중 검색과 정렬을 유지하고 한 현장 �
   // Fixture/external ledgers differ on which group is nonempty (attention is 0 in
   // the isolated fixture): derive the precondition from a group that actually has
   // members instead of hardcoding one.
-  const memberChip = page.getByRole("group", { name: "현장 상태 필터" }).getByRole("link", { name: /등록됨|준비 중|순찰 가능|확인 필요|운영 중단/ }).first();
+  const memberChip = page.getByRole("group", { name: "프로젝트 상태 필터" }).getByRole("link", { name: /등록됨|준비 중|순찰 가능|확인 필요|운영 중단/ }).first();
   const memberGroup = new URL((await memberChip.getAttribute("href"))!, page.url()).searchParams.get("group")!;
   await memberChip.click();
-  const firstHref = await page.locator("[data-site-card]:visible").first().getByRole("link", { name: "현장 열기", exact: true }).getAttribute("href");
+  const firstHref = await page.locator("[data-site-card]:visible").first().getByRole("link", { name: "프로젝트 열기", exact: true }).getAttribute("href");
   const id = decodeURIComponent(new URL(firstHref!, page.url()).pathname.split("/")[2]);
   await page.goto(`/sites?group=${encodeURIComponent(memberGroup)}&sort=updated`);
   const search = page.getByRole("searchbox", { name: "현장 찾기" });
@@ -122,12 +122,12 @@ test("보기 전환은 입력 중 검색과 정렬을 유지하고 한 현장 �
   await views.list.click();
   await search.fill("목록 보기에서 없는 현장");
   await search.press("Enter");
-  await expect(page.getByRole("main").getByText("조건에 맞는 현장이 없습니다", { exact: true })).toHaveCount(1);
-  await expect(page.getByRole("main").getByText("현장 상태", { exact: true })).toBeHidden();
+  await expect(page.getByRole("main").getByText("조건에 맞는 프로젝트이 없습니다", { exact: true })).toHaveCount(1);
+  await expect(page.getByRole("main").getByText("프로젝트 상태", { exact: true })).toBeHidden();
   await expect(views.list).toHaveAttribute("aria-pressed", "true");
 });
 
-test("마지막 보기는 새로고침·현장 상세 왕복·서버 첫 응답에서도 유지된다", async ({ page }, testInfo) => {
+test("마지막 보기는 새로고침·프로젝트 상세 왕복·서버 첫 응답에서도 유지된다", async ({ page }, testInfo) => {
   test.skip(!testInfo.project.name.startsWith("desktop"), "브라우저의 desktop 표시 설정입니다.");
   await login(page);
   const views = viewButtons(page);
@@ -142,7 +142,7 @@ test("마지막 보기는 새로고침·현장 상세 왕복·서버 첫 응답�
   const preference = (await page.context().cookies(page.url())).find((cookie) => cookie.value === "list" && cookie.path === "/sites");
   expect(preference).toBeTruthy();
   expect(preference!.httpOnly).toBe(false); // Functional display setting, never an auth cookie.
-  const open = page.getByRole("link", { name: "현장 열기", exact: true }).first();
+  const open = page.getByRole("link", { name: "프로젝트 열기", exact: true }).first();
   await open.click();
   await expect.poll(() => new URL(page.url()).pathname).not.toBe("/sites");
   await page.goBack();
@@ -176,7 +176,7 @@ test("설정 저장이 제한돼도 현재 탭 전환은 동작하고 phone 배�
   await expect(views.list).toHaveAttribute("aria-pressed", "true");
   await expect(page.locator("[data-site-card]:visible")).toHaveCount(0);
   await expect(page.getByRole("main").getByText("관리 단계", { exact: true })).toBeVisible();
-  await expect(page.getByRole("link", { name: "현장 열기", exact: true })).toHaveCount(Math.min(total, 10));
+  await expect(page.getByRole("link", { name: "프로젝트 열기", exact: true })).toHaveCount(Math.min(total, 10));
   expect(errors).toEqual([]);
   await page.setViewportSize({ width: 390, height: 844 });
   await expect(views.group).toBeHidden();

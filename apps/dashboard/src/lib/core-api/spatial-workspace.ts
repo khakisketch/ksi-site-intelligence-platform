@@ -97,7 +97,7 @@ function workspacePath(siteId: string, workAreaId: string): string {
 }
 
 /**
- * 구역의 관측 프로젝션 한 페이지. `entryDefault`는 Core가 전체 범위에서
+ * 영역의 관측 프로젝션 한 페이지. `entryDefault`는 Core가 전체 범위에서
  * 계산하므로 페이지가 잘려도 서버 결정을 그대로 쓴다. SITES_READ 세션으로
  * 읽으며, 바이트 권한을 만들지 않는다.
  */

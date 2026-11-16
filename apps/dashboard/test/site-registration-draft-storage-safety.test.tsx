@@ -26,7 +26,7 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-describe("현장 등록 저장 초안 보호", () => {
+describe("프로젝트 등록 저장 초안 보호", () => {
   it("구 초안의 반출 선택만 남아도 주체 미상으로 잠그고 편집으로 귀속하지 않는다", async () => {
     const raw = JSON.stringify({ name: "", siteId: "", aoi: [], egressChoice: "allow" });
     sessionStorage.setItem(KEY, raw);
@@ -49,8 +49,8 @@ describe("현장 등록 저장 초안 보호", () => {
     sessionStorage.setItem(KEY, raw);
     render(<SiteRegistrationOnlyWizard mode="MAPPED_BOOTSTRAP" accountFingerprint={IDENTITY} />);
     await screen.findByText("주인을 확인할 수 없는 입력입니다");
-    expect(screen.queryByText("현장 이름을 입력하세요.")).toBeNull();
-    expect(screen.getByText("이 입력의 원래 계정을 확인할 수 없어 표시하지 않습니다. 현장 목록에서 먼저 확인하세요.")).toBeTruthy();
+    expect(screen.queryByText("프로젝트 이름을 입력하세요.")).toBeNull();
+    expect(screen.getByText("이 입력의 원래 계정을 확인할 수 없어 표시하지 않습니다. 프로젝트 목록에서 먼저 확인하세요.")).toBeTruthy();
     expect(screen.queryByText(/입력 내용은 자동 저장됩니다/)).toBeNull();
     expect(screen.getAllByText(/저장된 입력을 표시하거나 변경하지 않습니다/).length).toBeGreaterThan(0);
     expect((screen.getByRole("button", { name: "다음" }) as HTMLButtonElement).disabled).toBe(true);
@@ -63,7 +63,7 @@ describe("현장 등록 저장 초안 보호", () => {
     sessionStorage.setItem(KEY, raw);
     render(<SiteRegistrationOnlyWizard mode="MAPPED_BOOTSTRAP" accountFingerprint={IDENTITY} />);
     await screen.findByText("다른 계정의 입력입니다");
-    expect(screen.queryByText("현장 이름을 입력하세요.")).toBeNull();
+    expect(screen.queryByText("프로젝트 이름을 입력하세요.")).toBeNull();
     expect(screen.getByText("저장된 입력의 계정과 이 화면의 계정 정보가 다릅니다. 원래 계정으로 돌아오세요.")).toBeTruthy();
     expect(screen.queryByText(/입력 내용은 자동 저장됩니다/)).toBeNull();
     expect(sessionStorage.getItem(KEY)).toBe(raw);
@@ -71,7 +71,7 @@ describe("현장 등록 저장 초안 보호", () => {
   it("새 빈 초안에서는 기존 이름 입력 안내를 유지한다", async () => {
     render(<SiteRegistrationOnlyWizard mode="MAPPED_BOOTSTRAP" accountFingerprint={IDENTITY} />);
     await screen.findByPlaceholderText(NAME_PLACEHOLDER);
-    expect(screen.getByText("현장 이름을 입력하세요.")).toBeTruthy();
+    expect(screen.getByText("프로젝트 이름을 입력하세요.")).toBeTruthy();
     expect(screen.getByText(/입력 내용은 자동 저장됩니다/)).toBeTruthy();
   });
   it.each(["MAPPED_BOOTSTRAP", "LEGACY_SITE_ID"] as const)("%s 구 초안의 잔여 본문 단독·조합을 잠근다", async (mode) => {

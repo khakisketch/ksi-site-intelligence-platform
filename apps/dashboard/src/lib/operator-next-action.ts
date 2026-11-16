@@ -41,7 +41,7 @@ export function resolveSiteOperatorNextAction(
   if (includeRoutineSurvey && permissions.canEditSite && site.status === "UNMAPPED") {
     return {
       kind: "MANAGE_WORK_AREAS",
-      label: "작업구역 설정",
+      label: "영역 설정",
       href: siteAreasHref(site.siteId, null, { manage: true }),
       responsiveAction: "SITE_DEVICE_TRANSITION",
       siteId: site.siteId,

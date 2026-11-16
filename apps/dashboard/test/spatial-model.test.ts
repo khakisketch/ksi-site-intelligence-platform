@@ -17,7 +17,7 @@ describe("공간모델 상태 표시의 정직성", () => {
     expect(summary.tone).not.toBe("positive");
   });
 
-  it("현장 상태와 모델 유무가 어긋나면 그 모순을 먼저 보여준다", () => {
+  it("프로젝트 상태와 모델 유무가 어긋나면 그 모순을 먼저 보여준다", () => {
     const summary = spatialModelSummary({
       state: "ABSENT",
       ageDays: null,

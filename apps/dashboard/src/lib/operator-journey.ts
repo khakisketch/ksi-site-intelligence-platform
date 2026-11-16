@@ -43,8 +43,8 @@ function activeAreasOf(areas: readonly JourneyAreaOption[]): JourneyAreaOption[]
  * 관측 자료 등록 진입 범위 해석.
  *
  * 우선순위: 반복 템플릿(이전 비교/작업에서 온 실제 선택) > 명시 workAreaId
- * 표시 의도 > 단일 활성 구역 자동 선택 > 수동 선택.
- * 명시 값이 무효(배열·빈값·보관/타구역·미포함·모르는 긴 값)면 조용히 다른 구역을
+ * 표시 의도 > 단일 활성 영역 자동 선택 > 수동 선택.
+ * 명시 값이 무효(배열·빈값·보관/타영역·미포함·모르는 긴 값)면 조용히 다른 영역을
  * 고르지 않고 빈 선택 + 일반 공지만 둔다. 원문 값은 돌려주지 않는다. 이미 승인된
  * 목록과 정확히 같은 긴 식별자는 길이 상한 없이 받는다.
  */
@@ -69,7 +69,7 @@ export function resolveRegistrationScope(input: {
       return {
         initialWorkAreaIds: [active[0].workAreaId],
         scopeNotice:
-          "선택한 구역에서 시작합니다. 범위가 맞는지 확인하고 필요하면 바꾸세요.",
+          "선택한 영역에서 시작합니다. 범위가 맞는지 확인하고 필요하면 바꾸세요.",
         invalidRequested: false,
       };
     }
@@ -79,13 +79,13 @@ export function resolveRegistrationScope(input: {
     return {
       initialWorkAreaIds: [],
       scopeNotice:
-        "요청한 작업구역을 확인하지 못했습니다. 비교할 작업구역을 직접 선택하세요.",
+        "요청한 영역을 확인하지 못했습니다. 비교할 영역을 직접 선택하세요.",
       invalidRequested: true,
     };
   }
   return {
     initialWorkAreaIds: [parsed.value],
-    scopeNotice: "선택한 구역에서 시작합니다. 범위가 맞는지 확인하고 필요하면 바꾸세요.",
+    scopeNotice: "선택한 영역에서 시작합니다. 범위가 맞는지 확인하고 필요하면 바꾸세요.",
     invalidRequested: false,
   };
 }
@@ -115,7 +115,7 @@ export function resolveAnalysisScope(input: {
       return {
         initialWorkAreaId: active[0].workAreaId,
         scopeNotice:
-          "선택한 구역에서 시작합니다. 범위가 맞는지 확인하고 필요하면 바꾸세요.",
+          "선택한 영역에서 시작합니다. 범위가 맞는지 확인하고 필요하면 바꾸세요.",
         invalidRequested: false,
       };
     }
@@ -124,7 +124,7 @@ export function resolveAnalysisScope(input: {
   if (parsed.kind === "invalid" || !parsed.value || !activeIds.has(parsed.value)) {
     return {
       initialWorkAreaId: "",
-      scopeNotice: "요청한 작업구역을 확인하지 못했습니다. 작업구역을 직접 선택하세요.",
+      scopeNotice: "요청한 영역을 확인하지 못했습니다. 영역을 직접 선택하세요.",
       invalidRequested: true,
     };
   }
@@ -138,7 +138,7 @@ export type AnalysisCandidateOption = {
 
 /**
  * 변화 분석 현재 관측 힌트 해석. 실제 허용 분석 후보 목록 안에 있고 선택
- * 구역과 정확히 묶인 경우에만 쓴다. 후보가 여러 개면 버전을 지어내지 않고
+ * 영역과 정확히 묶인 경우에만 쓴다. 후보가 여러 개면 버전을 지어내지 않고
  * 고르지 않는다. 부적격·없음이면 빈 값 + 있는 그대로의 공지만 둔다.
  */
 export function resolveAnalysisCurrentHint(input: {
@@ -171,7 +171,7 @@ export function resolveAnalysisCurrentHint(input: {
   if (matches.length === 0) {
     return {
       currentWorkOrderId: null,
-      notice: "요청한 관측은 이 구역의 분석 후보에 없습니다. 현재 관측을 직접 선택하세요.",
+      notice: "요청한 관측은 이 영역의 분석 후보에 없습니다. 현재 관측을 직접 선택하세요.",
     };
   }
   if (matches.length > 1) {
@@ -184,9 +184,9 @@ export function resolveAnalysisCurrentHint(input: {
 }
 
 /**
- * 작업 상세에서 이어지는 범위 확인. 원래 연결이 정확히 하나의 구역이고 그
- * 구역이 현행 활성 승인 범위일 때만 미리 고른다. 비활성·모르는 연결을 먼저
- * 걸러내고 하나로 만들지 않는다 — 다구역 작업은 목록에서 직접 고르게 둔다.
+ * 작업 상세에서 이어지는 범위 확인. 원래 연결이 정확히 하나의 영역이고 그
+ * 영역이 현행 활성 승인 범위일 때만 미리 고른다. 비활성·모르는 연결을 먼저
+ * 걸러내고 하나로 만들지 않는다 — 다영역 작업은 목록에서 직접 고르게 둔다.
  */
 export function resolveWorkOrderContinuation(input: {
   areas: readonly JourneyAreaOption[];
@@ -207,7 +207,7 @@ export type SiteHeaderScope = {
  * 서버 확인 범위 항해 브리지 — 헤더가 싣고 팔레트가 읽는 읽기 전용 힌트.
  *
  * - 값 자체는 호출 페이지가 이미 검증한 범위다(분석 상세는 기록에서 확인한
- *   구역, 등록 자료는 카탈로그에서 확인한 참조). 팔레트는 그대로 목적지에만
+ *   영역, 등록 자료는 카탈로그에서 확인한 참조). 팔레트는 그대로 목적지에만
  *   싣고, 판정·최신 추측·임의 쿼리 전달을 하지 않는다. 받는 화면이 서버 목록과
  *   재대조한다.
  * - URL에 명시된 범위를 조용히 덮어쓰지 않는다 — 호출자가 합칠 때 명시 값이
@@ -242,8 +242,8 @@ const SCOPED_ASSET_REF_PATTERN = /^ksa-v1-[0-9a-f]{64}$/;
 /**
  * 화면 이동용 범위 힌트 해석(URL 쿼리 → 허용 목록만).
  *
- * - 작업구역은 다듬은 단일 값만 받는다(배열·빈값·200자 초과는 버린다).
- * - 자산 참조는 같은 작업구역과 함께 있고 엄격한 모양일 때만 싣는다.
+ * - 영역은 다듬은 단일 값만 받는다(배열·빈값·200자 초과는 버린다).
+ * - 자산 참조는 같은 영역과 함께 있고 엄격한 모양일 때만 싣는다.
  * - 판정·조회·권한 확인을 하지 않는다 — 받는 화면이 서버 목록과 재대조한다.
  * - 분석 선택자(analysisId·currentWorkOrderId)와 frozen 결과 입력은 이 값을
  *   읽지 않는다. INV-051(원본 권위)/INV-060·061(범위·반출) 때문이다.
@@ -266,7 +266,7 @@ export function parseScopedNavQuery(search: string | null | undefined): SiteHead
   return { workAreaId, assetRef };
 }
 
-/** 현장 메뉴 이동에 검증된 구역과 자료를 함께 싣는다. */
+/** 프로젝트 메뉴 이동에 검증된 영역과 자료를 함께 싣는다. */
 export function siteTabHref(
   siteId: string,
   tab: string,
@@ -288,7 +288,7 @@ export function siteTabHref(
   return `${base}${analysis ? "/analysis" : ""}${search ? `?${search}` : ""}`;
 }
 
-/** 시각 쌍 둘러보기 맥락 — 같은 구역의 두 정확한 자료 참조만 싣는다. */
+/** 시각 쌍 둘러보기 맥락 — 같은 영역의 두 정확한 자료 참조만 싣는다. */
 export type VisualBrowsingContext = {
   workAreaId: string;
   visualAAssetRef: string;
@@ -308,9 +308,9 @@ function trimmedContextId(value: unknown): string | null {
 
 /**
  * 시각 쌍 복귀 맥락 해석 — 모양(shape)만 본다. 권위(authorization)·범위
- * 확인이 아니며, 해석 결과를 권위 있는 값으로 취급하지 않는다. 구역·양쪽
+ * 확인이 아니며, 해석 결과를 권위 있는 값으로 취급하지 않는다. 영역·양쪽
  * 참조가 모두 있고 서로 다를 때만 둔다. 토큰·바이트 URL·외부 참조를 싣지
- * 않는다. 받는 화면이 같은 구역의 카탈로그·프로젝션과 재대조해야 한다.
+ * 않는다. 받는 화면이 같은 영역의 카탈로그·프로젝션과 재대조해야 한다.
  */
 export function parseVisualBrowsingContext(input: {
   workAreaId?: unknown;
@@ -329,7 +329,7 @@ export function parseVisualBrowsingContext(input: {
 /**
  * 작업공간 복귀 주소 — 검증된 시각 쌍 맥락만 싣는다. 임의 returnTo·개방
  * 리다이렉트를 만들지 않으며, 원문 쿼리 값을 그대로 옮기지 않는다.
- * 구역이 바뀌면 쌍을 싣지 않는다(조용히 다른 구역의 쌍을 복원하지 않는다).
+ * 영역이 바뀌면 쌍을 싣지 않는다(조용히 다른 영역의 쌍을 복원하지 않는다).
  */
 export function visualBrowsingReturnHref(
   sitePath: string,
@@ -360,7 +360,7 @@ export type ExactAnalysisCandidate = {
 
 /**
  * 변화 분석 정확한 선택자 힌트 해석 — 작업지시·제출 묶음·버전의 정확한
- * 일치가 같은 구역에 정확히 하나 있을 때만 미리 고른다. WorkOrder 근사·
+ * 일치가 같은 영역에 정확히 하나 있을 때만 미리 고른다. WorkOrder 근사·
  * 최신·날짜 유추를 하지 않는다. 모호하거나 후보에 없거나 날짜만으로 온
  * 값은 고르지 않고 사유를 둔다. 보류 시도·딥링크가 있으면 호출자가 먼저
  * 가른다(여기서는 힌트를 쓰지 않는다).
@@ -439,13 +439,13 @@ export function resolveExactAnalysisSelectorHints(input: {
   // 한쪽만 정확히 맞았을 때는 그쪽만 미리 고른다. 반대쪽 사유를 그대로 밝혀
   // 자동 완성을 지어내지 않는다. 한쪽 미리 고름만으로는 요청할 수 없고(두 쪽
   // 선택이 있어야 제출 가능), 같은 선택은 제출 전에 막히며, 최종 판단은
-  // 요청 시 Core가 한다. 정확한 삼중항·같은 구역·유일 후보만 미리 고르므로
+  // 요청 시 Core가 한다. 정확한 삼중항·같은 영역·유일 후보만 미리 고르므로
   // 다른 관측으로 바꾸거나 깊은 연결을 만들지 않는다.
   const reasonLine = (side: "baseline" | "current", reason: "malformed" | "not-found" | "ambiguous"): string => {
     const label = side === "baseline" ? "기준" : "현재";
     if (reason === "malformed") return `요청한 ${label} 관측 형식을 확인하지 못했습니다.`;
     if (reason === "ambiguous") return `요청한 ${label} 관측에 후보가 여러 개 있어 자동으로 고르지 않았습니다.`;
-    return `요청한 ${label} 관측을 이 구역의 분석 후보에서 확인하지 못했습니다.`;
+    return `요청한 ${label} 관측을 이 영역의 분석 후보에서 확인하지 못했습니다.`;
   };
   if (matchedBaseline && current.status === "failed") {
     return {

@@ -859,7 +859,7 @@ function isCoverageShape(value: unknown): value is MaskedCoverageWire {
   if (!decoded.every((bytes) => bytes.length === expectedBytes)) return false;
   if (decoded.map(countBits).join(",") !== counts.join(",")) return false;
   // effective = original − excluded, common ⊆ effective, unavailable = effective − common.
-  // V3 성공은 0이 아닌 유효 구역 + 100% 공통 유효 + 0 unavailable이다.
+  // V3 성공은 0이 아닌 유효 영역 + 100% 공통 유효 + 0 unavailable이다.
   const [originalBits, excludedBits, effectiveBits, commonBits, unavailableBits] = decoded as [Uint8Array, Uint8Array, Uint8Array, Uint8Array, Uint8Array];
   for (let index = 0; index < expectedBytes; index += 1) {
     const sel = originalBits[index]!;
@@ -886,7 +886,7 @@ function isCoverageShape(value: unknown): value is MaskedCoverageWire {
 
 /**
  * 마스크를 씌우지 않았을 때와의 차이 — Core `MaskedVolumeImpactV3` 그대로다.
- * 원본 구역에 값 없는 셀이 있었다면 제외 영역의 원래 수치는 알 수 없으므로
+ * 원본 영역에 값 없는 셀이 있었다면 제외 영역의 원래 수치는 알 수 없으므로
  * 전부 null이다 — 0을 지어내지 않는다.
  */
 export type MaskedImpactWire = {
@@ -1549,7 +1549,7 @@ export function parseMaskedSourceContext(
     throw new Error("원본 맥락 응답의 요청 범위를 확인할 수 없습니다.");
   }
   // 봉인 subject는 요청 현장에 묶여야 하며 같은 조직이어야 한다.
-  // 구역은 Core 쿼리·호출자가 이미 묶었으므로 subject에서 추론하지 않는다.
+  // 영역은 Core 쿼리·호출자가 이미 묶었으므로 subject에서 추론하지 않는다.
   // 부모 subject는 기준·현재 어느 쪽에 속해도 된다(서로 다름을 요구하지 않는다).
   const baseline = value.baselineSubject as MaskedSealedSubject;
   const current = value.currentSubject as MaskedSealedSubject;
@@ -1794,7 +1794,7 @@ function isContinuityScope(value: unknown): value is MaskedContinuityScope {
   );
 }
 
-/** 범위당 안정 키 — 사용자·조직·현장·구역·원본이 다르면 키가 다르다. */
+/** 범위당 안정 키 — 사용자·조직·현장·영역·원본이 다르면 키가 다르다. */
 export function maskedContinuityKey(scope: MaskedContinuityScope): string {
   if (!isContinuityScope(scope)) {
     throw new MaskedRequestError("마스크 작업 범위가 올바르지 않습니다.");

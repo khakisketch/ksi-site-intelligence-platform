@@ -9,11 +9,11 @@
  "workAreas": {
   "north": {
    "workAreaId": "wa-syn-demo-site-01-0001",
-   "name": "북측 절토구역"
+   "name": "북측 절토영역"
   },
   "south": {
    "workAreaId": "wa-syn-demo-site-01-0003",
-   "name": "남측 성토구역"
+   "name": "남측 성토영역"
   }
  },
  "epochs": {

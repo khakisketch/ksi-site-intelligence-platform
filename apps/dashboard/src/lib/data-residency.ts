@@ -1,6 +1,6 @@
 import type { DataResidency } from "@/lib/core-api/types";
 
-// 현장 등록 Wizard가 데이터 반출 선언(INV-050)을 묻는 질문의 답 3가지.
+// 프로젝트 등록 Wizard가 데이터 반출 선언(INV-050)을 묻는 질문의 답 3가지.
 // "unset" 은 사용자가 이 질문에 답하지 않기로 선택한 상태다 — 스키마상 선택
 // 필드이므로 이 값은 유효한 최종 상태다(contracts/api/openapi-core.yaml
 // dataResidency 설명: "생략은 반출 불가를 뜻한다" — 관대한 기본값이 아니다).

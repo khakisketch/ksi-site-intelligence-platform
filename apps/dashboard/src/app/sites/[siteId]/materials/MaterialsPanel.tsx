@@ -27,7 +27,7 @@ export function MaterialsPanel({
   compare: boolean;
 }) {
   if (issue) return <InlineNotice tone="high">{issue}</InlineNotice>;
-  if (!workAreaId || !page) return <p className="text-caption text-ink-2">작업구역을 선택하면 이곳에서 자료를 확인할 수 있습니다.</p>;
+  if (!workAreaId || !page) return <p className="text-caption text-ink-2">영역을 선택하면 이곳에서 자료를 확인할 수 있습니다.</p>;
 
   const { q = "", kind = "", state = "", ...selection } = scope;
   const filtered = applyCatalogFilters(page.assets, { q, kind, state: state === "attention" || state === "inspected" ? state : "" });

@@ -116,7 +116,7 @@ export function projectSectionHref(siteId: string, section: ProjectSection | nul
   return base;
 }
 
-/** 자료 섹션의 한 장면 — 구역·선택 자료·검색 조건·페이지를 주소에 남긴다. 값이 없는 조건은 싣지 않는다. */
+/** 자료 섹션의 한 장면 — 영역·선택 자료·검색 조건·페이지를 주소에 남긴다. 값이 없는 조건은 싣지 않는다. */
 export interface SiteDataScope {
   workAreaId?: string | null;
   assetRef?: string | null;

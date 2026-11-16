@@ -46,7 +46,7 @@ vi.mock("@/lib/core-api/client", () => ({
 import SpatialDataRequestsPage from "@/app/sites/[siteId]/spatial-data-requests/page";
 
 const requestId = "sdj-v1-12345678-1234-1234-1234-123456789abc";
-const area = { workAreaId: "area-1", name: "북측 작업구역", status: "ACTIVE" };
+const area = { workAreaId: "area-1", name: "북측 영역", status: "ACTIVE" };
 const digest = (value: string) => `sha256:${value.repeat(64)}`;
 
 function receipt(jobId = requestId) {
@@ -115,9 +115,9 @@ beforeEach(() => {
 describe("spatial data request Console surface", () => {
   it("mirrors the WorkArea selector and does not fetch jobs until one area is selected", async () => {
     const html = renderToStaticMarkup(await callPage());
-    expect(html).toContain("구역 자료 준비");
-    expect(html).toContain("작업구역 선택");
-    expect(html).toContain("북측 작업구역");
+    expect(html).toContain("영역 자료 준비");
+    expect(html).toContain("영역 선택");
+    expect(html).toContain("북측 영역");
     expect(mocked.areas).toHaveBeenCalledWith("site-1", { includeArchived: true });
     expect(mocked.list).not.toHaveBeenCalled();
   });
@@ -198,10 +198,10 @@ describe("spatial data request Console surface", () => {
   });
 
   it("keeps archived WorkAreas selectable for existing request history", async () => {
-    mocked.areas.mockResolvedValueOnce({ workAreas: [area, { workAreaId: "old-area", name: "이전 구역", status: "ARCHIVED" }] });
+    mocked.areas.mockResolvedValueOnce({ workAreas: [area, { workAreaId: "old-area", name: "이전 영역", status: "ARCHIVED" }] });
     mocked.list.mockResolvedValueOnce({ items: [], nextCursor: null });
     const html = renderToStaticMarkup(await callPage({ workAreaId: "old-area" }));
-    expect(html).toContain("이전 구역 · 보관됨");
+    expect(html).toContain("이전 영역 · 보관됨");
     expect(mocked.list).toHaveBeenCalledWith("site-1", "old-area", { limit: 50, cursor: undefined });
   });
 
@@ -217,7 +217,7 @@ describe("spatial data request Console surface", () => {
   it("keeps an empty Core page distinct from missing permission or a failed query", async () => {
     mocked.list.mockResolvedValueOnce({ items: [], nextCursor: null });
     const html = renderToStaticMarkup(await callPage({ workAreaId: "area-1" }));
-    expect(html).toContain("이 작업구역의 자료 준비 요청이 없습니다");
+    expect(html).toContain("이 영역의 자료 준비 요청이 없습니다");
     expect(html).toContain("등록 자료에서 이 자료 받기 요청을 만들면 상태와 출력 근거가 이곳에 표시됩니다.");
     expect(html).not.toContain("조회할 권한이 없습니다");
   });
@@ -234,7 +234,7 @@ describe("spatial data request Console surface", () => {
       principalId: "viewer-1", organizationId: "org-1", kind: "OPERATOR", role: "VIEWER", permissions: ["SITES_READ"],
     } });
     const html = renderToStaticMarkup(await callPage({ workAreaId: "area-1" }));
-    expect(html).toContain("구역 자료 준비 기록을 볼 권한이 없습니다");
+    expect(html).toContain("영역 자료 준비 기록을 볼 권한이 없습니다");
     expect(html).not.toContain("SPATIAL_DATA_READ");
     expect(mocked.areas).not.toHaveBeenCalled();
     expect(mocked.list).not.toHaveBeenCalled();
@@ -245,7 +245,7 @@ describe("spatial data request Console surface", () => {
     expect(mocked.catalog).toHaveBeenCalledWith("site-1", "area-1", { limit: 50, cursor: undefined });
     expect(mocked.catalog).toHaveBeenCalledTimes(1);
     expect(html).not.toContain("이 요청 열기");
-    expect(html).toContain("북측 작업구역");
+    expect(html).toContain("북측 영역");
     expect(html).toContain("2026. 10. 14.");
     expect(html).toContain("19:40:09");
     expect(html).toContain("north-dsm.tif");
@@ -282,7 +282,7 @@ describe("spatial data request Console surface", () => {
   it("identifies the original source and requested bounds directly in the detail", async () => {
     const html = renderToStaticMarkup(await callPage({ workAreaId: "area-1", requestId }));
     expect(html).toContain("원본 자료");
-    expect(html).toContain("지표면 높이 자료(DSM) · 2026. 10. 9. 14:00–14:30 촬영 · 북측 작업구역");
+    expect(html).toContain("지표면 높이 자료(DSM) · 2026. 10. 9. 14:00–14:30 촬영 · 북측 영역");
     expect(html).toContain(`원본 assetRef · ksa-v1-${"a".repeat(64)}`);
     expect(html).toContain("요청 범위(파일 좌표 순서)");
   });
@@ -371,7 +371,7 @@ describe("spatial data request Console surface", () => {
   it("hides the size guidance when the list has no recorded size", async () => {
     mocked.list.mockResolvedValueOnce({ items: [], nextCursor: null });
     const html = renderToStaticMarkup(await callPage({ workAreaId: "area-1" }));
-    expect(html).toContain("이 작업구역의 자료 준비 요청이 없습니다");
+    expect(html).toContain("이 영역의 자료 준비 요청이 없습니다");
     expect(html).not.toContain("누적 사용량이나 비용이 아닙니다");
   });
 

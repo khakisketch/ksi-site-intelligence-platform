@@ -1,7 +1,7 @@
 import type { SiteProcessingJobSummary } from "@/lib/core-api/types";
 
 /**
- * 현장 상세의 "조사 기록" 줄 — 그 현장에서 실제로 돌아간 **재구성 시점(epoch)** 목록.
+ * 프로젝트 상세의 "조사 기록" 줄 — 그 현장에서 실제로 돌아간 **재구성 시점(epoch)** 목록.
  *
  * ── 무엇을 싣고 무엇을 싣지 않나 ─────────────────────────────────────────
  * 비교 후보만 고르는 `comparison-submit.selectableEpochs` 와 달리 여기는 **성공하지

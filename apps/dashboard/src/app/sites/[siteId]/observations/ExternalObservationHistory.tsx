@@ -79,7 +79,7 @@ function MetricRow({ item, workAreaName, siteId, detailMode }: {
     <article className="rounded-lg border border-line bg-surface">
       <div className="flex flex-wrap items-start justify-between gap-3 border-b border-line px-4 py-3">
         <div>
-          <p className="flex flex-wrap items-center gap-2 text-lead font-bold"><span>{workAreaName ?? "작업구역"} · {formatKoreanDateTime(result.reportedAt, { dateStyle: "medium", timeStyle: "short" })}</span><ExternalVolumeKindBadge single={single} /></p>
+          <p className="flex flex-wrap items-center gap-2 text-lead font-bold"><span>{workAreaName ?? "영역"} · {formatKoreanDateTime(result.reportedAt, { dateStyle: "medium", timeStyle: "short" })}</span><ExternalVolumeKindBadge single={single} /></p>
           {/* 병합 이력(external-volume-reports)과 상세 페이지 조회는 SINGLE_VOLUME 결과도 돌려준다.
               그 결과의 baselineCapturedFrom/To 는 null 이다(기준 시기가 없다) — 날짜를 지어내지
               않고 기준 구간을 생략한다. */}
@@ -129,7 +129,7 @@ function NetTrend({ items, workAreaNames }: { items: readonly ExternalVolumeHist
   if (groups.length === 0) return null;
   return <section className="rounded-lg border border-line bg-surface px-4 py-3">
     <h2 className="text-lead font-bold">호환되는 비교의 순변화</h2>
-    <p className="mt-1 text-body leading-5 text-ink-2">같은 구역·구역 정의·좌표·수직 기준·정책이 모두 일치한 결과만 같은 줄에 표시합니다. 누적 합계나 공간 분포를 만들지 않습니다.</p>
+    <p className="mt-1 text-body leading-5 text-ink-2">같은 영역·영역 정의·좌표·수직 기준·정책이 모두 일치한 결과만 같은 줄에 표시합니다. 누적 합계나 공간 분포를 만들지 않습니다.</p>
     <div className="mt-3 space-y-4">
       {groups.map((group, groupIndex) => {
         const chronological = group.toSorted((left, right) => (
@@ -138,7 +138,7 @@ function NetTrend({ items, workAreaNames }: { items: readonly ExternalVolumeHist
         const max = Math.max(...group.map((item) => Math.abs(item.result?.metrics?.netM3 ?? 0)), 1);
         const first = chronological[0]!.result!;
         return <div key={compatibilityKey(group[0]!)} className="space-y-2">
-          <p className="text-caption font-semibold text-ink-2">{workAreaNames.get(first.workAreaId) ?? "작업구역"} · 호환 비교 {groupIndex + 1} <span className="font-normal text-ink-muted">(이 묶음의 표시 범위 ±{number(max)} m³)</span></p>
+          <p className="text-caption font-semibold text-ink-2">{workAreaNames.get(first.workAreaId) ?? "영역"} · 호환 비교 {groupIndex + 1} <span className="font-normal text-ink-muted">(이 묶음의 표시 범위 ±{number(max)} m³)</span></p>
           {chronological.map((item) => {
             const result = item.result!;
             const net = result.metrics!.netM3;

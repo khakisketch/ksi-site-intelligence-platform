@@ -59,9 +59,9 @@ const digest = (letter: string) => `sha256:${letter.repeat(64)}`;
 const refOf = (letter: string) => `ksa-v1-${letter.repeat(64)}`;
 const assetRef = refOf("a");
 const secondRef = refOf("c");
-const northArea = { workAreaId: "area-1", name: "북측 작업구역", status: "ACTIVE" };
-const southArea = { workAreaId: "area-2", name: "남측 작업구역", status: "ACTIVE" };
-const oldArea = { workAreaId: "area-3", name: "보관 작업구역", status: "ARCHIVED" };
+const northArea = { workAreaId: "area-1", name: "북측 영역", status: "ACTIVE" };
+const southArea = { workAreaId: "area-2", name: "남측 영역", status: "ACTIVE" };
+const oldArea = { workAreaId: "area-3", name: "보관 영역", status: "ARCHIVED" };
 
 function asset(ref = assetRef, fileName = "north-dsm.tif", workAreaId = "area-1", state = "COMPLETED", outcome: string | null = "MEASURED") {
   return {
@@ -127,7 +127,7 @@ beforeEach(() => {
 });
 
 describe("자료 섹션 화면 (ADR-KSI-043)", () => {
-  it("선택 구역의 자료를 표로 보이고 구역·검색을 컨텍스트 패널에 둔다", async () => {
+  it("선택 영역의 자료를 표로 보이고 영역·검색을 컨텍스트 패널에 둔다", async () => {
     const html = await render();
     expect(mocked.catalog).toHaveBeenCalledWith("site-1", "area-1", { limit: 50 });
     expect(html).toContain('aria-label="자료 보기 조건"');
@@ -138,9 +138,9 @@ describe("자료 섹션 화면 (ADR-KSI-043)", () => {
     expect(html).toContain("EPSG:32652");
     expect(html).toContain("검사 완료");
     expect(html).toContain("검사 실패");
-    // 구역은 링크로 바꾸고, 보관 구역은 접힘 안에 둔다.
+    // 영역은 링크로 바꾸고, 보관 영역은 접힘 안에 둔다.
     expect(html).toContain('href="/sites/site-1/data?workAreaId=area-2"');
-    expect(html).toContain("보관된 구역 1");
+    expect(html).toContain("보관된 영역 1");
     expect(html).toContain('action="/sites/site-1/data"');
   });
 
@@ -200,31 +200,31 @@ describe("자료 섹션 화면 (ADR-KSI-043)", () => {
     expect(html).toContain("불러온 1개 자료에서 검색합니다.");
   });
 
-  it("알 수 없는 구역은 읽지 않고 안내하며, 다른 구역으로 조용히 바꾸지 않는다", async () => {
+  it("알 수 없는 영역은 읽지 않고 안내하며, 다른 영역으로 조용히 바꾸지 않는다", async () => {
     const html = await render({ workAreaId: "area-x" });
     expect(mocked.catalog).not.toHaveBeenCalled();
-    expect(html).toContain("작업구역을 확인할 수 없거나 접근 권한이 없습니다");
+    expect(html).toContain("영역을 확인할 수 없거나 접근 권한이 없습니다");
   });
 
   it("목록 읽기 실패와 권한 거부를 빈 목록으로 단정하지 않는다", async () => {
     mocked.catalog.mockRejectedValueOnce(coreError(403));
-    expect(await render({ workAreaId: "area-1" })).toContain("이 구역의 자료를 볼 권한이 없습니다");
+    expect(await render({ workAreaId: "area-1" })).toContain("이 영역의 자료를 볼 권한이 없습니다");
     mocked.catalog.mockRejectedValueOnce(coreError(500));
     const failed = await render({ workAreaId: "area-1" });
     expect(failed).toContain("비어 있다는 뜻이 아닙니다");
     expect(failed).not.toContain("등록된 자료가 없습니다");
   });
 
-  it("자료가 하나도 없는 구역은 빈 상태를 말한다", async () => {
+  it("자료가 하나도 없는 영역은 빈 상태를 말한다", async () => {
     mocked.catalog.mockResolvedValue(page([]));
-    expect(await render({ workAreaId: "area-1" })).toContain("이 구역에 등록된 자료가 없습니다");
+    expect(await render({ workAreaId: "area-1" })).toContain("이 영역에 등록된 자료가 없습니다");
   });
 
-  it("구역이 없으면 작업구역 관리로 안내한다", async () => {
+  it("영역이 없으면 영역 관리로 안내한다", async () => {
     mocked.areas.mockResolvedValue({ workAreas: [] });
     const html = await render();
     expect(mocked.catalog).not.toHaveBeenCalled();
-    expect(html).toContain("등록된 작업구역이 없습니다");
+    expect(html).toContain("등록된 영역이 없습니다");
     expect(html).toContain('href="/sites/site-1?panel=areas&amp;manage=1"');
   });
 
@@ -238,7 +238,7 @@ describe("자료 섹션 화면 (ADR-KSI-043)", () => {
     expect(open).toMatch(/<details[^>]*open=""[^>]*>/);
   });
 
-  it("자료 등록은 작업 생성 권한이 있고 활성 구역일 때만 둔다", async () => {
+  it("자료 등록은 작업 생성 권한이 있고 활성 영역일 때만 둔다", async () => {
     expect(await render({ workAreaId: "area-1" })).toContain("/sites/site-1/observations/new?workAreaId=area-1");
     mocked.session.mockResolvedValue({ kind: "ready", principal: { organizationId: "org-1", principalId: "v", permissions: ["SITES_READ", "SPATIAL_DATA_READ"] } });
     expect(await render({ workAreaId: "area-1" })).not.toContain("observations/new");

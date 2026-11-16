@@ -3,7 +3,7 @@ import { computePlaneBounds, formatPlaneValue, type PlaneUnit } from "./site-spa
 /**
  * 만료·미준비 상태의 큰 범위 캔버스 — 사진이 아니다.
  *
- * - 검사 격자에서 유도한 파일 전체 사각형과, 같은 평면일 때만 겹치는 작업구역 링,
+ * - 검사 격자에서 유도한 파일 전체 사각형과, 같은 평면일 때만 겹치는 영역 링,
  *   그리고 실제 준비 창의 actualBounds를 네이티브 좌표 그대로 그린다.
  * - 재투영·유효 픽셀 단정·정확도 주장을 하지 않는다. 실제 픽셀은 그리지 않고
  *   범위·치수·축척만 등록 기록에서 계산한다.
@@ -112,7 +112,7 @@ export function SiteMosaicAbsentCanvas({
       preserveAspectRatio="xMidYMid meet"
       className="absolute inset-0 block h-full w-full"
       role="img"
-      aria-label={`등록 범위 도식. 실제 픽셀이 아니며 파일 전체 범위 ${formatPlaneValue(fileWidth, planeUnit)}${unit} × ${formatPlaneValue(fileHeight, planeUnit)}${unit}. ${showRing ? "실선은 작업구역 경계, 점선은 파일 전체 범위입니다." : "작업구역 경계는 같은 평면으로 확인되지 않아 표시하지 않았습니다."}${preparedLabel ? ` ${preparedLabel}의 실제 범위를 함께 표시합니다.` : ""}`}
+      aria-label={`등록 범위 도식. 실제 픽셀이 아니며 파일 전체 범위 ${formatPlaneValue(fileWidth, planeUnit)}${unit} × ${formatPlaneValue(fileHeight, planeUnit)}${unit}. ${showRing ? "실선은 영역 경계, 점선은 파일 전체 범위입니다." : "영역 경계는 같은 평면으로 확인되지 않아 표시하지 않았습니다."}${preparedLabel ? ` ${preparedLabel}의 실제 범위를 함께 표시합니다.` : ""}`}
     >
       <title>등록 범위 도식 — 실제 픽셀 아님</title>
       <defs>

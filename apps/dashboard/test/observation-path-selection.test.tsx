@@ -14,7 +14,7 @@ describe("ExternalObservationCreateForm path selection", () => {
       <ExternalObservationCreateForm
         siteId="site-1"
         siteName="A 현장"
-        workAreas={[{ workAreaId: "area-1", name: "1구역" }]}
+        workAreas={[{ workAreaId: "area-1", name: "1영역" }]}
         accountIdentity={{ fingerprint: `v1-${"a".repeat(64)}` }}
       />,
     );
@@ -28,7 +28,7 @@ describe("ExternalObservationCreateForm path selection", () => {
     // Next step is explicit: the action stays disabled until scope is complete.
     const submit = screen.getByRole("button", { name: "관측 자료 등록 계속" }) as HTMLButtonElement;
     expect(submit.disabled).toBe(true);
-    expect(screen.getByText("작업 이름을 입력하고 비교할 작업구역을 하나 이상 선택하세요.")).toBeTruthy();
+    expect(screen.getByText("작업 이름을 입력하고 비교할 영역을 하나 이상 선택하세요.")).toBeTruthy();
     // The preserved comparison record stays a plain navigation link, not a competing action.
     expect(screen.getByRole("link", { name: /외부 비교 기록/ }).getAttribute("href")).toBe("/sites/site-1/observations");
   });
@@ -38,12 +38,12 @@ describe("ExternalObservationCreateForm path selection", () => {
       <ExternalObservationCreateForm
         siteId="site-1"
         siteName="A 현장"
-        workAreas={[{ workAreaId: "area-1", name: "1구역" }]}
+        workAreas={[{ workAreaId: "area-1", name: "1영역" }]}
         accountIdentity={{ fingerprint: `v1-${"a".repeat(64)}` }}
       />,
     );
     fireEvent.change(screen.getByLabelText("작업 이름"), { target: { value: "9월 현황 비교" } });
-    fireEvent.click(screen.getByLabelText("1구역"));
+    fireEvent.click(screen.getByLabelText("1영역"));
     expect((screen.getByRole("button", { name: "관측 자료 등록 계속" }) as HTMLButtonElement).disabled).toBe(false);
     expect(screen.queryByText(/비행을 시작합니다/)).toBeNull();
   });

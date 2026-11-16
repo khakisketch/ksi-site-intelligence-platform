@@ -8,7 +8,7 @@ import { SiteDisplayLegend } from "@/app/sites/[siteId]/SiteDisplayLegend";
 import type { WorkArea } from "@/lib/core-api/types";
 import type { WorkspaceServerFacts } from "@/lib/site-workspace-entry";
 
-const area = { workAreaId: "area-1", name: "검증 구역", status: "ACTIVE" } as WorkArea;
+const area = { workAreaId: "area-1", name: "검증 영역", status: "ACTIVE" } as WorkArea;
 function canvas({ mode = "explore", detail = true }: { mode?: "explore" | "compare" | "results"; detail?: boolean } = {}) {
   return <SiteExploreCanvas sitePath="/sites/site-1" areas={[area]} selectedWorkAreaId="area-1"
     captureOptions={[{ assetRef: "asset-1", label: "2021. 8. 17. 촬영 (날짜만 확인 · 시각 미상)", title: "원본 1", selected: true }, { assetRef: "asset-2", label: "2022. 8. 17. 촬영 (날짜만 확인 · 시각 미상)", title: "원본 2", selected: false }]}
@@ -62,9 +62,9 @@ describe("workspace selection rail", () => {
       const { unmount } = render(canvas({ mode }));
       const rail = screen.getByRole("complementary", { name: "작업공간 선택" });
       const link = rail.querySelector('a[href*="manage=1"]')!;
-      expect(link.textContent).toBe("작업구역 관리");
+      expect(link.textContent).toBe("영역 관리");
       expect(link.getAttribute("href")).toBe("/sites/site-1?panel=areas&workAreaId=area-1&manage=1");
-      expect(rail.textContent!.indexOf("작업구역")).toBeLessThan(rail.textContent!.indexOf("관측 시점"));
+      expect(rail.textContent!.indexOf("영역")).toBeLessThan(rail.textContent!.indexOf("관측 시점"));
       expect(rail.textContent!.indexOf("관측 시점")).toBeLessThan(rail.textContent!.indexOf("표시 레이어"));
       expect(screen.getByRole("region", { name: "공간자료 뷰어" })).toBeTruthy();
       unmount();
@@ -141,7 +141,7 @@ const visualCatalog = [
   { assetRef: visualRef("2"), workAreaId: "area-1", workOrderId: "w-b", observationEpochId: "epoch-b", kind: "dsm", submissionRef: VISUAL_SUB_B, revision: 1, declared: { fileName: "d1.tif" }, inspection: { raster: null, outcome: "PASS" } },
 ];
 
-const visualAreas = [{ workAreaId: "area-1", name: "검증 구역", status: "ACTIVE" }];
+const visualAreas = [{ workAreaId: "area-1", name: "검증 영역", status: "ACTIVE" }];
 
 function compareControls(a = visualRef("1"), b = visualRef("2")) {
   return <SiteWorkspaceCompare
@@ -231,10 +231,10 @@ describe("compare selection rail (viewer-first compact)", () => {
     const aside = rail.closest("aside")!;
     expect(aside.className).toContain("items-start");
     expect(aside.className).toContain("content-start");
-    // 작업구역 줄은 작은 화면에서 전폭 행이다.
-    const areaRow = within(rail).getByText(/작업구역 ·/).closest("div")!.parentElement!;
+    // 영역 줄은 작은 화면에서 전폭 행이다.
+    const areaRow = within(rail).getByText(/^영역 · /).closest("div")!.parentElement!;
     expect(areaRow.className).toContain("sm:col-span-full");
-    // 포커스/DOM 순서: 구역 → 관측 A → 관측 B → 적용 → 표시 레이어.
+    // 포커스/DOM 순서: 영역 → 관측 A → 관측 B → 적용 → 표시 레이어.
     const inOrder = (first: Element, second: Element) =>
       Boolean(first.compareDocumentPosition(second) & Node.DOCUMENT_POSITION_FOLLOWING);
     const selectA = within(rail).getByLabelText("관측 A");

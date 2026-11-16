@@ -13,7 +13,7 @@ describe("정적 경로", () => {
   it.each([
     ["/", "홈"],
     ["/sites", "현장"],
-    ["/sites/new", "현장 등록"],
+    ["/sites/new", "프로젝트 등록"],
     ["/field", "작업"],
     ["/field/new", "관측 자료 등록"],
     ["/field/inbox", "받은 작업"],
@@ -40,19 +40,19 @@ describe("동적 경로", () => {
 
   it("query navigation uses the current result or settings title", () => {
     expect(resolvePageTitle("/sites/SITE-1", new URLSearchParams("mode=results"))).toBe("분석 결과");
-    expect(resolvePageTitle("/sites/SITE-1", new URLSearchParams("section=manage"))).toBe("현장 설정");
+    expect(resolvePageTitle("/sites/SITE-1", new URLSearchParams("section=manage"))).toBe("프로젝트 설정");
   });
 
-  it("작업구역(M4-C)도 마찬가지다 — 패턴이 없으면 topbar 가 제목을 잃는다", () => {
-    expect(resolvePageTitle("/sites/SITE-1/work-areas")).toBe("작업구역");
-    expect(resolvePageTitle("/sites/SITE-1/work-areas/")).toBe("작업구역");
+  it("영역(M4-C)도 마찬가지다 — 패턴이 없으면 topbar 가 제목을 잃는다", () => {
+    expect(resolvePageTitle("/sites/SITE-1/work-areas")).toBe("영역");
+    expect(resolvePageTitle("/sites/SITE-1/work-areas/")).toBe("영역");
   });
 
   it("공간 자산 화면도 접근 가능한 상태와 현장 거부 상태에서 같은 제목을 유지한다", () => {
     expect(resolvePageTitle("/sites/SITE-1/spatial-assets")).toBe("공간");
     expect(resolvePageTitle("/sites/SITE-1/spatial-assets/")).toBe("공간");
-    expect(resolvePageTitle("/sites/SITE-1/spatial-data-requests")).toBe("구역 자료 준비");
-    expect(resolvePageTitle("/sites/SITE-1/spatial-data-requests/")).toBe("구역 자료 준비");
+    expect(resolvePageTitle("/sites/SITE-1/spatial-data-requests")).toBe("영역 자료 준비");
+    expect(resolvePageTitle("/sites/SITE-1/spatial-data-requests/")).toBe("영역 자료 준비");
   });
 
   it("후행 슬래시가 있어도 같은 제목이다", () => {

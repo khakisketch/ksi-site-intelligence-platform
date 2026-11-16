@@ -29,7 +29,7 @@ export function SiteDirectoryCard({ row, sameName }: { row: SiteListRow; sameNam
       {sameName && <SiteIdentityDetails site={site} sameName />}
       <div className="mt-auto flex flex-wrap items-center gap-x-4 border-t border-line pt-1.5 text-caption">
         <Link href={href} className="tap-target inline-flex items-center gap-2 font-semibold">
-          현장 열기
+          프로젝트 열기
           <svg aria-hidden="true" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" className="size-4"><path d="M4 10h12m-5-5 5 5-5 5" /></svg>
         </Link>
         <Link href={`${href}/data`} className="tap-target ml-auto inline-flex items-center text-ink-2 hover:underline">자료</Link>

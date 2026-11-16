@@ -64,14 +64,14 @@ describe("영역 관리 보기 — 목록 읽기 상태", () => {
   it("gives access-specific guidance for a denied WorkArea read", async () => {
     mocked.areas.mockRejectedValueOnce(new CoreApiError(403, {}));
     const html = renderToStaticMarkup(await callPage());
-    expect(html).toContain("현장 담당자에게 조회 권한을 요청하세요.");
+    expect(html).toContain("프로젝트 담당자에게 조회 권한을 요청하세요.");
     expect(html).toContain("data-list-error=\"true\"");
   });
 
   it("does not treat a missing WorkArea-list response as an empty site", async () => {
     mocked.areas.mockRejectedValueOnce(new CoreApiError(404, {}));
     const html = renderToStaticMarkup(await callPage());
-    expect(html).toContain("현장 작업구역 목록을 확인할 수 없습니다.");
+    expect(html).toContain("현장 영역 목록을 확인할 수 없습니다.");
     expect(html).toContain("data-list-error=\"true\"");
   });
 

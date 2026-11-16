@@ -14,7 +14,7 @@ const base: SpatialTaskView = {
   readiness: null, analysis: null,
 };
 const options: SpatialTaskOptions = {
-  siteId: "site-a", areas: [{ workAreaId: "area-a", name: "동측 구역" }], nextOffset: null,
+  siteId: "site-a", areas: [{ workAreaId: "area-a", name: "동측 영역" }], nextOffset: null,
   observations: ["a", "b"].map((letter, index) => ({
     selector: { workOrderId: `order-${letter}`, submissionRef: `ers-v1-${letter.repeat(64)}`, revision: 1 },
     observationEpochId: `epoch-${letter}`, captureStartedAt: `2026-10-${20 + index}T00:00:00Z`,
@@ -111,7 +111,7 @@ describe("disabled save explains what is missing", () => {
     render(<SpatialTaskPanel initialView={base} initialOptions={options} siteName="테스트 현장" areas={[]} canWrite />);
     const save = screen.getByRole("button", { name: "이 선택으로 계속" });
     expect(save.matches(":disabled")).toBe(true);
-    const hint = screen.getByText(/어느 구역인지 선택하면/);
+    const hint = screen.getByText(/어느 영역인지 선택하면/);
     expect(save.getAttribute("aria-describedby")).toContain(hint.id);
   });
 });
@@ -122,13 +122,13 @@ describe("header reload never silently drops an unsaved draft", () => {
     Object.defineProperty(window, "location", { value: { ...window.location, reload }, writable: true, configurable: true });
     vi.stubGlobal("fetch", vi.fn());
     render(<SpatialTaskPanel initialView={base} initialOptions={options} siteName="테스트 현장" areas={[]} canWrite />);
-    fireEvent.click(screen.getByLabelText("동측 구역"));
+    fireEvent.click(screen.getByLabelText("동측 영역"));
     fireEvent.click(screen.getByRole("button", { name: "저장된 선택 불러오기" }));
     expect(await screen.findByRole("dialog", { name: "저장하지 않은 변경이 있습니다" })).toBeTruthy();
     expect(reload).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: "취소" }));
     await waitFor(() => expect(screen.queryByRole("dialog", { name: "저장하지 않은 변경이 있습니다" })).toBeNull());
-    expect((screen.getByLabelText("동측 구역") as HTMLInputElement).checked).toBe(true);
+    expect((screen.getByLabelText("동측 영역") as HTMLInputElement).checked).toBe(true);
     expect(reload).not.toHaveBeenCalled();
   });
   it("reloads directly when nothing is unsaved", () => {
@@ -153,7 +153,7 @@ describe("fewer than two observations links the existing registration path", () 
   it("offers the same-area asset registration route without widening the grant", () => {
     const single: SpatialTaskOptions = { ...options, observations: options.observations.slice(0, 1) };
     render(<SpatialTaskPanel initialView={base} initialOptions={single} siteName="테스트 현장" areas={[]} canWrite />);
-    fireEvent.click(screen.getByLabelText("동측 구역"));
+    fireEvent.click(screen.getByLabelText("동측 영역"));
     expect(screen.getByText(/두 개 미만입니다/)).toBeTruthy();
     expect(screen.getByRole("link", { name: "등록 자료와 검사 상태 확인" }).getAttribute("href"))
       .toBe("/sites/site-a?panel=materials&workAreaId=area-a");

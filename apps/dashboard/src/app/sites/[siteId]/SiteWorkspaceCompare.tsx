@@ -103,7 +103,7 @@ function CompareSlot({
               coincident={footprintRing ? coincident(footprintRing) : false}
             />
           ) : (
-            <p className="text-body leading-5 text-ink-2">구역 기하를 읽지 못해 범위를 그리지 않았습니다.</p>
+            <p className="text-body leading-5 text-ink-2">영역 기하를 읽지 못해 범위를 그리지 않았습니다.</p>
           )}
           {!catalogItem && (
             <p className="text-caption leading-5 text-ink-2">측정 범위 정보를 조회하지 못해 관측 범위를 겹쳐 표시하지 않았습니다. 선택한 버전 자체는 그대로 둡니다.</p>
@@ -176,7 +176,7 @@ export function SiteWorkspaceCompare({
   /** 관측 자료 등록(쓰기) 가능 여부 — 펼침의 등록 경로 안내에만 쓴다. */
   canCreateWorkOrder: boolean;
   scopedCompareHref: string;
-  /** 비교할 후보가 없을 때 돌아갈 탐색 주소 — 같은 구역·선택 자료 그대로 둔다. */
+  /** 비교할 후보가 없을 때 돌아갈 탐색 주소 — 같은 영역·선택 자료 그대로 둔다. */
   exploreHref: string;
   facts: WorkspaceServerFacts;
   /** Same comparison logic, with its observation controls hosted by the workspace rail. */
@@ -221,7 +221,7 @@ export function SiteWorkspaceCompare({
   const noOptionReason = (() => {
     if (!showNoOptionBox || !selected) return null;
     if (representatives.length === 0) {
-      return "이 구역에 확인된 관측이 없습니다. 관측이 등록되면 같은 구역의 두 시점을 나란히 둘 수 있습니다.";
+      return "이 영역에 확인된 관측이 없습니다. 관측이 등록되면 같은 영역의 두 시점을 나란히 둘 수 있습니다.";
     }
     const browsableCount = (groups?.browsableDateOnly.length ?? 0) + (groups?.browsableUnknown.length ?? 0);
     if (blocked.length > 0 && browsableCount === 0 && tiedFacts.length === 0) {
@@ -230,7 +230,7 @@ export function SiteWorkspaceCompare({
     if (browsableCount > 0 && blocked.length === 0 && tiedFacts.length === 0) {
       return (groups?.browsableUnknown.length ?? 0) > 0
         ? "촬영 시각을 확인하지 못한 관측이 있어, 두 시점의 순서를 확정할 수 없습니다. 날짜만 확인된 관측과 시점 미상 관측은 상세에서 구분합니다."
-        : "이 구역의 관측은 촬영 시각 대신 날짜만 확인되어, 두 시점의 순서를 확정할 수 없습니다.";
+        : "이 영역의 관측은 촬영 시각 대신 날짜만 확인되어, 두 시점의 순서를 확정할 수 없습니다.";
     }
     if (tiedFacts.length > 0 && blocked.length === 0 && browsableCount === 0) {
       return "같은 촬영 구간의 관측이 2개 이상 있어 자동으로 고르지 않았습니다.";
@@ -301,7 +301,7 @@ export function SiteWorkspaceCompare({
       {workspaceHasMore && <p className="text-caption text-ink-2">조회된 목록 뒤에 관측이 더 있습니다. 찾는 관측이 없으면 담당자에게 문의하세요.</p>}
     </form>
   ) : null;
-  if (presentation === "controls") return <div className="min-w-0"><h3 className="mb-2 text-caption font-semibold">관측 시점</h3>{visualForm ?? <p className="text-caption leading-5 text-ink-2">{selected === null ? "비교할 작업구역이 없습니다. 목록에서 구역을 고르세요." : projectionState === "denied" ? "관측 목록을 조회할 권한이 없습니다. 담당자에게 조회 권한을 요청하세요." : projectionState === "ready" ? "독립 보기로 둘 관측이 아직 없습니다. 뷰어에서 사유를 확인하세요." : "관측 목록을 불러오지 못했습니다. 잠시 후 뷰어에서 조회 상태를 확인하세요."}</p>}{comparisonForm && <ActionMenu label="시간 순서 비교" className="mt-2 text-caption" panelClassName="w-[min(34rem,calc(100vw-2rem))] max-h-[65vh]"><div className="mt-2">{comparisonForm}</div></ActionMenu>}</div>;
+  if (presentation === "controls") return <div className="min-w-0"><h3 className="mb-2 text-caption font-semibold">관측 시점</h3>{visualForm ?? <p className="text-caption leading-5 text-ink-2">{selected === null ? "비교할 영역이 없습니다. 목록에서 영역을 고르세요." : projectionState === "denied" ? "관측 목록을 조회할 권한이 없습니다. 담당자에게 조회 권한을 요청하세요." : projectionState === "ready" ? "독립 보기로 둘 관측이 아직 없습니다. 뷰어에서 사유를 확인하세요." : "관측 목록을 불러오지 못했습니다. 잠시 후 뷰어에서 조회 상태를 확인하세요."}</p>}{comparisonForm && <ActionMenu label="시간 순서 비교" className="mt-2 text-caption" panelClassName="w-[min(34rem,calc(100vw-2rem))] max-h-[65vh]"><div className="mt-2">{comparisonForm}</div></ActionMenu>}</div>;
   if (presentation === "inspector") return <div className="flex min-w-0 flex-col gap-3">
     {visualPair.status === "ready" && visualAFact && visualBFact && (
       <div className="rounded-lg border border-line bg-surface px-3.5 py-2.5">
@@ -418,7 +418,7 @@ export function SiteWorkspaceCompare({
       </Disclosure>
     )}
     {selected && projectionState === "ready" && resolution.status !== "ready" && (
-      <Link href={`${sitePath}/spatial-data-requests?workAreaId=${encodeURIComponent(selected.workAreaId)}`} className="btn btn-quiet w-fit">구역 자료 준비</Link>
+      <Link href={`${sitePath}/spatial-data-requests?workAreaId=${encodeURIComponent(selected.workAreaId)}`} className="btn btn-quiet w-fit">영역 자료 준비</Link>
     )}
 
     {comparisonForm && (
@@ -450,7 +450,7 @@ export function SiteWorkspaceCompare({
         </p>
       </div>
       <p className="mt-2 text-caption leading-5">
-        <Link href={`${sitePath}/spatial-data-requests?workAreaId=${encodeURIComponent(selected.workAreaId)}`} className="tap-target underline">구역 자료 준비</Link>
+        <Link href={`${sitePath}/spatial-data-requests?workAreaId=${encodeURIComponent(selected.workAreaId)}`} className="tap-target underline">영역 자료 준비</Link>
         <span className="text-ink-muted"> · 자료 준비는 보는 범위를 넓힐 뿐, 시간 순서·표시 봉인 조건을 보장하지 않습니다.</span>
       </p>
       <p className="mt-1 text-caption leading-5 text-ink-muted">실제 파일은 권한 확인 뒤 준비·다운로드로만 받습니다. 이 화면에서 바이트를 직접 열지 않습니다.</p>
@@ -459,12 +459,12 @@ export function SiteWorkspaceCompare({
   return <div className="flex min-w-0 flex-col gap-3">
     {selected === null && (
       <p className="rounded-lg border border-line bg-surface px-4 py-3 text-body leading-5 text-ink-2">
-        비교할 작업구역이 없습니다. 작업구역이 등록되면 같은 구역의 두 자료를 나란히 둘 수 있습니다.
+        비교할 영역이 없습니다. 영역이 등록되면 같은 영역의 두 자료를 나란히 둘 수 있습니다.
       </p>
     )}
     {selected && (
       <p className="text-body leading-5 text-ink-2 xl:hidden">
-        {areaLabel} · 같은 구역의 두 자료를 독립된 두 보기로 둡니다.{" "}
+        {areaLabel} · 같은 영역의 두 자료를 독립된 두 보기로 둡니다.{" "}
         <span className="font-semibold">독립 보기 — 정합 근거 없음</span>
         {presentation === "full" && (visualPair.status === "ready" && visualAFact && visualBFact
           ? ` · 관측 A(${candidateLabel(visualAFact)}) · 관측 B(${candidateLabel(visualBFact)})`
@@ -532,7 +532,7 @@ export function SiteWorkspaceCompare({
     )}
     {selected && projectionState === "unavailable" && (
       <p className="rounded-lg border border-line bg-surface px-4 py-3 text-body leading-5 text-ink-2">
-        관측 목록을 불러오지 못했습니다. 잠시 후 다시 확인하세요. 빈 목록으로 단정하지 않습니다.
+        관측 목록을 불러오지 못했습니다. 잠시 후 다시 확인하세요.
       </p>
     )}
 
@@ -540,7 +540,7 @@ export function SiteWorkspaceCompare({
       <div className="rounded-lg border border-line bg-surface px-4 py-3" role="status">
         <p className="text-body font-bold">{noOptionReason}</p>
         <p className="mt-1 text-body leading-5 text-ink-2">
-          같은 구역의 실제 관측부터 둘러보세요.{" "}
+          같은 영역의 실제 관측부터 둘러보세요.{" "}
           <Link href={exploreHref} className="tap-target underline">탐색에서 날짜·층별로 확인</Link>
         </p>
         {/* 무엇을 하면 비교가 되는지 — 막힌 이유만 말하고 끝내지 않는다.
@@ -548,7 +548,7 @@ export function SiteWorkspaceCompare({
             필요할 때의 수치 계산 경로와 새 관측 등록을 함께 제시한다. */}
         <p className="mt-2 border-t border-line pt-2 text-caption leading-5 text-ink-2">
           나란히 두려면 <span className="font-semibold text-ink-1">촬영 시간이 정확히 기록된 관측 2개</span>가
-          같은 구역에 있어야 합니다. 각 관측의 표시 조건도 별도로 확인해야 합니다.
+          같은 영역에 있어야 합니다. 각 관측의 표시 조건도 별도로 확인해야 합니다.
         </p>
         <p className="mt-1.5 flex flex-wrap gap-2 text-caption">
           {canCreateWorkOrderHere && (
@@ -672,7 +672,7 @@ export function SiteWorkspaceCompare({
       </Disclosure>
     )}
     {selected && projectionState === "ready" && resolution.status !== "ready" && (
-      <Link href={`${sitePath}/spatial-data-requests?workAreaId=${encodeURIComponent(selected.workAreaId)}`} className="btn btn-quiet w-fit">구역 자료 준비</Link>
+      <Link href={`${sitePath}/spatial-data-requests?workAreaId=${encodeURIComponent(selected.workAreaId)}`} className="btn btn-quiet w-fit">영역 자료 준비</Link>
     )}
 
     {presentation !== "viewer" && selected && resolution.status === "ready" && <div className="rounded-lg border border-line bg-surface px-4 py-3">
@@ -698,7 +698,7 @@ export function SiteWorkspaceCompare({
         </p>
       </div>
       <p className="mt-2 text-caption leading-5">
-        <Link href={`${sitePath}/spatial-data-requests?workAreaId=${encodeURIComponent(selected.workAreaId)}`} className="tap-target underline">구역 자료 준비</Link>
+        <Link href={`${sitePath}/spatial-data-requests?workAreaId=${encodeURIComponent(selected.workAreaId)}`} className="tap-target underline">영역 자료 준비</Link>
         <span className="text-ink-muted"> · 자료 준비는 보는 범위를 넓힐 뿐, 시간 순서·표시 봉인 조건을 보장하지 않습니다.</span>
       </p>
       <p className="mt-1 text-caption leading-5 text-ink-muted">실제 파일은 권한 확인 뒤 준비·다운로드로만 받습니다. 이 화면에서 바이트를 직접 열지 않습니다.</p>

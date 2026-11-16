@@ -32,7 +32,7 @@ export const PORTFOLIO_SORTS = [
   { key: "attention", label: "확인 필요한 순" },
   { key: "recent", label: "최근 임무 순" },
   { key: "registered", label: "최근 등록 순" },
-  { key: "name", label: "현장명 순" },
+  { key: "name", label: "프로젝트명 순" },
 ] as const;
 
 export type PortfolioSort = (typeof PORTFOLIO_SORTS)[number]["key"];
@@ -57,7 +57,7 @@ export function normalizePortfolioQuery(raw: string | null | undefined): string 
 /**
  * 이름 또는 현장 ID 로 거른다.
  *
- * ID 를 포함하는 이유는 팔레트와 같다 — 현장명을 정확히 기억 못 해도 도달할 수
+ * ID 를 포함하는 이유는 팔레트와 같다 — 프로젝트명을 정확히 기억 못 해도 도달할 수
  * 있어야 한다. 상태 라벨로는 거르지 않는다: 표에 상태 배지가 이미 보이고, 라벨
  * 문자열을 검색 대상에 넣으면 "순찰"이 상태와 이름 양쪽에 걸려 결과가 왜 나왔는지
  * 설명되지 않는다.
@@ -83,7 +83,7 @@ function byIsoDesc(a: string | null, b: string | null): number {
 }
 
 /**
- * 정렬. 어떤 기준이든 **동점은 현장명 순**으로 풀어 순서를 결정론적으로 만든다 —
+ * 정렬. 어떤 기준이든 **동점은 프로젝트명 순**으로 풀어 순서를 결정론적으로 만든다 —
  * 새로고침마다 행이 뒤바뀌면 운영자는 표를 다시 읽는다.
  *
  * `attention`(기본)의 순서는 "순찰을 시작조차 못 하는 현장 → 미조치가 많은 현장"

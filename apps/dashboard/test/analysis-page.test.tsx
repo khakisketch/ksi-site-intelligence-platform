@@ -43,8 +43,8 @@ describe("analysis deep link", () => {
 
   it("shows start guidance from exact loaded records while no analysis exists yet", async () => {
     mocked.areas.mockResolvedValue({ workAreas: [
-      { workAreaId: "area-1", name: "1구역" },
-      { workAreaId: "area-2", name: "2구역" },
+      { workAreaId: "area-1", name: "1영역" },
+      { workAreaId: "area-2", name: "2영역" },
     ] });
     mocked.observations.mockResolvedValue([
       { selector: { workOrderId: "work-1", submissionRef: `ers-v1-${"a".repeat(64)}`, revision: 1 }, observationEpochId: "epoch-1", captureStartedAt: "2026-09-01T00:00:00Z", captureEndedAt: "2026-09-01T00:30:00Z" },
@@ -67,7 +67,7 @@ describe("analysis deep link", () => {
   });
 
   it("omits start guidance once analyses exist so results lead", async () => {
-    mocked.areas.mockResolvedValue({ workAreas: [{ workAreaId: "area-1", name: "1구역" }] });
+    mocked.areas.mockResolvedValue({ workAreas: [{ workAreaId: "area-1", name: "1영역" }] });
     mocked.observations.mockResolvedValue([
       { selector: { workOrderId: "work-1", submissionRef: `ers-v1-${"a".repeat(64)}`, revision: 1 }, observationEpochId: "epoch-1", captureStartedAt: "2026-09-01T00:00:00Z", captureEndedAt: "2026-09-01T00:30:00Z" },
     ]);
@@ -82,7 +82,7 @@ describe("analysis deep link", () => {
   });
 
   it("passes only Site-verified WorkArea attribution to the analysis selector and counts unknown links", async () => {
-    mocked.areas.mockResolvedValue({ workAreas: [{ workAreaId: "area-1", name: "1구역" }] });
+    mocked.areas.mockResolvedValue({ workAreas: [{ workAreaId: "area-1", name: "1영역" }] });
     mocked.observations.mockResolvedValue([
       { selector: { workOrderId: "work-1", submissionRef: `ers-v1-${"a".repeat(64)}`, revision: 1 }, observationEpochId: "epoch-known", captureStartedAt: "2026-09-01T00:00:00Z", captureEndedAt: "2026-09-01T00:30:00Z" },
       { selector: { workOrderId: "work-missing", submissionRef: `ers-v1-${"b".repeat(64)}`, revision: 1 }, observationEpochId: "epoch-unknown", captureStartedAt: "2026-09-08T00:00:00Z", captureEndedAt: "2026-09-08T00:30:00Z" },
@@ -96,7 +96,7 @@ describe("analysis deep link", () => {
   });
 
   it("does not treat a mismatched WorkOrder scope as a WorkArea attribution", async () => {
-    mocked.areas.mockResolvedValue({ workAreas: [{ workAreaId: "area-1", name: "1구역" }] });
+    mocked.areas.mockResolvedValue({ workAreas: [{ workAreaId: "area-1", name: "1영역" }] });
     mocked.observations.mockResolvedValue([
       { selector: { workOrderId: "work-1", submissionRef: `ers-v1-${"a".repeat(64)}`, revision: 1 }, observationEpochId: "epoch-1", captureStartedAt: "2026-09-01T00:00:00Z", captureEndedAt: "2026-09-01T00:30:00Z" },
     ]);
@@ -108,7 +108,7 @@ describe("analysis deep link", () => {
   });
 
   it("passes only Site-verified WorkOrder names for display and keeps missing names honest", async () => {
-    mocked.areas.mockResolvedValue({ workAreas: [{ workAreaId: "area-1", name: "1구역" }] });
+    mocked.areas.mockResolvedValue({ workAreas: [{ workAreaId: "area-1", name: "1영역" }] });
     mocked.observations.mockResolvedValue([
       { selector: { workOrderId: "work-1", submissionRef: `ers-v1-${"a".repeat(64)}`, revision: 1 }, observationEpochId: "epoch-1", captureStartedAt: "2026-09-01T00:00:00Z", captureEndedAt: "2026-09-01T00:30:00Z" },
     ]);
@@ -134,7 +134,7 @@ describe("analysis deep link", () => {
 
     expect(calls[0]).toBe("site");
     expect(screen.getByRole("navigation", { name: "분석 보기" })).toBeTruthy();
-    // 관측 실패가 기록 이력까지 닫지 않는다 — 구역별 상태로만 전달된다.
+    // 관측 실패가 기록 이력까지 닫지 않는다 — 영역별 상태로만 전달된다.
     const props = JSON.parse(screen.getByTestId("panel-exact").textContent!);
     expect(props.listsState.observations).toBe("unconfirmed");
     expect(props.listsState.history).toBe("ready");
@@ -173,7 +173,7 @@ describe("analysis deep link", () => {
     render(await SiteAnalysisPage({ params: Promise.resolve({ siteId: "site-1" }), searchParams: Promise.resolve({}) }));
 
     expect(screen.getByRole("navigation", { name: "분석 보기" })).toBeTruthy();
-    // 이력 실패는 기록 구역만의 상태다 — 요청서는 그대로 두고 빈 단정을 두지 않는다.
+    // 이력 실패는 기록 영역만의 상태다 — 요청서는 그대로 두고 빈 단정을 두지 않는다.
     const props = JSON.parse(screen.getByTestId("panel-exact").textContent!);
     expect(props.listsState.history).toBe("failed");
     expect(props.listsState.historyMessage).toContain("이력을 불러오지 못했습니다");
@@ -187,22 +187,22 @@ describe("analysis deep link", () => {
 
     const props = JSON.parse(screen.getByTestId("panel-exact").textContent!);
     expect(props.listsState.history).toBe("denied");
-    expect(props.listsState.historyMessage).toContain("현장 담당자에게 변화 분석 기록 조회 권한을 요청하세요.");
+    expect(props.listsState.historyMessage).toContain("프로젝트 담당자에게 변화 분석 기록 조회 권한을 요청하세요.");
     expect(screen.queryByText(/0건|아직 변화 분석 요청이 없습니다/)).toBeNull();
   });
 
   it("preselects the single ACTIVE area without an explicit query", async () => {
-    mocked.areas.mockResolvedValue({ workAreas: [{ workAreaId: "area-1", name: "1구역", status: "ACTIVE" }] });
+    mocked.areas.mockResolvedValue({ workAreas: [{ workAreaId: "area-1", name: "1영역", status: "ACTIVE" }] });
 
     render(await SiteAnalysisPage({ params: Promise.resolve({ siteId: "site-1" }), searchParams: Promise.resolve({}) }));
 
-    expect(screen.getByTestId("panel-scope").textContent).toBe("area-1|선택한 구역에서 시작합니다. 범위가 맞는지 확인하고 필요하면 바꾸세요.");
+    expect(screen.getByTestId("panel-scope").textContent).toBe("area-1|선택한 영역에서 시작합니다. 범위가 맞는지 확인하고 필요하면 바꾸세요.");
   });
 
   it("keeps the scope empty with several ACTIVE areas instead of guessing one", async () => {
     mocked.areas.mockResolvedValue({ workAreas: [
-      { workAreaId: "area-1", name: "1구역", status: "ACTIVE" },
-      { workAreaId: "area-2", name: "2구역", status: "ACTIVE" },
+      { workAreaId: "area-1", name: "1영역", status: "ACTIVE" },
+      { workAreaId: "area-2", name: "2영역", status: "ACTIVE" },
     ] });
 
     render(await SiteAnalysisPage({ params: Promise.resolve({ siteId: "site-1" }), searchParams: Promise.resolve({}) }));
@@ -211,12 +211,12 @@ describe("analysis deep link", () => {
   });
 
   it("marks observations unconfirmed for an ambiguous 404, keeping scope honest", async () => {
-    mocked.areas.mockResolvedValue({ workAreas: [{ workAreaId: "area-1", name: "1구역", status: "ACTIVE" }] });
+    mocked.areas.mockResolvedValue({ workAreas: [{ workAreaId: "area-1", name: "1영역", status: "ACTIVE" }] });
     mocked.observations.mockRejectedValueOnce(new CoreApiError(404, { detail: "route unavailable" }));
 
     render(await SiteAnalysisPage({ params: Promise.resolve({ siteId: "site-1" }), searchParams: Promise.resolve({ workAreaId: "area-1" }) }));
 
-    // 같은 구역의 다음 확인 링크는 요청서의 목록 상태 안내가 맡는다.
+    // 같은 영역의 다음 확인 링크는 요청서의 목록 상태 안내가 맡는다.
     const props = JSON.parse(screen.getByTestId("panel-exact").textContent!);
     expect(props.listsState.observations).toBe("unconfirmed");
     expect(props.listsState.history).toBe("ready");
@@ -226,7 +226,7 @@ describe("analysis deep link", () => {
 
   it.each([403, 503] as const)("marks order attribution unavailable (%s) without discarding verified observations", async (status) => {
     const sa = `ers-v1-${"a".repeat(64)}`, sb = `ers-v1-${"b".repeat(64)}`;
-    mocked.areas.mockResolvedValue({ workAreas: [{ workAreaId: "area-1", name: "1구역", status: "ACTIVE" }] });
+    mocked.areas.mockResolvedValue({ workAreas: [{ workAreaId: "area-1", name: "1영역", status: "ACTIVE" }] });
     mocked.observations.mockResolvedValue([
       { selector: { workOrderId: "work-a", submissionRef: sa, revision: 1 }, observationEpochId: "epoch-a", captureStartedAt: "2026-09-01T00:00:00Z", captureEndedAt: "2026-09-01T00:30:00Z" },
       { selector: { workOrderId: "work-b", submissionRef: sb, revision: 2 }, observationEpochId: "epoch-b", captureStartedAt: "2026-09-08T00:00:00Z", captureEndedAt: "2026-09-08T00:30:00Z" },
@@ -249,7 +249,7 @@ describe("analysis deep link", () => {
   });
 
   it("marks order attribution unconfirmed on an ambiguous 404", async () => {
-    mocked.areas.mockResolvedValue({ workAreas: [{ workAreaId: "area-1", name: "1구역", status: "ACTIVE" }] });
+    mocked.areas.mockResolvedValue({ workAreas: [{ workAreaId: "area-1", name: "1영역", status: "ACTIVE" }] });
     mocked.observations.mockResolvedValue([]);
     mocked.workOrders.mockRejectedValueOnce(new CoreApiError(404, { detail: "route unavailable" }));
     mocked.list.mockResolvedValue({ siteId: "site-1", items: [], nextCursor: null });
@@ -276,7 +276,7 @@ describe("analysis deep link", () => {
 
     const props = JSON.parse(screen.getByTestId("panel-exact").textContent!);
     expect(props.listsState.observations).toBe("unconfirmed");
-    // 모르는 구역 값은 그대로 싣지 않는다 — 목록 화면이 범위를 다시 검증한다.
+    // 모르는 영역 값은 그대로 싣지 않는다 — 목록 화면이 범위를 다시 검증한다.
     expect(screen.getByTestId("panel-scope").textContent?.startsWith("|")).toBe(true);
 
     cleanup();
@@ -293,7 +293,7 @@ describe("analysis deep link", () => {
 
 describe("browse source return scope", () => {
   it("keeps a browse assetRef as header-only return context without changing analysis selection", async () => {
-    mocked.areas.mockResolvedValue({ workAreas: [{ workAreaId: "area-1", name: "1구역", status: "ACTIVE" }] });
+    mocked.areas.mockResolvedValue({ workAreas: [{ workAreaId: "area-1", name: "1영역", status: "ACTIVE" }] });
 
     render(await SiteAnalysisPage({ params: Promise.resolve({ siteId: "site-1" }), searchParams: Promise.resolve({ workAreaId: "area-1" }) }));
     const plainScope = screen.getByTestId("panel-scope").textContent;
@@ -304,14 +304,14 @@ describe("browse source return scope", () => {
     render(await SiteAnalysisPage({ params: Promise.resolve({ siteId: "site-1" }), searchParams: Promise.resolve({ workAreaId: "area-1", assetRef: "browse-asset-1" }) }));
     // 분석 선택은 그대로 — assetRef는 분석 선택자(analysisId·currentWorkOrderId)가 아니다.
     expect(screen.getByTestId("panel-scope").textContent).toBe(plainScope);
-    // 헤더 복귀 링크에는 탐색 출처(구역·관측)가 그대로 실린다.
+    // 헤더 복귀 링크에는 탐색 출처(영역·관측)가 그대로 실린다.
     expect(screen.getAllByRole("link", { name: "공간으로 돌아가기" })[0]?.getAttribute("href")).toBe(
       "/sites/site-1?workAreaId=area-1&assetRef=browse-asset-1",
     );
   });
 
   it("drops a browse assetRef outside the validated work area", async () => {
-    mocked.areas.mockResolvedValue({ workAreas: [{ workAreaId: "area-1", name: "1구역", status: "ACTIVE" }] });
+    mocked.areas.mockResolvedValue({ workAreas: [{ workAreaId: "area-1", name: "1영역", status: "ACTIVE" }] });
 
     render(await SiteAnalysisPage({ params: Promise.resolve({ siteId: "site-1" }), searchParams: Promise.resolve({ workAreaId: "ghost-area", assetRef: "browse-asset-1" }) }));
 

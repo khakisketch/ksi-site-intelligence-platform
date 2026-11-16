@@ -4,7 +4,7 @@ import { toZonePolygon } from "@/lib/comparison-submit";
 import { partitionWorkAreas, polygonToVertices } from "@/lib/work-areas";
 import type { AoiVertex, WorkArea } from "@/lib/core-api/types";
 
-// 작업구역은 **기하가 굳는다**(M4-C). 그래서 "다시 그리기"가 유일한 정정 경로이고,
+// 영역은 **기하가 굳는다**(M4-C). 그래서 "다시 그리기"가 유일한 정정 경로이고,
 // 그 경로는 등록된 GeoJSON 을 지도 좌표로 되돌리는 데서 시작한다 — 이 되돌리기가
 // 틀리면 사용자는 엉뚱한 범위를 고쳐 그려 등록하고, 그 결과가 리포트 범위가 된다.
 
@@ -12,7 +12,7 @@ function area(overrides: Partial<WorkArea> & { workAreaId: string }): WorkArea {
   return {
     schemaVersion: "1.0.0",
     siteId: "site-1",
-    name: "구역",
+    name: "영역",
     polygon: { type: "Polygon", coordinates: [[]] },
     crs: "EPSG:4326",
     status: "ACTIVE",

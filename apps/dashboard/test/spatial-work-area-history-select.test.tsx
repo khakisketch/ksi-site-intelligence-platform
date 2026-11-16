@@ -9,12 +9,12 @@ afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 
 function HistoryForm() {
   return <form action="/sites/site-1/spatial-data-requests" method="get">
-    <label htmlFor="spatial-request-work-area">작업구역 선택</label>
+    <label htmlFor="spatial-request-work-area">영역 선택</label>
     <WorkAreaHistorySelect value="north">
-      <option value="north">북측 절토구역</option>
-      <option value="south">남측 성토구역</option>
+      <option value="north">북측 절토영역</option>
+      <option value="south">남측 성토영역</option>
     </WorkAreaHistorySelect>
-    <p id="spatial-request-work-area-help">구역을 바꾸면 요청 이력을 불러옵니다.</p>
+    <p id="spatial-request-work-area-help">영역을 바꾸면 요청 이력을 불러옵니다.</p>
     <button type="submit">요청 이력 불러오기</button>
   </form>;
 }
@@ -23,7 +23,7 @@ describe("WorkAreaHistorySelect", () => {
   it("submits the selected scope through the existing GET form without carrying a prior cursor or request", () => {
     const submit = vi.spyOn(HTMLFormElement.prototype, "requestSubmit").mockImplementation(() => {});
     render(<HistoryForm />);
-    fireEvent.change(screen.getByLabelText("작업구역 선택"), { target: { value: "south" } });
+    fireEvent.change(screen.getByLabelText("영역 선택"), { target: { value: "south" } });
     expect(submit).toHaveBeenCalledTimes(1);
     const form = screen.getByRole("button").closest("form")!;
     expect(form.method).toBe("get");

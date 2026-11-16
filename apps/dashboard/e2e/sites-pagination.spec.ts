@@ -33,7 +33,7 @@ test("실제 현장4개씩 나누고 등록 진입은 머리말에만 둔다", a
   await expect(root(page)).toHaveAttribute("data-site-page", "2");
   await expect(cards(page)).toHaveCount(1);
   await expect(page.locator("[data-site-create-card]:visible")).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "현장 등록", exact: true })).toHaveCount(1);
+  await expect(page.getByRole("button", { name: "프로젝트 등록", exact: true })).toHaveCount(1);
   const gridBox = await cards(page).first().locator("..").boundingBox();
   const pageBox = await pager(page).boundingBox();
   expect(pageBox!.y - (gridBox!.y + gridBox!.height)).toBeGreaterThanOrEqual(12);
@@ -47,10 +47,10 @@ test("실제 현장4개씩 나누고 등록 진입은 머리말에만 둔다", a
   await page.reload();
   await expect(root(page)).toHaveAttribute("data-site-page", "2");
   await expect(cards(page)).toHaveCount(1);
-  await page.getByRole("group", { name: "현장 보기 방식" }).getByRole("button", { name: "카드", exact: true }).click();
+  await page.getByRole("group", { name: "프로젝트 보기 방식" }).getByRole("button", { name: "카드", exact: true }).click();
   await expect(root(page)).toHaveAttribute("data-site-page", "2");
   expect(new URL(page.url()).searchParams.get("page")).toBe("2");
-  await page.getByRole("link", { name: "현장 열기", exact: true }).click();
+  await page.getByRole("link", { name: "프로젝트 열기", exact: true }).click();
   await page.goBack();
   await expect(root(page)).toHaveAttribute("data-site-page", "2");
   await expect(cards(page)).toHaveCount(1);
@@ -59,7 +59,7 @@ test("실제 현장4개씩 나누고 등록 진입은 머리말에만 둔다", a
 test("페이지·보기·정렬을 바꿔도 검색 범위를 잃거나 이전 검색 타이머를 실행하지 않는다", async ({ page }) => {
   await page.goto("/sites?q=e2e-site&sort=name");
   await expect(root(page)).toHaveAttribute("data-site-total", "5");
-  const modes = page.getByRole("group", { name: "현장 보기 방식" });
+  const modes = page.getByRole("group", { name: "프로젝트 보기 방식" });
   const search = page.getByRole("searchbox", { name: "현장 찾기" });
   await search.fill("아직 적용되지 않은 검색");
   await pager(page).getByRole("link", { name: "2", exact: true }).click();
@@ -80,7 +80,7 @@ test("페이지·보기·정렬을 바꿔도 검색 범위를 잃거나 이전 �
   await expect(root(page)).toHaveAttribute("data-site-page", "1");
   await expect(cards(page)).toHaveCount(4);
   await pager(page).getByRole("link", { name: "2", exact: true }).click();
-  await page.getByRole("group", { name: "현장 상태 필터" }).getByRole("link", { name: /^전체/ }).click();
+  await page.getByRole("group", { name: "프로젝트 상태 필터" }).getByRole("link", { name: /^전체/ }).click();
   await expect(root(page)).toHaveAttribute("data-site-page", "1");
   expect(new URL(page.url()).searchParams.has("page")).toBe(false);
   expect(new URL(page.url()).searchParams.get("q")).toBe("e2e-site");
@@ -88,7 +88,7 @@ test("페이지·보기·정렬을 바꿔도 검색 범위를 잃거나 이전 �
 
 test("잘못된 페이지는 실제 범위로 보정하고 등록 권한 없는 머리말 행동은 설명만 연다", async ({ page }) => {
   // 기본 카드를 바꾸더라도 저장 가능한 목록의 별도 페이지 경계도 보존한다.
-  const modes = page.getByRole("group", { name: "현장 보기 방식" });
+  const modes = page.getByRole("group", { name: "프로젝트 보기 방식" });
   await modes.getByRole("button", { name: "목록", exact: true }).click();
   await page.goto("/sites?page=9999");
   await expect(root(page)).toHaveAttribute("data-site-list-view", "list");
@@ -106,11 +106,11 @@ test("잘못된 페이지는 실제 범위로 보정하고 등록 권한 없는 
       await route.abort();
     } else await route.continue();
   });
-  await expect(page.getByRole("link", { name: "새 현장 추가", exact: true })).toHaveCount(0);
-  const trigger = page.getByRole("button", { name: "현장 등록", exact: true });
+  await expect(page.getByRole("link", { name: "새 프로젝트 추가", exact: true })).toHaveCount(0);
+  const trigger = page.getByRole("button", { name: "프로젝트 등록", exact: true });
   await trigger.focus();
   await page.keyboard.press("Enter");
-  await expect(page.getByText("현재 계정으로는 현장을 등록할 수 없습니다. 관리자에게 문의하세요.", { exact: true })).toBeVisible();
+  await expect(page.getByText("현재 계정으로는 프로젝트을 등록할 수 없습니다. 관리자에게 문의하세요.", { exact: true })).toBeVisible();
   expect(new URL(page.url()).pathname).toBe("/sites");
   await page.keyboard.press("Escape");
   await expect(trigger).toBeFocused();
@@ -126,9 +126,9 @@ test("카드 폭은 제한되고 장식 없이 현장 식별 정보가 먼저 �
     const first = cards(page).first();
     const cardBox = await first.boundingBox();
     expect(cardBox!.width).toBeLessThanOrEqual(480);
-    // 표지 커버 대신 현장명·상태·다음 행동·열기 동작이 카드의 전부다.
+    // 표지 커버 대신 프로젝트명·상태·다음 행동·열기 동작이 카드의 전부다.
     await expect(first.getByRole("heading", { level: 3 })).toBeVisible();
-    await expect(first.getByRole("link", { name: "현장 열기", exact: true })).toBeVisible();
+    await expect(first.getByRole("link", { name: "프로젝트 열기", exact: true })).toBeVisible();
     await expect(first.locator("[data-site-cover]")).toHaveCount(0);
     expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1)).toBe(false);
   }

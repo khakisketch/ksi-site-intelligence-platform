@@ -39,7 +39,7 @@ export default async function SiteAnalysisPage({ params, searchParams }: {
     await getSite(siteId);
   } catch (error) {
     if (error instanceof CoreApiError && error.status === 404) notFound();
-    return <div className="mx-auto max-w-5xl p-4 sm:p-5"><ErrorState message="현장 접근을 확인하지 못했습니다." retryable /></div>;
+    return <div className="mx-auto max-w-5xl p-4 sm:p-5"><ErrorState message="프로젝트 접근을 확인하지 못했습니다." retryable /></div>;
   }
 
   let loaded: {
@@ -52,7 +52,7 @@ export default async function SiteAnalysisPage({ params, searchParams }: {
     selectedDetail: Awaited<ReturnType<typeof getAnalysis>> | null;
   };
   // 목록 실패가 서로를 묻지 않게 각각 확인한다. 하나가 실패해도 확인할 수
-  // 있는 구역은 그대로 둔다. unavailable을 empty로 다루지 않는다.
+  // 있는 영역은 그대로 둔다. unavailable을 empty로 다루지 않는다.
   const [areasSettled, observationsSettled, analysesSettled, workOrdersSettled] = await Promise.allSettled([
     listWorkAreas(siteId),
     listAnalysisObservations(siteId),
@@ -69,7 +69,7 @@ export default async function SiteAnalysisPage({ params, searchParams }: {
   const observationsStatus = coreStatusOf(observationsSettled);
   const analysesStatus = coreStatusOf(analysesSettled);
   const workOrdersStatus = coreStatusOf(workOrdersSettled);
-  // 이력 실패는 기록 구역만의 상태로 둔다 — 요청서·다른 구역까지 닫지 않는다.
+  // 이력 실패는 기록 영역만의 상태로 둔다 — 요청서·다른 영역까지 닫지 않는다.
   const historyState: "ready" | "denied" | "unconfirmed" | "failed" =
     analysesValue !== null ? "ready"
     : analysesStatus === 403 ? "denied"
@@ -77,13 +77,13 @@ export default async function SiteAnalysisPage({ params, searchParams }: {
     : "failed";
   const historyMessage: string | null =
     historyState === "ready" ? null
-    : historyState === "denied" ? "현장 변화 분석 이력을 조회할 권한이 없습니다. 현장 담당자에게 변화 분석 기록 조회 권한을 요청하세요."
-    : historyState === "unconfirmed" ? "현장 범위를 확인하거나 다시 불러오세요. 이 안내는 등록 자료의 상태를 판단하지 않습니다."
+    : historyState === "denied" ? "현장 변화 분석 이력을 조회할 권한이 없습니다. 프로젝트 담당자에게 변화 분석 기록 조회 권한을 요청하세요."
+    : historyState === "unconfirmed" ? "프로젝트 범위를 확인하거나 다시 불러오세요. 이 안내는 등록 자료의 상태를 판단하지 않습니다."
     : "현장 변화 분석 이력을 불러오지 못했습니다. 다시 불러오면 최신 이력을 확인할 수 있습니다.";
   // 목록을 읽지 못해 검증된 범위가 없을 때는 다듬은 값만 복귀 링크에 싣는다(기존).
   const areasUnavailable = areasValue === null;
   const observationsUnavailable = observationsValue === null;
-  // 관측-구역 연결(작업지시 귀속)을 확인하지 못하면 후보 귀속을 단정하지
+  // 관측-영역 연결(작업지시 귀속)을 확인하지 못하면 후보 귀속을 단정하지
   // 않는다. 관측 목록은 읽혔어도 귀속 없이는 후보를 고를 수 없으므로 별도
   // 상태로 둔다. 빈 작업지시 목록([])은 끊김이 아니라 확인된 빈 귀속이다.
   const attributionUnavailable = workOrders === null;
@@ -137,7 +137,7 @@ export default async function SiteAnalysisPage({ params, searchParams }: {
   const canCreate = session.principal.permissions.includes("SITES_WRITE");
   const hasDeepLink = typeof analysisId === "string" && analysisId.length > 0;
   const journeyScope = areasUnavailable
-    // 구역 목록을 모르면 쿼리 값을 믿고 고르지 않는다. 조용한 대체 선택도 두지 않는다.
+    // 영역 목록을 모르면 쿼리 값을 믿고 고르지 않는다. 조용한 대체 선택도 두지 않는다.
     ? { initialWorkAreaId: "", scopeNotice: null, invalidRequested: false }
     : resolveAnalysisScope({
         areas: loaded.areas.workAreas.map((area) => ({ workAreaId: area.workAreaId, name: area.name, status: area.status })),
@@ -219,7 +219,7 @@ export default async function SiteAnalysisPage({ params, searchParams }: {
       currentMatched: exactHint.current !== null,
     }
     : null;
-  // 탐색 복귀 맥락 — 모양만 본 뒤, 같은 구역의 카탈로그와 한 번만 대조한다
+  // 탐색 복귀 맥락 — 모양만 본 뒤, 같은 영역의 카탈로그와 한 번만 대조한다
   // (메타데이터 1회 읽기, 바이트 없음). 묶이지 않은 참조는 버리고 사유를 둔다.
   const visualShape = parseVisualBrowsingContext({
     workAreaId: query.workAreaId ?? effectiveWorkAreaId,
@@ -231,15 +231,15 @@ export default async function SiteAnalysisPage({ params, searchParams }: {
     : null;
   const visualSupplied = query.visualAAssetRef !== undefined || query.visualBAssetRef !== undefined;
   let visualContextNotice: string | null = visualSupplied && !visualContext
-    ? "요청한 탐색 맥락을 확인하지 못했습니다. 작업구역을 직접 선택하세요."
+    ? "요청한 탐색 맥락을 확인하지 못했습니다. 영역을 직접 선택하세요."
     : null;
   // 바인딩된 시각 쌍의 카탈로그 해석(읽기 전용 조건 확인용). 후보 가입과
   // 무관한 서버 사실이며, 묶이지 않은 참조는 싣지 않는다.
   let catalogPair: CatalogInspectPair | null = null;
   if (visualContext && effectiveWorkAreaId) {
-    // 바인딩된 시각 쌍의 카탈로그 해석 — 같은 구역의 정확한 자료 조회를
+    // 바인딩된 시각 쌍의 카탈로그 해석 — 같은 영역의 정확한 자료 조회를
     // 참조별로 최대 2건 병렬로 읽는다. 목록 페이징과 무관하므로 페이지 밖
-    // 유효 참조도 놓치지 않는다. 반환된 사실의 현장·구역·참조 일치를
+    // 유효 참조도 놓치지 않는다. 반환된 사실의 현장·영역·참조 일치를
     // 확인한 뒤에만 싣는다(외부·모순 참조는 불투명). 실패·거부·모름은
     // 빈 맥락으로 닫는다.
     const areaId = effectiveWorkAreaId;
@@ -255,9 +255,9 @@ export default async function SiteAnalysisPage({ params, searchParams }: {
     const resolvedB = boundItem(itemB, visualContext.visualBAssetRef);
     if (!resolvedA || !resolvedB) {
       visualContext = null;
-      visualContextNotice = "요청한 탐색 맥락의 자료를 이 구역에서 확인하지 못했습니다. 기준·현재 관측을 직접 선택하세요.";
+      visualContextNotice = "요청한 탐색 맥락의 자료를 이 영역에서 확인하지 못했습니다. 기준·현재 관측을 직접 선택하세요.";
     } else {
-      // 시각 쌍의 카탈로그 해석 — 같은 구역에서 바인딩된 두 자료를 서버
+      // 시각 쌍의 카탈로그 해석 — 같은 영역에서 바인딩된 두 자료를 서버
       // 사실(선택자 삼중항·선언·검사)에서 푼다. 원문 쿼리·후보 가입 여부와
       // 무관하며, 읽기 전용 조건 확인에만 쓴다(실행 입력이 아니다).
       const toInspectSide = (item: SpatialAssetCatalogItem) => ({
@@ -279,7 +279,7 @@ export default async function SiteAnalysisPage({ params, searchParams }: {
   const visualReturnHref = visualContext && effectiveWorkAreaId
     ? visualBrowsingReturnHref(`/sites/${encodeURIComponent(siteId)}`, visualContext, effectiveWorkAreaId)
     : null;
-  // 목록 실패와 무관하게 검증된 구역 값만 복귀 링크에 싣는다. 비어 있으면
+  // 목록 실패와 무관하게 검증된 영역 값만 복귀 링크에 싣는다. 비어 있으면
   // 다듬은 단일 쿼리 값으로 복귀한다 — 받는 목록 화면이 범위를 다시 검증한다.
   const fallbackScope = effectiveWorkAreaId
     || (parseScopeId(typeof query.workAreaId === "string" ? query.workAreaId : undefined) ?? "");
@@ -297,7 +297,7 @@ export default async function SiteAnalysisPage({ params, searchParams }: {
     return `${href}${href.includes("?") ? "&" : "?"}${params}`;
   })();
   return <div className="flex min-w-0 flex-1 flex-col xl:h-full xl:min-h-0">
-      {/* 기록 구역·요청 구역은 서로의 실패에 닫히지 않는다. 각 구역이
+      {/* 기록 영역·요청 영역은 서로의 실패에 닫히지 않는다. 각 영역이
           확인할 수 없었던 목록을 밝히고, unavailable을 empty로 두지 않는다. */}
       {missingDetail && <div className="flex flex-col gap-3 px-4 pt-4 sm:px-5">
         <ErrorState message="선택한 분석 기록을 찾을 수 없거나 접근할 수 없습니다. 분석 목록에서 다른 기록을 확인하세요." tone="idle" />

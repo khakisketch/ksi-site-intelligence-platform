@@ -38,17 +38,17 @@ import type {
 } from "@/lib/core-api/types";
 
 /**
- * 작업구역 등록·보관(M4-C) — **기하가 굳는 자리**다.
+ * 영역 등록·보관(M4-C) — **기하가 굳는 자리**다.
  *
  * `DesignSurfacePanel` 과 형태는 같지만(등록 폼 + 목록) 규율이 하나 더 있다:
- * **수정 버튼이 없다.** 잘못 그린 구역은 고치는 게 아니라 새로 등록하고
- * `supersedes` 로 이전 것을 가리킨다 — 제자리 수정을 허용하면 이미 그 구역으로
+ * **수정 버튼이 없다.** 잘못 그린 영역은 고치는 게 아니라 새로 등록하고
+ * `supersedes` 로 이전 것을 가리킨다 — 제자리 수정을 허용하면 이미 그 영역으로
  * 낸 리포트가 가리키는 범위가 사후에 바뀐다. 화면에서 "다시 그리기"가 폼을 여는
- * 것이지 그 구역을 여는 게 아닌 이유가 그것이다.
+ * 것이지 그 영역을 여는 게 아닌 이유가 그것이다.
  *
  * 폴링이 없다 — 등록·보관 응답이 곧 최종 상태다(뒤에서 도는 계산이 없다).
- * 딱 한 자리만 예외로 목록을 다시 읽는다: **대체 등록**은 새 구역 생성과 이전
- * 구역 보관, 두 건을 한 번에 바꾸는데 응답은 앞의 것만 싣고 온다. 뒤의 것을
+ * 딱 한 자리만 예외로 목록을 다시 읽는다: **대체 등록**은 새 영역 생성과 이전
+ * 영역 보관, 두 건을 한 번에 바꾸는데 응답은 앞의 것만 싣고 온다. 뒤의 것을
  * 화면이 짐작해서 칠하면 서버 규칙을 여기에 복제하는 셈이라, 짐작 대신 읽는다.
  */
 
@@ -57,7 +57,7 @@ import type {
  * 이 호출자가 덧붙인다. 읽기 전용 미리보기는 reason만 그대로 보여준다.
  */
 const CORRECTION_RETRY_HINT =
-  "대신할 범위를 처음부터 그려 주세요. (원래 구역은 그대로 남아 있습니다.)";
+  "대신할 범위를 처음부터 그려 주세요. (원래 영역은 그대로 남아 있습니다.)";
 
 function WorkAreaCard({
   area,
@@ -75,19 +75,19 @@ function WorkAreaCard({
 }: {
   area: WorkArea;
   canWrite: boolean;
-  /** 이 구역의 보관 요청이 진행 중인가. */
+  /** 이 영역의 보관 요청이 진행 중인가. */
   archiving: boolean;
   /** 다른 요청이 진행 중이라 지금은 누를 수 없는가. */
   disabled: boolean;
   /** 미반영 지도 입력이 보관 대기 중 지도 리마운트로 사라지는 것을 막는다. */
   archiveBlockedByDraft: boolean;
-  /** 지금 위 폼이 이 구역을 대신할 새 구역을 그리는 중인가. */
+  /** 지금 위 폼이 이 영역을 대신할 새 영역을 그리는 중인가. */
   correcting: boolean;
-  /** 이 구역의 읽기 전용 미리보기를 펼쳤는가(작은 화면에서도 열린다). */
+  /** 이 영역의 읽기 전용 미리보기를 펼쳤는가(작은 화면에서도 열린다). */
   previewOpen: boolean;
   /** 열린 미리보기의 표시 변환 결과 — null이면 아직 고르지 않은 상태다. */
   previewResult: DisplayVerticesResult | null;
-  /** 이 구역의 보관 실패 메시지 — 해당 카드에만 둔다(한 복사본만). */
+  /** 이 영역의 보관 실패 메시지 — 해당 카드에만 둔다(한 복사본만). */
   archiveError: string | null;
   onTogglePreview: (area: WorkArea) => void;
   onCorrect: (area: WorkArea) => void;
@@ -105,7 +105,7 @@ function WorkAreaCard({
 
       <p className="text-caption break-keep text-ink-2">{status.description}</p>
 
-      <Disclosure label="구역 등록 상세" className="text-caption text-ink-2">
+      <Disclosure label="영역 등록 상세" className="text-caption text-ink-2">
       <dl className="mt-1 grid grid-cols-2 gap-x-3 gap-y-1 text-caption sm:grid-cols-4">
         <div className="flex flex-col">
           <dt className="break-keep text-ink-muted">기술 참조</dt>
@@ -127,14 +127,14 @@ function WorkAreaCard({
 
       {area.supersedes !== null && (
         <p className="text-caption break-keep text-ink-muted">
-          이전 구역을 대신해 등록된 구역입니다 — 기술 참조 ·{" "}
+          이전 영역을 대신해 등록된 영역입니다 — 기술 참조 ·{" "}
           <span className="num break-token font-mono text-micro">{area.supersedes}</span>
         </p>
       )}
 
       </Disclosure>
 
-      {/* 읽기 전용 미리보기 — 카드마다 지도를 두지 않고, 고른 구역 하나만 펼친다.
+      {/* 읽기 전용 미리보기 — 카드마다 지도를 두지 않고, 고른 영역 하나만 펼친다.
           작은 화면에서도 열리므로 현장에서 "어디 범위인지"를 먼저 확인할 수 있다. */}
       <button
         type="button"
@@ -142,7 +142,7 @@ function WorkAreaCard({
         aria-expanded={previewOpen}
         onClick={() => onTogglePreview(area)}
       >
-        {previewOpen ? "구역 범위 접기" : "구역 범위 보기"}
+        {previewOpen ? "영역 범위 접기" : "영역 범위 보기"}
       </button>
       {previewOpen &&
         (previewResult !== null && previewResult.ok ? (
@@ -151,7 +151,7 @@ function WorkAreaCard({
           <p className="rounded-md border border-line bg-sunk px-3 py-2 text-caption break-keep text-ink-2">
             {previewResult !== null && !previewResult.ok
               ? previewResult.reason
-              : "이 구역의 모양을 지도에 올리지 못했습니다."}
+              : "이 영역의 모양을 지도에 올리지 못했습니다."}
           </p>
         ))}
 
@@ -162,7 +162,7 @@ function WorkAreaCard({
         <ResponsiveActionBoundary
           action="SITE_DEVICE_TRANSITION"
           inlineNotice={false}
-          reason="작업구역 변경(다시 그리기·보관)은 노트북에서 같은 계정으로 이 현장의 ‘작업구역’ 화면을 열어 이어가세요. 작은 화면에서는 목록과 구역 범위 보기로 확인만 할 수 있습니다. 입력 중인 내용·임시 기록은 이 탭에만 있어 다른 기기로 이어지지 않습니다."
+          reason="영역 변경(다시 그리기·보관)은 노트북에서 같은 계정으로 이 현장의 ‘영역’ 화면을 열어 이어가세요. 작은 화면에서는 목록과 영역 범위 보기로 확인만 할 수 있습니다. 입력 중인 내용·임시 기록은 이 탭에만 있어 다른 기기로 이어지지 않습니다."
         >
           <div className="flex flex-wrap items-center gap-2">
             <button
@@ -171,7 +171,7 @@ function WorkAreaCard({
               disabled={disabled || correcting}
               onClick={() => onCorrect(area)}
             >
-              {correcting ? "위 폼에서 그리는 중…" : "범위 바꾸기(새 구역)"}
+              {correcting ? "위 폼에서 그리는 중…" : "범위 바꾸기(새 영역)"}
             </button>
             <button
               type="button"
@@ -179,12 +179,12 @@ function WorkAreaCard({
               disabled={disabled || archiveBlockedByDraft}
               onClick={() => onArchive(area)}
             >
-              {archiving ? "보관하는 중…" : "구역 보관"}
+              {archiving ? "보관하는 중…" : "영역 보관"}
             </button>
           </div>
           {archiveBlockedByDraft && (
             <p className="text-caption break-keep text-ink-2">
-              입력 중인 경계를 반영하거나 되돌린 뒤 구역을 보관할 수 있습니다.
+              입력 중인 경계를 반영하거나 되돌린 뒤 영역을 보관할 수 있습니다.
             </p>
           )}
         </ResponsiveActionBoundary>
@@ -254,7 +254,7 @@ export function WorkAreaPanel({
   accountIdentity = null,
 }: {
   siteId: string;
-  /** 현장에 등록된 좌표계 — 참고로만 적는다. 지도가 내는 좌표는 항상 WGS84 경위도다. */
+  /** 프로젝트에 등록된 좌표계 — 참고로만 적는다. 지도가 내는 좌표는 항상 WGS84 경위도다. */
   siteCrs: string;
   canWrite: boolean;
   initialWorkAreas: WorkArea[];
@@ -362,24 +362,24 @@ export function WorkAreaPanel({
     saveDraft({ vertices: next }); setVertices(next);
   }
 
-  /** null 이 아니면 "이 구역을 대신할 새 구역"을 그리는 중이다(제출 시 supersedes). */
+  /** null 이 아니면 "이 영역을 대신할 새 영역"을 그리는 중이다(제출 시 supersedes). */
   const [correcting, setCorrecting] = useState<WorkArea | null>(null);
   /**
-   * 정정 폼이 기존 구역의 모양을 지도에 올려 두었는가.
+   * 정정 폼이 기존 영역의 모양을 지도에 올려 두었는가.
    *
    * `toDisplayVertices` 가 실패하면(알 수 없는 기하·좌표계) 폼은 빈 지도에서
-   * 새로 그리는 자리가 된다 — 원래 구역은 그대로 남아 있고, "그만두기"로
-   * unrelated 새 구역 등록으로 돌아갈 수 있다.
+   * 새로 그리는 자리가 된다 — 원래 영역은 그대로 남아 있고, "그만두기"로
+   * unrelated 새 영역 등록으로 돌아갈 수 있다.
    */
   const [correctionReady, setCorrectionReady] = useState(false);
-  /** 읽기 전용 미리보기를 펼친 구역 — 한 번에 하나만(카드마다 지도를 두지 않는다). */
+  /** 읽기 전용 미리보기를 펼친 영역 — 한 번에 하나만(카드마다 지도를 두지 않는다). */
   const [previewId, setPreviewId] = useState<string | null>(null);
   /**
    * 지도를 통째로 다시 마운트하기 위한 열쇠.
    *
    * `AoiPolygonMap` 의 그리기 컨트롤은 **마운트 시점의 value 만** 초기값으로 읽는다
    * (`AoiPolygonMapInner` 의 DrawControl). 그래서 상태만 갈아끼우면 지도에 이미
-   * 그려진 폴리곤이 그대로 남는다 — 폼을 비우거나 기존 구역을 불러올 때는 이 값을
+   * 그려진 폴리곤이 그대로 남는다 — 폼을 비우거나 기존 영역을 불러올 때는 이 값을
    * 올려 지도를 새로 태운다.
    */
   const [mapKey, setMapKey] = useState(0);
@@ -400,7 +400,7 @@ export function WorkAreaPanel({
   const [notice, setNotice] = useState<string | null>(null);
   /**
    * 결과 불명 제출의 원래 요청 보존 — 응답을 잃으면 서버에 닿았는지 알 수 있다.
-   * 같은 내용을 다시 보내면 구역이 두 개 생길 수 있으므로, 입력은 그대로 두고
+   * 같은 내용을 다시 보내면 영역이 두 개 생길 수 있으므로, 입력은 그대로 두고
    * 이 패널에서만 다음 행동을 고르게 한다(자동 성공·같은 키 재시도 주장·이름/기하
    * 매칭 단정 금지). 명시적 재전송 뒤에도 첫 불명은 별도로 남긴다 — 두 번째
    * 요청의 성공이 첫 요청의 등록까지 증명하지 않으므로.
@@ -416,7 +416,7 @@ export function WorkAreaPanel({
      * 첫 POST에 실은 기하 원본 — 명시적 재전송도 이 값을 쓴다. 응답 유실 뒤
      * 지도가 바뀌어도 현재 입력으로 재구성하지 않는다(두 번째 요청의 성공이
      * 첫 요청의 등록을 증명하지 않으므로, 원본을 덮으면 무엇이 등록됐는지
-     * 잃는다). 새 구역 재전송이 멱등이 아니라는 안내는 그대로 둔다.
+     * 잃는다). 새 영역 재전송이 멱등이 아니라는 안내는 그대로 둔다.
      */
     polygon: Record<string, unknown>;
     /**
@@ -447,8 +447,8 @@ export function WorkAreaPanel({
   });
   /**
    * 이탈 확인 — 미반영 B(키보드 입력·포인터 진행 중)는 컴포넌트 로컬이라
-   * 지도 리마운트(다른 구역으로 범위 바꾸기·그만두기)에 조용히 사라진다.
-   * 기존 A·등록 구역은 보존되므로, 버리기 전에 명시적 확인을 받는다.
+   * 지도 리마운트(다른 영역으로 범위 바꾸기·그만두기)에 조용히 사라진다.
+   * 기존 A·등록 영역은 보존되므로, 버리기 전에 명시적 확인을 받는다.
    * 계속 입력하기(취소) / 입력 버리고 이동하기(확정) 중 고르게 한다.
    */
   const [abandonConfirm, setAbandonConfirm] = useState<
@@ -774,7 +774,7 @@ export function WorkAreaPanel({
   function startCorrection(area: WorkArea) {
     // U02 — 등록된 CRS 그대로 표시 변환한다. 투영좌표(m)를 위경도(°)로 잘못
     // 읽으면 지도가 수평선이 되고, 사용자는 엉뚱한 범위를 고쳐 그리게 된다.
-    // 변환이 안 되면 빈 지도에서 새로 그린다 — 원래 구역은 그대로 남는다.
+    // 변환이 안 되면 빈 지도에서 새로 그린다 — 원래 영역은 그대로 남는다.
     //
     // 다음 행동 안내는 여기서 붙인다. 헬퍼의 reason은 읽기 전용 미리보기와
     // 공유하는 기하·CRS 사실이므로, "다시 그리기" 문구는 이 호출자의 몫이다.
@@ -826,12 +826,12 @@ export function WorkAreaPanel({
       : vertices.map((v) => ({ ...v }));
     const trimmed = (retrySource?.name ?? name).trim();
     if (trimmed === "") {
-      setError("이름을 적으세요 — 이후 비교에서 이 이름으로 구역을 고릅니다.");
+      setError("이름을 적으세요 — 이후 비교에서 이 이름으로 영역을 고릅니다.");
       return;
     }
     const polygon = retrySource?.polygon ?? toZonePolygon(snapshotVertices);
     if (polygon === null) {
-      setError("꼭짓점을 3개 이상 찍어야 구역이 됩니다.");
+      setError("꼭짓점을 3개 이상 찍어야 영역이 됩니다.");
       return;
     }
 
@@ -991,7 +991,7 @@ export function WorkAreaPanel({
         ]);
         setNotice(
           `새 요청 #${seq}으로 "${outcome.workArea.name}"을 등록했습니다(기술 참조 ${outcome.workArea.workAreaId}). ` +
-            `첫 요청을 포함해 확인되지 않은 요청이 모두 ${unresolved}건 있어 구역이 더 생겼을 수 있습니다. ` +
+            `첫 요청을 포함해 확인되지 않은 요청이 모두 ${unresolved}건 있어 영역이 더 생겼을 수 있습니다. ` +
             "목록에서 기술 참조(workAreaId)로 확인하세요.",
         );
         return;
@@ -999,7 +999,7 @@ export function WorkAreaPanel({
       if (outcome.kind === "unknown") {
         // 서버에 닿았을 수도 있다 — 성공도 실패도 아니다. 입력은 그대로 두고
         // 읽기 전용 확인 + 명시적 새 요청 선택으로만 푼다. 이름·기하가 같아도
-        // 같은 구역이라고 단정하지 않는다(증명은 서버 발급 workAreaId뿐이다).
+        // 같은 영역이라고 단정하지 않는다(증명은 서버 발급 workAreaId뿐이다).
         // 화면을 서버 렌더한 시점의 계정 확인값을 함께 보관해, 다른 탭에서
         // 계정이 바뀌어도 재전송이 조용히 새 계정으로 나가지 않게 한다.
         if (!options?.explicitRetry) {
@@ -1034,7 +1034,7 @@ export function WorkAreaPanel({
         // 동결을 풀고 라이브 입력으로 돌아간다 — 거부된 요청의 스냅샷을
         // 지도에 남기지 않는다.
         setFrozenVertices(null);
-        setError(readableApiError(body, "작업구역 등록에 실패했습니다"));
+        setError(readableApiError(body, "영역 등록에 실패했습니다"));
         return;
       }
       {
@@ -1045,7 +1045,7 @@ export function WorkAreaPanel({
           {
             seq,
             kind: "failure",
-            message: readableApiError(body, "작업구역 등록에 실패했습니다"),
+            message: readableApiError(body, "영역 등록에 실패했습니다"),
           },
         ]);
         setNotice(
@@ -1088,10 +1088,10 @@ export function WorkAreaPanel({
 
   /** 검증된 성공 등록의 후처리.
    *
-   *  대체 등록은 새 구역 생성 + 이전 구역 보관 두 건인데 응답은 앞의 것만 싣고
+   *  대체 등록은 새 영역 생성 + 이전 영역 보관 두 건인데 응답은 앞의 것만 싣고
    *  오므로, 뒤의 것은 목록을 다시 읽어 **관측**한다. 목록이 곧 현재 상태이며
    *  임의로 바꾸지 않는다: 이전 ID가 그 목록에 ARCHIVED로 보일 때만 보관을
-   *  확정하고, ACTIVE로 보이거나 목록에 없거나 읽기에 실패하면 새 구역 등록만
+   *  확정하고, ACTIVE로 보이거나 목록에 없거나 읽기에 실패하면 새 영역 등록만
    *  확정하고 이전 보관은 미확인(관측 상태 그대로)으로 안내한다.
    */
   function applySuccessfulRegistration(created: WorkArea, supersedes: string | null, list: WorkArea[] | null) {
@@ -1100,7 +1100,7 @@ export function WorkAreaPanel({
         (prev) => [created, ...prev.filter((a) => a.workAreaId !== created.workAreaId)],
       );
       setNotice(null);
-      notify(`작업구역 "${created.name}"을 등록했습니다.`);
+      notify(`영역 "${created.name}"을 등록했습니다.`);
       setUnknownSubmission(null);
       setUnknownVerifyMessage(null);
       setRetryHistory([]);
@@ -1113,7 +1113,7 @@ export function WorkAreaPanel({
         (prev) => [created, ...prev.filter((a) => a.workAreaId !== created.workAreaId)],
       );
       setNotice(
-        `새 구역 "${created.name}"을 등록했습니다 — 다만 이전 구역이 보관됐는지는 확인하지 못했습니다(목록을 다시 읽지 못했습니다). 화면을 새로고침하면 확인할 수 있습니다.`,
+        `새 영역 "${created.name}"을 등록했습니다 — 다만 이전 영역이 보관됐는지는 확인하지 못했습니다(목록을 다시 읽지 못했습니다). 화면을 새로고침하면 확인할 수 있습니다.`,
       );
     } else {
       // 목록이 곧 현재 상태다 — 임의로 바꾸지 않는다. 원래 site+workAreaId로
@@ -1122,14 +1122,14 @@ export function WorkAreaPanel({
       const previous = list.find((a) => a.siteId === siteId && a.workAreaId === supersedes) ?? null;
       if (previous !== null && previous.status === "ARCHIVED") {
         setNotice(null);
-        notify("새 작업구역을 등록하고 이전 구역을 보관했습니다.");
+        notify("새 영역을 등록하고 이전 영역을 보관했습니다.");
       } else if (previous !== null) {
         setNotice(
-          `새 구역 "${created.name}"을 등록했습니다. 다만 대신하려던 구역(기술 참조 ${supersedes})은 목록에서 아직 사용 중으로 보입니다 — 보관이 확인되지 않았습니다. 목록에서 상태를 확인하세요.`,
+          `새 영역 "${created.name}"을 등록했습니다. 다만 대신하려던 영역(기술 참조 ${supersedes})은 목록에서 아직 사용 중으로 보입니다 — 보관이 확인되지 않았습니다. 목록에서 상태를 확인하세요.`,
         );
       } else {
         setNotice(
-          `새 구역 "${created.name}"을 등록했습니다. 다만 대신하려던 구역(기술 참조 ${supersedes})이 지금 계정의 목록에 없어 보관 여부를 확인하지 못했습니다. 목록에서 확인하세요.`,
+          `새 영역 "${created.name}"을 등록했습니다. 다만 대신하려던 영역(기술 참조 ${supersedes})이 지금 계정의 목록에 없어 보관 여부를 확인하지 못했습니다. 목록에서 확인하세요.`,
         );
       }
     }
@@ -1143,8 +1143,8 @@ export function WorkAreaPanel({
   /** 결과 불명 패널의 읽기 전용 확인 — 목록을 다시 읽어 화면과 원장을 맞춘다.
    *
    *  이 조회는 GET뿐이라 서버를 바꾸지 않는다. 다만 보여주는 것은 **지금 이
-   *  계정·이 현장 범위로 읽은 현재 상태**다 — 같은 이름·모양이 있어도 원래 요청의
-   *  구역이라고 단정하지 않고(증명은 workAreaId뿐), 목록에 없다고 등록되지
+   *  계정·이 프로젝트 범위로 읽은 현재 상태**다 — 같은 이름·모양이 있어도 원래 요청의
+   *  영역이라고 단정하지 않고(증명은 workAreaId뿐), 목록에 없다고 등록되지
    *  않았다고도 말하지 않는다(권한·조회 범위·읽기 실패로 보이지 않을 수 있다).
    */
   async function handleVerifyUnknown() {
@@ -1168,11 +1168,11 @@ export function WorkAreaPanel({
       const archivedCount = list.length - activeCount;
       setUnknownVerifyMessage(
         `목록을 ${list.length}건(사용 중 ${activeCount}건·보관 ${archivedCount}건)으로 다시 읽었습니다. ` +
-          "이 목록은 지금 이 계정·이 현장 범위로 읽은 현재 상태입니다. " +
-          "같은 이름·모양이 있어도 원래 요청의 구역이라고 단정하지 마세요 — 목록의 기술 참조(workAreaId)로만 확인하세요. " +
+          "이 목록은 지금 이 계정·이 프로젝트 범위로 읽은 현재 상태입니다. " +
+          "같은 이름·모양이 있어도 원래 요청의 영역이라고 단정하지 마세요 — 목록의 기술 참조(workAreaId)로만 확인하세요. " +
           "목록에 없더라도 등록되지 않았다는 증명이 아닙니다(조회 권한·범위·읽기 실패로 보이지 않을 수 있습니다). " +
           (unknownSubmission?.supersedes !== null
-            ? "대체 등록은 새 구역과 이전 구역 보관 두 건이므로, 대신할 구역의 상태도 목록에서 확인하세요."
+            ? "대체 등록은 새 영역과 이전 영역 보관 두 건이므로, 대신할 영역의 상태도 목록에서 확인하세요."
             : "목록 확인 뒤에도 판단이 서지 않으면 새 요청으로 다시 등록할 수 있습니다(중복 가능)."),
       );
     } finally {
@@ -1247,14 +1247,14 @@ export function WorkAreaPanel({
       const result = classifyWorkAreaSubmitOutcome({fetchThrew:false,status:response.status,body,siteId,request:{name:original.name,polygon:original.polygon,crs:original.crs,supersedes:original.supersedes}});
       if (!identityActive.current || !identityVerified.current || identityEpoch.current !== epoch || draftIdentity.current !== identity) return;
       const outcome = result.kind === "success" ? {kind:"success" as const,workAreaId:result.workArea.workAreaId,name:result.workArea.name}
-        : result.kind === "definiteFailure" ? {kind:"failure" as const,message:readableApiError(body,"작업구역 등록에 실패했습니다")} : {kind:"unknown" as const};
+        : result.kind === "definiteFailure" ? {kind:"failure" as const,message:readableApiError(body,"영역 등록에 실패했습니다")} : {kind:"unknown" as const};
       if (!settleAttempt(window.sessionStorage, siteId, identity, episodeIndex, attemptIndex, outcome)) {
         setContinuityBlocked("재전송 결과의 저장을 확인하지 못했습니다. 결과를 불명으로 두고 목록에서 확인하세요."); return;
       }
       const latest=readEpisodeJournal(window.sessionStorage,siteId,identity);
       if (latest.kind !== "found") { setContinuityBlocked("재전송 기록을 다시 읽지 못했습니다. 목록에서 확인하세요."); return; }
       const archived=loadArchived(latest.journal);setEpisodeLog(archived);setRetryHistory(archived[episodeIndex]?.retries ?? []);
-      setNotice("별도 새 요청의 결과를 기록했습니다. 첫 요청은 여전히 확인되지 않았으며 중복 구역이 생겼을 수 있습니다.");
+      setNotice("별도 새 요청의 결과를 기록했습니다. 첫 요청은 여전히 확인되지 않았으며 중복 영역이 생겼을 수 있습니다.");
     } catch {
       // 전송 후 예외는 pending 상태로 보존한다. 복구 시 불명으로 표시된다.
       if (identityActive.current && identityVerified.current && identityEpoch.current === epoch) {
@@ -1270,7 +1270,7 @@ export function WorkAreaPanel({
    *
    *  '입력 비우고 새로 시작'은 로컬 폼만 비운다. 첫 불명과 재전송 이력은 아래
    *  '이전 확인 기록' 묶음으로 옮겨 새 입력과 섞지 않고 남긴다. 서버에 만들어졌을
-   *  수 있는 구역은 사라지지 않으므로, 목록에서 기술 참조로 확인해야 한다.
+   *  수 있는 영역은 사라지지 않으므로, 목록에서 기술 참조로 확인해야 한다.
    */
   function handleAbandonUnknown() {
     if (!identityVerified.current || !draftWritable.current || !draftIdentity.current || unknownSubmission === null || abandonLock.current) return;
@@ -1339,7 +1339,7 @@ export function WorkAreaPanel({
     resetForm();
     setNotice(
       "입력을 비웠습니다. 이전 요청의 확인 기록(확정 ID·불명 건수)은 아래에 남겨 두었습니다 — " +
-        "서버에 구역이 만들어졌을 수도 있어 목록에서 먼저 확인하세요. 새로 입력하는 내용은 " +
+        "서버에 영역이 만들어졌을 수도 있어 목록에서 먼저 확인하세요. 새로 입력하는 내용은 " +
         "지금 이 브라우저에 로그인된 계정으로 등록되며, 계정을 바꿨다면 목록이 다르게 " +
         "보일 수 있습니다.",
     );
@@ -1361,7 +1361,7 @@ export function WorkAreaPanel({
     setFrozenVertices(original.vertices.map((vertex) => ({ ...vertex })));
     setUnknownVerifyMessage(null);
     setContinuityBlocked(null);
-    setNotice("이전 원래 요청을 다시 확인합니다. 다시 보내는 행동은 별도 선택이며 중복 구역이 생길 수 있습니다.");
+    setNotice("이전 원래 요청을 다시 확인합니다. 다시 보내는 행동은 별도 선택이며 중복 영역이 생길 수 있습니다.");
   }
 
   async function handleArchiveListRead() {
@@ -1414,7 +1414,7 @@ export function WorkAreaPanel({
     // 있다면 편집기가 언마운트되어 입력이 사라지므로 보관 요청을 보내지 않는다.
     // 확인창을 연 뒤 상태가 바뀐 경우도 이 방어선에서 다시 막는다.
     if (mapPending.blocked) {
-      setArchiveError({ areaId: area.workAreaId, message: "입력 중인 경계를 반영하거나 되돌린 뒤 구역을 보관하세요." });
+      setArchiveError({ areaId: area.workAreaId, message: "입력 중인 경계를 반영하거나 되돌린 뒤 영역을 보관하세요." });
       return;
     }
     // 보관 대기 중 폼이 잠기므로, 열려 있던 이탈 확인은 닫는다(재개 시
@@ -1485,7 +1485,7 @@ export function WorkAreaPanel({
       setNotice(null);
       setArchiveError(null);
       notify(`"${area.name}"을 보관했습니다.`);
-      // 그 구역을 대신할 새 구역을 그리던 중이었다면 그 폼은 의미를 잃는다.
+      // 그 영역을 대신할 새 영역을 그리던 중이었다면 그 폼은 의미를 잃는다.
       if (correcting?.workAreaId === area.workAreaId) resetForm();
     } catch {
       if (current()) recordUnknown();
@@ -1535,11 +1535,11 @@ export function WorkAreaPanel({
     <>
     {!scopeReady && <div role="status" className="rounded-md border border-line bg-sunk p-3 text-ink-2">
       <p>{draftMessage ?? (canWrite ? "현재 계정과 임시 저장 내용을 확인하고 있습니다." : "현재 계정을 확인하고 있습니다.")}</p>
-      {draftGate === "failed" && <><p>확인이 끝나기 전에는 이 화면에서 작업구역 목록도 볼 수 없습니다. 저장된 원문은 변경하지 않습니다.</p><button type="button" className="btn mt-2" onClick={() => recheckIdentity.current?.()}>{canWrite ? "계정과 저장 상태 다시 확인" : "계정 다시 확인"}</button></>}
+      {draftGate === "failed" && <><p>확인이 끝나기 전에는 이 화면에서 영역 목록도 볼 수 없습니다. 저장된 원문은 변경하지 않습니다.</p><button type="button" className="btn mt-2" onClick={() => recheckIdentity.current?.()}>{canWrite ? "계정과 저장 상태 다시 확인" : "계정 다시 확인"}</button></>}
     </div>}
     <div ref={sensitiveRootRef} hidden={!scopeReady} style={{display: !scopeReady ? "none" : undefined}} className="flex flex-col gap-5">
       {scopeReady && <Disclosure label="임시 저장 상세" className="text-caption text-ink-2">
-        <p className="mt-1 max-w-[80ch] leading-5">이름과 경계 편집 원문 및 첫 전송 원본을 이 탭에 임시 저장합니다. 탭을 닫으면 사라질 수 있으며, 진행 중인 지도 포인터 동작은 복구되지 않습니다. 첫 요청과 재전송 기록은 이 탭에만 보관됩니다. 재전송은 별도의 비멱등 요청이므로 중복 구역이 생길 수 있습니다.</p>
+        <p className="mt-1 max-w-[80ch] leading-5">이름과 경계 편집 원문 및 첫 전송 원본을 이 탭에 임시 저장합니다. 탭을 닫으면 사라질 수 있으며, 진행 중인 지도 포인터 동작은 복구되지 않습니다. 첫 요청과 재전송 기록은 이 탭에만 보관됩니다. 재전송은 별도의 비멱등 요청이므로 중복 영역이 생길 수 있습니다.</p>
       </Disclosure>}
       {scopeReady && draftMessage && <p role="alert" className="rounded-md bg-crit-bg px-3 py-2 text-crit-ink">{draftMessage}</p>}
       {canWrite && scopeReady && error && (
@@ -1559,7 +1559,7 @@ export function WorkAreaPanel({
         >
           <p className="font-bold">등록 결과를 확인하지 못했습니다</p>
           <p className="break-keep text-ink-2">
-            서버에 등록됐을 수도 있습니다. 같은 내용을 다시 보내면 구역이 두 개 생길 수 있어
+            서버에 등록됐을 수도 있습니다. 같은 내용을 다시 보내면 영역이 두 개 생길 수 있어
             위 등록 버튼을 잠시 막았습니다. 입력과 지도는 그대로 두었습니다.
           </p>
           <p className="break-keep text-ink-2">
@@ -1580,7 +1580,7 @@ export function WorkAreaPanel({
               <div className="sm:col-span-2">
                 <dt className="text-caption text-ink-muted">대체 대상</dt>
                 <dd className="break-keep">
-                  {unknownSubmission.supersedesName ?? "이전 구역"}(
+                  {unknownSubmission.supersedesName ?? "이전 영역"}(
                   <span className="num break-token font-mono text-micro">
                     {unknownSubmission.supersedes}
                   </span>
@@ -1590,9 +1590,9 @@ export function WorkAreaPanel({
             )}
           </dl>
           <p className="break-keep text-ink-2">
-            이름·모양이 같아도 같은 구역이라고 단정하지 마세요 — 목록의 기술 참조(workAreaId)로
+            이름·모양이 같아도 같은 영역이라고 단정하지 마세요 — 목록의 기술 참조(workAreaId)로
             확인하세요. 다른 계정·다른 브라우저에서는 목록이 다르게 보일 수 있습니다.
-            재전송은 별도 요청으로 기록되며 중복 구역이 생길 수 있습니다.
+            재전송은 별도 요청으로 기록되며 중복 영역이 생길 수 있습니다.
           </p>
           <div className="flex flex-wrap items-center gap-2">
             <button
@@ -1602,7 +1602,7 @@ export function WorkAreaPanel({
               disabled={verifying || busy}
               onClick={() => void handleVerifyUnknown()}
             >
-              {verifying ? "목록 확인 중…" : "작업구역 목록 다시 불러오기"}
+              {verifying ? "목록 확인 중…" : "영역 목록 다시 불러오기"}
             </button>
             {/* 쓰기(POST)는 노트북 경계 안으로 — 390px에서도 패널은 보이지만
                 재전송 버튼은 `hidden lg:contents` 로 가려 키보드·클릭 모두 닿지
@@ -1633,15 +1633,15 @@ export function WorkAreaPanel({
             </button>
           </div>
           <p className="text-caption break-keep text-ink-muted">
-            새 요청으로 다시 등록하면 중복 구역이 생길 수 있습니다. 먼저 목록을 확인하세요.
-            재전송은 별도 요청으로 기록되며 중복 구역이 생길 수 있습니다. 계정을 바꿨다면
+            새 요청으로 다시 등록하면 중복 영역이 생길 수 있습니다. 먼저 목록을 확인하세요.
+            재전송은 별도 요청으로 기록되며 중복 영역이 생길 수 있습니다. 계정을 바꿨다면
             입력 비우기로 새로 시작하세요(새 입력은 지금 로그인된 계정으로 등록됩니다).
-            입력을 비워도 서버에 만들어졌을 수 있는 구역은 사라지지 않으며, 지금까지의
+            입력을 비워도 서버에 만들어졌을 수 있는 영역은 사라지지 않으며, 지금까지의
             확인 기록은 아래 이전 확인 기록에 남습니다.
           </p>
           <p className="text-caption break-keep text-ink-muted lg:hidden">
             작은 화면에서는 새 요청 다시 등록이 열리지 않습니다. 노트북에서 같은 계정으로
-            이 현장의 ‘작업구역’ 화면을 열어 목록을 먼저 확인하세요. 이 탭의 임시 기록은
+            이 현장의 ‘영역’ 화면을 열어 목록을 먼저 확인하세요. 이 탭의 임시 기록은
             다른 기기로 옮겨가지 않습니다. 원래 기록으로 재전송하려면 이 탭의 화면 폭을 1024px 이상으로 넓히세요.
           </p>
           {continuityBlocked !== null && (
@@ -1771,7 +1771,7 @@ export function WorkAreaPanel({
       {canWrite && (
         <ResponsiveNotice
           action="SITE_DEVICE_TRANSITION"
-          reason="작업구역 등록·다시 그리기·보관은 노트북에서 같은 계정으로 이 현장의 ‘작업구역’ 화면을 열어 진행하세요. 작은 화면에서는 아래 목록과 구역 범위 보기로 확인만 할 수 있습니다. 입력 중인 내용·임시 기록은 이 탭에만 있어 다른 기기로 이어지지 않습니다. 재전송은 원래 기록이 있는 탭에서 확인하세요."
+          reason="영역 등록·다시 그리기·보관은 노트북에서 같은 계정으로 이 현장의 ‘영역’ 화면을 열어 진행하세요. 작은 화면에서는 아래 목록과 영역 범위 보기로 확인만 할 수 있습니다. 입력 중인 내용·임시 기록은 이 탭에만 있어 다른 기기로 이어지지 않습니다. 재전송은 원래 기록이 있는 탭에서 확인하세요."
         />
       )}
 
@@ -1780,7 +1780,7 @@ export function WorkAreaPanel({
         <ResponsiveActionBoundary
           action="SITE_DEVICE_TRANSITION"
           inlineNotice={false}
-          reason="작업구역 등록과 다시 그리기는 노트북에서 같은 계정으로 이 현장의 ‘작업구역’ 화면을 열어 이어가세요. 입력 중인 내용·임시 기록은 이 탭에만 있어 다른 기기로 이어지지 않습니다."
+          reason="영역 등록과 다시 그리기는 노트북에서 같은 계정으로 이 현장의 ‘영역’ 화면을 열어 이어가세요. 입력 중인 내용·임시 기록은 이 탭에만 있어 다른 기기로 이어지지 않습니다."
         >
         <section className="flex flex-col gap-3 rounded-lg border border-line bg-surface p-4">
           <h2
@@ -1788,7 +1788,7 @@ export function WorkAreaPanel({
             tabIndex={-1}
             className="text-body font-bold tracking-tight break-keep text-ink-2"
           >
-            {correcting ? "구역 다시 그리기" : "새 작업구역 등록"}
+            {correcting ? "영역 다시 그리기" : "새 영역 등록"}
           </h2>
 
           {abandonConfirm !== null && (
@@ -1808,7 +1808,7 @@ export function WorkAreaPanel({
               </h3>
               <p className="text-body break-keep text-ink-2">
                 지도에 반영하지 않은 입력은 이동하면 사라집니다. 기존에 반영된
-                범위와 등록된 구역은 그대로 남습니다. Esc를 누르면 계속 입력합니다.
+                범위와 등록된 영역은 그대로 남습니다. Esc를 누르면 계속 입력합니다.
               </p>
               <div className="flex flex-wrap items-center gap-2">
                 <button
@@ -1832,13 +1832,13 @@ export function WorkAreaPanel({
           {correcting ? (
             <div className="flex flex-col gap-2 rounded-md border border-dashed border-line-strong bg-sunk px-3 py-2">
               <p className="text-body break-keep text-ink-2">
-                <strong className="font-bold">{correcting.name}</strong>을 대신할 새 구역을
+                <strong className="font-bold">{correcting.name}</strong>을 대신할 새 영역을
                 그립니다 —{" "}
                 {correctionReady
-                  ? "지도에 그 구역의 지금 모양을 올려 두었습니다."
-                  : "그 구역의 모양을 지도에 올리지 못해 빈 지도에서 새로 그립니다(원래 구역은 그대로 남아 있습니다)."}
-                등록하면 새 구역이 생기고 이전 구역은 자동으로 보관되며,{" "}
-                <strong className="font-bold">이미 낸 리포트는 이전 구역의 범위를 그대로</strong>{" "}
+                  ? "지도에 그 영역의 지금 모양을 올려 두었습니다."
+                  : "그 영역의 모양을 지도에 올리지 못해 빈 지도에서 새로 그립니다(원래 영역은 그대로 남아 있습니다)."}
+                등록하면 새 영역이 생기고 이전 영역은 자동으로 보관되며,{" "}
+                <strong className="font-bold">이미 낸 리포트는 이전 영역의 범위를 그대로</strong>{" "}
                 가리킵니다.
               </p>
               <button
@@ -1849,14 +1849,14 @@ export function WorkAreaPanel({
                   requestResetForm();
                 }}
               >
-                그만두고 새 구역으로 등록
+                그만두고 새 영역으로 등록
               </button>
             </div>
           ) : (
             <p className="text-body break-keep text-ink-muted">
-              이름을 붙여 등록해 두면 이후 비교마다 이 구역을 고르기만 하면 됩니다.{" "}
+              이름을 붙여 등록해 두면 이후 비교마다 이 영역을 고르기만 하면 됩니다.{" "}
               <strong className="font-bold">등록한 모양은 고칠 수 없습니다</strong> — 잘못
-              그렸으면 목록에서 &ldquo;다시 그리기&rdquo;로 대신할 구역을 등록하세요.
+              그렸으면 목록에서 &ldquo;다시 그리기&rdquo;로 대신할 영역을 등록하세요.
             </p>
           )}
 
@@ -1892,9 +1892,9 @@ export function WorkAreaPanel({
             <span className="text-caption break-keep text-ink-muted">
               {displayedVertices.length >= 3
                 ? `꼭짓점 ${displayedVertices.length}개 — 이 모양으로 굳습니다.`
-                : "아직 구역이 되지 않았습니다 — 꼭짓점을 3개 이상 찍으세요."}{" "}
+                : "아직 영역이 되지 않았습니다 — 꼭짓점을 3개 이상 찍으세요."}{" "}
               좌표는 위경도(<span className="num">{COMPARISON_ZONE_CRS}</span>)로 저장됩니다
-              (현장 등록 좌표계는 <span className="num break-token">{siteCrs}</span>입니다).
+              (프로젝트 등록 좌표계는 <span className="num break-token">{siteCrs}</span>입니다).
             </span>
             {mapBlocked && (
               <p
@@ -1913,12 +1913,12 @@ export function WorkAreaPanel({
             disabled={!canSubmit}
             onClick={() => void handleSubmit()}
           >
-            {submitting ? "등록하는 중…" : correcting ? "대신할 구역으로 등록" : "등록"}
+            {submitting ? "등록하는 중…" : correcting ? "대신할 영역으로 등록" : "등록"}
           </button>
         </section>
         </ResponsiveActionBoundary>
       ) : (
-        <ActionUnavailable label="작업구역 등록" description="현재 계정으로는 작업구역을 등록하거나 보관할 수 없습니다. 현장 담당자에게 문의하세요." />
+        <ActionUnavailable label="영역 등록" description="현재 계정으로는 영역을 등록하거나 보관할 수 없습니다. 프로젝트 담당자에게 문의하세요." />
       )}</div>}
 
       {scopeReady && archiveReceiptWarning && <p role="alert" className="rounded-md border border-line bg-sunk p-3 text-ink-2">{archiveReceiptWarning}</p>}
@@ -1934,7 +1934,7 @@ export function WorkAreaPanel({
       </div>}
       <section className="flex flex-col gap-3">
         <div className="flex flex-wrap items-baseline justify-between gap-2">
-          <h2 className="text-lead font-bold break-keep">사용 중인 작업구역</h2>
+          <h2 className="text-lead font-bold break-keep">사용 중인 영역</h2>
           <span className="num text-caption whitespace-nowrap text-ink-muted">
             {workAreaListError ? "확인할 수 없음" : `${active.length}건`}
           </span>
@@ -1951,14 +1951,14 @@ export function WorkAreaPanel({
           <p className="rounded-lg border border-dashed border-line-strong bg-surface px-4 py-8 text-center text-body break-keep text-ink-muted">
             {canWrite ? (
               <>
-                아직 등록된 작업구역이 없습니다. 위 지도에서 이름과 범위를 정해 등록하세요.
+                아직 등록된 영역이 없습니다. 위 지도에서 이름과 범위를 정해 등록하세요.
                 <span className="mt-1 block lg:hidden">
                   작은 화면에서는 등록 폼이 열리지 않으므로, 목록 확인만 할 수 있습니다.
-                  노트북에서 같은 계정으로 이 현장의 ‘작업구역’ 화면을 열어 이어가세요.
+                  노트북에서 같은 계정으로 이 현장의 ‘영역’ 화면을 열어 이어가세요.
                 </span>
               </>
             )
-              : "이 현장에 등록된 작업구역이 없습니다. 현장 담당자에게 구역 등록을 요청하세요."}
+              : "이 프로젝트에 등록된 영역이 없습니다. 프로젝트 담당자에게 영역 등록을 요청하세요."}
           </p>
         ) : (
           <ul className="flex flex-col gap-2">
@@ -1985,9 +1985,9 @@ export function WorkAreaPanel({
 
       <ConfirmDialog
         open={archiveTarget !== null}
-        title="구역을 보관할까요?"
+        title="영역을 보관할까요?"
         description={archiveTarget ? <>“{archiveTarget.name}”을 보관하면 이 화면에서 되돌릴 수 없습니다. 새 비교에서 고를 수 없게 되며, 이미 낸 리포트는 그대로 유지됩니다.{unconfirmedArchiveKeys.includes(JSON.stringify([siteId, boundScope?.identity, archiveTarget.workAreaId])) && " 이번 행동은 별도 전송이며 이전 요청의 결과를 증명하지 않습니다."}</> : null}
-        confirmLabel="구역 보관"
+        confirmLabel="영역 보관"
         pending={archivingId !== null}
         onCancel={() => setArchiveTarget(null)}
         onConfirm={() => {
@@ -2000,13 +2000,13 @@ export function WorkAreaPanel({
       {archived.length > 0 && (
         <section className="flex flex-col gap-3">
           <div className="flex flex-wrap items-baseline justify-between gap-2">
-            <h2 className="text-lead font-bold break-keep">보관된 작업구역</h2>
+            <h2 className="text-lead font-bold break-keep">보관된 영역</h2>
             <span className="num text-caption whitespace-nowrap text-ink-muted">
               {archived.length}건
             </span>
           </div>
           <p className="text-body break-keep text-ink-muted">
-            보관은 삭제가 아닙니다 — 새 비교에서 고를 수 없게 될 뿐, 이 구역으로 이미 낸
+            보관은 삭제가 아닙니다 — 새 비교에서 고를 수 없게 될 뿐, 이 영역으로 이미 낸
             리포트는 그대로 남아 그때의 범위를 가리킵니다.
           </p>
           <ul className="flex flex-col gap-2">

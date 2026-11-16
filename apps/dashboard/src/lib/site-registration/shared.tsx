@@ -200,7 +200,7 @@ export function verifySitePostEcho(
     return { ok: false };
   }
 
-  // 현장 범위 — 꼭짓점 수와 각 좌표 엄격 일치(JSON 왕복은 배정밀도를 보존한다).
+  // 프로젝트 범위 — 꼭짓점 수와 각 좌표 엄격 일치(JSON 왕복은 배정밀도를 보존한다).
   const aoi = site.aoi;
   if (!aoi || typeof aoi !== "object" || Array.isArray(aoi)) return { ok: false };
   const vertices = (aoi as Record<string, unknown>).vertices;

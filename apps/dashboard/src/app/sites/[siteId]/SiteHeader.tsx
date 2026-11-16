@@ -19,9 +19,9 @@ export function SiteHeader({
   site: SiteView;
   selectedEpochId: string | null;
   tab: SiteRouteSection;
-  /** 루트가 검증한 현행 승인 구역 — 원문 쿼리를 그대로 두지 않는다. 없으면 범위 없이 간다. */
+  /** 루트가 검증한 현행 승인 영역 — 원문 쿼리를 그대로 두지 않는다. 없으면 범위 없이 간다. */
   scopedWorkAreaId?: string | null;
-  /** 같은 등록 자료 목록에서 확인한 자산 참조 — 구역과 함께일 때만 싣는다. */
+  /** 같은 등록 자료 목록에서 확인한 자산 참조 — 영역과 함께일 때만 싣는다. */
   scopedAssetRef?: string | null;
   /** 탐색 중이던 시각 쌍 맥락 — 현황·분석 이동에 그대로 싣고 받는 화면이 재대조한다.
    *  결과 이동에는 요청 힌트·앵커를 싣지 않는다 — 둘러보기는 새 요청 의도가 아니다. */
@@ -53,7 +53,7 @@ export function SiteHeader({
       data-site-header="true"
       // 서버 확인 범위의 읽기 전용 브리지 — 팔레트가 열릴 때 같은 목적지를
       // 가리키게 한다. URL 쿼리에는 없는 bare deep link(분석 기록 직접 연결 등)의
-      // 실제 구역을 헤더가 이미 알고 있을 때만 싣는다. 판정이 아니라 힌트이며,
+      // 실제 영역을 헤더가 이미 알고 있을 때만 싣는다. 판정이 아니라 힌트이며,
       // 받는 화면이 서버 목록과 재대조한다. 빈 값은 없음으로 읽는다.
       data-site-nav="true"
       data-site-id={site.siteId}
@@ -94,7 +94,7 @@ export function SiteHeader({
           <StateBadge label={status.label} tone={status.tone} />
           <Link
             href={siteSettingsHref(site.siteId)}
-            aria-label="현장 설정"
+            aria-label="프로젝트 설정"
             aria-current={activeTab === "manage" ? "page" : undefined}
             className="btn btn-quiet btn-sm tap-target md:hidden"
           >
@@ -103,10 +103,10 @@ export function SiteHeader({
         </div>
       </div>
 
-      {/* 현장 메뉴 — 제품 전체에서 같은 밑줄 탭 문법. 현재 영역은
+      {/* 프로젝트 메뉴 — 제품 전체에서 같은 밑줄 탭 문법. 현재 영역은
           aria-current와 밑줄로 밝히고, 좁은 화면에서는 가로 스크롤로
           두 줄로 깨지지 않게 한다. 하단 탭과 겹쳐 보여도 지우지 않는다 — 이 탭만이
-          탐색 중이던 구역·자료·시각 쌍 범위를 이동에 싣는다. */}
+          탐색 중이던 영역·자료·시각 쌍 범위를 이동에 싣는다. */}
       <nav
         className="mx-auto flex w-full max-w-[1440px] gap-1 overflow-x-auto px-3 sm:px-5 md:hidden"
         aria-label="현장 영역 메뉴"

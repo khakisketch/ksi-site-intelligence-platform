@@ -36,23 +36,23 @@ afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 
 describe("WorkAreaChoiceMap omission note", () => {
   it("shows exact non-CRS reasons even when nothing is drawable", async () => {
-    renderMap([makeArea("area-hole", "구멍 구역", holed, "EPSG:4326")]);
+    renderMap([makeArea("area-hole", "구멍 영역", holed, "EPSG:4326")]);
     const note = await screen.findByRole("note");
-    expect(note.textContent).toContain("지도에 표시되지 않은 구역 1개");
-    expect(note.textContent).toContain("구멍 구역");
+    expect(note.textContent).toContain("지도에 표시되지 않은 영역 1개");
+    expect(note.textContent).toContain("구멍 영역");
     expect(note.textContent).not.toContain("좌표계");
   });
   it("shows the note for mixed drawable and omitted areas", async () => {
     renderMap([
-      makeArea("area-ok", "동측 구역", polygon, "EPSG:4326"),
-      makeArea("area-crs", "서측 구역", polygon, "EPSG:9999"),
+      makeArea("area-ok", "동측 영역", polygon, "EPSG:4326"),
+      makeArea("area-crs", "서측 영역", polygon, "EPSG:9999"),
     ]);
     await screen.findByTestId("map-inner");
     const note = await screen.findByRole("note");
-    expect(note.textContent).toContain("서측 구역");
+    expect(note.textContent).toContain("서측 영역");
   });
   it("shows no note when every area is drawable", async () => {
-    renderMap([makeArea("area-ok", "동측 구역", polygon, "EPSG:4326")]);
+    renderMap([makeArea("area-ok", "동측 영역", polygon, "EPSG:4326")]);
     await screen.findByTestId("map-inner");
     expect(screen.queryByRole("note")).toBeNull();
   });

@@ -24,8 +24,8 @@ const BODY = {
   supersedes: null,
 };
 
-// 작업구역 Core 등록에는 멱등 키가 없다 — 같은 내용의 POST마다 새 sequence 구역이
-// 생긴다. 이 mock은 그 계약을 재현한다(같은 계정의 재시도도 새 구역을 만든다).
+// 영역 Core 등록에는 멱등 키가 없다 — 같은 내용의 POST마다 새 sequence 영역이
+// 생긴다. 이 mock은 그 계약을 재현한다(같은 계정의 재시도도 새 영역을 만든다).
 // BFF 가드는 중복 생성을 막지 않고, 다른 계정의 조용한 재전송만 Core 호출 없이
 // 끊는다.
 let areaCounter = 0;
@@ -139,7 +139,7 @@ describe("work-area account-continuity BFF guard", () => {
     const blocked = await postAs("token-bob-a", claim);
     expect(blocked.status).toBe(409);
     expect(((await blocked.json()) as { code?: string }).code).toBe("ACCOUNT_CONTINUITY_MISMATCH");
-    // B의 요청으로 Core 구역이 하나도 더 생기지 않는다
+    // B의 요청으로 Core 영역이 하나도 더 생기지 않는다
     expect(coreCreateCalls).toBe(1);
     expect(createdIds).toHaveLength(1);
   });
@@ -148,7 +148,7 @@ describe("work-area account-continuity BFF guard", () => {
     const claim = fingerprint("org-a", "alice");
     expect((await postAs("token-alice-a", claim)).status).toBe(201);
     expect((await postAs("token-alice-a", claim)).status).toBe(201);
-    // 같은 계정·같은 내용도 새 구역이다 — 계약 변경 없음
+    // 같은 계정·같은 내용도 새 영역이다 — 계약 변경 없음
     expect(coreCreateCalls).toBe(2);
     expect(createdIds).toHaveLength(2);
     expect(createdIds[0]).not.toBe(createdIds[1]);

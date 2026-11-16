@@ -39,7 +39,7 @@ describe("포트폴리오 검색", () => {
     expect(filterPortfolio(ROWS, "   ").map((r) => r.siteId)).toEqual(ROWS.map((r) => r.siteId));
   });
 
-  it("현장명 일부로 찾는다", () => {
+  it("프로젝트명 일부로 찾는다", () => {
     expect(filterPortfolio(ROWS, "광교").map((r) => r.siteId)).toEqual(["S-2411-GJ"]);
   });
 
@@ -98,7 +98,7 @@ describe("포트폴리오 정렬", () => {
     ]);
   });
 
-  it("현장명 순은 한국어 정렬을 쓴다", () => {
+  it("프로젝트명 순은 한국어 정렬을 쓴다", () => {
     expect(sortPortfolio(ROWS, "name").map((r) => r.name)).toEqual([
       "광교 A3블록",
       "대전 물류센터",
@@ -106,7 +106,7 @@ describe("포트폴리오 정렬", () => {
     ]);
   });
 
-  it("동점은 현장명으로 풀어 순서가 새로고침마다 흔들리지 않는다", () => {
+  it("동점은 프로젝트명으로 풀어 순서가 새로고침마다 흔들리지 않는다", () => {
     const rows = [
       row({ siteId: "B", name: "나현장", unattendedCount: 3 }),
       row({ siteId: "A", name: "가현장", unattendedCount: 3 }),

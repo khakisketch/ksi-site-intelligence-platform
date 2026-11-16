@@ -22,8 +22,8 @@ function AreaLink({ siteId, area, label, current }: { siteId: string; area: Work
 }
 
 /**
- * 자료 섹션의 컨텍스트 패널 — 어느 구역의 자료를 볼지, 불러온 자료를 어떻게 좁힐지.
- * 자료 조회가 구역 단위라서 구역 선택이 이 패널의 첫 줄이다. 검색·필터는 이미 불러온 페이지 안에서만 적용된다.
+ * 자료 섹션의 컨텍스트 패널 — 어느 영역의 자료를 볼지, 불러온 자료를 어떻게 좁힐지.
+ * 자료 조회가 영역 단위라서 영역 선택이 이 패널의 첫 줄이다. 검색·필터는 이미 불러온 페이지 안에서만 적용된다.
  */
 export function DataContextPanel({
   siteId, areas, selectedWorkAreaId, kinds, q, kind, state, loadedCount, hasMore,
@@ -45,17 +45,17 @@ export function DataContextPanel({
   const filterProps = { siteId, kinds, q, kind, state, loadedCount, hasMore };
   return (
     <>
-      <section aria-label="작업구역" className="flex min-w-0 flex-col gap-1.5">
-        <h2 className="px-1 text-micro font-bold tracking-wide text-ink-muted">작업구역</h2>
+      <section aria-label="영역" className="flex min-w-0 flex-col gap-1.5">
+        <h2 className="px-1 text-micro font-bold tracking-wide text-ink-muted">영역</h2>
         {areas.length === 0 ? (
-          <p className="px-1 text-caption text-ink-2">등록된 작업구역이 없습니다.</p>
+          <p className="px-1 text-caption text-ink-2">등록된 영역이 없습니다.</p>
         ) : (
           <>
             <ul className="flex flex-wrap gap-1 xl:flex-col xl:gap-0.5">
               {active.map((area) => <AreaLink key={area.workAreaId} siteId={siteId} area={area} label={label(area)} current={area.workAreaId === selectedWorkAreaId} />)}
             </ul>
             {archived.length > 0 && (
-              <Disclosure label={`보관된 구역 ${archived.length}`} open={archived.some((area) => area.workAreaId === selectedWorkAreaId)}>
+              <Disclosure label={`보관된 영역 ${archived.length}`} open={archived.some((area) => area.workAreaId === selectedWorkAreaId)}>
                 <ul className="mt-1 flex flex-wrap gap-1 xl:flex-col xl:gap-0.5">
                   {archived.map((area) => <AreaLink key={area.workAreaId} siteId={siteId} area={area} label={label(area)} current={area.workAreaId === selectedWorkAreaId} />)}
                 </ul>

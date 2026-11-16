@@ -7,7 +7,7 @@ import { StepIndicator } from "@/components/ui/StepIndicator";
  * 여기에는 순서만 두고, 진행 상태·완료 여부는 말하지 않는다(그 사실은 작업
  * 화면이 맡는다).
  */
-const STEPS = ["작업구역", "파일 제출", "검사 확인"] as const;
+const STEPS = ["영역", "파일 제출", "검사 확인"] as const;
 
 export function RegistrationPath({ className = "" }: { className?: string }) {
   return <StepIndicator steps={STEPS} label="자료 등록 순서" className={className} />;

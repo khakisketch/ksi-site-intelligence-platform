@@ -5,7 +5,7 @@ import { computePlaneBounds, formatPlaneValue, type PlaneUnit } from "./site-spa
  * 원본 좌표 평면 SVG — 실제 꼭짓점을 그대로 옮긴 벡터 범위 미리보기.
  *
  * 위성사진이 아니며 정확도 인증도 아니다. OSM 축척에서 점으로만 보이는 작은
- * 투영좌표 구역이 "어디까지가 등록된 범위인가"를 눈으로 확인할 자리다.
+ * 투영좌표 영역이 "어디까지가 등록된 범위인가"를 눈으로 확인할 자리다.
  * 축 수치는 실제 범위에서 잰 값이며, 축척 막대는 미터 단위일 때만 그린다.
  * 좌표계가 알려지지 않은 평면은 단위를 단정하지 않는다. 두 축은 같은 자료
  * 단위로 그린다(한 축만 늘리지 않는다).
@@ -77,9 +77,9 @@ export function SiteNativeExtentSvg({
       viewBox={`0 0 ${width} ${VIEW_HEIGHT}`}
       className={compact ? "block h-36 w-full text-ink-1" : "block h-60 w-full text-ink-1 sm:h-80"}
       role="img"
-      aria-label={`작업구역 경계${footprint ? ", 선택한 자료의 포함 범위 함께 표시" : ""}. ${planeUnit === "unknown" ? "좌표 단위 미확인." : ""}`}
+      aria-label={`영역 경계${footprint ? ", 선택한 자료의 포함 범위 함께 표시" : ""}. ${planeUnit === "unknown" ? "좌표 단위 미확인." : ""}`}
     >
-      <title>작업구역과 선택 자료의 범위</title>
+      <title>영역과 선택 자료의 범위</title>
       <rect x={1} y={1} width={width - 2} height={VIEW_HEIGHT - 2} fill="none" stroke="currentColor" strokeOpacity={0.25} />
       {footprint && !coincident && (
         <polygon points={toPoints(footprint)} fill="none" stroke="currentColor" strokeOpacity={0.55} strokeDasharray="5 3" strokeWidth={1.5} />
@@ -103,7 +103,7 @@ export function SiteNativeExtentSvg({
       })()}
     </svg>
     <figcaption className="border-t border-line px-3 py-2 text-caption leading-5 text-ink-2">
-      <p>실선은 작업구역{footprint ? (coincident ? "이며, 선택 자료의 포함 범위와 겹칩니다" : "이며, 점선은 선택 자료가 포함하는 범위입니다") : "의 경계입니다"}.
+      <p>실선은 영역{footprint ? (coincident ? "이며, 선택 자료의 포함 범위와 겹칩니다" : "이며, 점선은 선택 자료가 포함하는 범위입니다") : "의 경계입니다"}.
       {planeUnit === "unknown" && " 좌표 단위를 확인하지 못했습니다."} 사진이 아닌 범위 표시이며 정확도를 보증하지 않습니다.</p>
       <Disclosure label="좌표 상세" className="mt-1">
         <dl className="mt-1 grid gap-1">

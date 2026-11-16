@@ -61,7 +61,7 @@ describe("SurveyRegionInspector", () => {
     expect(await screen.findByText("r1")).toBeTruthy();
     expect(screen.getByText(/전수측량 실행 run-7/)).toBeTruthy();
     expect(screen.getByText(/survey-extraction-policy-v1/)).toBeTruthy();
-    const section = screen.getByLabelText("후보 구역 지표");
+    const section = screen.getByLabelText("후보 영역 지표");
     expect(section.textContent).toContain("10.5");
     // formatNumberKo SSOT: 소수 1자리 반올림 표기.
     expect(section.textContent).toContain("8.3");
@@ -73,7 +73,7 @@ describe("SurveyRegionInspector", () => {
 
   it("prompts for selection when nothing is selected", async () => {
     render(<SurveyRegionInspector report={makeReport("survey:run-7")} selectedId={null} />);
-    expect(await screen.findByText(/지도에서 후보 구역을 선택하면/)).toBeTruthy();
+    expect(await screen.findByText(/지도에서 후보 영역을 선택하면/)).toBeTruthy();
   });
 
   it("reports an unknown selection instead of showing another region", async () => {

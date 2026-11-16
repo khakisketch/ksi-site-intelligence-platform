@@ -176,7 +176,7 @@ afterEach(() => {
   vi.resetAllMocks();
 });
 
-describe("현장 등록 지도 미반영 차단 (사용자 이벤트)", () => {
+describe("프로젝트 등록 지도 미반영 차단 (사용자 이벤트)", () => {
   it("편집 중에는 다음이 막히고 이유가 보이며 POST로 갈 수 없다", async () => {
     await fillToMapStep();
     fireEvent.click(screen.getByRole("button", { name: "편집 시작" }));
@@ -185,7 +185,7 @@ describe("현장 등록 지도 미반영 차단 (사용자 이벤트)", () => {
     expect((next as HTMLButtonElement).disabled).toBe(true);
     expect(screen.getByText(EDITING_REASON)).toBeTruthy();
     // 다음 단계로 넘어가지 못하므로 등록 버튼도 없고 POST도 없다.
-    expect(screen.queryByRole("button", { name: "현장 등록" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "프로젝트 등록" })).toBeNull();
     expect(requestMock).not.toHaveBeenCalled();
   });
 
@@ -197,7 +197,7 @@ describe("현장 등록 지도 미반영 차단 (사용자 이벤트)", () => {
       true,
     );
     expect(screen.getByText(INVALID_REASON)).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "현장 등록" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "프로젝트 등록" })).toBeNull();
     expect(requestMock).not.toHaveBeenCalled();
   });
 
@@ -215,11 +215,11 @@ describe("현장 등록 지도 미반영 차단 (사용자 이벤트)", () => {
     expect(screen.queryByText(EDITING_REASON)).toBeNull();
 
     fireEvent.click(screen.getByRole("button", { name: "다음" }));
-    await screen.findByRole("button", { name: "현장 등록" });
+    await screen.findByRole("button", { name: "프로젝트 등록" });
     const issued = "site-12345678-1234-1234-1234-123456789012";
     requestMock.mockResolvedValueOnce(jsonResponse(echoSite(issued, "현장 A", AOI_ORIG), 201));
-    fireEvent.click(screen.getByRole("button", { name: "현장 등록" }));
-    expect(await screen.findByText("현장이 등록되었습니다.")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "프로젝트 등록" }));
+    expect(await screen.findByText("프로젝트이 등록되었습니다.")).toBeTruthy();
     // 취소 뒤에는 원래 커밋 AOI가 그대로 보내진다.
     expect(
       ((sentBody(0).aoi ?? {}) as Record<string, unknown>).vertices,
@@ -235,11 +235,11 @@ describe("현장 등록 지도 미반영 차단 (사용자 이벤트)", () => {
     );
 
     fireEvent.click(screen.getByRole("button", { name: "다음" }));
-    await screen.findByRole("button", { name: "현장 등록" });
+    await screen.findByRole("button", { name: "프로젝트 등록" });
     const issued = "site-abcdefab-1234-1234-1234-123456789012";
     requestMock.mockResolvedValueOnce(jsonResponse(echoSite(issued, "현장 A", AOI_NEW), 201));
-    fireEvent.click(screen.getByRole("button", { name: "현장 등록" }));
-    expect(await screen.findByText("현장이 등록되었습니다.")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "프로젝트 등록" }));
+    expect(await screen.findByText("프로젝트이 등록되었습니다.")).toBeTruthy();
     // 반영한 새 AOI가 그대로 보내진다(이전 값 아님).
     expect(
       ((sentBody(0).aoi ?? {}) as Record<string, unknown>).vertices,
@@ -251,11 +251,11 @@ describe("현장 등록 지도 미반영 차단 (사용자 이벤트)", () => {
     fireEvent.click(screen.getByRole("button", { name: "편집 시작" }));
     fireEvent.click(screen.getByRole("button", { name: "편집 취소" }));
     fireEvent.click(screen.getByRole("button", { name: "다음" }));
-    await screen.findByRole("button", { name: "현장 등록" });
+    await screen.findByRole("button", { name: "프로젝트 등록" });
     const issued = "site-12345678-1234-1234-1234-123456789012";
     requestMock.mockResolvedValueOnce(jsonResponse(echoSite(issued, "현장 A", AOI_ORIG), 201));
-    fireEvent.click(screen.getByRole("button", { name: "현장 등록" }));
-    expect(await screen.findByText("현장이 등록되었습니다.", { selector: "p" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "프로젝트 등록" }));
+    expect(await screen.findByText("프로젝트이 등록되었습니다.", { selector: "p" })).toBeTruthy();
 
     const draft = JSON.parse(
       window.sessionStorage.getItem("ksi-wizard-site-registration-only") ?? "{}",
@@ -427,14 +427,14 @@ it.each([`${MAP_KEY}:backup`, `${DRAFT_KEY}:map-draft-backup`, `${DRAFT_KEY}:suc
   await screen.findByRole("heading", { name: "지도 입력을 안전하게 복구할 수 없습니다" });
   expect(screen.getByText(/남은 백업은 자동으로 복구하거나 삭제하지 않습니다/)).toBeTruthy();
   expect(screen.getByText(/요청 결과가 확정되는 것은 아닙니다/)).toBeTruthy();
-  for (const name of ["별도 탭에서 현장 목록 확인하기", "별도 탭에서 새로 시작하기"]) {
+  for (const name of ["별도 탭에서 프로젝트 목록 확인하기", "별도 탭에서 새로 시작하기"]) {
     const link = screen.getByRole("link", { name });
     expect(link.getAttribute("target")).toBe("_blank");
     expect(link.getAttribute("rel")).toContain("noopener");
     fireEvent.click(link, { button: 0, ctrlKey: true });
   }
-  expect(screen.queryByText("현장이 등록되었습니다.")).toBeNull();
-  expect(screen.queryByRole("button", { name: /현장 등록|다음/ })).toBeNull();
+  expect(screen.queryByText("프로젝트이 등록되었습니다.")).toBeNull();
+  expect(screen.queryByRole("button", { name: /프로젝트 등록|다음/ })).toBeNull();
   expect(sessionStorage.getItem(backupKey)).toBe(backup);
   expect(sessionStorage.getItem(MAP_KEY)).toBe(map);
   expect(sessionStorage.getItem(DRAFT_KEY)).toBe(draft);
@@ -569,7 +569,7 @@ it("성공 영수증과 지도 원문이 함께 있으면 양쪽을 보존하고
   expect(sessionStorage.getItem(MAP_KEY)).toBe(map);
   expect(sessionStorage.getItem(DRAFT_KEY)).toBe(draft);
   expect(sessionStorage.getItem(`${DRAFT_KEY}:success`)).toBe(receipt);
-  expect(screen.queryByText("현장이 등록되었습니다.")).toBeNull();
+  expect(screen.queryByText("프로젝트이 등록되었습니다.")).toBeNull();
   expect(requestMock).not.toHaveBeenCalled();
 });
 
@@ -580,11 +580,11 @@ it("명시적으로 해소한 지도 원본은 확정 성공에만 정리하고 
   expect(sessionStorage.getItem(MAP_KEY)).toContain("미반영 원문");
   fireEvent.click(screen.getByRole("button", { name: "지도 입력 해소" }));
   fireEvent.click(screen.getByRole("button", { name: "다음" }));
-  await screen.findByRole("button", { name: "현장 등록" });
+  await screen.findByRole("button", { name: "프로젝트 등록" });
   const issued = "site-12345678-1234-1234-1234-123456789012";
   requestMock.mockResolvedValueOnce(jsonResponse(echoSite(issued, "현장 A", AOI_ORIG), 201));
-  fireEvent.click(screen.getByRole("button", { name: "현장 등록" }));
-  expect(await screen.findByText("현장이 등록되었습니다.")).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "프로젝트 등록" }));
+  expect(await screen.findByText("프로젝트이 등록되었습니다.")).toBeTruthy();
   expect(sessionStorage.getItem(MAP_KEY)).toBeNull();
   expect(sessionStorage.getItem(`${DRAFT_KEY}:success`)).toContain(issued);
 });

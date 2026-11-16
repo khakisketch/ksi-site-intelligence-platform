@@ -54,7 +54,7 @@ function areaFixture(overrides: Record<string, unknown> = {}) {
     schemaVersion: "1.0",
     siteId: "site-1",
     workAreaId: "tiny-1",
-    name: "미세 분석 구역",
+    name: "미세 분석 영역",
     polygon: TINY_5186,
     crs: "EPSG:5186",
     status: "ACTIVE",
@@ -104,7 +104,7 @@ describe("Site spatial overview data bounds", () => {
   it("renders an action-ready empty stage without treating it as an observation", async () => {
     mocked.areas.mockResolvedValue({ workAreas: [] });
     await renderDefaultTab({});
-    expect(screen.getByRole("heading", { name: "등록된 작업구역이 없습니다" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "등록된 영역이 없습니다" })).toBeTruthy();
     expect(screen.getByRole("list", { name: "자료 등록 순서" })).toBeTruthy();
     expect(mocked.assets).not.toHaveBeenCalled();
     expect(screen.queryByRole("img")).toBeNull();
@@ -112,20 +112,20 @@ describe("Site spatial overview data bounds", () => {
 
   it("announces an unknown scope once without exposing the requested identifier", async () => {
     await renderDefaultTab({ workAreaId: "no-such-area" });
-    expect(screen.getAllByText(/요청한 작업구역이 조회 범위에 없습니다/)).toHaveLength(1);
+    expect(screen.getAllByText(/요청한 영역이 조회 범위에 없습니다/)).toHaveLength(1);
     expect(screen.queryByText(/no-such-area/)).toBeNull();
     expect(mocked.assets).toHaveBeenCalledWith("site-1", "tiny-1", { limit: 50 });
   });
 
   it("uses the bound area before a newer empty area", async () => {
     mocked.areas.mockResolvedValue({ workAreas: [
-      areaFixture({ workAreaId: "bound-1", name: "기록 있는 구역", createdAt: "2026-09-01T00:00:00Z" }),
-      areaFixture({ workAreaId: "empty-new", name: "새 빈 구역", createdAt: "2026-10-12T00:00:00Z" }),
+      areaFixture({ workAreaId: "bound-1", name: "기록 있는 영역", createdAt: "2026-09-01T00:00:00Z" }),
+      areaFixture({ workAreaId: "empty-new", name: "새 빈 영역", createdAt: "2026-10-12T00:00:00Z" }),
     ] });
     mocked.orders.mockResolvedValue([{ workOrderId: "w1", workAreaIds: ["bound-1"] }]);
     await renderDefaultTab({});
     expect(mocked.assets).toHaveBeenCalledWith("site-1", "bound-1", { limit: 50 });
-    expect(screen.getByRole("button", { name: "작업구역 · 기록 있는 구역" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "영역 · 기록 있는 영역" })).toBeTruthy();
   });
 
   it("keeps denial distinct from a truly empty catalog", async () => {

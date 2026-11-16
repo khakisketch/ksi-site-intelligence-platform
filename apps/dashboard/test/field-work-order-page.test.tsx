@@ -105,7 +105,7 @@ beforeEach(() => {
   mocked.report.mockResolvedValue(reportDetail());
   mocked.history.mockResolvedValue({ items: [], nextCursor: null });
   mocked.site.mockResolvedValue({ siteId: "site-1", name: "현장 A" });
-  mocked.areas.mockResolvedValue({ workAreas: [{ workAreaId: "area-1", name: "동측 구역" }] });
+  mocked.areas.mockResolvedValue({ workAreas: [{ workAreaId: "area-1", name: "동측 영역" }] });
   mocked.resolveContext.mockImplementation((_order: unknown, context: { externalPlanningBinding?: unknown } | null) => context?.externalPlanningBinding ? "EXTERNAL_REOBSERVATION_PLANNING" : "EXTERNAL_INGRESS");
 });
 
@@ -154,7 +154,7 @@ describe("작업 페이지 follow-up", () => {
     await renderPage();
 
     expect(screen.getByRole("link", { name: "비교 요청·제안 상태로 이동" }).getAttribute("href")).toBe("#external-volume");
-    expect(document.body.textContent).toContain("1개 구역 · 만료 2026. 9. 30. 09:00");
+    expect(document.body.textContent).toContain("1개 영역 · 만료 2026. 9. 30. 09:00");
     expect(document.body.textContent).not.toContain("2026-09-30T00:00:00Z");
   });
 
@@ -175,8 +175,8 @@ describe("작업 페이지 follow-up", () => {
 
     await renderPage();
 
-    expect(document.body.textContent).toContain("현장 A · 동측 구역 외 1,233개 구역 · 1회차");
-    expect(document.body.textContent).toContain("1,234개 구역 · 만료 2026. 9. 30. 09:00");
+    expect(document.body.textContent).toContain("현장 A · 동측 영역 외 1,233개 영역 · 1회차");
+    expect(document.body.textContent).toContain("1,234개 영역 · 만료 2026. 9. 30. 09:00");
   });
 
   it("shows a compact successor banner with the exact source proposal and next analysis step", async () => {
@@ -259,7 +259,7 @@ describe("작업 페이지 follow-up", () => {
     expect(screen.queryByRole("region", { name: "등록 자료 다음 확인" })).toBeNull();
 
     cleanup();
-    mocked.areas.mockResolvedValueOnce({ workAreas: [{ workAreaId: "area-1", name: "동측 구역", status: "ACTIVE" }] });
+    mocked.areas.mockResolvedValueOnce({ workAreas: [{ workAreaId: "area-1", name: "동측 영역", status: "ACTIVE" }] });
     mocked.submissions.mockResolvedValueOnce([{ submissionId: "sub-1", submissionRef: "sub-ref-1", state: "REGISTERED" }]);
     await renderPage();
     const continuation = within(screen.getByRole("region", { name: "등록 자료 다음 확인" }));

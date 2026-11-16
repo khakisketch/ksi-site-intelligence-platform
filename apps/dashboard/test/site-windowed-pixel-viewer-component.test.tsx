@@ -231,7 +231,7 @@ describe("site windowed pixel viewer", () => {
     await screen.findByText(/실제 파일 · 준비된 창 · 2 × 2 픽셀/);
     expect(screen.getByText(/EPSG:7850 · \[0, 0, 2, 2\]/)).toBeTruthy();
     expect(screen.getByText(/지도 재투영이 아닙니다/)).toBeTruthy();
-    expect(screen.getByText(/같은 좌표 평면의 작업구역 경계/)).toBeTruthy();
+    expect(screen.getByText(/같은 좌표 평면의 영역 경계/)).toBeTruthy();
     // 한 창 보기와 이어 보기 모두 표시용임을 밝힌다 — 같은 문구가 두 자리에 있다.
     expect(screen.getByText(/확대·이동은 화면 표시용이며 측정값이 아닙니다/)).toBeTruthy();
     expect(screen.getByText(/이 보기의 이동·확대는 화면 표시용이며 측정값이 아닙니다/)).toBeTruthy();
@@ -352,7 +352,7 @@ describe("site windowed pixel viewer", () => {
     vi.stubGlobal("fetch", fetchMock);
     render(<SiteWindowedPixelViewer {...propsFor({ canRequest: false })} />);
     // 권한 없음 트리거만 보인다 — 사유는 눌러야 열리는 팝오버에 있다(기존 동작).
-    expect(screen.getByRole("button", { name: "이 구역의 창 준비 요청" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "이 영역의 창 준비 요청" })).toBeTruthy();
     // 준비 요청 권한이 없어도 이미 준비된 창 읽기는 나간다. 쓰기만 막는다.
     await vi.waitFor(() => expect(fetchMock).toHaveBeenCalled());
     expect(posts).toHaveLength(0);

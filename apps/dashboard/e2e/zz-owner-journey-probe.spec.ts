@@ -251,19 +251,19 @@ test("owner probe: desktop registration creates a work order and submits a synth
   expect(await seriousAxeViolations(page)).toEqual([]);
   await shot(page, testInfo, "before-01-reg-empty-1440.png");
 
-  // 2. 단일 활성 구역은 미리 골라진다 (범위 확인 후 제출 가능)
+  // 2. 단일 활성 영역은 미리 골라진다 (범위 확인 후 제출 가능)
   // 범위 공지는 작은 화면 요약과 데스크톱 폼에 하나씩 있어 role=status 쪽으로 좁힌다.
-  await expect(page.getByRole("status").filter({ hasText: "선택한 구역에서 시작합니다." })).toBeVisible();
+  await expect(page.getByRole("status").filter({ hasText: "선택한 영역에서 시작합니다." })).toBeVisible();
   await page.getByRole("textbox", { name: "작업 이름", exact: true }).click();
   await page.keyboard.type("프로브 1차 관측");
   await expect(submit).toBeEnabled();
-  // 단일 구역 선택 시 돌아가기 링크가 승인 범위를 싣는다.
-  await expect(page.getByRole("link", { name: "현장으로 돌아가기" })).toHaveAttribute("href", /workAreaId=/);
+  // 단일 영역 선택 시 돌아가기 링크가 승인 범위를 싣는다.
+  await expect(page.getByRole("link", { name: "프로젝트으로 돌아가기" })).toHaveAttribute("href", /workAreaId=/);
   // 키보드 해제 → 필수 안내 + 제출 잠금, 다시 선택 → 복구
   await page.keyboard.press("Tab");
   await page.keyboard.press("Space");
   await expect(submit).toBeDisabled();
-  await expect(page.getByText("비교할 작업구역을 하나 이상 선택하세요.")).toBeVisible();
+  await expect(page.getByText("비교할 영역을 하나 이상 선택하세요.")).toBeVisible();
   await page.keyboard.press("Space");
   await expect(submit).toBeEnabled();
   await shot(page, testInfo, "before-02-reg-filled-1440.png");

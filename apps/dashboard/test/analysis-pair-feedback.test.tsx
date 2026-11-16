@@ -44,7 +44,7 @@ function renderPairPanel(overrides: Partial<Parameters<typeof AnalysisRequestPan
     siteId="site-1"
     organizationId="org-1"
     principalId="operator-1"
-    workAreas={[{ workAreaId: "area-1", name: "1구역" }]}
+    workAreas={[{ workAreaId: "area-1", name: "1영역" }]}
     observations={overrides.observations ?? threeEpochs}
     siteObservations={overrides.siteObservations ?? overrides.observations ?? threeEpochs}
     initialPage={emptyPage()}
@@ -83,7 +83,7 @@ describe("analysis pair feedback", () => {
 
   it("auto-suggests the latest prior baseline only while none is chosen", () => {
     renderPairPanel();
-    fireEvent.change(screen.getByLabelText("작업구역"), { target: { value: "area-1" } });
+    fireEvent.change(screen.getByLabelText("영역"), { target: { value: "area-1" } });
     fireEvent.change(screen.getByLabelText("현재 관측"), { target: { value: "2" } });
     expect((screen.getByLabelText("기준 관측") as HTMLSelectElement).value).toBe("1");
     expect(submitButton().disabled).toBe(false);
@@ -91,7 +91,7 @@ describe("analysis pair feedback", () => {
 
   it("preserves an explicitly chosen baseline when current changes, gating reversed chronology", () => {
     renderPairPanel();
-    fireEvent.change(screen.getByLabelText("작업구역"), { target: { value: "area-1" } });
+    fireEvent.change(screen.getByLabelText("영역"), { target: { value: "area-1" } });
     fireEvent.change(screen.getByLabelText("기준 관측"), { target: { value: "2" } });
     fireEvent.change(screen.getByLabelText("현재 관측"), { target: { value: "1" } });
 
@@ -106,7 +106,7 @@ describe("analysis pair feedback", () => {
 
   it("blocks a programmatic form submit of a known-bad pair before any POST", async () => {
     const { fetchMock } = renderPairPanel();
-    fireEvent.change(screen.getByLabelText("작업구역"), { target: { value: "area-1" } });
+    fireEvent.change(screen.getByLabelText("영역"), { target: { value: "area-1" } });
     fireEvent.change(screen.getByLabelText("기준 관측"), { target: { value: "2" } });
     fireEvent.change(screen.getByLabelText("현재 관측"), { target: { value: "1" } });
     expect(submitButton().disabled).toBe(true);
@@ -121,7 +121,7 @@ describe("analysis pair feedback", () => {
 
   it("gates the same observation in both pickers with a precise reason", () => {
     renderPairPanel();
-    fireEvent.change(screen.getByLabelText("작업구역"), { target: { value: "area-1" } });
+    fireEvent.change(screen.getByLabelText("영역"), { target: { value: "area-1" } });
     fireEvent.change(screen.getByLabelText("기준 관측"), { target: { value: "0" } });
     fireEvent.change(screen.getByLabelText("현재 관측"), { target: { value: "0" } });
 
@@ -135,7 +135,7 @@ describe("analysis pair feedback", () => {
       option("work-b", "b", "epoch-b", "2026-09-01T00:30:00Z", "2026-09-01T01:30:00Z"),
     ];
     renderPairPanel({ observations: overlapping });
-    fireEvent.change(screen.getByLabelText("작업구역"), { target: { value: "area-1" } });
+    fireEvent.change(screen.getByLabelText("영역"), { target: { value: "area-1" } });
     fireEvent.change(screen.getByLabelText("기준 관측"), { target: { value: "0" } });
     fireEvent.change(screen.getByLabelText("현재 관측"), { target: { value: "1" } });
     expect(screen.getByRole("status").textContent).toContain("겹칩니다");
@@ -147,7 +147,7 @@ describe("analysis pair feedback", () => {
       option("work-b", "b", "epoch-b", "2026-09-08T00:00:00Z", "2026-09-08T00:30:00Z"),
     ];
     renderPairPanel({ observations: invalid });
-    fireEvent.change(screen.getByLabelText("작업구역"), { target: { value: "area-1" } });
+    fireEvent.change(screen.getByLabelText("영역"), { target: { value: "area-1" } });
     fireEvent.change(screen.getByLabelText("기준 관측"), { target: { value: "0" } });
     fireEvent.change(screen.getByLabelText("현재 관측"), { target: { value: "1" } });
     expect(screen.getByRole("status").textContent).toContain("촬영 구간을 확인하지 못했습니다");
@@ -162,14 +162,14 @@ describe("analysis pair feedback", () => {
     ];
     renderPairPanel({
       observations: twoAreas,
-      workAreas: [{ workAreaId: "area-1", name: "1구역" }, { workAreaId: "area-2", name: "2구역" }],
+      workAreas: [{ workAreaId: "area-1", name: "1영역" }, { workAreaId: "area-2", name: "2영역" }],
     });
-    fireEvent.change(screen.getByLabelText("작업구역"), { target: { value: "area-1" } });
+    fireEvent.change(screen.getByLabelText("영역"), { target: { value: "area-1" } });
     fireEvent.change(screen.getByLabelText("기준 관측"), { target: { value: "0" } });
     fireEvent.change(screen.getByLabelText("현재 관측"), { target: { value: "1" } });
     expect(submitButton().disabled).toBe(false);
 
-    fireEvent.change(screen.getByLabelText("작업구역"), { target: { value: "area-2" } });
+    fireEvent.change(screen.getByLabelText("영역"), { target: { value: "area-2" } });
     expect((screen.getByLabelText("기준 관측") as HTMLSelectElement).value).toBe("");
     expect((screen.getByLabelText("현재 관측") as HTMLSelectElement).value).toBe("");
     expect(screen.getByText(/기준·현재 선택을 모두 지웠습니다/)).toBeTruthy();
@@ -183,7 +183,7 @@ describe("analysis pair feedback", () => {
     expect(form.className).toContain("lg:grid-cols-2");
     expect(form.querySelector("select")?.closest("label")?.className).toContain("lg:col-span-2");
 
-    fireEvent.change(screen.getByLabelText("작업구역"), { target: { value: "area-1" } });
+    fireEvent.change(screen.getByLabelText("영역"), { target: { value: "area-1" } });
     const baseline = screen.getByLabelText("기준 관측") as HTMLSelectElement;
     expect(baseline.options[1]?.textContent).toContain(longName);
     expect(baseline.options[1]?.textContent).toContain("2026. 9. 1.");

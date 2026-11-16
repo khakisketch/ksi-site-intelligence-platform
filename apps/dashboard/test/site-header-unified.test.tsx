@@ -25,7 +25,7 @@ describe("unified site header", () => {
     expect(html).toContain('data-site-nav="true"');
     expect(html).toContain('href="/sites"');
     expect(html).toContain("동측 현장");
-    expect(html).toContain("현장 등록됨");
+    expect(html).toContain("프로젝트 등록됨");
     expect(html).toContain('aria-label="현장 영역 메뉴"');
   });
 
@@ -66,7 +66,7 @@ describe("unified site header", () => {
 
   it("keeps settings separate from the tabs, with one link", () => {
     const html = headerHtml();
-    expect(html.match(/aria-label="현장 설정"/g)).toHaveLength(1);
+    expect(html.match(/aria-label="프로젝트 설정"/g)).toHaveLength(1);
     expect(html).toContain("/sites/site-1?section=manage");
     expect(html).not.toContain("작업 기록");
   });

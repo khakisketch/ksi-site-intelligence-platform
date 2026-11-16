@@ -1,7 +1,7 @@
 import { EXACT_ANALYSIS_HINT_QUERY_KEYS, VISUAL_PAIR_QUERY_KEYS } from "./site-visual-pair";
 
 /**
- * 선택 구역의 다음 행동. 조회한 구역·권한·분석 기록으로 이동 주소를 정한다.
+ * 선택 영역의 다음 행동. 조회한 영역·권한·분석 기록으로 이동 주소를 정한다.
  */
 export interface SiteAreaNextAction {
   /** 주 행동 — 이 화면에서 한 가지로 가장 먼저 할 수 있는 일. */
@@ -15,14 +15,14 @@ export interface SiteAreaNextAction {
 }
 
 /**
- * 선택 구역의 다음 행동을 계산한다 — 탐색 첫 화면과 구역 상세 화면이 같은
- * 것을 본다. 어느 화면이든 같은 구역에서 같은 행동을 제안해야 한다.
+ * 선택 영역의 다음 행동을 계산한다 — 탐색 첫 화면과 영역 상세 화면이 같은
+ * 것을 본다. 어느 화면이든 같은 영역에서 같은 행동을 제안해야 한다.
  *
- * - 주 행동은 이 구역의 최근 분석이 있으면 그 기록으로, 없으면 등록(가능
- *   할 때) 또는 분석 목록으로 간다. 구역·권한·분석 사실을 새로 만들어내지
+ * - 주 행동은 이 영역의 최근 분석이 있으면 그 기록으로, 없으면 등록(가능
+ *   할 때) 또는 분석 목록으로 간다. 영역·권한·분석 사실을 새로 만들어내지
  *   않고 이미 읽은 값만 쓴다.
  * - 보조 등록은 주 행동과 같은 목적이면 숨긴다(같은 일을 두 번 제안하지
- *   않는다). 비교 진입은 권한이 있는 활성 구역에만 단다.
+ *   않는다). 비교 진입은 권한이 있는 활성 영역에만 단다.
  */
 export function resolveSiteAreaNextAction(input: {
   sitePath: string;
@@ -64,7 +64,7 @@ export function resolveSiteAreaNextAction(input: {
   const primary = latestAnalysis
     ? {
       href: withPair(`${sitePath}/analysis?workAreaId=${encodeURIComponent(latestAnalysis.workAreaId)}&analysisId=${encodeURIComponent(latestAnalysis.analysisId)}`),
-      label: "이 구역의 최근 분석 확인",
+      label: "이 영역의 최근 분석 확인",
     }
     : {
       href: canRegisterHere ? scopedRegisterHref : scopedAnalysisListHref,

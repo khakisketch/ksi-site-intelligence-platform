@@ -93,7 +93,7 @@ export interface SpatialModelView {
   sourceArtifactCount: number;
   succeededEpochCount: number;
   siteStatus: SiteStatus;
-  /** false 면 현장 상태가 실제 모델 유무와 어긋난다(예: 순찰 준비인데 모델 없음). */
+  /** false 면 프로젝트 상태가 실제 모델 유무와 어긋난다(예: 순찰 준비인데 모델 없음). */
   siteStatusMatchesModel: boolean;
   capturedFrom: string | null;
   capturedTo: string | null;
@@ -1008,7 +1008,7 @@ export interface ChangeDetectionView {
   revisitRecommended: boolean;
 }
 
-/** 구역 하나의 절토·성토 — 부호는 `netM3` 하나로만 말한다(양수 cut/fill). */
+/** 영역 하나의 절토·성토 — 부호는 `netM3` 하나로만 말한다(양수 cut/fill). */
 export interface ZoneVolumeDelta {
   zoneId: string;
   cutM3: number;
@@ -1046,7 +1046,7 @@ export interface VolumeChangeEntry {
 export interface VolumeChangeListView {
   missionId: string;
   reportCount: number;
-  /** 최신 리포트의 전 구역 순변화 — 서버가 계산해 싣는다(화면이 합산하지 않는다). */
+  /** 최신 리포트의 전 영역 순변화 — 서버가 계산해 싣는다(화면이 합산하지 않는다). */
   latestTotalNetM3: number | null;
   reports: VolumeChangeEntry[];
 }
@@ -1420,7 +1420,7 @@ export interface ComparisonRequestDetailView {
   leaseExpiresAt: string | null;
 }
 
-/** 제출 본문 — 무엇을 비교할지와 확정한 구역만 정한다(임계값 자리는 없다). */
+/** 제출 본문 — 무엇을 비교할지와 확정한 영역만 정한다(임계값 자리는 없다). */
 export interface ComparisonRequestCreateInput {
   baselineJobId: string;
   currentJobId: string;
@@ -1631,9 +1631,9 @@ export interface DesignConformanceRequestListResponse {
 }
 
 /**
- * 제출 본문 — 어느 설계면을 어느 재구성 결과와 견줄지 + 확정한 구역.
+ * 제출 본문 — 어느 설계면을 어느 재구성 결과와 견줄지 + 확정한 영역.
  *
- * 구역을 주는 길은 둘이고 **동시에 쓸 수 없다**(M4-C): 등록된 작업구역을 고르거나
+ * 영역을 주는 길은 둘이고 **동시에 쓸 수 없다**(M4-C): 등록된 영역을 고르거나
  * (`workAreaIds`), 즉석 폴리곤을 싣거나(`zones`/`zoneCrs`). 앞의 것만 다음 시점의
  * 리포트와 이어져 진척이 나온다 — 즉석 폴리곤은 매번 좌표가 달라 시계열이 끊긴다.
  */
@@ -1646,10 +1646,10 @@ export interface DesignConformanceRequestCreateInput {
 }
 
 /**
- * 현장에 영구적으로 사는 작업구역(M4-C) — 기하는 등록 후 불변이다.
+ * 현장에 영구적으로 사는 영역(M4-C) — 기하는 등록 후 불변이다.
  *
- * 고치면 새 구역이고 `supersedes` 가 이전 것을 가리킨다(그때 이전 구역은 보관된다).
- * 제자리 수정을 허용하면 이미 그 구역으로 낸 리포트가 가리키는 범위가 사후에 바뀐다.
+ * 고치면 새 영역이고 `supersedes` 가 이전 것을 가리킨다(그때 이전 영역은 보관된다).
+ * 제자리 수정을 허용하면 이미 그 영역으로 낸 리포트가 가리키는 범위가 사후에 바뀐다.
  */
 export interface WorkArea {
   schemaVersion: string;
@@ -1681,7 +1681,7 @@ export interface WorkAreaRegisterInput {
 }
 
 /**
- * 구역 하나의 계획 대비 진척 — 절토와 성토를 **합치지 않는다**.
+ * 영역 하나의 계획 대비 진척 — 절토와 성토를 **합치지 않는다**.
  *
  * 합계 하나로 뭉개면 "5000 깎고 5000 쌓는" 현장과 "아무것도 안 한" 현장이 같은
  * 숫자가 된다. 비율이 `null` 이면 그 방향의 계획이 없다는 뜻이고, `0%` 로 그리면
@@ -1722,7 +1722,7 @@ export interface DesignProgressResponse {
   /** INV-053 typed blocker; narrative detail과 달리 UI/자동화가 안전하게 분기한다. */
   reason: string | null;
   unmatchedZoneIds: string[];
-  /** 양쪽에 다 있었지만(zoneId 일치) 측정 면적이 크게 달라 표에서 뺀 구역 — unmatched 와 다른 사유. */
+  /** 양쪽에 다 있었지만(zoneId 일치) 측정 면적이 크게 달라 표에서 뺀 영역 — unmatched 와 다른 사유. */
   areaMismatchZoneIds: string[];
   detail: string | null;
   /** 최신 리포트가 속한 임무 — 히트맵(임무 스코프 표면)으로 건너뛸 때만 쓰는 UI 편의값. */
@@ -1772,7 +1772,7 @@ export interface DesignConformanceReport {
   current: ArtifactRefView;
   crs: string;
   verticalReference: VerticalReference;
-  /** 구역별 잔량 — `cut` = 깎아야 할 양, `fill` = 쌓아야 할 양, `net = fill - cut`. */
+  /** 영역별 잔량 — `cut` = 깎아야 할 양, `fill` = 쌓아야 할 양, `net = fill - cut`. */
   zones: ZoneVolumeDelta[];
   policy: ComparisonPolicyView;
   diffRaster: DiffRasterRef;
@@ -1790,7 +1790,7 @@ export interface DesignConformanceEntry {
 export interface DesignConformanceListView {
   missionId: string;
   reportCount: number;
-  /** 최신 리포트의 전 구역 순 성토 필요량 — 서버가 계산해 준다. */
+  /** 최신 리포트의 전 영역 순 성토 필요량 — 서버가 계산해 준다. */
   latestTotalNetM3: number | null;
   reports: DesignConformanceEntry[];
 }

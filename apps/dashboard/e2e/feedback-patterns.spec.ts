@@ -49,8 +49,8 @@ test("읽기 전용 작업 등록 사유는 클릭·키보드로 열고 닫으�
   expect(mutations).toBe(0);
 });
 
-test("구역 보관은 확인 전·취소·Escape에 실행되지 않고 확인 한 번만 전송한다", async ({ page }, testInfo) => {
-  test.skip(!testInfo.project.name.startsWith("desktop"), "구역 변경은 기존 노트북 제한을 유지합니다.");
+test("영역 보관은 확인 전·취소·Escape에 실행되지 않고 확인 한 번만 전송한다", async ({ page }, testInfo) => {
+  test.skip(!testInfo.project.name.startsWith("desktop"), "영역 변경은 기존 노트북 제한을 유지합니다.");
   await login(page);
   // The normal regression stack owns these synthetic fixtures. This test never forwards a mutation.
   if (process.env.KSI_DASHBOARD_E2E_BASE_URL) {
@@ -64,7 +64,7 @@ test("구역 보관은 확인 전·취소·Escape에 실행되지 않고 확인 
       await route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ detail: "검증용 일시 장애" }) });
     } else await route.continue();
   });
-  const archive = page.getByRole("button", { name: "구역 보관", exact: true }).first();
+  const archive = page.getByRole("button", { name: "영역 보관", exact: true }).first();
   await archive.click();
   const dialog = page.getByRole("dialog");
   await expect(dialog).toBeVisible();
@@ -79,7 +79,7 @@ test("구역 보관은 확인 전·취소·Escape에 실행되지 않고 확인 
   await expect(archive).toBeFocused();
   expect(attempts).toBe(0);
   await archive.click();
-  await dialog.getByRole("button", { name: "구역 보관", exact: true }).click();
+  await dialog.getByRole("button", { name: "영역 보관", exact: true }).click();
   await expect.poll(() => attempts).toBe(1);
   await expect(page.getByRole("alert").filter({ hasText: /보관|검증용|처리/ })).toBeVisible();
 });

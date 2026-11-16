@@ -19,8 +19,8 @@ export type Tone = "neutral" | "progress" | "caution" | "positive" | "warning";
 export const SITE_STATUS_LABEL: Record<SiteStatus, { label: string; tone: Tone }> = {
   // 외부 관측 등록은 과거 취득 상태를 전이시키지 않는다. UNMAPPED 하나로
   // 경계나 관측의 부재를 추론하면 이미 자료가 있는 현장에도 거짓 부재를 표시한다.
-  // 이 상태만으로 확인되는 현장 등록 사실만 표시한다. 도메인 상태·전이는 그대로다.
-  UNMAPPED: { label: "현장 등록됨", tone: "neutral" },
+  // 이 상태만으로 확인되는 프로젝트 등록 사실만 표시한다. 도메인 상태·전이는 그대로다.
+  UNMAPPED: { label: "프로젝트 등록됨", tone: "neutral" },
   BASELINE_MAPPING: { label: "초기 매핑 중", tone: "progress" },
   MODEL_PROCESSING: { label: "모델 처리 중", tone: "progress" },
   MODEL_VALIDATION: { label: "모델 검증 중", tone: "progress" },
@@ -53,7 +53,7 @@ export const MISSION_EXECUTION_STATUS_LABEL: Record<
  *
  * **미선언을 "최신"으로 표시하지 않는다.** "판정하지 않았다"와 "판정했더니 최신이다"는
  * 다른 사실이고, 전자를 후자로 보여주면 화면이 근거 없는 안심을 준다(ADR-KSI-019 G1).
- * 현장 상태와 모델 유무가 어긋나면(`siteStatusMatchesModel === false`) 그 모순이
+ * 프로젝트 상태와 모델 유무가 어긋나면(`siteStatusMatchesModel === false`) 그 모순이
  * 결론보다 먼저 읽혀야 한다 — 순찰 준비인데 모델이 없는 현장이 정상으로 보이면 안 된다.
  */
 export function spatialModelSummary(input: {
@@ -64,7 +64,7 @@ export function spatialModelSummary(input: {
 }): { label: string; detail: string; tone: Tone } {
   if (!input.siteStatusMatchesModel) {
     return {
-      label: "현장 상태와 어긋남",
+      label: "프로젝트 상태와 어긋남",
       detail: "현장은 모델이 있는 단계로 표시돼 있는데 실제 공간모델이 없습니다. 확인이 필요합니다.",
       tone: "warning",
     };
@@ -161,7 +161,7 @@ export function evidenceDeviceBoundLabel(deviceBound: boolean): { label: string;
 
 // 정본: services/core/src/ksi_core/mission_plans.py 미션타입→경로패턴 제약
 // (docs/architecture/03_DASHBOARD_UX_GOALS.md §7). 화면마다 별도 라벨을 만들지 않는다 —
-// 홈·현장 상세·임무 목록 전부 이 표 하나를 참조한다.
+// 홈·프로젝트 상세·임무 목록 전부 이 표 하나를 참조한다.
 export const MISSION_TYPE_LABEL: Record<MissionType, string> = {
   UNIFIED_SITE_SURVEY: "통합 현장조사",
   BASELINE_MAPPING: "초기 매핑",
@@ -292,10 +292,10 @@ export const API_ERROR_MESSAGE: Record<string, string> = {
   MISSION_ID_CONFLICT: "이미 사용 중인 임무 ID입니다.",
   UNKNOWN_SITE: "등록되지 않은 현장입니다.",
   SITE_FRAME_MISMATCH: "요청한 좌표계가 등록된 현장과 다릅니다.",
-  // INV-052(ADR-KSI-014) — 현재 현장 상태에서 이 임무 목적은 발급할 수 없다.
+  // INV-052(ADR-KSI-014) — 현재 프로젝트 상태에서 이 임무 목적은 발급할 수 없다.
   // Wizard가 missionSiteGate.ts 로 발급 전에 미리 막으므로 정상 동선에서는
   // 거의 노출되지 않는다(방어 심층 — 다른 클라이언트·표 drift 대비).
-  MISSION_TYPE_SITE_STATUS_MISMATCH: "현재 현장 상태에서는 이 임무 목적을 발급할 수 없습니다.",
+  MISSION_TYPE_SITE_STATUS_MISMATCH: "현재 프로젝트 상태에서는 이 임무 목적을 발급할 수 없습니다.",
   COVERAGE_BELOW_CONTRACT_PROMISE:
     "계획 단계의 커버리지가 임무가 요구하는 값에 못 미칩니다. 격자·촬영 간격을 좁히세요.",
   EVIDENCE_INCOMPLETE: "이 확정 등급에 필요한 증거가 아직 부족합니다.",
@@ -315,12 +315,12 @@ export const API_ERROR_MESSAGE: Record<string, string> = {
   INVALID_EVENT_TIMESTAMP: "이벤트 발생 시각 형식이 올바르지 않습니다.",
   INVALID_MISSION_IDENTITY: "임무 식별자 형식이 올바르지 않습니다.",
   INVALID_TEXT_ENCODING: "입력한 텍스트에 처리할 수 없는 문자가 포함되어 있습니다.",
-  EMPTY_ALLOWED_VOLUMES: "허용 비행 구역이 비어 있어 경로를 만들 수 없습니다. 고급 설정에서 허용 구역을 지정하세요.",
-  NON_CONVEX_AOI: "이 조사 방식은 오목한(L자 등) 범위를 지원하지 않습니다. 현장 범위를 볼록한 모양으로 다시 그리세요.",
+  EMPTY_ALLOWED_VOLUMES: "허용 비행 영역이 비어 있어 경로를 만들 수 없습니다. 고급 설정에서 허용 영역을 지정하세요.",
+  NON_CONVEX_AOI: "이 조사 방식은 오목한(L자 등) 범위를 지원하지 않습니다. 프로젝트 범위를 볼록한 모양으로 다시 그리세요.",
   // COVERAGE_BELOW_MINIMUM(경로 생성기 하한 95%)과 COVERAGE_BELOW_CONTRACT_PROMISE(계약이
   // 약속한 값)는 서로 다른 임계값 — 별개 코드로 유지한다(§7 SSOT 정신).
   COVERAGE_BELOW_MINIMUM:
-    "실제 촬영 범위가 최소 기준(95%)에 못 미칩니다. 간격을 줄이거나 구역을 나눠 다시 시도하세요.",
+    "실제 촬영 범위가 최소 기준(95%)에 못 미칩니다. 간격을 줄이거나 영역을 나눠 다시 시도하세요.",
   TAKEOFF_HEIGHT_BELOW_MINIMUM: "이륙 안전 고도가 너무 낮습니다(최소 1.2m).",
   TAKEOFF_HEIGHT_EXCEEDS_ENVELOPE: "이륙 안전 고도가 비행 고도 상한을 초과합니다.",
   // 원본 사진 업로드 · 재구성 발행(M3, B1/B2) — source_media.py/processing_jobs.py verdict.
@@ -355,22 +355,22 @@ export const API_ERROR_MESSAGE: Record<string, string> = {
     "아직 검증되지 않은 설계 기준면입니다 — 검증이 끝난 것만 비교에 쓸 수 있습니다.",
   NO_DSM_ARTIFACT: "고른 재구성 결과에 높이자료(DSM)가 없습니다.",
   ZONES_REQUIRED:
-    "구역을 확정해야 합니다 — 설계 대비 잔량은 '어느 범위의' 잔량인지 없이는 답이 되지 않습니다.",
+    "영역을 확정해야 합니다 — 설계 대비 잔량은 '어느 범위의' 잔량인지 없이는 답이 되지 않습니다.",
   VERTICAL_REFERENCE_UNKNOWN:
     "이 재구성 결과는 높이 기준이 기록되기 전에 만들어졌습니다 — 다시 재구성하면 비교할 수 있습니다.",
   VERTICAL_DATUM_INCOMPATIBLE:
     "설계 기준면과 현재 지형의 높이 기준 계열이 다릅니다 — 변환 없이 비교하면 20~30 m 가 틀리므로 계산하지 않습니다.",
-  // 작업구역(M4-C) — work_areas.py · design_conformance_requests.py verdict.
+  // 영역(M4-C) — work_areas.py · design_conformance_requests.py verdict.
   WORK_AREA_UNUSABLE:
-    "고른 작업구역을 쓸 수 없습니다 — 다른 현장 소속이거나 보관된 구역일 수 있습니다.",
-  UNKNOWN_WORK_AREA: "등록된 적 없는 작업구역입니다.",
-  SUPERSEDES_NOT_FOUND: "대체하려는 작업구역을 찾을 수 없습니다.",
+    "고른 영역을 쓸 수 없습니다 — 다른 현장 소속이거나 보관된 영역일 수 있습니다.",
+  UNKNOWN_WORK_AREA: "등록된 적 없는 영역입니다.",
+  SUPERSEDES_NOT_FOUND: "대체하려는 영역을 찾을 수 없습니다.",
   SUPERSEDES_OTHER_SITE: "대체 대상이 다른 현장 소속입니다.",
-  SUPERSEDES_NOT_ACTIVE: "대체 대상이 이미 보관된 작업구역입니다 — 보관된 구역은 다시 대체할 수 없습니다.",
-  ALREADY_ARCHIVED: "이미 보관된 작업구역입니다.",
+  SUPERSEDES_NOT_ACTIVE: "대체 대상이 이미 보관된 영역입니다 — 보관된 영역은 다시 대체할 수 없습니다.",
+  ALREADY_ARCHIVED: "이미 보관된 영역입니다.",
   TOO_MANY_ACTIVE:
-    "이 현장의 작업구역이 상한에 도달했습니다 — 쓰지 않는 구역을 먼저 보관하세요.",
-  INVALID_WORK_AREA: "작업구역 폴리곤 형식이 올바르지 않습니다.",
+    "이 현장의 영역이 상한에 도달했습니다 — 쓰지 않는 영역을 먼저 보관하세요.",
+  INVALID_WORK_AREA: "영역 폴리곤 형식이 올바르지 않습니다.",
   UNKNOWN_REPORT: "그 설계 대비 잔량 리포트를 찾을 수 없습니다.",
   // 작업 생성 계정 연속성(BFF 중복 방지 가드) — Core 권한·범위 판단이
   // 아니라 같은 키의 다른 계정/조직 재시도를 막는 usability guard다.

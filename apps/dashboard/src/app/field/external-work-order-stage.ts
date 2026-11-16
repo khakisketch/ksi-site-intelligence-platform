@@ -74,7 +74,7 @@ export function deriveExternalWorkOrderStage(input: ExternalStageInput): Externa
     return {
       stage: "PROPOSE",
       label: "재관측 필요 여부 결정",
-      detail: "결과 검토가 기록되었습니다. 부족한 구역이 있으면 재관측 제안을 만들고 승인하세요.",
+      detail: "결과 검토가 기록되었습니다. 부족한 영역이 있으면 재관측 제안을 만들고 승인하세요.",
       tone: "warning",
       anchor: "external-volume",
     };

@@ -4,7 +4,7 @@ import type { WorkArea } from "@/lib/core-api/types";
 const identity = `v1-${"a".repeat(64)}`;
 const one = "11111111-1111-4111-8111-111111111111";
 const two = "22222222-2222-4222-8222-222222222222";
-const area: WorkArea = {schemaVersion:"1.0",siteId:"site-1",workAreaId:"area-1",name:"구역",polygon:{type:"Polygon",coordinates:[[[0,0],[1,0],[1,1],[0,0]]]},crs:"EPSG:4326",status:"ACTIVE",supersedes:null,createdAt:"2026-01-01"};
+const area: WorkArea = {schemaVersion:"1.0",siteId:"site-1",workAreaId:"area-1",name:"영역",polygon:{type:"Polygon",coordinates:[[[0,0],[1,0],[1,1],[0,0]]]},crs:"EPSG:4326",status:"ACTIVE",supersedes:null,createdAt:"2026-01-01"};
 function storage() {
   const map = new Map<string,string>();
   return {map, get length(){return map.size;}, key(i:number){return [...map.keys()][i] ?? null;}, getItem(k:string){return map.get(k) ?? null;}, setItem(k:string,v:string){map.set(k,v);}};

@@ -40,10 +40,10 @@ import {
 } from "@/lib/site-registration/shared";
 import type { AoiVertex, SiteFrame } from "@/lib/core-api/types";
 
-// 현장 등록은 기본정보 → AOI/좌표계 → 확인의 3단계로 끝낸다. 베이스라인 조사는
-// 등록 성공 뒤 현장 작업공간에서 별도로 시작한다. 현장 등록과 Mission 발급을 한
+// 프로젝트 등록은 기본정보 → AOI/좌표계 → 확인의 3단계로 끝낸다. 베이스라인 조사는
+// 등록 성공 뒤 현장 작업공간에서 별도로 시작한다. 프로젝트 등록과 Mission 발급을 한
 // Wizard에 묶지 않는 것은 ADR-KSI-026의 작업 경계다.
-const STEP_LABELS = ["기본정보", "현장 범위·좌표계", "확인·등록"];
+const STEP_LABELS = ["기본정보", "프로젝트 범위·좌표계", "확인·등록"];
 const DRAFT_STORAGE_KEY = "ksi-wizard-site-registration-only";
 const CANONICAL_UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
@@ -604,7 +604,7 @@ export function SiteRegistrationOnlyWizard({
       candidates.find((entry) => entry.originFingerprint === effectiveIdentity) ?? candidates[0];
     if (recorded?.originFingerprint) return { origin: recorded.originFingerprint };
     // 구 초안에 키만 있고 지문이 없으면 그 키의 원래 신원을 알 수 없다 —
-    // 현재 값으로 추측해 POST하면 계정 교체 시 별도 현장을 만든다.
+    // 현재 값으로 추측해 POST하면 계정 교체 시 별도 프로젝트을 만든다.
     if (input.priorKey !== null) return { blocked: "old-attempt" };
     // 새 미시도 초안만 현재 확인된 신원으로 시작할 수 있다. live 확인값이
     // 있으면 그걸 우선하고, 없으면 마운트 시점 prop을 쓴다.
@@ -619,7 +619,7 @@ export function SiteRegistrationOnlyWizard({
     setSubmitError(
       kind === "old-attempt"
         ? "이전 요청의 신원을 확인할 수 없어 같은 키로 다시 보내지 않았습니다. " +
-          "서버에 등록됐을 수도 있습니다. 입력은 그대로 있습니다. 현장 목록에서 " +
+          "서버에 등록됐을 수도 있습니다. 입력은 그대로 있습니다. 프로젝트 목록에서 " +
           "입력한 이름이 있는지 먼저 확인하세요. 목록에 없어도 이 키로의 재시도는 " +
           "원래 계정 확인 없이는 하지 않습니다."
         : "계정을 확인하지 못해 등록 요청을 보내지 않았습니다. 입력은 그대로 있습니다. " +
@@ -787,14 +787,14 @@ export function SiteRegistrationOnlyWizard({
     function failUnknown() {
       // Core bootstrap 멱등 namespace는 (organizationId, actor, requestKey)다.
       // 응답 유실 뒤 계정이 바뀌면 같은 키·같은 원본이어도 B namespace에서 별도
-      // 현장을 만든다 — 그래서 "다시 시도해도 중복 등록이 되지 않는다"는 원래
+      // 프로젝트을 만든다 — 그래서 "다시 시도해도 중복 등록이 되지 않는다"는 원래
       // 계정에서 같은 키로 재시도할 때만 참이다.
       recordUnknown();
       setSubmitError(
         "등록 결과를 확인하지 못했습니다. 서버에 등록됐을 수도 있습니다. " +
           "원래 계정에서, 내용을 바꾸지 않고 같은 요청 키로 다시 시도하면 중복 " +
           "등록이 되지 않습니다. 계정이 바뀌었다면 같은 키로 다시 보내지 마세요 — " +
-          "현장 목록에서 입력한 이름이 있는지 먼저 확인하세요.",
+          "프로젝트 목록에서 입력한 이름이 있는지 먼저 확인하세요.",
       );
       setSubmitPhase("error");
     }
@@ -854,17 +854,17 @@ export function SiteRegistrationOnlyWizard({
           failDefinite(
             "계정이 바뀌어 같은 요청을 다시 보내지 않았습니다. 이전 요청이 처리되었는지는 알 수 없습니다. " +
               "입력은 그대로 있습니다. 원래 계정으로 다시 로그인한 뒤 같은 요청으로 다시 시도하거나, " +
-              "현장 목록에서 입력한 이름이 있는지 먼저 확인하세요.",
+              "프로젝트 목록에서 입력한 이름이 있는지 먼저 확인하세요.",
           );
-          setSubmitAction({ label: "현장 목록에서 직접 확인하기", href: "/sites" });
+          setSubmitAction({ label: "프로젝트 목록에서 직접 확인하기", href: "/sites" });
           return;
         }
         failDefinite(
           body.code === "BOOTSTRAP_REQUEST_CONFLICT"
-            ? "같은 등록 요청 키가 다른 내용으로 사용되어 현장을 등록하지 못했습니다. 내용을 확인한 뒤 다시 시도하세요."
+            ? "같은 등록 요청 키가 다른 내용으로 사용되어 프로젝트을 등록하지 못했습니다. 내용을 확인한 뒤 다시 시도하세요."
             : body.code === "SITE_BOOTSTRAP_LIMIT_REACHED"
-              ? "조직의 현장 등록 한도에 도달해 현장을 등록하지 못했습니다. 관리자에게 문의하세요."
-              : "현장 등록 요청이 충돌했습니다. 내용을 확인한 뒤 다시 시도하세요.",
+              ? "조직의 프로젝트 등록 한도에 도달해 프로젝트을 등록하지 못했습니다. 관리자에게 문의하세요."
+              : "프로젝트 등록 요청이 충돌했습니다. 내용을 확인한 뒤 다시 시도하세요.",
         );
         return;
       }
@@ -905,7 +905,7 @@ export function SiteRegistrationOnlyWizard({
       setSubmitError(
         "등록 결과를 확인하지 못했습니다. 서버에 등록됐을 수도 있습니다. " +
           "화면의 계정 정보가 바뀌었을 수 있어 성공 화면을 표시하지 않았습니다. " +
-          "현장 목록에서 입력한 이름이 있는지 먼저 확인하세요.",
+          "프로젝트 목록에서 입력한 이름이 있는지 먼저 확인하세요.",
       );
       setSubmitPhase("error");
       return;
@@ -1154,7 +1154,7 @@ export function SiteRegistrationOnlyWizard({
           recordLegacyUnknown();
           fail(
             "등록 결과를 확인하지 못했습니다. 서버에 등록됐을 수도 있습니다. " +
-              "같은 현장 ID로 바로 다시 보내지 마세요 — 현장 목록에서 입력한 ID가 있는지 먼저 확인하세요. " +
+              "같은 현장 ID로 바로 다시 보내지 마세요 — 프로젝트 목록에서 입력한 ID가 있는지 먼저 확인하세요. " +
               "목록에 없으면 입력은 그대로 둔 채 다시 시도할 수 있습니다.",
           );
           return;
@@ -1167,7 +1167,7 @@ export function SiteRegistrationOnlyWizard({
           fail(
             "등록 결과를 확인하지 못했습니다. 서버에 등록됐을 수도 있습니다. " +
               "화면의 계정 정보가 바뀌었을 수 있어 성공 화면을 표시하지 않았습니다. " +
-              "현장 목록에서 입력한 ID가 있는지 먼저 확인하세요.",
+              "프로젝트 목록에서 입력한 ID가 있는지 먼저 확인하세요.",
           );
           return;
         }
@@ -1202,9 +1202,9 @@ export function SiteRegistrationOnlyWizard({
         fail(
           "계정이 바뀌어 같은 요청을 다시 보내지 않았습니다. 이전 요청이 처리되었는지는 알 수 없습니다. " +
             "입력은 그대로 있습니다. 원래 계정으로 다시 로그인한 뒤 같은 요청으로 다시 시도하거나, " +
-            "현장 목록에서 입력한 ID가 있는지 먼저 확인하세요.",
+            "프로젝트 목록에서 입력한 ID가 있는지 먼저 확인하세요.",
           null,
-          { label: "현장 목록에서 직접 확인하기", href: "/sites" },
+          { label: "프로젝트 목록에서 직접 확인하기", href: "/sites" },
         );
         return;
       }
@@ -1221,7 +1221,7 @@ export function SiteRegistrationOnlyWizard({
         recordLegacyUnknown();
         fail(
           "등록 결과를 확인하지 못했습니다. 서버에 등록됐을 수도 있습니다. " +
-            "같은 현장 ID로 바로 다시 보내지 마세요 — 현장 목록에서 입력한 ID가 있는지 먼저 확인하세요. " +
+            "같은 현장 ID로 바로 다시 보내지 마세요 — 프로젝트 목록에서 입력한 ID가 있는지 먼저 확인하세요. " +
             "목록에 없으면 입력은 그대로 둔 채 다시 시도할 수 있습니다.",
         );
         return;
@@ -1229,20 +1229,20 @@ export function SiteRegistrationOnlyWizard({
       if (outcome.kind === "duplicateUnverified") {
         // 409는 이 ID가 이미 있다는 뜻이지만 누구 것인지는 모른다. 첫 충돌이든
         // 관측 성공 뒤든, 계정 일치가 확인되지 않으므로 자동 성공·자동 이동하지
-        // 않고 현장 목록·상세에서 직접 확인하게 한다.
+        // 않고 프로젝트 목록·상세에서 직접 확인하게 한다.
         postAttemptRef.current = outcome.sameSiteAsPrevious
           ? (previousAttempt ?? buildSitePostAttempt(siteId, payloadInput, false))
           : null;
         clearPreparedIfNew();
         fail(
           "이미 등록된 현장 ID입니다. 이 ID가 방금 이 화면에서 등록한 것인지 알 수 없어 자동으로 들어가지 않았습니다.",
-          "현장 목록·상세에서 ID·이름·좌표계가 입력과 같은지 직접 확인하세요. " +
+          "프로젝트 목록·상세에서 ID·이름·좌표계가 입력과 같은지 직접 확인하세요. " +
             "다른 현장일 수 있습니다." +
             (outcome.payloadChanged ? " 그 사이 입력이 바뀌어, 바뀐 내용은 저장되지 않았습니다." : "") +
             (outcome.sameSiteAsPrevious
               ? " 이전 요청의 결과가 확인되지 않은 채 충돌했으므로, 목록에 없더라도 등록되지 않았다는 증명이 아닙니다."
               : ""),
-          { label: "현장 목록에서 직접 확인하기", href: "/sites" },
+          { label: "프로젝트 목록에서 직접 확인하기", href: "/sites" },
         );
         return;
       }
@@ -1271,7 +1271,7 @@ export function SiteRegistrationOnlyWizard({
       recordLegacyUnknown();
       fail(
         "등록 결과를 확인하지 못했습니다. 서버에 등록됐을 수도 있습니다. " +
-          "같은 현장 ID로 바로 다시 보내지 마세요 — 현장 목록에서 입력한 ID가 있는지 먼저 확인하세요. " +
+          "같은 현장 ID로 바로 다시 보내지 마세요 — 프로젝트 목록에서 입력한 ID가 있는지 먼저 확인하세요. " +
           "목록에 없으면 입력은 그대로 둔 채 다시 시도할 수 있습니다.",
       );
     }
@@ -1388,7 +1388,7 @@ export function SiteRegistrationOnlyWizard({
               확인되지 않은 이전 요청이 {entries.length}건 있습니다
             </p>
             <p className="text-caption break-keep text-ink-2">
-              현장 목록에서 이름이 있는지 먼저 확인하세요. 기록을 지워도 서버의 등록
+              프로젝트 목록에서 이름이 있는지 먼저 확인하세요. 기록을 지워도 서버의 등록
               상태는 바뀌지 않습니다. 실제로 등록됐던 요청의 기록을 지우면, 같은
               내용으로 다시 등록할 때 충돌 안내만 보고 헷갈릴 수 있습니다.
             </p>
@@ -1455,7 +1455,7 @@ export function SiteRegistrationOnlyWizard({
   /** 상한 도달로 신규 변이를 보내기 전에 차단한다 — 조용히 버리는 대신 막는다. */
   function failCapacityBlocked(kind: "mapped" | "legacy") {
     setSubmitError(
-      `확인되지 않은 이전 요청이 ${MAX_PRIOR_UNKNOWNS}건 이상 있습니다. 새로 보내기 전에 현장 목록에서 ` +
+      `확인되지 않은 이전 요청이 ${MAX_PRIOR_UNKNOWNS}건 이상 있습니다. 새로 보내기 전에 프로젝트 목록에서 ` +
         "먼저 확인하세요. 확인한 항목은 아래 목록에서 기록을 지울 수 있습니다. 형식이 손상된 기록은 지울 수 없습니다.",
     );
     setSubmitDetail(
@@ -1595,7 +1595,7 @@ export function SiteRegistrationOnlyWizard({
         ? "현장 브리핑으로 이동"
         : submitPhase === "error"
           ? "다시 시도"
-          : "현장 등록";
+          : "프로젝트 등록";
   }
 
   const siteIdError =
@@ -1613,12 +1613,12 @@ export function SiteRegistrationOnlyWizard({
         : siteIdError
           ? siteIdError
           : !form.name.trim()
-            ? "현장 이름을 입력하세요."
+            ? "프로젝트 이름을 입력하세요."
             : jurisdictionRequired && !form.jurisdiction.trim()
               ? "관할을 입력하세요(예: KR)."
               : undefined
       : !form.name.trim()
-        ? "현장 이름을 입력하세요."
+        ? "프로젝트 이름을 입력하세요."
         : jurisdictionRequired && !form.jurisdiction.trim()
           ? "관할을 입력하세요(예: KR)."
           : undefined;
@@ -1633,7 +1633,7 @@ export function SiteRegistrationOnlyWizard({
     : stepValid[1]
       ? undefined
       : form.aoi.length < 3
-        ? "지도에서 조사 구역을 그리세요(최소 3개 꼭짓점)."
+        ? "지도에서 조사 영역을 그리세요(최소 3개 꼭짓점)."
         : !isConvexPolygon(form.aoi)
           ? "현재 조사 경로는 오목한 외곽을 지원하지 않습니다. 볼록한 외곽으로 다시 그려 주세요."
           : !form.crs.trim()
@@ -1651,7 +1651,7 @@ export function SiteRegistrationOnlyWizard({
   // 실제 차단 원인과 안전한 복귀 경로를 안내한다.
   const nextDisabledReasonWithGate = nextBlockedByAccount
     ? hasUnverifiedLegacyDraft
-      ? "이 입력의 원래 계정을 확인할 수 없어 표시하지 않습니다. 현장 목록에서 먼저 확인하세요."
+      ? "이 입력의 원래 계정을 확인할 수 없어 표시하지 않습니다. 프로젝트 목록에서 먼저 확인하세요."
       : "저장된 입력의 계정과 이 화면의 계정 정보가 다릅니다. 원래 계정으로 돌아오세요."
     : nextDisabledReason;
 
@@ -1690,16 +1690,16 @@ export function SiteRegistrationOnlyWizard({
     <div hidden={preservePendingMap} inert={preservePendingMap || !supportedDraftShape(form)}>
     <div role="status" aria-live="polite" aria-atomic="true" className="sr-only">
       {!accountMismatch && currentStep === 2 && submitPhase === "pending"
-        ? "현장을 등록하는 중입니다."
+        ? "프로젝트을 등록하는 중입니다."
         : !accountMismatch && currentStep === 2 && submitPhase === "success"
           ? receiptPersisted
-            ? "현장이 등록되었습니다. 현장 브리핑으로 이동할 수 있습니다."
-            : "등록은 확인됐지만 저장을 확인하지 못했습니다. 이 탭을 유지하고 현장 목록에서 확인하세요."
+            ? "프로젝트이 등록되었습니다. 현장 브리핑으로 이동할 수 있습니다."
+            : "등록은 확인됐지만 저장을 확인하지 못했습니다. 이 탭을 유지하고 프로젝트 목록에서 확인하세요."
           : ""}
     </div>
     <WizardShell
       draftStatusText={storageStatus === "write-failed" ? "임시저장 실패 · 이 화면을 벗어나면 입력이 사라질 수 있습니다" : accountMismatch ? "저장된 입력을 표시하거나 변경하지 않습니다" : undefined}
-      title="현장 등록"
+      title="프로젝트 등록"
       layout="steps"
       stepLabels={STEP_LABELS}
       currentStep={currentStep}
@@ -1768,9 +1768,9 @@ export function SiteRegistrationOnlyWizard({
       {currentStep === 0 && (
         <>
           <p className="text-sm break-keep text-ink-2 sm:col-span-2">
-            현장 이름과 범위를 등록한 뒤, 현장에서 관측 자료를 추가할 수 있습니다.
+            프로젝트 이름과 범위를 등록한 뒤, 현장에서 관측 자료를 추가할 수 있습니다.
           </p>
-          <Field label="현장 이름" required>
+          <Field label="프로젝트 이름" required>
             <input
               type="text"
               value={form.name}
@@ -1877,7 +1877,7 @@ export function SiteRegistrationOnlyWizard({
         <>
           <div className="flex flex-col gap-3 sm:col-span-2">
             <p className="text-sm break-keep text-ink-2">
-              지도에서 현장 범위를 그리세요. 최소 3개 꼭짓점의 볼록한 모양이어야 합니다.
+              지도에서 프로젝트 범위를 그리세요. 최소 3개 꼭짓점의 볼록한 모양이어야 합니다.
             </p>
             <p className="text-sm text-ink-2">지도 입력은 이 탭의 sessionStorage에 단기 평문으로 저장되며 탭을 닫으면 사라집니다. 저장 실패 시 이동하면 최신 입력을 잃을 수 있습니다. 진행 중인 지도 포인터 그리기·편집은 복구되지 않으므로 이동 전에 완료하거나 취소하세요.</p>
             {(mapConflict || mapStorage === "failed") && <div role="alert" className="flex flex-col gap-2"><p>{mapConflict ? "지도 원문과 초안 또는 성공 영수증이 충돌합니다. 기록을 보존하고 제출을 막았습니다." : "지도 입력 저장을 확인하지 못했습니다. 현재 화면의 원문은 그대로 두었지만 이동하면 잃을 수 있어 제출을 막았습니다."}</p><SiteRegistrationRecoveryGuidance /></div>}
@@ -1936,24 +1936,24 @@ export function SiteRegistrationOnlyWizard({
                 {mode === "LEGACY_SITE_ID" && (
                   <div><dt className="text-caption text-ink-muted">현장 ID</dt><dd className="num break-token">{trimmedSiteId}</dd></div>
                 )}
-                <div><dt className="text-caption text-ink-muted">현장 범위</dt><dd>{form.aoi.length}개 꼭짓점</dd></div>
+                <div><dt className="text-caption text-ink-muted">프로젝트 범위</dt><dd>{form.aoi.length}개 꼭짓점</dd></div>
                 <div><dt className="text-caption text-ink-muted">현장 좌표계</dt><dd className="num break-token">{form.crs.trim()}</dd></div>
                 <div><dt className="text-caption text-ink-muted">외부 클라우드 처리</dt><dd>{form.egressChoice === "allow" ? "허용" : form.egressChoice === "deny" ? "허용하지 않음 — 벤더 클라우드 처리 작업 발급 불가" : "미정 — 벤더 클라우드 처리 작업 발급 불가, 등록 후 변경 불가"}</dd></div>
                 <div><dt className="text-caption text-ink-muted">처리 기준 관할</dt><dd className="num break-token">{jurisdictionRequired ? form.jurisdiction.trim() : "—"}</dd></div>
                 <div><dt className="text-caption text-ink-muted">외부 AI 접근 동의</dt><dd>{form.aiEgressAllowed ? "허용 — 실제 접근에는 별도 설정과 권한이 필요" : "허용하지 않음(기본값)"}</dd></div>
               </dl>
               <p className="text-caption break-keep text-ink-2">
-                현장 등록과 자료 검사·분석은 별개입니다. 등록 후 작업구역과 관측 자료를 확인하세요.
+                프로젝트 등록과 자료 검사·분석은 별개입니다. 등록 후 영역과 관측 자료를 확인하세요.
               </p>
             </section>
           )}
           {submitPhase === "pending" && (
-            <p className="text-sm break-keep text-ink-2 sm:col-span-2">현장을 등록하는 중입니다…</p>
+            <p className="text-sm break-keep text-ink-2 sm:col-span-2">프로젝트을 등록하는 중입니다…</p>
           )}
           {submitPhase === "success" && (
             <div className="flex flex-col gap-3 rounded-lg border border-safe/30 bg-safe-bg p-4 text-sm sm:col-span-2">
               <p className="font-medium break-keep text-safe-ink">
-                현장이 등록되었습니다.
+                프로젝트이 등록되었습니다.
               </p>
               {/* 확인된 등록의 식별자 — 새로고침 뒤 셸이 늦게 반영되거나 권한·조회
                   실패로 이 화면이 사라져도, 이 ID·이름이 다음 행동의 기준점이다. */}
@@ -1967,17 +1967,17 @@ export function SiteRegistrationOnlyWizard({
                   <dd className="num font-medium break-token text-safe-ink">{confirmedSiteId || "ID 확인 안 됨"}</dd>
                 </div>
               </dl>
-              {/* 링크를 여기서 걸지 않는다 — 아래 "현장 상세로 이동" 버튼(다음 버튼)이
+              {/* 링크를 여기서 걸지 않는다 — 아래 "프로젝트 상세로 이동" 버튼(다음 버튼)이
                   이미 같은 목적지로 보낸다. ADR-KSI-015 이후 이 흐름을 고른 사용자도
                   MISSIONS_ISSUE 를 갖고 있어(권한이 아니라 순서를 미룬 것뿐이다),
                   상세 화면에서 "베이스라인 조사 계획" 버튼이 곧바로 보인다. */}
               <p className="break-keep text-safe-ink/90">
                 {mode === "MAPPED_BOOTSTRAP"
-                  ? "현장에서 작업구역과 관측 자료를 확인하세요."
-                  : "현장에서 작업구역을 확인하고 관측 자료 등록을 이어가세요."}
+                  ? "현장에서 영역과 관측 자료를 확인하세요."
+                  : "현장에서 영역을 확인하고 관측 자료 등록을 이어가세요."}
               </p>
               <p className="text-caption break-keep text-safe-ink/80">
-                좌측 현장 목록·건수는 다음 화면으로 이동하면 서버 기준으로 반영됩니다.
+                좌측 프로젝트 목록·건수는 다음 화면으로 이동하면 서버 기준으로 반영됩니다.
                 이 화면에서는 바로 바뀌지 않지만, 위 현장 ID로의 등록은 끝났습니다.
                 아래에서 목록을 직접 열어 ID가 있는지 확인할 수 있습니다.
               </p>
@@ -1998,7 +1998,7 @@ export function SiteRegistrationOnlyWizard({
                 rel={!receiptPersisted ? "noopener noreferrer" : undefined}
                 className="tap-target self-start text-body font-semibold break-keep text-safe-ink underline underline-offset-2"
               >
-                현장 목록에서 직접 확인하기
+                프로젝트 목록에서 직접 확인하기
               </Link>
             </div>
           )}

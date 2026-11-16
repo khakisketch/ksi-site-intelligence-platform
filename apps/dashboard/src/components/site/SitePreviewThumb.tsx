@@ -15,7 +15,7 @@ import { SiteFootprint } from "./SiteFootprint";
 import type { AoiVertex } from "@/lib/core-api/types";
 
 /**
- * 현장 목록 미리보기 — 실제 준비된 출력의 작은 인식용 표시.
+ * 프로젝트 목록 미리보기 — 실제 준비된 출력의 작은 인식용 표시.
  *
  * 같은 세션 BFF 기술서(`/api/sites/[siteId]/preview`)로 현재 허용된 준비
  * 출력 하나를 찾고, 허용될 때만 같은 세션 준비 파일 BFF에서 바이트를 받아
@@ -30,7 +30,7 @@ import type { AoiVertex } from "@/lib/core-api/types";
  * - '미리보기 없음'은 완전히 읽고 없음이 확정될 때만, '확인하지 못함'은
  *   원인을 알 때(읽기 실패·미확인), '열람 권한 없음'은 권한 거부(403)일 때만 둔다.
  *   어느 쪽도 등록 자료 부재로 말하지 않는다.
- * - 클릭은 기술서가 가리킨 정확한 구역·자산·버전의 현장 주소로 간다.
+ * - 클릭은 기술서가 가리킨 정확한 영역·자산·버전의 현장 주소로 간다.
  * - 실제 픽셀이 없을 때는 사진이 아님을 밝힌 중립 블록으로 같은 자리를
  *   채운다(사진 아이콘+상태 문구, 자료·범위 주장 없음). 픽셀이 오면 사진이
  *   이긴다.
@@ -266,7 +266,7 @@ export function SitePreviewThumb({
         </div>
         <Disclosure label="미리보기 출처 상세" className="border-b border-line px-4">
           <div className="pb-2 text-caption leading-5 break-keep text-ink-2">
-            <p>표시 구역: {preview.link.workAreaName}</p>
+            <p>표시 영역: {preview.link.workAreaName}</p>
             {precisionFacts ? <p>{precisionFacts}</p> : null}
             {attributionText ? (
               /* 출처 문장은 제출자가 적은 원문이라 길다. 사람이 읽는
@@ -296,10 +296,10 @@ export function SitePreviewThumb({
     phase.name === "refused" ? "미리보기 권한 없음" : phase.name === "unknown" ? "미리보기 확인 불가" : "미리보기 없음";
   const emptyNote =
     phase.name === "refused"
-      ? "미리보기만 볼 수 없는 상태이며, 등록 자료가 없다는 뜻이 아닙니다. 영역·자료는 현장 열기에서 확인하세요."
+      ? "미리보기만 볼 수 없는 상태이며, 등록 자료가 없다는 뜻이 아닙니다. 영역·자료는 프로젝트 열기에서 확인하세요."
       : phase.name === "unknown"
-        ? "미리보기를 불러오지 못했습니다. 등록 자료가 없다는 뜻이 아닙니다. 현장을 열어 자료와 준비 상태를 다시 확인하세요."
-        : "등록 자료 현황을 뜻하지 않습니다. 영역·자료는 현장 열기에서 확인하세요.";
+        ? "미리보기를 불러오지 못했습니다. 등록 자료가 없다는 뜻이 아닙니다. 프로젝트을 열어 자료와 준비 상태를 다시 확인하세요."
+        : "등록 자료 현황을 뜻하지 않습니다. 영역·자료는 프로젝트 열기에서 확인하세요.";
   const emptyTone = phase.name === "refused" ? "refused" : phase.name === "unknown" ? "unknown" : "empty";
   return (
         <div ref={boxRef} data-site-preview="card-empty" className="border-b border-line">

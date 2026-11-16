@@ -78,7 +78,7 @@ export function SiteListView({
     prevPageRef.current = page;
     if (!pageNavRef.current) return;
     pageNavRef.current = false;
-    setAnnouncement(`현장 목록 ${page}페이지, ${pageSummary}`);
+    setAnnouncement(`프로젝트 목록 ${page}페이지, ${pageSummary}`);
     const panel = panelRef.current;
     const heading = panel?.querySelector("h2");
     if (heading instanceof HTMLElement) {
@@ -122,7 +122,7 @@ export function SiteListView({
       <div className="flex w-full flex-wrap items-center gap-3 border-t border-line pt-3">
         <div className="min-w-0 flex-1">{toolbar}</div>
         {mounted && (
-          <div role="group" aria-label="현장 보기 방식" className="inline-flex shrink-0 items-center gap-0.5 rounded-lg border border-line bg-sunk p-0.5">
+          <div role="group" aria-label="프로젝트 보기 방식" className="inline-flex shrink-0 items-center gap-0.5 rounded-lg border border-line bg-sunk p-0.5">
             <button type="button" aria-pressed={view === "cards"} onClick={() => select("cards")} className={segment("cards")}>
               <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" className="size-4 flex-none"><rect x="3.5" y="3.5" width="7" height="7" rx="1.5" /><rect x="13.5" y="3.5" width="7" height="7" rx="1.5" /><rect x="3.5" y="13.5" width="7" height="7" rx="1.5" /><rect x="13.5" y="13.5" width="7" height="7" rx="1.5" /></svg>
               카드

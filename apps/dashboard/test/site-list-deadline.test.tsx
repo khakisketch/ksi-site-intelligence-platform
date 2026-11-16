@@ -16,9 +16,9 @@ it('recovers from a site list fetch that never settles without losing existing d
  render(<SiteListProvider sites={old} fingerprint={fingerprint}><App/></SiteListProvider>);
  const input=screen.getByLabelText('입력') as HTMLInputElement; fireEvent.change(input,{target:{value:'미저장'}}); fireEvent.click(screen.getByText('브리핑 이동'));
  await act(async()=>{await Promise.resolve(); await Promise.resolve();});
- expect(screen.getByText('현장 메뉴를 확인하고 있습니다.')).toBeTruthy();
+ expect(screen.getByText('프로젝트 메뉴를 확인하고 있습니다.')).toBeTruthy();
  await act(async()=>{await vi.advanceTimersByTimeAsync(10000);});
- expect(screen.getByText(/현장 메뉴를 확인하지 못했습니다/)).toBeTruthy(); expect(screen.getByText('현장 메뉴 다시 확인')).toBeTruthy();
+ expect(screen.getByText(/프로젝트 메뉴를 확인하지 못했습니다/)).toBeTruthy(); expect(screen.getByText('프로젝트 메뉴 다시 확인')).toBeTruthy();
  expect(screen.getByText('기존 현장')).toBeTruthy(); expect(screen.getByLabelText('입력')).toBe(input); expect(input.value).toBe('미저장');
 });
 it.each(['identity fetch','identity body','sites fetch','sites body','post identity body'] as const)('bounds %s even when the dummy ignores abort', async phase => {
@@ -40,7 +40,7 @@ it.each(['identity fetch','identity body','sites fetch','sites body','post ident
  expect(signal).toBeDefined();
  await act(async()=>{await vi.advanceTimersByTimeAsync(10000);});
  expect(signal?.aborted).toBe(true);
- expect(screen.getByText(/현장 메뉴를 확인하지 못했습니다/)).toBeTruthy(); expect(screen.getByText('기존 현장')).toBeTruthy();
+ expect(screen.getByText(/프로젝트 메뉴를 확인하지 못했습니다/)).toBeTruthy(); expect(screen.getByText('기존 현장')).toBeTruthy();
  expect(env.invalidate).toHaveBeenCalledTimes(phase.includes('identity') ? 1 : 0);
  expect(vi.getTimerCount()).toBe(0);
 });
@@ -55,7 +55,7 @@ it('a late abort-ignoring body cannot replace a successful retry', async()=>{
  render(<SiteListProvider sites={old} fingerprint={fingerprint}><App/></SiteListProvider>);
  fireEvent.click(screen.getByText('브리핑 이동')); await act(async()=>{for(let i=0;i<20;i++) await Promise.resolve();});
  await act(async()=>{await vi.advanceTimersByTimeAsync(10000);}); expect(oldSignal?.aborted).toBe(true);
- fireEvent.click(screen.getByText('현장 메뉴 다시 확인')); await act(async()=>{for(let i=0;i<30;i++) await Promise.resolve();});
+ fireEvent.click(screen.getByText('프로젝트 메뉴 다시 확인')); await act(async()=>{for(let i=0;i<30;i++) await Promise.resolve();});
  expect(screen.getByText('확인된 최신 현장')).toBeTruthy();
  await act(async()=>{resolve({fingerprint,sites:[{siteId:'new',name:'오래된 현장',status:'UNMAPPED'}]}); await Promise.resolve();});
  expect(screen.queryByText('오래된 현장')).toBeNull(); expect(screen.getByText('확인된 최신 현장')).toBeTruthy(); expect(vi.getTimerCount()).toBe(0);
@@ -71,7 +71,7 @@ it('a new attempt cancels the first deadline and only the latest may finish', as
  fireEvent.click(screen.getByText('브리핑 이동')); await act(async()=>{for(let i=0;i<20;i++) await Promise.resolve();});
  fireEvent.click(screen.getByText('브리핑 이동')); await act(async()=>{for(let i=0;i<30;i++) await Promise.resolve();});
  expect(firstSignal?.aborted).toBe(true); expect(screen.getByText('최신 현장')).toBeTruthy();
- await act(async()=>{await vi.advanceTimersByTimeAsync(20000);}); expect(screen.queryByText(/현장 메뉴를 확인하지 못했습니다/)).toBeNull(); expect(vi.getTimerCount()).toBe(0);
+ await act(async()=>{await vi.advanceTimersByTimeAsync(20000);}); expect(screen.queryByText(/프로젝트 메뉴를 확인하지 못했습니다/)).toBeNull(); expect(vi.getTimerCount()).toBe(0);
 });
 it('unmount cancels the active request and timer', async()=>{
  let signal:AbortSignal|undefined;

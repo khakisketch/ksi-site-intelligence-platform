@@ -78,10 +78,10 @@ describe("SiteSelectionForm", () => {
   it("select 변경에만 즉시 제출한다(필수 빈값·텍스트 입력 제외)", () => {
     const { container } = render(
       <SiteSelectionForm action="/sites/site-a">
-        <select id="req-area" name="workAreaId" defaultValue="w1" required aria-label="작업구역">
+        <select id="req-area" name="workAreaId" defaultValue="w1" required aria-label="영역">
           <option value="">선택</option>
-          <option value="w1">구역 1</option>
-          <option value="w2">구역 2</option>
+          <option value="w1">영역 1</option>
+          <option value="w2">영역 2</option>
         </select>
         <input id="q" name="q" type="search" defaultValue="" aria-label="검색" />
       </SiteSelectionForm>,

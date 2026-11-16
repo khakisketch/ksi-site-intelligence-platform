@@ -149,7 +149,7 @@ beforeEach(() => {
   vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ fingerprint: alice }), { status: 200, headers: { "Content-Type": "application/json" } })));
 });
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
-describe("현장 등록 실제 지도 편집기 이동 복구", () => {
+describe("프로젝트 등록 실제 지도 편집기 이동 복구", () => {
   it("거부 원본과 마지막 위도 입력을 같은 이벤트에서 저장하고 재진입 후 제출하지 않는다", async () => {
     const first = render(createElement(SiteRegistrationOnlyWizard, { mode: "MAPPED_BOOTSTRAP" }));
     fireEvent.change(await screen.findByPlaceholderText("예: OO산업단지 3공구 신축공사 현장"), { target: { value: "현장 A" } });
