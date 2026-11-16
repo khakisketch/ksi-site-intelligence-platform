@@ -81,7 +81,7 @@ test("빈 조직의 Work는 typed empty와 다음 행동을 보이고 Events는 
   // EmptyState intentionally renders its title as paragraph text, not a heading.
   const main = page.getByRole("main");
   await expect(main.getByText("등록된 작업이 없습니다", { exact: true })).toBeVisible();
-  await expect(main.getByText("현장 화면에서 영역을 확인하고 관측 자료 등록을 시작할 수 있습니다.", { exact: true })).toBeVisible();
+  await expect(main.getByText("프로젝트 화면에서 영역을 확인하고 관측 자료 등록을 시작할 수 있습니다.", { exact: true })).toBeVisible();
   await expect(page.getByRole("link", { name: "프로젝트 보기", exact: true })).toBeVisible();
   await expect(page.locator('main a[href="/events"], main a[href="/missions"]')).toHaveCount(0);
   await expect(page.getByRole("navigation", { name: "대기열 필터" })).toHaveCount(0);

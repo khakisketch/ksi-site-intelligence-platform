@@ -63,7 +63,7 @@ describe("Field work list page", () => {
     // 보기 전환은 탭으로, 한 줄 목적만 둔다(설명벽을 주 내비로 쓰지 않는다).
     const nav = screen.getByRole("navigation", { name: "작업 보기 방식" });
     expect(nav).toBeTruthy();
-    expect(screen.getByText(/조직의 작업 기록을 현장별로 확인하세요/)).toBeTruthy();
+    expect(screen.getByText(/조직의 작업 기록을 프로젝트별로 확인하세요/)).toBeTruthy();
     expect(screen.getByRole("link", { name: "전체 작업" }).getAttribute("href")).toBe("/field");
     expect(screen.getByRole("link", { name: "받은 작업" }).getAttribute("href")).toBe("/field/inbox");
   });

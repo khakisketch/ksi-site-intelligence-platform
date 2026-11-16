@@ -230,7 +230,7 @@ describe("visual tile fact wording", () => {
     expect(name).toContain("사진 아님");
     expect(name).toContain("Floreat common-extent");
     expect(name).toContain("정사영상");
-    expect(name).not.toMatch(/미리보기|전체 현장|최신/);
+    expect(name).not.toMatch(/미리보기|전체 프로젝트|최신/);
   });
 });
 

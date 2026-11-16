@@ -1410,7 +1410,7 @@ function ExternalReconstructionPanelState({ workOrderId, siteId = "", expectedEp
   <details ref={legacyDetails} open={initialReport ? true : undefined} className="rounded-xl border border-line bg-sunk/40" aria-label="이전 비교 흐름 기록">
     <summary className="tap-target cursor-pointer px-4 py-3 text-[13px] font-bold text-ink-2">이전 비교 흐름(V1) · 검사점·물량·재관측</summary>
     <div className="flex flex-col gap-3 border-t border-line p-4">
-      <p className="text-[12px] leading-5 text-ink-muted">이전 흐름의 기록 조회와 요청 기능입니다. 새 변화 분석과 결과 검토는 현장의 분석·검토에서 진행합니다.</p>
+      <p className="text-[12px] leading-5 text-ink-muted">이전 흐름의 기록 조회와 요청 기능입니다. 새 변화 분석과 결과 검토는 프로젝트의 분석·검토에서 진행합니다.</p>
     <ExternalEvidencePanel workOrderId={workOrderId} siteId={siteId} revisions={revisions} canWrite={canWrite} newIntentAllowed={newIntentAllowed} accountIdentity={accountIdentity} legacyDecisionClosed={legacyDecisionClosed} onRelativeVolumeDecisionChange={receiveRelativeVolumeDecision} onSingleVolumeDecisionChange={receiveSingleVolumeDecision} />
     <ExternalResultWorkflowPanel workOrderId={workOrderId} siteId={siteId} decision={relativeVolumeDecision} singleVolumeDecision={singleVolumeDecision} initialReport={initialReport} permissions={permissions ?? (canWrite ? ["SITES_WRITE"] : [])} workAreaNames={workAreaNames} newIntentAllowed={newIntentAllowed} legacyDecisionClosed={legacyDecisionClosed} />
     </div>

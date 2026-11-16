@@ -1005,7 +1005,7 @@ describe("use-decision account-continuity client guard", () => {
     expect(screen.getByText(/현재 계정의 배포 범위에 열려 있지 않아 보낼 수 없습니다/)).toBeTruthy();
     expect(screen.getByText(/이 화면에서는 새로운 사용 결정 요청을 보내지 않습니다/)).toBeTruthy();
     expect(screen.queryByText(/판정이 기록되지 않았습니다/)).toBeNull();
-    expect(screen.getByText(/새로운 두 시점 관측 변화 분석은 현장의 분석 화면에서 진행합니다/)).toBeTruthy();
+    expect(screen.getByText(/새로운 두 시점 관측 변화 분석은 프로젝트의 분석 화면에서 진행합니다/)).toBeTruthy();
     expect(screen.queryByText(/정량 비교·측정/)).toBeNull();
     const handoff = screen.getByRole("link", { name: "분석 화면 열기" });
     expect(handoff.getAttribute("href")).toBe("/sites/site-1/analysis");

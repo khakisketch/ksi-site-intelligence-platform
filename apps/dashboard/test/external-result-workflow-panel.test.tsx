@@ -1933,7 +1933,7 @@ describe("scoped release account (legacyDecisionClosed)", () => {
     expect(await screen.findByText(/이 화면의 상대 물량 비교 요청은 현재 계정의 배포 범위에 열려 있지 않습니다/)).toBeTruthy();
     expect(screen.queryByText("현재 선택에서 상대 물량 비교를 요청하세요.")).toBeNull();
     expect(screen.queryByRole("button", { name: "상대 물량 비교 요청" })).toBeNull();
-    expect(screen.getByText(/새로운 두 시점 관측 변화 분석은 현장의 분석 화면에서 진행합니다/)).toBeTruthy();
+    expect(screen.getByText(/새로운 두 시점 관측 변화 분석은 프로젝트의 분석 화면에서 진행합니다/)).toBeTruthy();
     const handoff = screen.getByRole("link", { name: "분석 화면 열기" });
     expect(handoff.getAttribute("href")).toBe("/sites/site-1/analysis");
 

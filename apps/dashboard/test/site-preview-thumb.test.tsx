@@ -144,7 +144,7 @@ describe("SitePreviewThumb", () => {
     expect(link.textContent).toContain("정사영상");
     expect(link.textContent).toContain("2021");
     expect(link.textContent).toContain("부분 범위");
-    expect(link.textContent).not.toMatch(/최신|전체 현장/);
+    expect(link.textContent).not.toMatch(/최신|전체 프로젝트/);
     // 영역명·등록 버전·GSD는 보이는 자막에 두지 않고 펼침이 맡는다.
     expect(link.textContent).not.toContain("Floreat common-extent");
     expect(link.textContent).not.toContain("등록 버전");
@@ -459,7 +459,7 @@ describe("SitePreviewThumb", () => {
     expect(described?.textContent).toContain("Floreat public sample (CC BY 4.0)");
     expect(described?.textContent).toContain("등록 버전 1");
     expect(described?.textContent).toContain("제출 GSD 0.05m");
-    expect(accessibleText).not.toMatch(/전체 현장|최신/);
+    expect(accessibleText).not.toMatch(/전체 프로젝트|최신/);
     expect(link.querySelector("details,summary,input,button")).toBeNull();
   });
 

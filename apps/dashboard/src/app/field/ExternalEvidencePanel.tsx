@@ -1133,7 +1133,7 @@ export function ExternalEvidencePanel({
               : "다시 보낸 요청이 세션 만료로 접수되지 않았습니다. 이전 요청이 처리되었는지는 알 수 없습니다. 입력과 요청은 이 화면에 그대로 있습니다. 같은 계정으로 다시 로그인한 뒤 같은 요청으로 다시 시도하세요. 계정을 바꾸기 전에 기록에서 원래 요청의 판정이 이미 있는지 먼저 확인하세요.", true);
           } else if (response.status === 403) {
             sayForUse(use, definitive
-              ? "이 확인을 요청할 권한이 없습니다. 판정은 기록되지 않았습니다. 프로젝트 담당자에게 권한을 확인하세요. 증거와 이미 기록된 판정은 그대로 볼 수 있습니다. 새로운 정량 비교는 현장의 분석 화면에서 진행합니다."
+              ? "이 확인을 요청할 권한이 없습니다. 판정은 기록되지 않았습니다. 프로젝트 담당자에게 권한을 확인하세요. 증거와 이미 기록된 판정은 그대로 볼 수 있습니다. 새로운 정량 비교는 프로젝트의 분석 화면에서 진행합니다."
               : "다시 보낸 요청이 권한 부족으로 접수되지 않았습니다. 이전 요청이 처리되었는지는 알 수 없습니다. 같은 요청으로 다시 시도하거나, 먼저 기록에서 원래 요청의 판정이 이미 있는지 확인하세요. 증거와 이미 기록된 판정은 그대로 볼 수 있습니다.", true);
           } else if (response.status === 404) {
             sayForUse(use, definitive
@@ -1392,7 +1392,7 @@ export function ExternalEvidencePanel({
                 <div role="status" className="flex flex-col gap-2 rounded-lg border border-line bg-sunk px-3 py-2">
                   <h3 className="text-lead font-bold">사용 결정 요청 닫힘</h3>
                   <p className="text-caption leading-5 text-ink-2">이 화면의 사용 결정 요청(화면·높이·비교·측정 확인)은 현재 계정의 배포 범위에 열려 있지 않아 보낼 수 없습니다. 이 화면에서는 새로운 사용 결정 요청을 보내지 않습니다. 노트북 화면에서도 마찬가지입니다. 등록된 증거·검사 상태·봉인 기록은 그대로 볼 수 있습니다.</p>
-                  <p className="text-caption leading-5 text-ink-2">새로운 두 시점 관측 변화 분석은 현장의 분석 화면에서 진행합니다.</p>
+                  <p className="text-caption leading-5 text-ink-2">새로운 두 시점 관측 변화 분석은 프로젝트의 분석 화면에서 진행합니다.</p>
                   <a className="btn w-fit" href={`/sites/${encodeURIComponent(siteId)}/analysis`}>분석 화면 열기</a>
                 </div>
               )}

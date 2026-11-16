@@ -125,7 +125,7 @@ export default async function FieldWorkListPage({ searchParams }: {
         <FieldWorkNav active="orders" showTeam={showTeam} />
         <PageHeader
           title="작업"
-          description="조직의 작업 기록을 현장별로 확인하세요."
+          description="조직의 작업 기록을 프로젝트별로 확인하세요."
           headingLevel={2}
           actions={canCreateObservation ? (
             <Link href="/field/new" className="btn btn-primary tap-target">관측 자료 등록</Link>
@@ -135,7 +135,7 @@ export default async function FieldWorkListPage({ searchParams }: {
         />
         <WorkQueueOperationsNotices notices={notices} />
         {workOrders.length === 0 ? (
-          <EmptyState title="등록된 작업이 없습니다" description="현장 화면에서 영역을 확인하고 관측 자료 등록을 시작할 수 있습니다." action={{ label: "프로젝트 보기", href: "/sites" }} />
+          <EmptyState title="등록된 작업이 없습니다" description="프로젝트 화면에서 영역을 확인하고 관측 자료 등록을 시작할 수 있습니다." action={{ label: "프로젝트 보기", href: "/sites" }} />
         ) : (
           <>
             <nav className="flex flex-wrap items-center gap-x-1 gap-y-2 border-b border-line pb-3 sm:flex-nowrap sm:gap-1 sm:overflow-x-auto" aria-label="작업 요약">
@@ -147,14 +147,14 @@ export default async function FieldWorkListPage({ searchParams }: {
             <form action="/field" className="flex flex-wrap items-end gap-3" role="search" aria-label="작업 검색">
               {groupKey && <input type="hidden" name="group" value={groupKey} />}
               <label className="grid min-w-0 flex-1 basis-56 gap-1.5 text-caption font-medium sm:max-w-md">작업 검색<input className="input w-full" type="search" name="q" defaultValue={query} placeholder="작업명 또는 프로젝트명" /></label>
-              <label className="grid min-w-0 gap-1.5 text-caption font-medium">현장<select className="input w-full sm:max-w-64" name="site" defaultValue={params.site ?? ""}><option value="">전체 현장</option>{[...siteById.values()].filter((site) => siteIds.includes(site.siteId)).map((site) => <option key={site.siteId} value={site.siteId}>{site.name}</option>)}</select></label>
+              <label className="grid min-w-0 gap-1.5 text-caption font-medium">프로젝트<select className="input w-full sm:max-w-64" name="site" defaultValue={params.site ?? ""}><option value="">전체 프로젝트</option>{[...siteById.values()].filter((site) => siteIds.includes(site.siteId)).map((site) => <option key={site.siteId} value={site.siteId}>{site.name}</option>)}</select></label>
               <button className="btn" type="submit">검색</button>
               {(query || params.site || groupKey) && <Link href="/field" className="tap-target inline-flex items-center px-2 text-caption underline">필터 초기화</Link>}
             </form>
             <section aria-label="작업 목록" className="overflow-hidden rounded-lg border border-line bg-surface">
               <div className="flex items-center justify-between border-b border-line px-4 py-3 text-caption text-ink-2"><span>{groupKey ? GROUPS.find(([key]) => key === groupKey)?.[1] : "전체 작업"}</span><span role="status" className="tabular-nums">{matching.length}건 표시</span></div>
               <div className="hidden grid-cols-[minmax(0,1fr)_140px_110px_150px] gap-4 border-b border-line bg-page px-4 py-2.5 text-caption text-ink-muted xl:grid" aria-hidden="true"><span>작업 · 현장</span><span>담당</span><span>기한</span><span>상태</span></div>
-              {matching.length === 0 ? <EmptyState title="조건에 맞는 작업이 없습니다" description="검색어나 상태·현장 필터를 바꿔 보세요." compact /> : <ul className="divide-y divide-line">
+              {matching.length === 0 ? <EmptyState title="조건에 맞는 작업이 없습니다" description="검색어나 상태·프로젝트 필터를 바꿔 보세요." compact /> : <ul className="divide-y divide-line">
                       {matching.map(({ key, order }) => {
                         const state = presentWorkOrder(order.status, order.executionMode);
                         const siteName = siteById.get(order.siteId)?.name ?? null;
@@ -182,7 +182,7 @@ export default async function FieldWorkListPage({ searchParams }: {
                               </span>
                             </Link>
                             {rowsNeedingTechnicalRef.has(order.workOrderId) && <Disclosure label="식별 상세" className="px-4 pb-2 text-caption text-ink-muted">
-                              <p className="mt-1 break-all">작업 {order.workOrderId} · 현장 {siteName ?? SITE_NAME_UNAVAILABLE} ({order.siteId}) · 영역 {formatWorkAreaTechnicalRefs(order.workAreaIds)} · {formatKoreanDateTime(order.updatedAt, { dateStyle: "medium", timeStyle: "short" })} 갱신</p>
+                              <p className="mt-1 break-all">작업 {order.workOrderId} · 프로젝트 {siteName ?? SITE_NAME_UNAVAILABLE} ({order.siteId}) · 영역 {formatWorkAreaTechnicalRefs(order.workAreaIds)} · {formatKoreanDateTime(order.updatedAt, { dateStyle: "medium", timeStyle: "short" })} 갱신</p>
                             </Disclosure>}
                           </li>
                         );

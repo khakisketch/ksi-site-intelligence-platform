@@ -1263,7 +1263,7 @@ export function ExternalResultWorkflowPanel({
       const current = latestDecision.current;
       if (!current || current.verdict !== "ELIGIBLE" || !canIssue || busy) return;
       if (legacyDecisionClosed) {
-        setMessage("이 화면의 상대 물량 비교 요청은 현재 계정의 배포 범위에 열려 있지 않습니다. 기존 비교 요청 목록과 결과·검토 기록은 그대로 볼 수 있습니다. 새로운 두 시점 관측 변화 분석은 현장의 분석 화면에서 진행합니다.");
+        setMessage("이 화면의 상대 물량 비교 요청은 현재 계정의 배포 범위에 열려 있지 않습니다. 기존 비교 요청 목록과 결과·검토 기록은 그대로 볼 수 있습니다. 새로운 두 시점 관측 변화 분석은 프로젝트의 분석 화면에서 진행합니다.");
         return;
       }
       const key = `${current.decisionId}|${current.decisionDigest}`;
@@ -1354,7 +1354,7 @@ export function ExternalResultWorkflowPanel({
 
       {legacyDecisionClosed ? (
         <div role="status" className="flex flex-col gap-2">
-          <p className="text-ink-2">이 화면의 상대 물량 비교 요청은 현재 계정의 배포 범위에 열려 있지 않습니다. 기존 비교 요청 목록과 결과·검토 기록은 아래에서 그대로 볼 수 있습니다. 새로운 두 시점 관측 변화 분석은 현장의 분석 화면에서 진행합니다.</p>
+          <p className="text-ink-2">이 화면의 상대 물량 비교 요청은 현재 계정의 배포 범위에 열려 있지 않습니다. 기존 비교 요청 목록과 결과·검토 기록은 아래에서 그대로 볼 수 있습니다. 새로운 두 시점 관측 변화 분석은 프로젝트의 분석 화면에서 진행합니다.</p>
           <a className="btn w-fit" href={`/sites/${encodeURIComponent(siteId)}/analysis`}>분석 화면 열기</a>
         </div>
       ) : !decision ? (
