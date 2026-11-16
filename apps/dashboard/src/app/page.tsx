@@ -230,8 +230,10 @@ export default async function HomePage() {
   });
   // 대기열에 오르지 않은 실제 현장 바로가기 — 확인 목록·초기 설정에 이미 나온
   // 현장은 빼고, 남는 현장이 있을 때만 한 줄씩 둔다. 장식 이미지·가짜 요약은 두지 않는다.
+  // 확인 안건이 없어 "최근 현장" 목록이 그 자리를 대신하면 그 현장도 이미 나온 것이다 — 같은 현장이 두 번 나오지 않게 뺀다.
   const surfacedSiteIds = new Set([
     ...attentionSources.map((source) => source.siteId),
+    ...(attentionSources.length === 0 ? recentSiteSources.map((source) => source.siteId) : []),
     ...initialSetupItems.map((item) => item.siteId),
   ]);
   const otherSites = selectHomeQuickAccessSites(sites, surfacedSiteIds);
