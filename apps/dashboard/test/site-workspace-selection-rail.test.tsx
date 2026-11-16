@@ -61,9 +61,9 @@ describe("workspace selection rail", () => {
     for (const mode of ["explore", "compare", "results"] as const) {
       const { unmount } = render(canvas({ mode }));
       const rail = screen.getByRole("complementary", { name: "작업공간 선택" });
-      const link = rail.querySelector('a[href*="/work-areas"]')!;
+      const link = rail.querySelector('a[href*="manage=1"]')!;
       expect(link.textContent).toBe("작업구역 관리");
-      expect(link.getAttribute("href")).toBe("/sites/site-1/work-areas?workAreaId=area-1");
+      expect(link.getAttribute("href")).toBe("/sites/site-1?panel=areas&workAreaId=area-1&manage=1");
       expect(rail.textContent!.indexOf("작업구역")).toBeLessThan(rail.textContent!.indexOf("관측 시점"));
       expect(rail.textContent!.indexOf("관측 시점")).toBeLessThan(rail.textContent!.indexOf("표시 레이어"));
       expect(screen.getByRole("region", { name: "공간자료 뷰어" })).toBeTruthy();

@@ -1,4 +1,5 @@
 import { Disclosure } from "@/components/ui/Disclosure";
+import { siteAreasHrefAt } from "@/components/nav/site-context";
 import type { WorkArea } from "@/lib/core-api/types";
 import Link from "next/link";
 import { SiteLayerDisclosure } from "./SiteLayerDisclosure";
@@ -108,7 +109,7 @@ export function SiteExploreCanvas({
         ) : (
           <p className="text-body text-ink-2" role="status">작업구역을 확인할 수 없습니다. 아래 상세에서 목록을 확인하세요.</p>
         )}
-        <Link href={`${sitePath}/work-areas${selected ? `?workAreaId=${encodeURIComponent(selected.workAreaId)}` : ""}`} className="tap-target w-fit shrink-0 text-caption underline">작업구역 관리</Link>
+        <Link href={siteAreasHrefAt(sitePath, selected?.workAreaId, { manage: true })} className="tap-target w-fit shrink-0 text-caption underline">작업구역 관리</Link>
       </div>
       <div className="flex min-w-0 flex-col gap-2">
         {observationControls ?? (mode === "explore" && captureOptions.length > 0 && selected ? (

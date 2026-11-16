@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { siteAreasHref } from "@/components/nav/site-context";
 import { useEffect, useRef, useState } from "react";
 import { WorkAreaChoiceMap } from "@/components/map/WorkAreaChoiceMap";
 import { AnalysisCoverage } from "@/components/analysis/AnalysisCoverage";
@@ -386,7 +387,7 @@ export function SpatialTaskPanel({ initialView, initialOptions, siteName, areas,
           </div>
           {options.areas.length === 0 && <p className="mt-2 text-sm text-ink-2">선택 가능한 작업구역이 없습니다. 담당자에게 구역 등록과 이 요청의 접근 범위를 확인해 달라고 요청하세요.</p>}
         </fieldset>
-        <p className="text-sm leading-6 text-ink-2">새 범위는 <Link className="underline underline-offset-4" href={`/sites/${encodeURIComponent(siteId)}/work-areas`}>작업구역 관리</Link>에서 등록합니다. 외부 AI의 허용 범위가 자동으로 넓어지지는 않습니다. 이 작업 링크는 그대로 보관하세요.</p>
+        <p className="text-sm leading-6 text-ink-2">새 범위는 <Link className="underline underline-offset-4" href={siteAreasHref(siteId, null, { manage: true })}>작업구역 관리</Link>에서 등록합니다. 외부 AI의 허용 범위가 자동으로 넓어지지는 않습니다. 이 작업 링크는 그대로 보관하세요.</p>
       </section>
       <section aria-label="선택 범위와 관측" className="min-w-0">
         <h2 className="mb-2 text-base font-semibold">{selectedArea?.name ?? "구역을 고르면 경계를 보여드립니다"}</h2>

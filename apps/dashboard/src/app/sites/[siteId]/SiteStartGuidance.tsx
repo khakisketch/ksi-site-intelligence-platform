@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { siteAreasHref } from "@/components/nav/site-context";
 
 /**
  * 현장 시작 요약 — 공간 확인 작업공간 아래 두는 한 줄 요약.
@@ -45,7 +46,7 @@ export function SiteStartGuidance({
           ? "현재 조회된 작업이 없습니다. 필요한 외부 관측은 자료 담당자와 확인하세요."
           : "관측 시점을 골라 기준 자료와 비교할 자료를 확인하세요. 비교 가능 여부는 요청할 때 확인합니다.";
   const nextStepAction = workAreaCount === null || workAreaCount === 0
-    ? { href: `${sitePath}/work-areas`, label: "작업구역 확인" }
+    ? { href: siteAreasHref(siteId, null, { manage: true }), label: "작업구역 확인" }
     : observationWorkOrderCount === null || observationWorkOrderCount === 0
       ? { href: `${sitePath}/data?progress=1`, label: "작업 현황 확인" }
       : { href: `${sitePath}/analysis`, label: "비교할 자료 선택" };

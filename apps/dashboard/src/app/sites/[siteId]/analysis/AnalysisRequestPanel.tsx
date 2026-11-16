@@ -1,6 +1,7 @@
 "use client";
 
 import { Disclosure } from "@/components/ui/Disclosure";
+import { siteAreasHref } from "@/components/nav/site-context";
 import type { DeltaExportDeliveryConfig } from "@/lib/delta-export-config";
 import { AnalysisDeltaPublication } from "./AnalysisDeltaPublication";
 import { AnalysisMaskedCalculation } from "./AnalysisMaskedCalculation";
@@ -971,7 +972,7 @@ function AnalysisBlockerItem({ blocker, siteId, workAreaId }: {
   const sitePath = `/sites/${encodeURIComponent(siteId)}`;
   const evidencePath = `${sitePath}/data?workAreaId=${encodeURIComponent(workAreaId)}`;
   const destination = guidance.destination === "work-areas"
-    ? { href: `${sitePath}/work-areas`, label: "작업구역 현황 확인" }
+    ? { href: siteAreasHref(siteId, null, { manage: true }), label: "작업구역 현황 확인" }
     : guidance.destination === "spatial-assets"
       ? { href: evidencePath, label: "공간 자산 기록 확인" }
       : null;

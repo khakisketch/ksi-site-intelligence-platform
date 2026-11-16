@@ -524,7 +524,7 @@ describe("새 현장 작업구역 첫 행동", () => {
     const stage = screen.getByRole("region", { name: "선택 관측 보기" });
     expect(within(stage).getByText("등록된 작업구역이 없습니다")).toBeTruthy();
     const link = within(stage).getByRole("link", { name: "작업구역 등록" });
-    expect(link.getAttribute("href")).toBe("/sites/site-1/work-areas");
+    expect(link.getAttribute("href")).toBe("/sites/site-1?panel=areas&manage=1");
     const click = vi.fn((event: MouseEvent) => event.preventDefault());
     link.addEventListener("click", click);
     link.focus();
@@ -554,7 +554,7 @@ describe("새 현장 작업구역 첫 행동", () => {
   it("비교 모드에서도 빈 구역의 첫 행동을 보여주고 허위 관측 오류를 감춘다", () => {
     render(shell(shellProps({ ...empty, mode: "compare" })));
     const stage = within(screen.getByRole("region", { name: "두 시점 비교" }));
-    expect(stage.getByRole("link", { name: "작업구역 등록" }).getAttribute("href")).toBe("/sites/site-1/work-areas");
+    expect(stage.getByRole("link", { name: "작업구역 등록" }).getAttribute("href")).toBe("/sites/site-1?panel=areas&manage=1");
     expect(stage.queryByText(/비교할 작업구역이 없습니다/)).toBeNull();
   });
 });
@@ -565,7 +565,7 @@ describe("보관·미선택 작업구역 회복", () => {
     render(shell(shellProps({ mode: "explore", areas: [archived], selectedWorkAreaId: "tiny-1", canCreateWorkArea: "allowed" })));
     const stage = within(screen.getByRole("region", { name: "선택 관측 보기" }));
     expect(stage.getByText(/활성 작업구역이 없습니다/)).toBeTruthy();
-    expect(stage.getByRole("link", { name: "작업구역 등록" }).getAttribute("href")).toBe("/sites/site-1/work-areas");
+    expect(stage.getByRole("link", { name: "작업구역 등록" }).getAttribute("href")).toBe("/sites/site-1?panel=areas&manage=1");
   });
   it.each(["denied", "unknown"])("보관 구역만 있을 때 쓰기 권한 %s는 등록 동작을 열지 않는다", (permission) => {
     render(shell(shellProps({ mode: "explore", areas: [archived], selectedWorkAreaId: "tiny-1", canCreateWorkArea: permission })));

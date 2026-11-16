@@ -225,7 +225,7 @@ describe("자료 섹션 화면 (ADR-KSI-043)", () => {
     const html = await render();
     expect(mocked.catalog).not.toHaveBeenCalled();
     expect(html).toContain("등록된 작업구역이 없습니다");
-    expect(html).toContain('href="/sites/site-1/work-areas"');
+    expect(html).toContain('href="/sites/site-1?panel=areas&amp;manage=1"');
   });
 
   it("등록 진행은 접힌 하단 서랍이고 progress=1이면 펼친다", async () => {

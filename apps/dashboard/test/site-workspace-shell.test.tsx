@@ -261,9 +261,9 @@ describe("workspace shell structure", () => {
     mocked.permissions.mockImplementation(async (permission: string) => permission === "SITES_WRITE");
     await renderOverview();
     const stage = within(screen.getByRole("region", { name: "선택 관측 보기" }));
-    expect(stage.getByRole("link", { name: "작업구역 등록" }).getAttribute("href")).toBe("/sites/site-1/work-areas");
+    expect(stage.getByRole("link", { name: "작업구역 등록" }).getAttribute("href")).toBe("/sites/site-1?panel=areas&manage=1");
     const mobileLink = stage.getByRole("link", { name: "작업구역 목록 보기" });
-    expect(mobileLink.getAttribute("href")).toBe("/sites/site-1/work-areas");
+    expect(mobileLink.getAttribute("href")).toBe("/sites/site-1?panel=areas&manage=1");
     expect(mobileLink.className).toContain("lg:hidden");
     expect(mocked.areas).toHaveBeenCalledWith("site-1", { includeArchived: true });
     expect(mocked.workspace).not.toHaveBeenCalled();

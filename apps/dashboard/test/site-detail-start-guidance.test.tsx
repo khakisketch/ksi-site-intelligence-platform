@@ -126,12 +126,13 @@ describe("Site detail start guidance", () => {
     expect(screen.queryByText("등록된 작업구역이 없습니다")).toBeNull();
   });
 
-  it("keeps the settings page to extent, state and a WorkArea management entry", async () => {
+  it("keeps the settings page to extent and state, and points area management to the space area tab", async () => {
     render(await openSite({ section: "manage" }));
     expect(screen.getByRole("heading", { name: "현장 설정" })).toBeTruthy();
     expect(screen.getByRole("heading", { name: "현장 범위" })).toBeTruthy();
     expect(screen.getByRole("heading", { name: /^현장 상태/ })).toBeTruthy();
-    expect(screen.getByRole("link", { name: "작업구역 관리" }).getAttribute("href")).toBe("/sites/site-1/work-areas");
+    expect(screen.getByRole("link", { name: "영역 탭" }).getAttribute("href")).toBe("/sites/site-1?panel=areas");
+    expect(screen.queryByRole("link", { name: "작업구역 관리" })).toBeNull();
     expect(screen.queryByText("자료 보기")).toBeNull();
   });
 });

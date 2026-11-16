@@ -9,6 +9,8 @@ import { ConsoleWork } from "@/components/nav/ConsolePage";
 import type { SiteSpatialAssetsState } from "./SiteSpatialOverview";
 import { SiteWorkspaceShell } from "./SiteWorkspaceShell";
 import { SpaceAreasView } from "./areas/SpaceAreasView";
+import { SpaceAreasManage } from "./areas/SpaceAreasManage";
+import { workAreaListFailure } from "./areas/work-area-list-failure";
 import { buildWorkspaceServerFacts } from "./site-workspace-server-facts";
 import { SiteTransitionActions } from "./SiteTransitionActions";
 import { ResponsiveActionBoundary } from "@/components/responsive/ResponsiveActionBoundary";
@@ -46,7 +48,7 @@ import { formatKoreanDate } from "@/lib/datetime";
 import { SITE_DETAIL_DOCUMENT_TITLE } from "@/lib/site-detail-title";
 import { normalizeSiteTab } from "@/lib/site-epochs";
 import { parseScopeId, pickFootprintAsset, resolveSelectedWorkAreaId } from "./site-spatial";
-import { siteDataHref } from "@/components/nav/site-context";
+import { siteAreasHref, siteDataHref } from "@/components/nav/site-context";
 
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Disclosure } from "@/components/ui/Disclosure";
@@ -71,7 +73,7 @@ export default async function SiteDetailPage({
   searchParams,
 }: {
   params: Promise<{ siteId: string }>;
-  searchParams: Promise<MaterialsSearchParams & { section?: string | string[]; tab?: string | string[]; panel?: string | string[]; mode?: string | string[]; baselineAssetRef?: string | string[]; currentAssetRef?: string | string[]; analysisId?: string | string[] }>;
+  searchParams: Promise<MaterialsSearchParams & { section?: string | string[]; tab?: string | string[]; panel?: string | string[]; mode?: string | string[]; manage?: string | string[]; baselineAssetRef?: string | string[]; currentAssetRef?: string | string[]; analysisId?: string | string[] }>;
 }) {
   const [{ siteId }, query] = await Promise.all([params, searchParams]);
   const firstValue = (value: string | string[] | undefined): string | undefined =>
@@ -473,7 +475,14 @@ export default async function SiteDetailPage({
         : null}
     />
     <ConsoleWork className={tab === "space" ? `min-h-0 flex-1 overflow-x-clip${workspaceViewer || areasView ? " lg:gap-0 lg:p-0" : ""}` : "flex-1"}>
-      {areasView && <SpaceAreasView
+      {areasView && firstValue(query.manage) === "1" && <SpaceAreasManage
+        site={site}
+        workAreas={allAreas}
+        workAreaError={areasResult.status === "rejected" ? workAreaListFailure(areasResult.reason) : null}
+        canWrite={canTransition}
+        selectedId={areasViewSelectedId}
+      />}
+      {areasView && firstValue(query.manage) !== "1" && <SpaceAreasView
         siteId={site.siteId}
         sitePath={sitePath}
         areas={allAreas}
@@ -553,11 +562,11 @@ export default async function SiteDetailPage({
           </div>
         </SectionCard>
         <SectionCard title={`현장 상태 · ${status.label}`}>
-          {canTransition ? <SiteTransitionActions siteId={site.siteId} status={site.status} resumeTarget={site.resumeTarget} canApproveAutonomy={canApproveAutonomy} /> : <ActionUnavailable label="현장 상태 변경" description="현재 계정으로는 현장 상태를 변경할 수 없습니다. 현장 쓰기 권한이 있는 담당자에게 문의하세요." />}
+          {canTransition ? <Disclosure label="관리자용 · 운영 상태 변경"><div className="mt-2"><SiteTransitionActions siteId={site.siteId} status={site.status} resumeTarget={site.resumeTarget} canApproveAutonomy={canApproveAutonomy} /></div></Disclosure> : <ActionUnavailable label="현장 상태 변경" description="현재 계정으로는 현장 상태를 변경할 수 없습니다. 현장 쓰기 권한이 있는 담당자에게 문의하세요." />}
           <dl className="mt-3 grid gap-2 border-t border-line pt-3 text-caption sm:grid-cols-2"><div><dt className="text-ink-muted">등록</dt><dd>{formatKoreanDate(site.registeredAt)}</dd></div><div><dt className="text-ink-muted">최근 갱신</dt><dd>{formatKoreanDate(site.updatedAt)}</dd></div></dl>
           <Disclosure label="좌표계·변환 상세" className="mt-2"><dl className="mt-1 grid gap-1"><div><dt className="text-ink-muted">좌표계</dt><dd>{site.siteFrame.crs}</dd></div><div><dt className="text-ink-muted">변환 버전</dt><dd>{site.siteFrame.transformVersion}</dd></div></dl></Disclosure>
         </SectionCard>
-        <Link href={`${sitePath}/work-areas`} className="btn w-fit">작업구역 관리</Link>
+        <p className="text-caption text-ink-2">자료를 붙여 비교하는 영역은 공간의 <Link href={siteAreasHref(site.siteId)} className="font-semibold underline">영역 탭</Link>에서 만들고 관리합니다.</p>
       </div>}
 
     </ConsoleWork>

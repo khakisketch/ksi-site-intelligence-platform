@@ -1,4 +1,5 @@
 import type { ResponsiveAction } from "@/components/responsive/responsive-actions";
+import { siteAreasHref } from "@/components/nav/site-context";
 import type { SiteView } from "@/lib/core-api/types";
 
 export type OperatorNextActionKind = "MANAGE_WORK_AREAS" | "CREATE_OBSERVATION";
@@ -41,7 +42,7 @@ export function resolveSiteOperatorNextAction(
     return {
       kind: "MANAGE_WORK_AREAS",
       label: "작업구역 설정",
-      href: `${siteHref}/work-areas`,
+      href: siteAreasHref(site.siteId, null, { manage: true }),
       responsiveAction: "SITE_DEVICE_TRANSITION",
       siteId: site.siteId,
     };

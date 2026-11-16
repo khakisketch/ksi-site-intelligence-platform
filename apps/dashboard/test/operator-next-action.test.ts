@@ -30,7 +30,7 @@ describe("site operator next action", () => {
   it("offers actual WorkArea management rather than a dead AOI anchor for an editor", () => {
     expect(resolveSiteOperatorNextAction(site("UNMAPPED", null), {
       canEditSite: true, canCreateWorkOrder: false,
-    }, { includeRoutineSurvey: true })).toMatchObject({ kind: "MANAGE_WORK_AREAS", href: "/sites/site-1/work-areas" });
+    }, { includeRoutineSurvey: true })).toMatchObject({ kind: "MANAGE_WORK_AREAS", href: "/sites/site-1?panel=areas&manage=1" });
   });
 
   it("does not prescribe registration or setup solely because external data keeps UNMAPPED", () => {

@@ -146,9 +146,15 @@ export function projectSwitchHref(siteId: string, section: ProjectSection | null
   return projectSectionHref(siteId, section);
 }
 
-/** 공간 섹션의 영역 보기 — 지도 위에서 영역을 고르는 화면. 고른 영역은 `workAreaId`로 남긴다. */
-export function siteAreasHref(siteId: string, workAreaId?: string | null): string {
+/** 공간 섹션의 영역 보기 — 지도 위에서 영역을 고르는 화면. 고른 영역은 `workAreaId`로 남기고, `manage`는 추가·범위 바꾸기·보관 화면이다. */
+export function siteAreasHref(siteId: string, workAreaId?: string | null, options: { manage?: boolean } = {}): string {
+  return siteAreasHrefAt(`/sites/${encodeURIComponent(siteId)}`, workAreaId, options);
+}
+
+/** `siteAreasHref`와 같되, 이미 만든 프로젝트 경로(`/sites/{id}`)를 받는 화면용. */
+export function siteAreasHrefAt(sitePath: string, workAreaId?: string | null, options: { manage?: boolean } = {}): string {
   const query = new URLSearchParams({ panel: "areas" });
   if (workAreaId) query.set("workAreaId", workAreaId);
-  return `/sites/${encodeURIComponent(siteId)}?${query}`;
+  if (options.manage) query.set("manage", "1");
+  return `${sitePath}?${query}`;
 }

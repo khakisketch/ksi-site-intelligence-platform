@@ -407,7 +407,7 @@ test("현장의 공간과 분석 메뉴가 자료 패널, 비교, 설정과 옛 
 
   const areaMenu = page.getByRole("button", { name: /^작업구역 · / });
   await areaMenu.click();
-  await expect(page.getByRole("link", { name: "작업구역 관리", exact: true })).toHaveAttribute("href", /\/work-areas\?workAreaId=/);
+  await expect(page.getByRole("link", { name: "작업구역 관리", exact: true })).toHaveAttribute("href", /panel=areas&workAreaId=.*&manage=1/);
   await page.keyboard.press("Escape");
   await expect(areaMenu).toBeFocused();
 
@@ -429,7 +429,7 @@ test("현장의 공간과 분석 메뉴가 자료 패널, 비교, 설정과 옛 
 
   await page.goto(`${sitePath}?section=manage`);
   await expect(page.getByRole("heading", { name: "현장 범위", exact: true })).toBeVisible();
-  await expect(page.getByRole("main").getByRole("link", { name: "작업구역 관리", exact: true })).toHaveAttribute("href", `${sitePath}/work-areas`);
+  await expect(page.getByRole("main").getByRole("link", { name: "영역 탭", exact: true })).toHaveAttribute("href", `${sitePath}?panel=areas`);
   await expectNoHorizontalOverflow(page);
 
   await page.goto(`${sitePath}?mode=results`);

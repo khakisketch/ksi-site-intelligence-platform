@@ -11,24 +11,7 @@ import { WORK_AREA_STATUS_LABEL } from "@/lib/work-areas";
 
 import { disambiguatedAreaNames } from "../site-spatial";
 import { SpaceAreasStage } from "./SpaceAreasStage";
-
-/** 공간 왼쪽 패널의 첫 줄 — 자료 보기와 영역 보기를 오간다. 고른 영역은 두 보기에서 그대로 이어진다. */
-function SpaceViewTabs({ sitePath, siteId, workAreaId }: { sitePath: string; siteId: string; workAreaId: string | null }) {
-  const dataHref = workAreaId ? `${sitePath}?workAreaId=${encodeURIComponent(workAreaId)}` : sitePath;
-  const tab = (label: string, href: string, current: boolean) => (
-    <Link
-      href={href}
-      aria-current={current ? "page" : undefined}
-      className={`tap-target flex grow items-center justify-center rounded-md px-2 text-caption ${current ? "bg-surface font-bold shadow-sm" : "text-ink-2 hover:bg-surface/60"}`}
-    >{label}</Link>
-  );
-  return (
-    <nav aria-label="공간 보기" className="flex gap-1 rounded-md bg-sunk p-1">
-      {tab("자료", dataHref, false)}
-      {tab("영역", siteAreasHref(siteId, workAreaId), true)}
-    </nav>
-  );
-}
+import { SpaceViewTabs } from "./SpaceViewTabs";
 
 function AreaRow({ siteId, area, label, current, supersededName }: {
   siteId: string; area: WorkArea; label: string; current: boolean; supersededName: string | null;
@@ -54,8 +37,8 @@ function AreaRow({ siteId, area, label, current, supersededName }: {
  * 공간의 영역 보기(ADR-KSI-043) — 영역 목록과 지도를 한 화면에 둔다.
  *
  * 이 화면은 읽는 자리다: 영역을 고르고, 지도에서 위치를 확인하고, 그 영역의 자료로 간다.
- * 영역 추가·범위 바꾸기·보관은 아직 작업구역 화면에서 한다(`/work-areas`) — 그 안전 장치
- * (중복 제출 방지·계정 연속성 확인·미확인 제출 복구)를 옮기기 전까지 이 화면에 흉내 내지 않는다.
+ * 추가·범위 바꾸기·보관은 영역 관리 보기(`SpaceAreasManage`)가 한다 — 중복 제출 방지·계정 연속성
+ * 확인·미확인 제출 복구 같은 안전 장치를 이 화면에 따로 흉내 내지 않는다.
  */
 export function SpaceAreasView({ siteId, sitePath, areas, areasState, selectedId, canWrite }: {
   siteId: string;
@@ -77,7 +60,7 @@ export function SpaceAreasView({ siteId, sitePath, areas, areasState, selectedId
   const selected = selectedId ? byId.get(selectedId) ?? null : null;
   // 지도에는 사용 중인 영역과, 보관된 영역을 골랐을 때 그 영역만 올린다.
   const mapAreas = selected && selected.status !== "ACTIVE" ? [...active, selected] : [...active];
-  const manageHref = `${sitePath}/work-areas${selected ? `?workAreaId=${encodeURIComponent(selected.workAreaId)}` : ""}`;
+  const manageHref = siteAreasHref(siteId, selected?.workAreaId, { manage: true });
 
   const context = (
     <>

@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { siteAreasHref } from "@/components/nav/site-context";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 
@@ -286,8 +287,8 @@ export function ExternalObservationCreateForm({
         <section className="rounded-xl border border-line bg-surface p-4">
           <h2 className="text-lead font-bold">먼저 작업구역을 등록하세요</h2>
           <p className="mt-1 text-body leading-5 text-ink-2">비교할 범위가 있어야 결과의 위치와 의미를 확인할 수 있습니다.</p>
-          <Link href={`/sites/${encodeURIComponent(siteId)}/work-areas`} className="btn mt-3 lg:hidden">작업구역 목록 보기</Link>
-          <Link href={`/sites/${encodeURIComponent(siteId)}/work-areas`} className="btn mt-3 hidden lg:inline-flex">작업구역 만들기</Link>
+          <Link href={siteAreasHref(siteId, null, { manage: true })} className="btn mt-3 lg:hidden">작업구역 목록 보기</Link>
+          <Link href={siteAreasHref(siteId, null, { manage: true })} className="btn mt-3 hidden lg:inline-flex">작업구역 만들기</Link>
           <p className="mt-2 text-body leading-5 text-ink-2 lg:hidden">모바일에서는 목록을 확인할 수 있습니다. 작업구역 등록은 노트북에서 같은 계정으로 로그인한 뒤 화면 폭 1024px 이상에서 진행하세요.</p>
         </section>
       ) : (

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { siteAreasHref } from "@/components/nav/site-context";
 
 export function AnalysisStartGuide({
   siteId,
@@ -25,7 +26,7 @@ export function AnalysisStartGuide({
       <li className="min-w-0">
         <p className="text-caption font-semibold text-ink-muted">작업구역</p>
         <p className="mt-1 text-body font-semibold">{workAreaCount > 0 ? `${workAreaCount}개 확인됨` : "등록된 작업구역 없음"}</p>
-        <Link className="mt-2 inline-flex min-h-11 items-center text-caption font-semibold text-accent-text hover:underline" href={`${sitePath}/work-areas`}>작업구역 현황 확인</Link>
+        <Link className="mt-2 inline-flex min-h-11 items-center text-caption font-semibold text-accent-text hover:underline" href={siteAreasHref(siteId, null, { manage: true })}>작업구역 현황 확인</Link>
       </li>
       <li className="min-w-0">
         <p className="text-caption font-semibold text-ink-muted">관측 후보</p>

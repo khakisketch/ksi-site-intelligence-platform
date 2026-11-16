@@ -102,10 +102,10 @@ describe("공간 영역 보기", () => {
     expect(screen.queryByRole("link", { name: "+ 추가" })).toBeNull();
   });
 
-  it("쓰기 권한이 있으면 아직은 작업구역 화면으로 이어 준다", async () => {
+  it("쓰기 권한이 있으면 영역 관리 보기로 이어 준다", async () => {
     mocked.permissions.mockResolvedValue(true);
     render(await openAreas({ workAreaId: "area-1" }));
-    expect(screen.getByRole("link", { name: "범위 바꾸기·보관" }).getAttribute("href")).toBe("/sites/site-1/work-areas?workAreaId=area-1");
+    expect(screen.getByRole("link", { name: "범위 바꾸기·보관" }).getAttribute("href")).toBe("/sites/site-1?panel=areas&workAreaId=area-1&manage=1");
     expect(screen.getByRole("link", { name: "+ 추가" })).toBeTruthy();
   });
 

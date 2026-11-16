@@ -904,7 +904,7 @@ export function SiteWorkspaceShell({
           </option>)}
         </select>
       </SiteSelectionForm>}
-      <Link href={`${sitePath}/work-areas${selected ? `?workAreaId=${encodeURIComponent(selected.workAreaId)}` : ""}`} className="tap-target rounded-md px-2 py-1.5 text-caption hover:bg-sunk">작업구역 관리</Link>
+      <Link href={siteAreasHref(facts.siteId, selected?.workAreaId, { manage: true })} className="tap-target rounded-md px-2 py-1.5 text-caption hover:bg-sunk">작업구역 관리</Link>
     </ActionMenu>
     <Link href={siteAreasHref(facts.siteId, selected?.workAreaId)} className="btn shrink-0">영역 지도</Link>
     <div className="flex min-w-0 shrink-0 flex-wrap items-center gap-x-2 gap-y-1">
@@ -1007,11 +1007,11 @@ export function SiteWorkspaceShell({
             action={onlyArchivedAreas || areas.length === 0 ? (
               canCreateWorkArea === "allowed" ? (
                 <>
-                  <Link href={`${sitePath}/work-areas`} className="btn btn-primary hidden lg:inline-flex">작업구역 등록</Link>
-                  <Link href={`${sitePath}/work-areas`} className="btn btn-primary lg:hidden">작업구역 목록 보기</Link>
+                  <Link href={siteAreasHref(facts.siteId, null, { manage: true })} className="btn btn-primary hidden lg:inline-flex">작업구역 등록</Link>
+                  <Link href={siteAreasHref(facts.siteId, null, { manage: true })} className="btn btn-primary lg:hidden">작업구역 목록 보기</Link>
                 </>
               ) : canCreateWorkArea === "unknown" ? <WorkbenchRefreshButton label="등록 권한 다시 확인" /> : null
-            ) : <Link href={`${sitePath}/work-areas`} className="btn btn-primary">작업구역 관리</Link>}
+            ) : <Link href={siteAreasHref(facts.siteId, null, { manage: true })} className="btn btn-primary">작업구역 관리</Link>}
           />;
   const stage = (<>
     {mode === "explore" && (

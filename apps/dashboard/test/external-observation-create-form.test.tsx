@@ -114,8 +114,8 @@ describe("ExternalObservationCreateForm", () => {
 
   it("keeps external-result creation separate and gives a recovery link when no work area is available", () => {
     render(<ExternalObservationCreateForm siteId="site-1" siteName="서쪽 현장" workAreas={[]} />);
-    expect(screen.getByRole("link", { name: "작업구역 만들기" }).getAttribute("href")).toBe("/sites/site-1/work-areas");
-    expect(screen.getByRole("link", { name: "작업구역 목록 보기" }).getAttribute("href")).toBe("/sites/site-1/work-areas");
+    expect(screen.getByRole("link", { name: "작업구역 만들기" }).getAttribute("href")).toBe("/sites/site-1?panel=areas&manage=1");
+    expect(screen.getByRole("link", { name: "작업구역 목록 보기" }).getAttribute("href")).toBe("/sites/site-1?panel=areas&manage=1");
     expect(screen.getByText(/모바일에서는 목록을 확인할 수 있습니다/).textContent).toContain("같은 계정");
     expect(screen.getByRole("link", { name: /외부 비교 기록/ }).getAttribute("href")).toBe("/sites/site-1/observations");
     expect(screen.queryByRole("button", { name: "관측 자료 등록 계속" })).toBeNull();

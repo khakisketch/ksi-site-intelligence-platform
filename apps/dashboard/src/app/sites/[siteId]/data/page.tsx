@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { siteAreasHref } from "@/components/nav/site-context";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { cache } from "react";
@@ -169,7 +170,7 @@ export default async function SiteDataPage({
       {!areasKnown && <ErrorState message="작업구역을 불러오지 못했습니다. 잠시 후 다시 시도하세요." retryable />}
       {areasKnown && allAreas.length === 0 && (
         <EmptyState compact title="등록된 작업구역이 없습니다" description="작업구역을 만든 뒤 자료를 등록할 수 있습니다."
-          action={{ label: "작업구역 관리", href: `${sitePath}/work-areas` }} />
+          action={{ label: "작업구역 관리", href: siteAreasHref(site.siteId, null, { manage: true }) }} />
       )}
       {assets.status === "denied" && <InlineNotice tone="high">이 구역의 자료를 볼 권한이 없습니다.</InlineNotice>}
       {assets.status === "unavailable" && <InlineNotice tone="high">자료 목록을 불러오지 못했습니다. 비어 있다는 뜻이 아닙니다. 잠시 후 다시 시도하세요.</InlineNotice>}
