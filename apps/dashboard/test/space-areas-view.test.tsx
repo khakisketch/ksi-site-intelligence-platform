@@ -77,7 +77,7 @@ describe("공간 영역 보기", () => {
     expect(list.getByText("영역 2개")).toBeTruthy();
     expect(list.getByRole("link", { name: /2구역 성토부/ }).getAttribute("aria-current")).toBe("true");
     expect(list.getByRole("link", { name: /1구역 북측/ }).getAttribute("aria-current")).toBeNull();
-    expect(list.getByText(/옛 1구역을\(를\) 대체/)).toBeTruthy();
+    expect(list.getByText(/이전 범위\(옛 1구역\)를 대체/)).toBeTruthy();
 
     // 지도는 사용 중인 영역만 올린다 — 보관된 영역은 골랐을 때만 올라간다.
     const map = await screen.findByTestId("map-inner");

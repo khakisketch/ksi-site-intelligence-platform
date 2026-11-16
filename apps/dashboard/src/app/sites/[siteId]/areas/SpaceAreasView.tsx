@@ -26,7 +26,7 @@ function AreaRow({ siteId, area, label, current, supersededName }: {
       >
         <span className={`text-body break-words ${current ? "font-semibold" : "text-ink-2"}`}>{label}</span>
         <span className="text-micro text-ink-muted">
-          {formatKoreanDate(area.createdAt)} 등록{supersededName ? ` · ${supersededName}을(를) 대체` : ""}{archived ? " · 보관됨" : ""}
+          {formatKoreanDate(area.createdAt)} 등록{supersededName ? ` · 이전 범위(${supersededName})를 대체` : ""}{archived ? " · 보관됨" : ""}
         </span>
       </Link>
     </li>
@@ -48,15 +48,17 @@ export function SpaceAreasView({ siteId, sitePath, areas, areasState, selectedId
   selectedId: string | null;
   canWrite: boolean;
 }) {
-  const names = disambiguatedAreaNames(areas);
+  const active = areas.filter((area) => area.status === "ACTIVE");
+  const archived = areas.filter((area) => area.status !== "ACTIVE");
+  // 대체 등록은 이름을 이어받으므로 같은 이름이 흔하다. 사용 중인 영역끼리, 보관된 영역끼리만 구분해
+  // 기술 참조가 목록에 끼어들지 않게 한다(사용 중 목록에서는 보통 이름이 하나씩이다).
+  const names = new Map([...disambiguatedAreaNames(active), ...disambiguatedAreaNames(archived)]);
   const labelOf = (area: WorkArea) => names.get(area.workAreaId)?.label ?? area.workAreaId;
   const byId = new Map(areas.map((area) => [area.workAreaId, area]));
   const supersededNameOf = (area: WorkArea) => {
     const previous = area.supersedes ? byId.get(area.supersedes) : undefined;
-    return previous ? labelOf(previous) : null;
+    return previous ? previous.name : null;
   };
-  const active = areas.filter((area) => area.status === "ACTIVE");
-  const archived = areas.filter((area) => area.status !== "ACTIVE");
   const selected = selectedId ? byId.get(selectedId) ?? null : null;
   // 지도에는 사용 중인 영역과, 보관된 영역을 골랐을 때 그 영역만 올린다.
   const mapAreas = selected && selected.status !== "ACTIVE" ? [...active, selected] : [...active];
