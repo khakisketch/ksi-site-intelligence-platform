@@ -243,7 +243,7 @@ test("Home은 합성 운영 원장의 작업·현장 우선순위를 보여 준�
   await expect(attentionList.getByRole("heading", { name: "E2E 과거 읽기 전용 · 작업 범위 승인" })).toBeVisible();
   await expect(attentionList.getByRole("heading", { name: "E2E 과거 읽기 전용 · 결과 검토 기록" })).toBeVisible();
 
-  const initialSetup = page.getByRole("region", { name: "초기 설정이 필요한 현장" });
+  const initialSetup = page.getByRole("region", { name: "초기 설정이 필요한 프로젝트" });
   // All seeded Sites already have a work order. Legacy UNMAPPED state must not
   // turn an in-use Site into an instruction to configure its optional AOI.
   await expect(initialSetup).toHaveCount(0);

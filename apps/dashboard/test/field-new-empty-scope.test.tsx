@@ -21,7 +21,7 @@ afterEach(() => {
 });
 
 describe("관측 자료 등록의 빈 프로젝트 범위", () => {
-  it("볼 수 있는 현장이 없으면 기존 현장의 접근 권한 확인 경로를 제공한다", async () => {
+  it("볼 수 있는 프로젝트이 없으면 기존 현장의 접근 권한 확인 경로를 제공한다", async () => {
     mocked.listSites.mockResolvedValue([]);
     render(await FieldNewObservationPage());
     expect(screen.getByText("현재 계정에서 선택할 수 있는 프로젝트이 없습니다")).toBeTruthy();

@@ -17,7 +17,7 @@ export function HomeSiteGrid({ sites }: { sites: readonly SiteView[] }) {
   return (
     <section aria-label="다른 프로젝트 바로가기" className="flex min-w-0 flex-col gap-3">
       <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-        <h2 className="text-title font-bold tracking-[-0.02em] break-keep sm:text-display">다른 현장</h2>
+        <h2 className="text-title font-bold tracking-[-0.02em] break-keep sm:text-display">다른 프로젝트</h2>
         <div className="flex flex-wrap items-center gap-x-4 text-caption font-semibold">
           <Link href="/sites" className="tap-target inline-flex items-center text-accent-text hover:underline">전체 목록</Link>
           <Link href="/field" className="tap-target inline-flex items-center text-ink-2 hover:text-ink-1 hover:underline">작업 목록</Link>

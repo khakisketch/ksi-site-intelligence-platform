@@ -43,7 +43,7 @@ export function SiteAoiEditor({ siteId, siteFrame }: { siteId: string; siteFrame
   return (
     <div className="flex flex-col gap-3">
       <p className="text-body break-keep text-ink-muted">
-        현장 전체의 경계를 설정합니다. 자료 등록·비교에 사용하는 영역과는 별개이며,
+        프로젝트 전체의 경계를 설정합니다. 자료 등록·비교에 사용하는 영역과는 별개이며,
         전체 경계가 없어도 영역에 연결된 자료를 등록할 수 있습니다.
       </p>
       <AoiPolygonMap value={vertices} onChange={setVertices} />

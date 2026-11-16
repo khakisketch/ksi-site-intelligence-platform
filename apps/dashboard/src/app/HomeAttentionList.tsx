@@ -48,7 +48,7 @@ function ArrowIcon() {
  */
 export function HomeAttentionList({
   items,
-  title = "확인이 필요한 현장",
+  title = "확인이 필요한 프로젝트",
   description,
   regionLabel = "확인 필요 프로젝트 목록",
 }: {

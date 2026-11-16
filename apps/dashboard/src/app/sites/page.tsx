@@ -40,7 +40,7 @@ import { SITE_STATUSES, type SiteStatus, type SiteView } from "@/lib/core-api/ty
 import { SiteOnboarding } from "./SiteOnboarding";
 import { RegisterSiteAction } from "./RegisterSiteAction";
 
-export const metadata = { title: "현장 · KSI" };
+export const metadata = { title: "프로젝트 · KSI" };
 
 type SortKey = "attention" | "updated" | "name";
 
@@ -342,7 +342,7 @@ export default async function SitesPage({
           <section className="flex flex-col gap-2 lg:hidden" aria-label="프로젝트 목록">
             {/* 폰에서는 검색 아래 건수+필터 행이 수를 말하므로 제목 줄을 두지 않는다. */}
             <div className="hidden items-baseline gap-2 px-1 sm:flex">
-              <h2 className="text-lead font-bold">현장</h2>
+              <h2 className="text-lead font-bold">프로젝트</h2>
               <span className="text-caption text-ink-muted">
                 {sites !== null ? `${siteRows.length} / ${sites.length}곳 표시` : undefined}
               </span>

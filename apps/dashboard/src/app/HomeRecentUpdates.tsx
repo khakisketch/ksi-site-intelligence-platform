@@ -38,7 +38,7 @@ export function HomeRecentUpdates({ items }: { items: HomeRecentUpdateView[] }) 
           <p className="mt-1 text-caption break-keep text-ink-2">결과와 사람이 정리한 안건만 표시합니다.</p>
         </div>
         <Link href="/sites" className="tap-target inline-flex items-center text-caption font-semibold text-accent-text hover:underline">
-          현장 전체
+          프로젝트 전체
         </Link>
       </div>
 

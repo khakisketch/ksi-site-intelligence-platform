@@ -44,8 +44,8 @@ describe("승인된 Home 표시 계약(D7·D8)", () => {
     expect(home).toContain("attentionItems.length > 0");
     expect(home).toContain("recentSiteItems.length > 0");
     expect(home).toContain('regionLabel="최근 프로젝트 목록"');
-    expect(home).toContain("초기 설정이 필요한 현장");
-    expect(home).toContain("현장 전체를 열어 직접 확인하세요.");
+    expect(home).toContain("초기 설정이 필요한 프로젝트");
+    expect(home).toContain("프로젝트 전체를 열어 직접 확인하세요.");
     expect(home).toContain('<Link href="/sites"');
     expect(home.indexOf("<HomeAttentionList")).toBeLessThan(home.indexOf("<HomeSituationList"));
     // D7: 고정 큰 시각·거대 장식 커버 금지 — 높이는 내용이 정한다.
