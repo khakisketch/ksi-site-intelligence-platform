@@ -17,6 +17,8 @@ describe("current Site task vocabulary", () => {
       "등록 진행",
       "프로젝트 설정",
       "영역 자료 준비",
+      "자료 목록",
+      "영역 지도",
     ]);
     const hrefs = contextPaletteItems(items, "/sites/site-1/analysis").map((i) => i.href);
     expect(hrefs).toContain("/sites/site-1/analysis");

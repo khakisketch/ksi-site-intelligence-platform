@@ -36,5 +36,8 @@ export function contextPaletteItems(
     { key: `${site.key}:intake`, label: "등록 진행", group: "현재 현장", hint: site.label, href: scopedSiteHref(site.href, { panel: "intake" }, scope), keywords: "작업 담당 기한 이어서" },
     { key: `${site.key}:manage`, label: "프로젝트 설정", group: "현재 현장", hint: site.label, href: scopedSiteHref(site.href, { section: "manage" }, scope), keywords: "영역 경계 프로젝트 상태 설정" },
     { key: `${site.key}:prepare`, label: "영역 자료 준비", group: "현재 현장", hint: site.label, href: scopedSiteHref(`${site.href}/spatial-data-requests`, {}, scope), keywords: "내보내기 받기 다운로드 요청" },
+    // 자료 섹션(표)과 공간의 영역 지도 — 레일의 자료·공간과 같은 목적지를 이름으로도 찾을 수 있게 한다.
+    { key: `${site.key}:data-table`, label: "자료 목록", group: "현재 현장", hint: site.label, href: scopedSiteHref(`${site.href}/data`, {}, scope), keywords: "표 파일 검사 상태 등록 자료 영역별" },
+    { key: `${site.key}:areas`, label: "영역 지도", group: "현재 현장", hint: site.label, href: scopedSiteHref(site.href, { panel: "areas" }, scope), keywords: "영역 경계 구역 추가 범위 보관 지도" },
   ];
 }
