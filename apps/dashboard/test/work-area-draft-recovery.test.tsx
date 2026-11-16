@@ -84,10 +84,10 @@ it('restores an exact correction context with multiple rejected originals', asyn
   const key = `ksi.work-area.v1:site-1:${a}`;
   sessionStorage.setItem(key, JSON.stringify({version:1,siteId:'site-1',identity:a,payload}));
   render(<WorkAreaPanel {...props} initialWorkAreas={[area as never]} />);
-  await waitFor(() => expect(screen.getByText('구역 다시 그리기')).toBeTruthy());
+  await waitFor(() => expect(screen.getByText('영역 다시 그리기')).toBeTruthy());
   expect((screen.getByPlaceholderText('3공구 성토부') as HTMLInputElement).value).toBe('수정 이름');
   expect((screen.getByLabelText('원문 좌표') as HTMLInputElement).value).toBe('37.000x');
-  expect((screen.getByRole('button', {name:'대신할 구역으로 등록'}) as HTMLButtonElement).disabled).toBe(true);
+  expect((screen.getByRole('button', {name:'대신할 영역으로 등록'}) as HTMLButtonElement).disabled).toBe(true);
   expect(JSON.parse(sessionStorage.getItem(key)!).payload.snapshot.rejectedDraws).toEqual(payload.snapshot.rejectedDraws);
 });
 it('persists the final name change before immediate unmount', async () => {
@@ -116,11 +116,11 @@ it('saves a correction selection before immediately leaving', async () => {
   vi.stubGlobal('fetch', vi.fn(async () => ({ok:true, json:async () => ({fingerprint:a})})));
   const area = {schemaVersion:'1.0',workAreaId:'area-1',siteId:'site-1',name:'원래', polygon:{type:'Polygon',coordinates:[[[127,37],[128,37],[127,38],[127,37]]]},crs:'EPSG:4326',status:'ACTIVE',supersedes:null,createdAt:'2026-01-01T00:00:00Z'} as const;
   const view = render(<WorkAreaPanel {...props} initialWorkAreas={[area as never]} />);
-  await waitFor(() => expect(screen.getByRole('button', {name:'범위 바꾸기(새 구역)'})).toHaveProperty('disabled', false));
-  fireEvent.click(screen.getByRole('button', {name:'범위 바꾸기(새 구역)'}));
+  await waitFor(() => expect(screen.getByRole('button', {name:'범위 바꾸기(새 영역)'})).toHaveProperty('disabled', false));
+  fireEvent.click(screen.getByRole('button', {name:'범위 바꾸기(새 영역)'}));
   view.unmount();
   render(<WorkAreaPanel {...props} initialWorkAreas={[area as never]} />);
-  await waitFor(() => expect(screen.getByText('구역 다시 그리기')).toBeTruthy());
+  await waitFor(() => expect(screen.getByText('영역 다시 그리기')).toBeTruthy());
   expect((screen.getByPlaceholderText('3공구 성토부') as HTMLInputElement).value).toBe('원래');
 });
 it('ignores a late initial A response after a newer B focus verification', async () => {
@@ -160,7 +160,7 @@ it('does not POST if tab storage fails before submission', async () => {
   vi.stubGlobal('fetch', request);
   render(<WorkAreaPanel {...props} />);
   await waitFor(() => expect(screen.getByPlaceholderText('3공구 성토부')).toBeTruthy());
-  fireEvent.change(screen.getByPlaceholderText('3공구 성토부'), {target:{value:'새 구역'}});
+  fireEvent.change(screen.getByPlaceholderText('3공구 성토부'), {target:{value:'새 영역'}});
   fireEvent.click(screen.getByRole('button', {name:'경계 선택'}));
   installFakeSessionStorage({ setItem: () => { throw new Error('quota'); } });
   fireEvent.click(screen.getByRole('button', {name:'등록'}));
@@ -407,10 +407,10 @@ it('preserves the request when the panel unmounts during the post-success replac
     return new Promise(resolve=>{finishList=resolve;});
   }));
   const view=render(<WorkAreaPanel {...props} initialWorkAreas={[area as never]} />);
-  await waitFor(()=>expect(screen.getByRole('button',{name:'범위 바꾸기(새 구역)'})).toHaveProperty('disabled',false));
-  fireEvent.click(screen.getByRole('button',{name:'범위 바꾸기(새 구역)'}));
-  await waitFor(()=>expect(screen.getByRole('button',{name:'대신할 구역으로 등록'})).toHaveProperty('disabled',false));
-  fireEvent.click(screen.getByRole('button',{name:'대신할 구역으로 등록'}));
+  await waitFor(()=>expect(screen.getByRole('button',{name:'범위 바꾸기(새 영역)'})).toHaveProperty('disabled',false));
+  fireEvent.click(screen.getByRole('button',{name:'범위 바꾸기(새 영역)'}));
+  await waitFor(()=>expect(screen.getByRole('button',{name:'대신할 영역으로 등록'})).toHaveProperty('disabled',false));
+  fireEvent.click(screen.getByRole('button',{name:'대신할 영역으로 등록'}));
   await waitFor(()=>expect(finishList).toBeDefined());
   const key=`ksi.work-area.first-post.v1:site-1:${a}`; const raw=sessionStorage.getItem(key);
   expect(raw).toBeTruthy();
@@ -949,7 +949,7 @@ it('explains that even the known list is unavailable after a corrupt draft and o
   render(<WorkAreaPanel {...props} initialWorkAreas={[area as never]} />);
   await waitFor(()=>expect(screen.getByText(/임시 저장 내용을 확인하지 못했습니다/)).toBeTruthy());
   expect(screen.getByText('알려진 A 목록').closest('[hidden]')).toBeTruthy();
-  expect(screen.getByText(/작업구역 목록도 볼 수 없습니다/)).toBeTruthy();
+  expect(screen.getByText(/영역 목록도 볼 수 없습니다/)).toBeTruthy();
   fireEvent.click(screen.getByRole('button',{name:'계정과 저장 상태 다시 확인'}));
   await waitFor(()=>expect(fetcher).toHaveBeenCalledTimes(2));
   expect(sessionStorage.getItem(key)).toBe(broken);
@@ -975,7 +975,7 @@ it('rechecks after a transient storage read error without deleting raw and then 
   });
   const fetcher=vi.fn(async()=>({ok:true,json:async()=>({fingerprint:a})}));vi.stubGlobal('fetch',fetcher);
   render(<WorkAreaPanel {...props} initialWorkAreas={[area as never]} />);
-  await waitFor(()=>expect(screen.getByText(/작업구역 목록도 볼 수 없습니다/)).toBeTruthy());
+  await waitFor(()=>expect(screen.getByText(/영역 목록도 볼 수 없습니다/)).toBeTruthy());
   expect(screen.getByText('복구 가능한 목록').closest('[hidden]')).toBeTruthy();
   fail=false;fireEvent.click(screen.getByRole('button',{name:'계정과 저장 상태 다시 확인'}));
   await waitFor(()=>expect(screen.getByText('복구 가능한 목록').closest('[hidden]')).toBeNull());
@@ -1019,7 +1019,7 @@ it('ignores an older successful manual recheck after a newer account mismatch', 
   fireEvent.click(screen.getByRole('button',{name:'계정과 저장 상태 다시 확인'}));
   fireEvent.focus(window);expect(pending).toHaveLength(3);
   pending[2]!({ok:true,json:async()=>({fingerprint:b})});
-  await waitFor(()=>expect(screen.getByText(/작업구역 목록도 볼 수 없습니다/)).toBeTruthy());
+  await waitFor(()=>expect(screen.getByText(/영역 목록도 볼 수 없습니다/)).toBeTruthy());
   pending[1]!({ok:true,json:async()=>({fingerprint:a})});
   await new Promise(resolve=>setTimeout(resolve,0));
   expect(screen.getByText('지연 응답 목록').closest('[hidden]')).toBeTruthy();

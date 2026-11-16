@@ -763,7 +763,7 @@ export function MaskedAnalysisPanel({
               </button>
             </div>
           </div>}
-        </div> : <div className="mt-3"><ActionUnavailable label="마스크 입력 선언" description="마스크 입력 선언은 현장 쓰기 권한이 있는 담당자에게 요청하세요." /></div>}
+        </div> : <div className="mt-3"><ActionUnavailable label="마스크 입력 선언" description="마스크 입력 선언은 프로젝트 쓰기 권한이 있는 담당자에게 요청하세요." /></div>}
       </ResponsiveActionBoundary>
       {actionError && <div className="mt-3 rounded-md border border-crit bg-crit-bg px-3 py-2" role="alert">
         <p className="text-caption leading-5 text-crit-ink">{actionError}</p>
@@ -825,13 +825,13 @@ export function MaskedAnalysisPanel({
         <div><dt className="text-ink-muted">유효 셀(원본−마스크)</dt><dd>{formatCountKo(report.numericResult.coverage.effectiveSelectedCellCount)} · {formatArea(report.numericResult.coverage.effectiveSelectedAreaM2)}</dd></div>
         <div><dt className="text-ink-muted">공통 유효 셀</dt><dd>{formatCountKo(report.numericResult.coverage.commonValidCellCount)} · 유효 커버리지 100%</dd></div>
       </dl>
-      <p className="mt-2 text-caption leading-5 text-ink-muted">작업구역 구멍이 먼저 제외되고 마스크가 그 다음에 제외됩니다. 확인할 수 없는 셀은 없습니다.</p>
+      <p className="mt-2 text-caption leading-5 text-ink-muted">영역 구멍이 먼저 제외되고 마스크가 그 다음에 제외됩니다. 확인할 수 없는 셀은 없습니다.</p>
       <Disclosure label="계산·마스크 제외 영역 상세" className="mt-3 text-caption text-ink-2">
         <CoverageGridView witness={report.numericResult.coverage} />
       </Disclosure>
       {!report.numericResult.impact.unmaskedImpactKnown ? <div className="mt-3 rounded-md border border-line bg-sunk/50 px-3 py-2.5 text-body leading-5 text-ink-2">
         <p className="font-semibold text-ink-1">제외 영역의 원래 수치는 확인할 수 없음</p>
-        <p className="mt-1">원본 구역에 값이 없던 셀이 있어 마스크를 씌우지 않았을 때의 수치를 확정할 수 없습니다. 알 수 없는 값은 0으로 표시하지 않습니다.</p>
+        <p className="mt-1">원본 영역에 값이 없던 셀이 있어 마스크를 씌우지 않았을 때의 수치를 확정할 수 없습니다. 알 수 없는 값은 0으로 표시하지 않습니다.</p>
       </div> : <dl className="mt-3 grid gap-2 text-caption text-ink-2 sm:grid-cols-3">
         <div><dt className="font-semibold text-ink-muted">마스크 없음 절토</dt><dd className="num mt-1 break-words text-lead font-bold text-ink-1">{formatVolume(report.numericResult.impact.unmaskedCutM3 ?? 0)}</dd></div>
         <div><dt className="font-semibold text-ink-muted">마스크 없음 성토</dt><dd className="num mt-1 break-words text-lead font-bold text-ink-1">{formatVolume(report.numericResult.impact.unmaskedFillM3 ?? 0)}</dd></div>

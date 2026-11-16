@@ -31,7 +31,7 @@ describe("owned single-h1 hierarchy", () => {
     render(<main><MainPageTitle fallback="새 관측" /><ExternalObservationCreateForm
       siteId="site-1"
       siteName="A 현장"
-      workAreas={[{ workAreaId: "area-1", name: "1구역" }]}
+      workAreas={[{ workAreaId: "area-1", name: "1영역" }]}
     /></main>);
     expect(screen.getAllByRole("heading", { level: 1 })).toHaveLength(1);
     expect(screen.getByRole("heading", { level: 2, name: "관측 자료 등록" })).toBeTruthy();
@@ -42,7 +42,7 @@ describe("owned single-h1 hierarchy", () => {
     render(<main><MainPageTitle fallback="새 관측" /><ExternalObservationCreateForm
       siteId="site-1"
       siteName="A 현장"
-      workAreas={[{ workAreaId: "area-1", name: "1구역" }]}
+      workAreas={[{ workAreaId: "area-1", name: "1영역" }]}
     /></main>);
     const notice = screen.getByText(/노트북에서 같은 계정으로/);
     expect(notice.textContent).toContain("관측 자료 등록");

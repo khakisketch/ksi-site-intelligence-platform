@@ -68,7 +68,7 @@ export async function POST(
     const siteId = decodeURIComponent(rawSiteId);
     const workAreaId = decodeURIComponent(rawWorkAreaId);
     if (!isScopeId(siteId) || !isScopeId(workAreaId)) {
-      return NextResponse.json({ message: "현장 또는 작업구역 식별자가 올바르지 않습니다." }, { status: 400 });
+      return NextResponse.json({ message: "현장 또는 영역 식별자가 올바르지 않습니다." }, { status: 400 });
     }
     const body = await readBoundedJson(request);
     const input = parseMaskChildDeclaration(body);

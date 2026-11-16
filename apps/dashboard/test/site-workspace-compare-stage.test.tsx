@@ -97,7 +97,7 @@ const AREA = {
   schemaVersion: "1.0",
   siteId: "site-1",
   workAreaId: "tiny-1",
-  name: "미세 분석 구역",
+  name: "미세 분석 영역",
   polygon: null,
   crs: "",
   status: "ACTIVE",
@@ -202,7 +202,7 @@ describe("compare stage pair controls", () => {
     expect(selectB.value).toBe(REFB);
     // 날짜 정밀도는 선택지에 그대로 둔다.
     expect(selectA.textContent).toContain("2021");
-    // 폼마다 같은 구역·반대쪽 참조를 싣고, 제출하면 그 칸만 바뀐다.
+    // 폼마다 같은 영역·반대쪽 참조를 싣고, 제출하면 그 칸만 바뀐다.
     for (const [select, name, sibling] of [
       [selectA, "visualAAssetRef", "visualBAssetRef"],
       [selectB, "visualBAssetRef", "visualAAssetRef"],
@@ -363,7 +363,7 @@ describe("compare stage pair controls", () => {
     // 각 칸의 보기가 접히지 않고, 무대에 범용 이력 단추를 따로 두지 않는다 —
     // 만료된 각 칸의 직접 회복은 그 칸의 보기 자리에서 둔다.
     expect(within(stage).getAllByLabelText(/임시 시각화 어댑터/)).toHaveLength(2);
-    expect(within(stage).queryByRole("link", { name: "구역 자료 준비에서 확인" })).toBeNull();
+    expect(within(stage).queryByRole("link", { name: "영역 자료 준비에서 확인" })).toBeNull();
     // 쌍 동작은 칸·회복보다 먼저 둔다 — 실패 무대를 스크롤해야 보이지 않는다.
     // (만료 문구 자체는 각 칸의 보기 자리에서 말하며, 단위 검사에서 둔다.)
     const markup = stage.innerHTML;
@@ -411,8 +411,8 @@ describe("compare stage pair controls", () => {
   it("shows the scope fallback banner in the stage without opening the catalog", () => {
     render(shell(shellProps({ scopeNotice: true })));
     const stage = screen.getByRole("region", { name: "두 시점 비교" });
-    const banner = within(stage).getByText(/요청한 작업구역이 조회 범위에 없습니다/);
-    expect(banner.textContent).toContain("미세 분석 구역");
+    const banner = within(stage).getByText(/요청한 영역이 조회 범위에 없습니다/);
+    expect(banner.textContent).toContain("미세 분석 영역");
     expect(banner.closest('[role="status"]')).toBeTruthy();
     expect(document.getElementById("workbench-catalog")).toBeNull();
   });
@@ -420,7 +420,7 @@ describe("compare stage pair controls", () => {
   it("keeps the scope fallback banner visible on narrow viewports", () => {
     render(shell(shellProps({ scopeNotice: true })));
     const stage = screen.getByRole("region", { name: "두 시점 비교" });
-    const banner = within(stage).getByText(/요청한 작업구역이 조회 범위에 없습니다/);
+    const banner = within(stage).getByText(/요청한 영역이 조회 범위에 없습니다/);
     // A stale link on a phone must still explain the fallback — never hide it below sm.
     expect(banner.className).not.toMatch(/max-sm:hidden/);
     expect(banner.closest('[role="status"]')).toBeTruthy();
@@ -462,7 +462,7 @@ describe("explore empty state", () => {
   it("puts the explicit register path in the main stage for a true empty area", () => {
     render(shell(exploreProps()));
     const stage = screen.getByRole("region", { name: "선택 관측 보기" });
-    expect(within(stage).getByText("미세 분석 구역에 확인된 관측이 없습니다")).toBeTruthy();
+    expect(within(stage).getByText("미세 분석 영역에 확인된 관측이 없습니다")).toBeTruthy();
     expect(within(stage).getByRole("list", { name: "자료 등록 순서" })).toBeTruthy();
     const primary = within(stage).getByRole("link", { name: "자료 등록" });
     expect(primary.getAttribute("href")).toBe("/sites/site-1/observations/new?workAreaId=tiny-1");
@@ -475,7 +475,7 @@ describe("explore empty state", () => {
       jobsState: "denied",
       ordinaryEntry: { ...NO_ENTRY, reason: "NO_PROJECTION" },
     })));
-    expect(screen.queryByText("미세 분석 구역에 확인된 관측이 없습니다")).toBeNull();
+    expect(screen.queryByText("미세 분석 영역에 확인된 관측이 없습니다")).toBeNull();
     expect(screen.getByText(/준비 기록을 조회할 권한이 없습니다/)).toBeTruthy();
   });
 
@@ -487,7 +487,7 @@ describe("explore empty state", () => {
     const stage = screen.getByRole("region", { name: "선택 관측 보기" });
     expect(within(stage).getByText(/등록 자료 목록을 조회할 권한이 없습니다/)).toBeTruthy();
     expect(within(stage).queryByText(/이 관측에서 화면에 둘 정사영상/)).toBeNull();
-    expect(screen.queryByText("미세 분석 구역에 확인된 관측이 없습니다")).toBeNull();
+    expect(screen.queryByText("미세 분석 영역에 확인된 관측이 없습니다")).toBeNull();
   });
 
   it("shows the catalog refetch state before the generic no-layer copy", () => {
@@ -498,7 +498,7 @@ describe("explore empty state", () => {
     const stage = screen.getByRole("region", { name: "선택 관측 보기" });
     expect(within(stage).getByText(/등록 자료 목록을 불러오지 못했습니다/)).toBeTruthy();
     expect(within(stage).queryByText(/이 관측에서 화면에 둘 정사영상/)).toBeNull();
-    expect(screen.queryByText("미세 분석 구역에 확인된 관측이 없습니다")).toBeNull();
+    expect(screen.queryByText("미세 분석 영역에 확인된 관측이 없습니다")).toBeNull();
   });
 
   it("does not show an empty register path when the list is unavailable", () => {
@@ -507,24 +507,24 @@ describe("explore empty state", () => {
       jobsState: "unavailable",
       ordinaryEntry: { ...NO_ENTRY, reason: "NO_PROJECTION" },
     })));
-    expect(screen.queryByText("미세 분석 구역에 확인된 관측이 없습니다")).toBeNull();
+    expect(screen.queryByText("미세 분석 영역에 확인된 관측이 없습니다")).toBeNull();
     expect(screen.getByText(/준비 기록을 불러오지 못했습니다/)).toBeTruthy();
   });
 });
 
-describe("새 현장 작업구역 첫 행동", () => {
+describe("새 현장 영역 첫 행동", () => {
   const empty = {
     mode: "explore", areas: [], areasKnown: true, areasState: "ready",
     selectedWorkAreaId: null, assetsState: { status: "not-requested" },
     projectionState: "not-requested", canCreateWorkArea: "allowed",
     facts: { siteId: "site-1", authorizedWorkAreaIds: [], entryDefault: null, observations: [], analyses: [] },
   };
-  it("닫힌 서랍을 열지 않고 등록 링크를 클릭해 현장 작업구역 관리로 이동한다", () => {
+  it("닫힌 서랍을 열지 않고 등록 링크를 클릭해 현장 영역 관리로 이동한다", () => {
     render(shell(shellProps(empty)));
     const stage = screen.getByRole("region", { name: "선택 관측 보기" });
-    expect(within(stage).getByText("등록된 작업구역이 없습니다")).toBeTruthy();
-    const link = within(stage).getByRole("link", { name: "작업구역 등록" });
-    expect(link.getAttribute("href")).toBe("/sites/site-1/work-areas");
+    expect(within(stage).getByText("등록된 영역이 없습니다")).toBeTruthy();
+    const link = within(stage).getByRole("link", { name: "영역 등록" });
+    expect(link.getAttribute("href")).toBe("/sites/site-1?panel=areas&manage=1");
     const click = vi.fn((event: MouseEvent) => event.preventDefault());
     link.addEventListener("click", click);
     link.focus();
@@ -535,53 +535,53 @@ describe("새 현장 작업구역 첫 행동", () => {
   it.each(["denied", "unavailable"])("목록 %s는 빈 목록이나 등록으로 오인하지 않는다", (state) => {
     render(shell(shellProps({ ...empty, areasKnown: false, areasState: state })));
     const stage = screen.getByRole("region", { name: "선택 관측 보기" });
-    expect(within(stage).queryByText("등록된 작업구역이 없습니다")).toBeNull();
-    expect(within(stage).queryByRole("link", { name: "작업구역 등록" })).toBeNull();
-    expect(within(stage).getByText(state === "denied" ? /작업구역 목록을 조회할 권한이 없습니다/ : /작업구역 목록을 불러오지 못했습니다/)).toBeTruthy();
+    expect(within(stage).queryByText("등록된 영역이 없습니다")).toBeNull();
+    expect(within(stage).queryByRole("link", { name: "영역 등록" })).toBeNull();
+    expect(within(stage).getByText(state === "denied" ? /영역 목록을 조회할 권한이 없습니다/ : /영역 목록을 불러오지 못했습니다/)).toBeTruthy();
   });
   it.each(["denied", "unknown"])("쓰기 권한 %s에서 등록을 제시하지 않는다", (permission) => {
     render(shell(shellProps({ ...empty, canCreateWorkArea: permission })));
     const stage = screen.getByRole("region", { name: "선택 관측 보기" });
-    expect(within(stage).queryByRole("link", { name: "작업구역 등록" })).toBeNull();
+    expect(within(stage).queryByRole("link", { name: "영역 등록" })).toBeNull();
     expect(within(stage).getByText(permission === "denied" ? /등록 권한이 없습니다/ : /등록 권한을 확인하지 못했습니다/)).toBeTruthy();
   });
   it("조회 실패에서 다시 확인을 누르면 서버 화면을 새로 읽는다", () => {
     render(shell(shellProps({ ...empty, areasKnown: false, areasState: "unavailable" })));
     const stage = within(screen.getByRole("region", { name: "선택 관측 보기" }));
-    stage.getByRole("button", { name: "작업구역 목록 다시 확인" }).click();
+    stage.getByRole("button", { name: "영역 목록 다시 확인" }).click();
     expect(refresh).toHaveBeenCalledOnce();
   });
-  it("비교 모드에서도 빈 구역의 첫 행동을 보여주고 허위 관측 오류를 감춘다", () => {
+  it("비교 모드에서도 빈 영역의 첫 행동을 보여주고 허위 관측 오류를 감춘다", () => {
     render(shell(shellProps({ ...empty, mode: "compare" })));
     const stage = within(screen.getByRole("region", { name: "두 시점 비교" }));
-    expect(stage.getByRole("link", { name: "작업구역 등록" }).getAttribute("href")).toBe("/sites/site-1/work-areas");
-    expect(stage.queryByText(/비교할 작업구역이 없습니다/)).toBeNull();
+    expect(stage.getByRole("link", { name: "영역 등록" }).getAttribute("href")).toBe("/sites/site-1?panel=areas&manage=1");
+    expect(stage.queryByText(/비교할 영역이 없습니다/)).toBeNull();
   });
 });
 
-describe("보관·미선택 작업구역 회복", () => {
+describe("보관·미선택 영역 회복", () => {
   const archived = { ...AREA, status: "ARCHIVED" };
-  it("보관 구역이 자동 선택되어도 등록 가능한 활성 구역이 없음을 알리고 등록으로 이동한다", () => {
+  it("보관 영역이 자동 선택되어도 등록 가능한 활성 영역이 없음을 알리고 등록으로 이동한다", () => {
     render(shell(shellProps({ mode: "explore", areas: [archived], selectedWorkAreaId: "tiny-1", canCreateWorkArea: "allowed" })));
     const stage = within(screen.getByRole("region", { name: "선택 관측 보기" }));
-    expect(stage.getByText(/활성 작업구역이 없습니다/)).toBeTruthy();
-    expect(stage.getByRole("link", { name: "작업구역 등록" }).getAttribute("href")).toBe("/sites/site-1/work-areas");
+    expect(stage.getByText(/활성 영역이 없습니다/)).toBeTruthy();
+    expect(stage.getByRole("link", { name: "영역 등록" }).getAttribute("href")).toBe("/sites/site-1?panel=areas&manage=1");
   });
-  it.each(["denied", "unknown"])("보관 구역만 있을 때 쓰기 권한 %s는 등록 동작을 열지 않는다", (permission) => {
+  it.each(["denied", "unknown"])("보관 영역만 있을 때 쓰기 권한 %s는 등록 동작을 열지 않는다", (permission) => {
     render(shell(shellProps({ mode: "explore", areas: [archived], selectedWorkAreaId: "tiny-1", canCreateWorkArea: permission })));
     const stage = within(screen.getByRole("region", { name: "선택 관측 보기" }));
-    expect(stage.getByText(/활성 작업구역이 없습니다/)).toBeTruthy();
-    expect(stage.queryByRole("link", { name: "작업구역 등록" })).toBeNull();
+    expect(stage.getByText(/활성 영역이 없습니다/)).toBeTruthy();
+    expect(stage.queryByRole("link", { name: "영역 등록" })).toBeNull();
     expect(stage.getByText(permission === "denied" ? /등록 권한이 없습니다/ : /등록 권한을 확인하지 못했습니다/)).toBeTruthy();
   });
-  it("보관 선택과 활성 구역이 함께 있으면 활성 구역이 없다고 말하지 않는다", () => {
+  it("보관 선택과 활성 영역이 함께 있으면 활성 영역이 없다고 말하지 않는다", () => {
     render(shell(shellProps({ mode: "explore", areas: [archived, { ...AREA, workAreaId: "active-2" }], selectedWorkAreaId: "tiny-1", canCreateWorkArea: "allowed" })));
-    expect(screen.queryByText(/활성 작업구역이 없습니다/)).toBeNull();
+    expect(screen.queryByText(/활성 영역이 없습니다/)).toBeNull();
   });
-  it("미선택 단일 구역은 도구 막대에서 선택할 수 있다", () => {
+  it("미선택 단일 영역은 도구 막대에서 선택할 수 있다", () => {
     render(shell(shellProps({ mode: "explore", areas: [AREA], selectedWorkAreaId: null })));
-    expect(screen.getByText("작업구역을 선택하세요")).toBeTruthy();
-    const button = screen.getByRole("button", { name: "작업구역 선택" });
+    expect(screen.getByText("영역을 선택하세요")).toBeTruthy();
+    const button = screen.getByRole("button", { name: "영역 선택" });
     const menu = document.getElementById(button.getAttribute("popovertarget")!)!;
     expect(menu.getAttribute("popover")).toBe("auto");
     const select = menu.querySelector("select")!;

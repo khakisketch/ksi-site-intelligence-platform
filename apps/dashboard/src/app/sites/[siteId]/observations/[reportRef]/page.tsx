@@ -156,8 +156,8 @@ export default async function SiteObservationDetailPage({
     return <ObservationDetailReadFailure siteId={siteId} error={error} subject="현장 정보" />;
   }
 
-  // 작업구역 이름은 표시 보조일 뿐이다. 이름 조회가 실패해도 보관 결과는
-  // 가리지 않는다 — 이름 없는 행은 '작업구역'으로 표시하고, 이름 실패만 따로
+  // 영역 이름은 표시 보조일 뿐이다. 이름 조회가 실패해도 보관 결과는
+  // 가리지 않는다 — 이름 없는 행은 '영역'으로 표시하고, 이름 실패만 따로
   // 알린다. 이름 목록에는 권한 없는 자료가 담기지 않으므로(실패 시 빈 목록)
   // 노출이 없다.
   const [projectionResult, areasResult] = await Promise.allSettled([
@@ -224,7 +224,7 @@ export default async function SiteObservationDetailPage({
     <ConsolePage density="dense">
       <PageHeader title={single ? "단일 시점 체적 결과" : "외부 비교 결과"} headingLevel={2}
         actions={<><PrintReportButton /><Link href={`/sites/${encodeURIComponent(siteId)}/observations`} className="btn">외부 비교 이력</Link></>} />
-    {areaNamesUnavailable && <InlineNotice>작업구역 이름을 불러오지 못했습니다. 이름이 없는 행은 작업구역으로 표시됩니다.</InlineNotice>}
+    {areaNamesUnavailable && <InlineNotice>영역 이름을 불러오지 못했습니다. 이름이 없는 행은 영역으로 표시됩니다.</InlineNotice>}
     <ExternalObservationHistory siteId={siteId} detailMode items={[{ reportRef, state: projection.state === "AVAILABLE" ? "AVAILABLE" : "HISTORICAL_SOURCE_UNAVAILABLE", result: projection.result ?? null }]} workAreaNames={names} />
     {detailReadError !== null && <ErrorState
       message={detailReadError instanceof CoreApiError && detailReadError.status === 403

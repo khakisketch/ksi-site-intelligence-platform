@@ -15,12 +15,12 @@ describe("WizardShell next-disabled reason (F16)", () => {
         currentStep={0}
         onNext={() => {}}
         nextDisabled
-        nextDisabledReason="현장 이름을 입력하세요."
+        nextDisabledReason="프로젝트 이름을 입력하세요."
       >
         <p>내용</p>
       </WizardShell>,
     );
-    expect(screen.getByText("현장 이름을 입력하세요.")).toBeTruthy();
+    expect(screen.getByText("프로젝트 이름을 입력하세요.")).toBeTruthy();
   });
 
   it("shows no reason text when the next button is enabled", () => {
@@ -30,11 +30,11 @@ describe("WizardShell next-disabled reason (F16)", () => {
         stepLabels={["1단계"]}
         currentStep={0}
         onNext={() => {}}
-        nextDisabledReason="현장 이름을 입력하세요."
+        nextDisabledReason="프로젝트 이름을 입력하세요."
       >
         <p>내용</p>
       </WizardShell>,
     );
-    expect(screen.queryByText("현장 이름을 입력하세요.")).toBeNull();
+    expect(screen.queryByText("프로젝트 이름을 입력하세요.")).toBeNull();
   });
 });

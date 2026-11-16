@@ -87,6 +87,22 @@ test("자료 섹션은 등록된 자료를 표로 보이고 선택·검색·등�
   await expectNoHorizontalOverflow(page);
 });
 
+test("공간의 영역 보기는 목록·지도·고른 영역의 자료 보기를 한 화면에 둔다", async ({ page }) => {
+  await login(page);
+  // 공간 뷰어의 맥락 막대에서 영역 보기로 들어간다 — 고른 영역이 그대로 이어진다.
+  await page.goto(`/sites/${info!.siteId}?workAreaId=${info!.workAreaId}`);
+  await page.getByRole("link", { name: "영역 지도" }).locator("visible=true").click();
+  await expect(page).toHaveURL(new RegExp(`panel=areas.*workAreaId=${info!.workAreaId}|workAreaId=${info!.workAreaId}.*panel=areas`));
+  const list = page.getByRole("region", { name: "영역 목록" });
+  await expect(list.getByRole("link").filter({ hasText: "등록" }).first()).toHaveAttribute("aria-current", "true");
+  await expect(page.locator('[data-space-areas-stage="true"] .leaflet-container')).toBeVisible();
+  await expectNoHorizontalOverflow(page);
+
+  // 고른 영역의 자료 보기는 공간의 자료 보기로 돌아간다.
+  await page.getByRole("link", { name: "이 영역 자료 보기" }).click();
+  await expect(page).toHaveURL(new RegExp(`/sites/${info!.siteId}\\?workAreaId=${info!.workAreaId}$`));
+});
+
 test("자료 검색은 파일명으로 목록을 좁힌다", async ({ page }) => {
   await login(page);
   await page.goto(`/sites/${info!.siteId}?panel=materials&workAreaId=${info!.workAreaId}`);
@@ -101,7 +117,7 @@ test("자료 검색은 파일명으로 목록을 좁힌다", async ({ page }) =>
 test("두 시점 비교는 A·B를 주소에 남기고, 준비 기록을 못 읽으면 빈 목록으로 단정하지 않는다", async ({ page }) => {
   await login(page);
   await page.goto(`/sites/${info!.siteId}?mode=compare&workAreaId=${info!.workAreaId}`);
-  // 선택 상자는 작업구역(0), A(1), B(2) 순서다.
+  // 선택 상자는 영역(0), A(1), B(2) 순서다.
   await page.locator("select").nth(1).selectOption({ index: 1 });
   // A 선택의 이동이 끝나야 B 칸이 A를 주소에 싣는다. 사람이 두 칸을 고르는 속도로 맞춘다.
   await expect(page).toHaveURL(/visualAAssetRef=/);
@@ -141,7 +157,7 @@ test("두 주기 결과는 관측일 순으로 비교되고, 검토를 남기면
     `/sites/${info!.siteId}?mode=results&workAreaId=${info!.workAreaId}&analysisId=${id}`;
   const main = page.getByRole("main");
 
-  // t1→t2 결과에서 t0→t1 결과가 같은 구역·임계값·셀 크기이므로 한 차트에 함께 놓인다.
+  // t1→t2 결과에서 t0→t1 결과가 같은 영역·임계값·셀 크기이므로 한 차트에 함께 놓인다.
   await page.goto(results(second!));
   await expect(main).toContainText("이전 결과와 비교");
   await expect(main).toContainText("비교 조건");

@@ -13,7 +13,7 @@ it("retains positive sub-square-metre areas from the actual padded-window report
     siteId: raw.siteId, workAreaId: raw.workAreaId, requestId: raw.requestId,
   });
   render(<MaskedAnalysisPanel siteId={raw.siteId} workAreaId={raw.workAreaId}
-    workAreaName="합성 구역" canRequest={false} maskBudgetBytes={null}
+    workAreaName="합성 영역" canRequest={false} maskBudgetBytes={null}
     sourceCalculationIdentityDigest={detail.admission!.sourceCalculationIdentityDigest}
     initialChild={null} initialCalculation={detail} />);
   expect(screen.getByText("4 · 0.04 m²")).toBeTruthy();

@@ -25,13 +25,13 @@ describe("work collaboration Core client", () => {
 
     await updateOrganizationWorkRosterMember("operator-a", {
       expectedRevision: 3,
-      displayName: "현장 담당자",
+      displayName: "프로젝트 담당자",
       roleHint: "FIELD_OPERATOR",
       status: "ACTIVE",
     }, "roster-1");
     expect(mocked.coreFetch).toHaveBeenLastCalledWith("/v1/organization-work-roster/operator-a", {
       method: "PUT",
-      body: { expectedRevision: 3, displayName: "현장 담당자", roleHint: "FIELD_OPERATOR", status: "ACTIVE" },
+      body: { expectedRevision: 3, displayName: "프로젝트 담당자", roleHint: "FIELD_OPERATOR", status: "ACTIVE" },
       headers: { "Idempotency-Key": "roster-1" },
     });
   });

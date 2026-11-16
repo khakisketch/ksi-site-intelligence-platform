@@ -42,7 +42,7 @@ function CoverageReader({ detail, allowMap, terse }: { detail: AnalysisView; all
       <button type="button" className="btn min-h-11" disabled={busy} onClick={() => void load()}>{resource ? "계산 범위 다시 확인" : "계산·제외 영역 보기"}</button>
       {busy && <button type="button" className="btn min-h-11" onClick={() => { controller.current?.abort(); setBusy(false); }}>불러오기 취소</button>}
     </div>
-    <p role="status" className="mt-2 text-xs leading-5 text-ink-2">{busy ? "Core에 보관된 범위 근거를 확인하고 있습니다." : terse ? "" : "등록된 구역 경계와 실제 계산 셀은 다를 수 있습니다. 저장된 셀 근거를 확인하세요."}</p>
+    <p role="status" className="mt-2 text-xs leading-5 text-ink-2">{busy ? "Core에 보관된 범위 근거를 확인하고 있습니다." : terse ? "" : "등록된 영역 경계와 실제 계산 셀은 다를 수 있습니다. 저장된 셀 근거를 확인하세요."}</p>
     <div role="alert" className="mt-1 text-sm leading-6 text-high-ink">{error}</div>
     {resource && <CoverageGridView witness={resource.coverage} terse={terse} />}
     {allowMap && resource?.gridReference && <>

@@ -82,7 +82,7 @@ async function goToConfirm() {
   fireEvent.change(screen.getByPlaceholderText("EPSG:5186"), { target: { value: "EPSG:5186" } });
   fireEvent.change(screen.getByPlaceholderText("KNGeoid2018"), { target: { value: "KNGeoid2018" } });
   fireEvent.click(screen.getByRole("button", { name: "다음" }));
-  await screen.findByRole("button", { name: "현장 등록" });
+  await screen.findByRole("button", { name: "프로젝트 등록" });
 }
 
 const requestMock = vi.fn();
@@ -102,14 +102,14 @@ afterEach(() => {
   vi.resetAllMocks();
 });
 
-describe("레거시 현장 등록 409·불명 (사용자 이벤트)", () => {
+describe("레거시 프로젝트 등록 409·불명 (사용자 이벤트)", () => {
   it("타인 ID 첫 409는 실패이며 자동 성공·이동이 없다", async () => {
     renderWizard();
     await goToConfirm();
     requestMock.mockResolvedValueOnce(
       jsonResponse({ message: "이미 등록된 현장 ID입니다.", code: "DUPLICATE_SITE_ID" }, 409),
     );
-    fireEvent.click(screen.getByRole("button", { name: "현장 등록" }));
+    fireEvent.click(screen.getByRole("button", { name: "프로젝트 등록" }));
     expect(await screen.findByText(/이미 등록된 현장 ID입니다/)).toBeTruthy();
     expect(mocked.push).not.toHaveBeenCalled();
   });
@@ -118,18 +118,18 @@ describe("레거시 현장 등록 409·불명 (사용자 이벤트)", () => {
     renderWizard();
     await goToConfirm();
     requestMock.mockResolvedValueOnce(jsonResponse(fullEchoSite(), 201));
-    fireEvent.click(screen.getByRole("button", { name: "현장 등록" }));
-    await screen.findByText("현장이 등록되었습니다.");
+    fireEvent.click(screen.getByRole("button", { name: "프로젝트 등록" }));
+    await screen.findByText("프로젝트가 등록되었습니다.");
 
     fireEvent.click(screen.getByRole("button", { name: "이전" }));
     fireEvent.click(screen.getByRole("button", { name: "다음" }));
-    await screen.findByRole("button", { name: "현장 등록" });
+    await screen.findByRole("button", { name: "프로젝트 등록" });
     requestMock.mockResolvedValueOnce(
       jsonResponse({ message: "이미 등록된 현장 ID입니다.", code: "DUPLICATE_SITE_ID" }, 409),
     );
-    fireEvent.click(screen.getByRole("button", { name: "현장 등록" }));
+    fireEvent.click(screen.getByRole("button", { name: "프로젝트 등록" }));
     expect(await screen.findByText(/자동으로 들어가지 않았습니다/)).toBeTruthy();
-    expect(screen.getByRole("link", { name: "현장 목록에서 직접 확인하기" })).toBeTruthy();
+    expect(screen.getByRole("link", { name: "프로젝트 목록에서 직접 확인하기" })).toBeTruthy();
     // 자동 성공 경로(2번째 push)가 열리지 않는다
     await waitFor(() => {
       expect(mocked.push).toHaveBeenCalledTimes(0);
@@ -140,8 +140,8 @@ describe("레거시 현장 등록 409·불명 (사용자 이벤트)", () => {
     renderWizard();
     await goToConfirm();
     requestMock.mockResolvedValueOnce(jsonResponse(fullEchoSite(), 201));
-    fireEvent.click(screen.getByRole("button", { name: "현장 등록" }));
-    await screen.findByText("현장이 등록되었습니다.");
+    fireEvent.click(screen.getByRole("button", { name: "프로젝트 등록" }));
+    await screen.findByText("프로젝트가 등록되었습니다.");
 
     fireEvent.click(screen.getByRole("button", { name: "이전" }));
     fireEvent.click(screen.getByRole("button", { name: "이전" }));
@@ -150,11 +150,11 @@ describe("레거시 현장 등록 409·불명 (사용자 이벤트)", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "다음" }));
     fireEvent.click(screen.getByRole("button", { name: "다음" }));
-    await screen.findByRole("button", { name: "현장 등록" });
+    await screen.findByRole("button", { name: "프로젝트 등록" });
     requestMock.mockResolvedValueOnce(
       jsonResponse({ message: "이미 등록된 현장 ID입니다.", code: "DUPLICATE_SITE_ID" }, 409),
     );
-    fireEvent.click(screen.getByRole("button", { name: "현장 등록" }));
+    fireEvent.click(screen.getByRole("button", { name: "프로젝트 등록" }));
     expect(await screen.findByText(/바뀐 내용/)).toBeTruthy();
     expect(mocked.push).not.toHaveBeenCalled();
   });
@@ -165,7 +165,7 @@ describe("레거시 현장 등록 409·불명 (사용자 이벤트)", () => {
     requestMock.mockResolvedValueOnce(
       jsonResponse({ message: "점검 중", code: "STORE_UNAVAILABLE" }, 503),
     );
-    fireEvent.click(screen.getByRole("button", { name: "현장 등록" }));
+    fireEvent.click(screen.getByRole("button", { name: "프로젝트 등록" }));
     expect(await screen.findByText(/결과를 확인하지 못했습니다/)).toBeTruthy();
 
     requestMock.mockResolvedValueOnce(
@@ -180,7 +180,7 @@ describe("레거시 현장 등록 409·불명 (사용자 이벤트)", () => {
     renderWizard();
     await goToConfirm();
     requestMock.mockRejectedValueOnce(new Error("network down"));
-    fireEvent.click(screen.getByRole("button", { name: "현장 등록" }));
+    fireEvent.click(screen.getByRole("button", { name: "프로젝트 등록" }));
     expect(await screen.findByText(/결과를 확인하지 못했습니다/)).toBeTruthy();
 
     requestMock.mockResolvedValueOnce(

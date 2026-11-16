@@ -59,8 +59,8 @@ describe("ExternalObservationCreateForm", () => {
   it("explains why the registration action is disabled and avoids exposing a synthetic work-area id", () => {
     render(<ExternalObservationCreateForm siteId="site-1" siteName="서쪽 현장" workAreas={[{ workAreaId: "wa-generated-1", name: "wa-generated-1" }]} />);
 
-    expect(screen.getByText("작업 이름을 입력하고 비교할 작업구역을 하나 이상 선택하세요.")).toBeTruthy();
-    expect(screen.getByRole("checkbox", { name: "이름을 확인할 수 없는 작업구역 1" })).toBeTruthy();
+    expect(screen.getByText("작업 이름을 입력하고 비교할 영역을 하나 이상 선택하세요.")).toBeTruthy();
+    expect(screen.getByRole("checkbox", { name: "이름을 확인할 수 없는 영역 1" })).toBeTruthy();
     expect(screen.queryByText("wa-generated-1")).toBeNull();
     expect((screen.getByRole("button", { name: "관측 자료 등록 계속" }) as HTMLButtonElement).disabled).toBe(true);
   });
@@ -71,8 +71,8 @@ describe("ExternalObservationCreateForm", () => {
     expect(screen.getByText("서쪽 현장")).toBeTruthy();
     expect(screen.queryByRole("heading", { name: "외부 산출물 등록" })).toBeNull();
     expect(screen.getByText("등록할 자료의 작업 이름과 범위를 선택하세요.")).toBeTruthy();
-    expect(screen.getByRole("list", { name: "자료 등록 흐름" }).querySelector('[aria-current="step"]')?.textContent).toBe("1. 작업구역");
-    expect(screen.getByRole("link", { name: "현장으로 돌아가기" }).getAttribute("href")).toBe("/sites/site-1");
+    expect(screen.getByRole("list", { name: "자료 등록 흐름" }).querySelector('[aria-current="step"]')?.textContent).toBe("1. 영역");
+    expect(screen.getByRole("link", { name: "프로젝트로 돌아가기" }).getAttribute("href")).toBe("/sites/site-1");
     expect(screen.getByLabelText("작업 이름").getAttribute("maxlength")).toBe("200");
     fireEvent.change(screen.getByLabelText("작업 이름"), { target: { value: "9월 6일 현황 비교" } });
     fireEvent.click(screen.getByLabelText("동측 절토면"));
@@ -114,8 +114,8 @@ describe("ExternalObservationCreateForm", () => {
 
   it("keeps external-result creation separate and gives a recovery link when no work area is available", () => {
     render(<ExternalObservationCreateForm siteId="site-1" siteName="서쪽 현장" workAreas={[]} />);
-    expect(screen.getByRole("link", { name: "작업구역 만들기" }).getAttribute("href")).toBe("/sites/site-1/work-areas");
-    expect(screen.getByRole("link", { name: "작업구역 목록 보기" }).getAttribute("href")).toBe("/sites/site-1/work-areas");
+    expect(screen.getByRole("link", { name: "영역 만들기" }).getAttribute("href")).toBe("/sites/site-1?panel=areas&manage=1");
+    expect(screen.getByRole("link", { name: "영역 목록 보기" }).getAttribute("href")).toBe("/sites/site-1?panel=areas&manage=1");
     expect(screen.getByText(/모바일에서는 목록을 확인할 수 있습니다/).textContent).toContain("같은 계정");
     expect(screen.getByRole("link", { name: /외부 비교 기록/ }).getAttribute("href")).toBe("/sites/site-1/observations");
     expect(screen.queryByRole("button", { name: "관측 자료 등록 계속" })).toBeNull();
@@ -161,16 +161,16 @@ describe("ExternalObservationCreateForm", () => {
       siteName="서쪽 현장"
       workAreas={[{ workAreaId: "wa-1", name: "동측 절토면" }]}
       initialWorkAreaIds={["wa-1"]}
-      scopeNotice="선택한 구역에서 시작합니다. 범위가 맞는지 확인하고 필요하면 바꾸세요."
+      scopeNotice="선택한 영역에서 시작합니다. 범위가 맞는지 확인하고 필요하면 바꾸세요."
     />);
     // 반복 진입이 아닌데 이전 비교 문구가 나오면 안 된다.
     expect(screen.queryByText(/이전 비교에 사용한/)).toBeNull();
     expect(screen.queryAllByText(/촬영 간격 기준을 미리 골랐습니다/)).toHaveLength(0);
     // 범위 공지는 데스크톱 폼과 작은 화면 요약에 하나씩만 둔다(한 번에 하나만 보인다).
-    expect(screen.getAllByText(/선택한 구역에서 시작합니다/)).toHaveLength(2);
+    expect(screen.getAllByText(/선택한 영역에서 시작합니다/)).toHaveLength(2);
     expect(screen.getAllByText(/파일은 다음 화면에서 제출합니다/)).toHaveLength(2);
     // 하나 고른 범위는 돌아가기 링크에 싣는다.
-    expect(screen.getByRole("link", { name: "현장으로 돌아가기" }).getAttribute("href")).toBe("/sites/site-1?workAreaId=wa-1");
+    expect(screen.getByRole("link", { name: "프로젝트로 돌아가기" }).getAttribute("href")).toBe("/sites/site-1?workAreaId=wa-1");
   });
 
   it.each([
@@ -374,8 +374,8 @@ describe("ExternalObservationCreateForm", () => {
     expect((freshDoc.querySelector('input[aria-label="동측 절토면"]') as HTMLInputElement).disabled).toBe(true);
     expect((freshDoc.querySelector("button.btn-primary") as HTMLButtonElement).disabled).toBe(true);
     // 준비 중에는 필수 입력 안내 3건이 아니라 준비 안내만 보인다.
-    expect(fresh).not.toContain("작업 이름을 입력하고 비교할 작업구역을 하나 이상 선택하세요");
-    expect(fresh).not.toContain("비교할 작업구역을 하나 이상 선택하세요");
+    expect(fresh).not.toContain("작업 이름을 입력하고 비교할 영역을 하나 이상 선택하세요");
+    expect(fresh).not.toContain("비교할 영역을 하나 이상 선택하세요");
     // Repeat: server values present, still locked before hydration. JS 없이
     // SSR만으로는 어떤 경우에도 제출할 수 없다.
     const repeat = renderToString(<ExternalObservationCreateForm
@@ -459,7 +459,7 @@ describe("ExternalObservationCreateForm", () => {
     try {
       // hydration 뒤에도 입력 전에는 잠금과 동일하게 막히고, 필수 입력 안내가 보인다.
       expect((screen.getByRole("button", { name: "관측 자료 등록 계속" }) as HTMLButtonElement).disabled).toBe(true);
-      expect(screen.getByText("작업 이름을 입력하고 비교할 작업구역을 하나 이상 선택하세요.")).toBeTruthy();
+      expect(screen.getByText("작업 이름을 입력하고 비교할 영역을 하나 이상 선택하세요.")).toBeTruthy();
       // hydration 이후의 실제 사용자 입력만 state가 된다.
       fireEvent.change(container.querySelector('input[aria-label="작업 이름"]') as HTMLInputElement, { target: { value: "사후 입력" } });
       fireEvent.click(container.querySelector('input[aria-label="동측 절토면"]') as HTMLInputElement);
@@ -503,7 +503,7 @@ describe("ExternalObservationCreateForm", () => {
       // hydration 뒤 실제 해제는 선택에서 빠지고, 강제 클릭으로도 나가지 않는다.
       fireEvent.click(container.querySelector('input[aria-label="동측 절토면"]') as HTMLInputElement);
       expect((screen.getByRole("button", { name: "관측 자료 등록 계속" }) as HTMLButtonElement).disabled).toBe(true);
-      expect(screen.getByText("비교할 작업구역을 하나 이상 선택하세요.")).toBeTruthy();
+      expect(screen.getByText("비교할 영역을 하나 이상 선택하세요.")).toBeTruthy();
       fireEvent.click(screen.getByRole("button", { name: "관측 자료 등록 계속" }));
       await waitFor(() => expect(fetchMock).not.toHaveBeenCalled());
     } finally {
@@ -559,12 +559,12 @@ describe("ExternalObservationCreateForm", () => {
     render(<ExternalObservationCreateForm
       siteId="site-1"
       siteName="서쪽 현장"
-      workAreas={[{ workAreaId: "wa-1", name: "A구역" }, { workAreaId: "wa-2", name: "B구역" }]}
+      workAreas={[{ workAreaId: "wa-1", name: "A영역" }, { workAreaId: "wa-2", name: "B영역" }]}
     />);
-    expect(screen.getByRole("link", { name: "현장으로 돌아가기" }).getAttribute("href")).toBe("/sites/site-1");
-    fireEvent.click(screen.getByLabelText("A구역"));
-    fireEvent.click(screen.getByLabelText("B구역"));
-    expect(screen.getByRole("link", { name: "현장으로 돌아가기" }).getAttribute("href")).toBe("/sites/site-1");
+    expect(screen.getByRole("link", { name: "프로젝트로 돌아가기" }).getAttribute("href")).toBe("/sites/site-1");
+    fireEvent.click(screen.getByLabelText("A영역"));
+    fireEvent.click(screen.getByLabelText("B영역"));
+    expect(screen.getByRole("link", { name: "프로젝트로 돌아가기" }).getAttribute("href")).toBe("/sites/site-1");
   });
 
   it("shows the repeat template notice only when an actual repeat template is provided", () => {
@@ -573,10 +573,10 @@ describe("ExternalObservationCreateForm", () => {
       siteName="서쪽 현장"
       workAreas={[{ workAreaId: "wa-1", name: "동측 절토면" }]}
       initialWorkAreaIds={["wa-1"]}
-      templateNotice="이전 관측의 활성 작업구역과 촬영 간격 기준을 미리 골랐습니다. 관측 자료를 등록하기 전에 범위를 확인하세요."
+      templateNotice="이전 관측의 활성 영역과 촬영 간격 기준을 미리 골랐습니다. 관측 자료를 등록하기 전에 범위를 확인하세요."
     />);
     // 데스크톱 폼과 작은 화면 요약에 하나씩 둔다(한 번에 하나만 보인다).
-    expect(screen.getAllByText(/이전 관측의 활성 작업구역/)).toHaveLength(2);
+    expect(screen.getAllByText(/이전 관측의 활성 영역/)).toHaveLength(2);
   });
 
   it("shows a read-only range summary for compact screens without any mutating control", () => {
@@ -585,10 +585,10 @@ describe("ExternalObservationCreateForm", () => {
       siteName="서쪽 현장"
       workAreas={[{ workAreaId: "wa-1", name: "동측 절토면" }, { workAreaId: "wa-2", name: "서측 제방" }]}
       initialWorkAreaIds={["wa-1"]}
-      templateNotice="이전 관측의 활성 작업구역과 촬영 간격 기준을 미리 골랐습니다. 관측 자료를 등록하기 전에 범위를 확인하세요."
+      templateNotice="이전 관측의 활성 영역과 촬영 간격 기준을 미리 골랐습니다. 관측 자료를 등록하기 전에 범위를 확인하세요."
     />);
     const summary = screen.getByTestId("compact-registration-summary");
-    expect(summary.textContent).toContain("이전 관측의 활성 작업구역");
+    expect(summary.textContent).toContain("이전 관측의 활성 영역");
     expect(summary.textContent).toContain("동측 절토면");
     expect(summary.textContent).toContain("서측 제방");
     expect(summary.textContent).toContain("선택 제안");

@@ -15,8 +15,10 @@ describe("current Site task vocabulary", () => {
       "자료 패널",
       "분석",
       "등록 진행",
-      "현장 설정",
-      "구역 자료 준비",
+      "프로젝트 설정",
+      "영역 자료 준비",
+      "자료 목록",
+      "영역 지도",
     ]);
     const hrefs = contextPaletteItems(items, "/sites/site-1/analysis").map((i) => i.href);
     expect(hrefs).toContain("/sites/site-1/analysis");
@@ -55,13 +57,13 @@ describe("current Site task vocabulary", () => {
       expect(hrefs.every((href) => !href.includes("analysisId") && !href.includes("currentWorkOrderId"))).toBe(true);
       expect(hrefs.every((href) => !href.includes("x".repeat(201)))).toBe(true);
     }
-    // 구역 없는 단독 참조는 버린다.
+    // 영역 없는 단독 참조는 버린다.
     const hrefs = contextPaletteItems(items, "/sites/site-1", "?assetRef=ksa-v1-" + "b".repeat(64)).map((item) => item.href);
     expect(hrefs.every((href) => !href.includes("assetRef"))).toBe(true);
   });
 
   it("drops unknown scope without touching the frozen result inputs", () => {
-    // 모르는 구역도 조용히 다른 구역으로 바꾸지 않는다 — 목적지만 간다.
+    // 모르는 영역도 조용히 다른 영역으로 바꾸지 않는다 — 목적지만 간다.
     const hrefs = contextPaletteItems(items, "/sites/site-1", "?workAreaId=ghost-area").map((item) => item.href);
     expect(hrefs).toContain("/sites/site-1?workAreaId=ghost-area");
   });
@@ -82,7 +84,7 @@ import { TopBarSearchTrigger } from "@/components/nav/TopBarSearchTrigger";
 
 const paletteItems: PaletteItem[] = [
   { key: "site:one", label: "남측 현장", group: "현장", href: "/sites/site-1", keywords: "opaque-source-1", hint: "현장 자료와 작업 보기" },
-  { key: "screen:sites", label: "현장 목록", group: "화면", href: "/sites" },
+  { key: "screen:sites", label: "프로젝트 목록", group: "화면", href: "/sites" },
 ];
 
 function openPalette() {
@@ -107,8 +109,8 @@ describe("palette modal interaction", () => {
     expect(screen.queryByRole("dialog")).toBeNull();
     openPalette();
     expect(screen.getByRole("dialog", { name: "검색 및 이동" })).toBeTruthy();
-    const input = screen.getByLabelText("화면 또는 현장 검색");
-    expect(input.getAttribute("placeholder")).toBe("화면 · 현장 검색");
+    const input = screen.getByLabelText("화면 또는 프로젝트 검색");
+    expect(input.getAttribute("placeholder")).toBe("화면 · 프로젝트 검색");
     expect(document.activeElement).toBe(input);
     expect(input.getAttribute("role")).toBe("combobox");
     const listbox = document.getElementById(input.getAttribute("aria-controls") ?? "");
@@ -123,7 +125,7 @@ describe("palette modal interaction", () => {
   it("traps Tab and Shift+Tab between input and close button", () => {
     render(h(CommandPalette, { items: paletteItems }));
     openPalette();
-    const input = screen.getByLabelText("화면 또는 현장 검색");
+    const input = screen.getByLabelText("화면 또는 프로젝트 검색");
     const close = screen.getByRole("button", { name: "팔레트 닫기" });
     // jsdom 은 Tab 기본 이동을 구현하지 않으므로 핸들러가 직접 움직이는
     // 경계(막→처음, 처음→막 Shift)만 단언한다. 중간 이동은 브라우저 기본 동작이다.
@@ -152,7 +154,7 @@ describe("palette modal interaction", () => {
     // Tab 정지가 아닌 곳에서 Tab 을 치면 첫 정지로 회수하고 기본 이동을 막는다.
     const prevented = !fireEvent.keyDown(options[1], { key: "Tab" });
     expect(prevented).toBe(true);
-    expect(document.activeElement).toBe(screen.getByLabelText("화면 또는 현장 검색"));
+    expect(document.activeElement).toBe(screen.getByLabelText("화면 또는 프로젝트 검색"));
   });
 
   it("locks background siblings inert and scroll while open, restores both on Escape with focus", () => {
@@ -171,7 +173,7 @@ describe("palette modal interaction", () => {
     openPalette();
     expect(main.inert).toBe(true);
     expect(document.body.style.overflow).toBe("hidden");
-    fireEvent.keyDown(screen.getByLabelText("화면 또는 현장 검색"), { key: "Escape" });
+    fireEvent.keyDown(screen.getByLabelText("화면 또는 프로젝트 검색"), { key: "Escape" });
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(main.inert).toBe(inertBefore);
     expect(document.body.style.overflow).toBe("");
@@ -181,7 +183,7 @@ describe("palette modal interaction", () => {
   it("moves with arrows and routes with Enter", () => {
     render(h(CommandPalette, { items: paletteItems }));
     openPalette();
-    const input = screen.getByLabelText("화면 또는 현장 검색");
+    const input = screen.getByLabelText("화면 또는 프로젝트 검색");
     fireEvent.keyDown(input, { key: "ArrowDown" });
     fireEvent.keyDown(input, { key: "Enter" });
     // pathname /sites/site-1 의 두 번째 맥락 항목 = 자료.
@@ -192,9 +194,9 @@ describe("palette modal interaction", () => {
   it("keeps a valid listbox on empty results and recovers when the query clears", () => {
     render(h(CommandPalette, { items: paletteItems }));
     openPalette();
-    const input = screen.getByLabelText("화면 또는 현장 검색");
+    const input = screen.getByLabelText("화면 또는 프로젝트 검색");
     fireEvent.change(input, { target: { value: "ㅁㅁㅁㅁㅁ" } });
-    expect(screen.getByText("일치하는 화면이나 현장이 없습니다.")).toBeTruthy();
+    expect(screen.getByText("일치하는 화면이나 프로젝트가 없습니다.")).toBeTruthy();
     expect(screen.getByRole("listbox")).toBeTruthy();
     expect(screen.queryByRole("option")).toBeNull();
     expect(document.getElementById(input.getAttribute("aria-controls") ?? "")).toBeTruthy();
@@ -238,7 +240,7 @@ describe("palette scoped cross-screen round trip", () => {
     window.history.replaceState({}, "", `/sites/site-1?workAreaId=wa-a&assetRef=${ref}`);
     render(h(CommandPalette, { items: paletteItems }));
     openPalette();
-    // 같은 구역·관측으로 Header와 같은 목적지에 간다 — 새 읽기 없이 주소만 싣는다.
+    // 같은 영역·관측으로 Header와 같은 목적지에 간다 — 새 읽기 없이 주소만 싣는다.
     const options = screen.getAllByRole("option");
     const labels = options.map((option) => option.textContent);
     expect(labels.some((text) => text?.includes("공간"))).toBe(true);
@@ -253,7 +255,7 @@ describe("palette scoped cross-screen round trip", () => {
     window.history.replaceState({}, "", `/sites/site-1?workAreaId=wa-a&assetRef=${ref}`);
     render(h(CommandPalette, { items: paletteItems }));
     openPalette();
-    expect(screen.getByText(/현재 현장 범위를 함께 이동합니다/)).toBeTruthy();
+    expect(screen.getByText(/현재 프로젝트 범위를 함께 이동합니다/)).toBeTruthy();
   });
 
   it("drops a malformed query from destinations instead of echoing it", () => {
@@ -305,7 +307,7 @@ describe("palette server-resolved scope bridge", () => {
   }
 
   it("fills a bare analysis deep link with the header-resolved area (two-area parity)", () => {
-    // /analysis?analysisId=… 에는 구역이 없지만, 서버가 기록에서 확인한 구역을
+    // /analysis?analysisId=… 에는 영역이 없지만, 서버가 기록에서 확인한 영역을
     // 헤더가 알고 있다. 팔레트는 헤더와 같은 목적지로 간다.
     navPath.current = "/sites/site-1/analysis";
     window.history.replaceState({}, "", "/sites/site-1/analysis?analysisId=a9");
@@ -327,7 +329,7 @@ describe("palette server-resolved scope bridge", () => {
   });
 
   it("fails closed on malformed or cross-site bridge values", () => {
-    // 깨진 참조는 버리고 구역만 싣는다.
+    // 깨진 참조는 버리고 영역만 싣는다.
     navPath.current = "/sites/site-1/analysis";
     window.history.replaceState({}, "", "/sites/site-1/analysis?analysisId=a9");
     renderWithBridge({ "data-site-id": "site-1", "data-work-area-id": "wa-b", "data-asset-ref": "bogus" });
@@ -346,7 +348,7 @@ describe("palette server-resolved scope bridge", () => {
   });
 
   it("fills a missing asset only from the matching header area, never another area", () => {
-    // URL 구역이 있고 관측이 없을 때, 같은 구역의 헤더 확인 관측만 메운다.
+    // URL 영역이 있고 관측이 없을 때, 같은 영역의 헤더 확인 관측만 메운다.
     navPath.current = "/sites/site-1";
     window.history.replaceState({}, "", "/sites/site-1?workAreaId=wa-a");
     renderWithBridge({ "data-site-id": "site-1", "data-work-area-id": "wa-a", "data-asset-ref": ref });
@@ -356,7 +358,7 @@ describe("palette server-resolved scope bridge", () => {
     expect(push).toHaveBeenCalledWith(`/sites/site-1?panel=materials&workAreaId=wa-a&assetRef=${ref}`);
     cleanup();
 
-    // 다른 구역의 관측은 가져오지 않는다 — 명시 구역이 이긴다.
+    // 다른 영역의 관측은 가져오지 않는다 — 명시 영역이 이긴다.
     renderWithBridge({ "data-site-id": "site-1", "data-work-area-id": "wa-b", "data-asset-ref": ref });
     openPalette();
     scoped = screen.getAllByRole("option").find((option) => option.textContent?.startsWith("자료 패널"));

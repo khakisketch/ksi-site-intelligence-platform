@@ -16,7 +16,7 @@ import type { PaletteItem } from "./palette-items";
  *
  * 현장 조회가 실패하면 **화면 항목만으로 연다**. 팔레트는 이동 수단이라, 현장을 못
  * 불러왔다고 이동 자체를 막으면 사용자가 갇힌다. 실패를 0건으로 위장하지도 않는다 —
- * 그냥 그 갈래가 비어 있고, 사용자는 현장 목록에서 확인할 수 있다.
+ * 그냥 그 갈래가 비어 있고, 사용자는 프로젝트 목록에서 확인할 수 있다.
  */
 export async function buildPaletteItems(snapshot?: readonly SiteView[] | null): Promise<PaletteItem[]> {
   const screens: PaletteItem[] = DESKTOP_NAV_ITEMS.map((item) => ({

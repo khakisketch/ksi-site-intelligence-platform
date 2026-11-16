@@ -176,7 +176,7 @@ function area(overrides: Record<string, unknown> = {}) {
     schemaVersion: "1",
     workAreaId: "wa-site-1-0001",
     siteId: SITE,
-    name: "기존 구역",
+    name: "기존 영역",
     polygon: { type: "Polygon", coordinates: [SENT_RING] },
     crs: "EPSG:4326",
     status: "ACTIVE",
@@ -194,7 +194,7 @@ function jsonResponse(body: unknown, status: number): Response {
 }
 
 function fillForm() {
-  fireEvent.change(screen.getByPlaceholderText("3공구 성토부"), { target: { value: "새 구역" } });
+  fireEvent.change(screen.getByPlaceholderText("3공구 성토부"), { target: { value: "새 영역" } });
   fireEvent.click(screen.getByRole("button", { name: "꼭짓점 채우기" }));
 }
 
@@ -255,7 +255,7 @@ function sentContinuity(callIndex: number): string | null {
   return headers?.["x-ksi-continuity-fingerprint"] ?? null;
 }
 
-function echoArea(workAreaId: string, name = "새 구역") {
+function echoArea(workAreaId: string, name = "새 영역") {
   return {
     schemaVersion: "1",
     workAreaId,
@@ -339,7 +339,7 @@ describe("WorkAreaPanel 불명 복구 (사용자 이벤트)", () => {
     fillForm();
     fireEvent.click(screen.getByRole("button", { name: "등록" }));
     expect(await screen.findByTestId("work-area-unknown-panel")).toBeTruthy();
-    expect(screen.getByPlaceholderText("3공구 성토부")).toHaveProperty("value", "새 구역");
+    expect(screen.getByPlaceholderText("3공구 성토부")).toHaveProperty("value", "새 영역");
     expect(screen.getByRole("button", { name: "등록" })).toHaveProperty("disabled", true);
   });
 
@@ -370,7 +370,7 @@ describe("WorkAreaPanel 불명 복구 (사용자 이벤트)", () => {
     fireEvent.click(screen.getByRole("button", { name: "등록" }));
     const panel = await screen.findByTestId("work-area-unknown-panel");
     expect(panel.textContent).toMatch(/노트북에서 같은 계정으로/);
-    expect(panel.textContent).toMatch(/이 현장의 ‘작업구역’ 화면/);
+    expect(panel.textContent).toMatch(/이 현장의 ‘영역’ 화면/);
     expect(panel.textContent).toMatch(/이 탭의 임시 기록은\s*다른 기기로 옮겨가지 않습니다/);
     expect(panel.textContent).toContain("원래 기록으로 재전송하려면 이 탭의 화면 폭을 1024px 이상으로 넓히세요");
     // 식별자 반출 없음 — 새로 둔 작은 화면 인계 문구에 기술 참조가 실리지 않는다.
@@ -468,7 +468,7 @@ describe("WorkAreaPanel 불명 복구 (사용자 이벤트)", () => {
     const submit = screen.getByRole("button", { name: "등록" });
     fireEvent.click(submit);
     fireEvent.click(submit);
-    resolvePost(jsonResponse({ verdict: "REGISTERED", detail: null, workArea: echoArea("wa-site-1-0001", "새 구역") }, 201));
+    resolvePost(jsonResponse({ verdict: "REGISTERED", detail: null, workArea: echoArea("wa-site-1-0001", "새 영역") }, 201));
     await waitFor(() => {
       expect(postCount()).toBe(1);
     });
@@ -483,14 +483,14 @@ describe("WorkAreaPanel 불명 복구 (사용자 이벤트)", () => {
     await screen.findByTestId("work-area-unknown-panel");
 
     vi.mocked(fetch).mockRejectedValueOnce(new Error("list down"));
-    fireEvent.click(screen.getByRole("button", { name: "작업구역 목록 다시 불러오기" }));
+    fireEvent.click(screen.getByRole("button", { name: "영역 목록 다시 불러오기" }));
     expect(await screen.findByTestId("work-area-verify-outcome")).toHaveProperty(
       "textContent",
       expect.stringMatching(/다시 읽지 못했습니다/),
     );
 
     vi.mocked(fetch).mockResolvedValueOnce(jsonResponse({ workAreas: [] }, 200));
-    fireEvent.click(screen.getByRole("button", { name: "작업구역 목록 다시 불러오기" }));
+    fireEvent.click(screen.getByRole("button", { name: "영역 목록 다시 불러오기" }));
     const verify = await screen.findByTestId("work-area-verify-outcome");
     expect(verify.textContent).toMatch(/증명이 아닙니다/);
     // 이름·모양 매칭 성공 단정이 없다
@@ -509,13 +509,13 @@ describe("WorkAreaPanel 불명 복구 (사용자 이벤트)", () => {
     vi.mocked(fetch).mockResolvedValueOnce(
       jsonResponse({ workAreas: [{ siteId: SITE, workAreaId: "wa-site-1-0009" }] }, 200),
     );
-    fireEvent.click(screen.getByRole("button", { name: "작업구역 목록 다시 불러오기" }));
+    fireEvent.click(screen.getByRole("button", { name: "영역 목록 다시 불러오기" }));
     expect(await screen.findByTestId("work-area-verify-outcome")).toHaveProperty(
       "textContent",
       expect.stringMatching(/다시 읽지 못했습니다/),
     );
     // 이전 목록이 그대로 있다
-    expect(screen.getByText("기존 구역")).toBeTruthy();
+    expect(screen.getByText("기존 영역")).toBeTruthy();
   });
 });
 
@@ -523,7 +523,7 @@ describe("WorkAreaPanel 대체 등록 보관 확인 (사용자 이벤트)", () =
   const OLD_ID = "wa-site-1-0001";
 
   function oldArea() {
-    return area({ workAreaId: OLD_ID, name: "기존 구역" });
+    return area({ workAreaId: OLD_ID, name: "기존 영역" });
   }
 
   /** 요청 본문을 에코하는 Core-like 성공 응답 — 원본 대조를 통과한다. */
@@ -562,12 +562,12 @@ describe("WorkAreaPanel 대체 등록 보관 확인 (사용자 이벤트)", () =
   async function startSupersede() {
     renderPanel([oldArea()]);
     await awaitReady();
-    fireEvent.click(screen.getByRole("button", { name: "범위 바꾸기(새 구역)" }));
-    await waitFor(() => expect(screen.getByRole("button", { name: "대신할 구역으로 등록" })).toHaveProperty("disabled", false));
+    fireEvent.click(screen.getByRole("button", { name: "범위 바꾸기(새 영역)" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "대신할 영역으로 등록" })).toHaveProperty("disabled", false));
   }
 
   function submitSupersede() {
-    fireEvent.click(screen.getByRole("button", { name: "대신할 구역으로 등록" }));
+    fireEvent.click(screen.getByRole("button", { name: "대신할 영역으로 등록" }));
   }
 
   it("이전 ID가 ARCHIVED로 관측될 때만 보관을 확정한다", async () => {
@@ -575,7 +575,7 @@ describe("WorkAreaPanel 대체 등록 보관 확인 (사용자 이벤트)", () =
       schemaVersion: "1",
       workAreaId: "wa-site-1-0002",
       siteId: SITE,
-      name: "기존 구역",
+      name: "기존 영역",
       polygon: { type: "Polygon", coordinates: [SENT_RING] },
       crs: "EPSG:4326",
       status: "ACTIVE",
@@ -586,7 +586,7 @@ describe("WorkAreaPanel 대체 등록 보관 확인 (사용자 이벤트)", () =
     await startSupersede();
     submitSupersede();
     await waitFor(() => {
-      expect(notifyMock).toHaveBeenCalledWith("새 작업구역을 등록하고 이전 구역을 보관했습니다.");
+      expect(notifyMock).toHaveBeenCalledWith("새 영역을 등록하고 이전 영역을 보관했습니다.");
     });
     expect(screen.getByText("보관됨")).toBeTruthy();
   });
@@ -597,7 +597,7 @@ describe("WorkAreaPanel 대체 등록 보관 확인 (사용자 이벤트)", () =
         schemaVersion: "1",
         workAreaId: "wa-site-1-0002",
         siteId: SITE,
-        name: "기존 구역",
+        name: "기존 영역",
         polygon: { type: "Polygon", coordinates: [SENT_RING] },
         crs: "EPSG:4326",
         status: "ACTIVE",
@@ -610,9 +610,9 @@ describe("WorkAreaPanel 대체 등록 보관 확인 (사용자 이벤트)", () =
     submitSupersede();
     const notice = await screen.findByText(/아직 사용 중으로 보입니다/);
     expect(notice).toBeTruthy();
-    expect(screen.queryByText("새 작업구역을 등록하고 이전 구역을 보관했습니다.")).toBeNull();
+    expect(screen.queryByText("새 영역을 등록하고 이전 영역을 보관했습니다.")).toBeNull();
     expect(notifyMock).not.toHaveBeenCalledWith(
-      "새 작업구역을 등록하고 이전 구역을 보관했습니다.",
+      "새 영역을 등록하고 이전 영역을 보관했습니다.",
     );
   });
 
@@ -622,7 +622,7 @@ describe("WorkAreaPanel 대체 등록 보관 확인 (사용자 이벤트)", () =
         schemaVersion: "1",
         workAreaId: "wa-site-1-0002",
         siteId: SITE,
-        name: "기존 구역",
+        name: "기존 영역",
         polygon: { type: "Polygon", coordinates: [SENT_RING] },
         crs: "EPSG:4326",
         status: "ACTIVE",
@@ -633,15 +633,15 @@ describe("WorkAreaPanel 대체 등록 보관 확인 (사용자 이벤트)", () =
     await startSupersede();
     submitSupersede();
     expect(await screen.findByText(/목록에 없어/)).toBeTruthy();
-    expect(screen.queryByText("새 작업구역을 등록하고 이전 구역을 보관했습니다.")).toBeNull();
+    expect(screen.queryByText("새 영역을 등록하고 이전 영역을 보관했습니다.")).toBeNull();
   });
 
-  it("대체 등록 뒤 목록을 읽지 못하면 새 구역 등록만 확정한다", async () => {
+  it("대체 등록 뒤 목록을 읽지 못하면 새 영역 등록만 확정한다", async () => {
     mockSupersedeFlow("fail");
     await startSupersede();
     submitSupersede();
     expect(await screen.findByText(/보관됐는지는 확인하지 못했습니다/)).toBeTruthy();
-    expect(screen.queryByText("새 작업구역을 등록하고 이전 구역을 보관했습니다.")).toBeNull();
+    expect(screen.queryByText("새 영역을 등록하고 이전 영역을 보관했습니다.")).toBeNull();
   });
 
   it("createdAt이 빠진 성공 본문은 unknown이다 (정렬 crash 방지)", async () => {    vi.mocked(fetch).mockImplementation(async (url: string | URL | Request, init?: RequestInit) => {
@@ -763,7 +763,7 @@ describe("WorkAreaPanel 확인 기록 보존 (사용자 이벤트)", () => {
 
     // 새 입력으로 두 번째 요청 — 이전 묶음과 섞지 않는다
     fireEvent.change(screen.getByPlaceholderText("3공구 성토부"), {
-      target: { value: "두 번째 구역" },
+      target: { value: "두 번째 영역" },
     });
     fireEvent.click(screen.getByRole("button", { name: "꼭짓점 채우기" }));
     const callsBefore = vi.mocked(fetch).mock.calls.length;
@@ -777,7 +777,7 @@ describe("WorkAreaPanel 확인 기록 보존 (사용자 이벤트)", () => {
     expect(episodes).toHaveLength(1);
     expect(episodes[0]?.textContent).toMatch(/묶음 1/);
     expect(episodes[0]?.textContent).toMatch(/확인되지 않은 채 남긴 요청: 1건/);
-    expect(screen.getByTestId("work-area-unknown-panel").textContent).toMatch(/두 번째 구역/);
+    expect(screen.getByTestId("work-area-unknown-panel").textContent).toMatch(/두 번째 영역/);
     expect(screen.queryAllByTestId("work-area-retry-outcome")).toHaveLength(0);
   });
 });
@@ -850,13 +850,13 @@ describe("WorkAreaPanel 계정 경계 (사용자 이벤트)", () => {
     expect(postCount()).toBe(0);
     expect(screen.queryByTestId("work-area-unknown-panel")).toBeNull();
     // 빈 목록 안내는 그대로 보인다
-    expect(screen.getByText(/아직 등록된 작업구역이 없습니다/)).toBeTruthy();
+    expect(screen.getByText(/아직 등록된 영역이 없습니다/)).toBeTruthy();
   });
 
   it("확인값이 없어도 기존 목록 읽기는 그대로 보인다", async () => {
     renderPanel([area()], null);
     await awaitGateFailed();
-    expect(screen.getByText("기존 구역")).toBeTruthy();
+    expect(screen.getByText("기존 영역")).toBeTruthy();
     expect(screen.queryByTestId("work-area-unknown-panel")).toBeNull();
   });
 
@@ -1019,7 +1019,7 @@ describe("WorkAreaPanel 지도 진행 중·미반영 가드 (사용자 이벤트
   });
 
   it("정정 흐름에서도 편집 중 대체 등록이 막히고 취소 후 원래 범위로 나간다", async () => {
-    const old = area({ workAreaId: "wa-site-1-0001", name: "기존 구역" });
+    const old = area({ workAreaId: "wa-site-1-0001", name: "기존 영역" });
     vi.mocked(fetch).mockImplementation(async (url: string | URL | Request, init?: RequestInit) => {
       const u = String(url);
       if (init?.method === "POST" && u.endsWith("/work-areas")) {
@@ -1051,7 +1051,7 @@ describe("WorkAreaPanel 지도 진행 중·미반영 가드 (사용자 이벤트
                 schemaVersion: "1",
                 workAreaId: "wa-site-1-0002",
                 siteId: SITE,
-                name: "기존 구역",
+                name: "기존 영역",
                 polygon: { type: "Polygon", coordinates: [SENT_RING] },
                 crs: "EPSG:4326",
                 status: "ACTIVE",
@@ -1068,20 +1068,20 @@ describe("WorkAreaPanel 지도 진행 중·미반영 가드 (사용자 이벤트
     });
     renderPanel([old]);
     await awaitReady();
-    fireEvent.click(screen.getByRole("button", { name: "범위 바꾸기(새 구역)" }));
-    await screen.findByRole("button", { name: "대신할 구역으로 등록" });
+    fireEvent.click(screen.getByRole("button", { name: "범위 바꾸기(새 영역)" }));
+    await screen.findByRole("button", { name: "대신할 영역으로 등록" });
 
     fireEvent.click(screen.getByRole("button", { name: "편집 시작" }));
-    expect(screen.getByRole("button", { name: "대신할 구역으로 등록" })).toHaveProperty("disabled", true);
+    expect(screen.getByRole("button", { name: "대신할 영역으로 등록" })).toHaveProperty("disabled", true);
     const callsBefore = vi.mocked(fetch).mock.calls.length;
-    fireEvent.click(screen.getByRole("button", { name: "대신할 구역으로 등록" }));
+    fireEvent.click(screen.getByRole("button", { name: "대신할 영역으로 등록" }));
     expect(vi.mocked(fetch).mock.calls.length).toBe(callsBefore);
 
     fireEvent.click(screen.getByRole("button", { name: "편집 종료" }));
     const postBefore = postCount();
-    fireEvent.click(screen.getByRole("button", { name: "대신할 구역으로 등록" }));
+    fireEvent.click(screen.getByRole("button", { name: "대신할 영역으로 등록" }));
     await waitFor(() => {
-      expect(notifyMock).toHaveBeenCalledWith("새 작업구역을 등록하고 이전 구역을 보관했습니다.");
+      expect(notifyMock).toHaveBeenCalledWith("새 영역을 등록하고 이전 영역을 보관했습니다.");
     });
     const post = postCall(postBefore) as RequestInit;
     const sentBody = JSON.parse(String(post.body)) as Record<string, unknown>;
@@ -1105,7 +1105,7 @@ describe("WorkAreaPanel 지도 진행 중·미반영 가드 (사용자 이벤트
     expect(screen.queryByRole("button", { name: "꼭짓점 채우기" })).toBeNull();
     expect(screen.getByTestId("mock-vertices-json").textContent).toBe(A_JSON);
     expect(await screen.findByTestId("work-area-unknown-panel")).toBeTruthy();
-    expect(screen.getByTestId("work-area-unknown-panel").textContent).toMatch(/새 구역/);
+    expect(screen.getByTestId("work-area-unknown-panel").textContent).toMatch(/새 영역/);
 
     // 유실 뒤 외부 경로로 B가 들어와도 명시적 재전송은 동결된 첫 요청(A)으로만 나간다
     fireEvent.click(screen.getByRole("button", { name: "외부 지도 변경(B)" }));
@@ -1122,23 +1122,23 @@ describe("WorkAreaPanel 지도 진행 중·미반영 가드 (사용자 이벤트
       type: "Polygon",
       coordinates: [SENT_RING],
     });
-    expect(retryBody.name).toBe("새 구역");
+    expect(retryBody.name).toBe("새 영역");
     expect(retryBody.supersedes).toBeNull();
     expect((retryInit.headers as Record<string, string>)["x-ksi-continuity-fingerprint"]).toBe(FP_A);
     // 화면 표시도 원래 A 요청을 유지한다
-    expect(screen.getByTestId("work-area-unknown-panel").textContent).toMatch(/새 구역/);
+    expect(screen.getByTestId("work-area-unknown-panel").textContent).toMatch(/새 영역/);
     expect(screen.getByTestId("mock-vertices-json").textContent).toBe(A_JSON);
   });
 
   it("대체 등록의 재전송도 동결된 supersedes와 원본 기하를 보낸다", async () => {
-    const old = area({ workAreaId: "wa-site-1-0001", name: "기존 구역" });
+    const old = area({ workAreaId: "wa-site-1-0001", name: "기존 영역" });
     vi.mocked(fetch).mockRejectedValueOnce(new Error("network down"));
     renderPanel([old]);
     await awaitReady();
-    fireEvent.click(screen.getByRole("button", { name: "범위 바꾸기(새 구역)" }));
-    await screen.findByRole("button", { name: "대신할 구역으로 등록" });
+    fireEvent.click(screen.getByRole("button", { name: "범위 바꾸기(새 영역)" }));
+    await screen.findByRole("button", { name: "대신할 영역으로 등록" });
     // 정정 폼은 기존 모양을 초기값으로 올린다 — mock 채우기는 같은 A 링이다.
-    fireEvent.click(screen.getByRole("button", { name: "대신할 구역으로 등록" }));
+    fireEvent.click(screen.getByRole("button", { name: "대신할 영역으로 등록" }));
     expect(await screen.findByTestId("work-area-unknown-panel")).toBeTruthy();
 
     vi.mocked(fetch).mockRejectedValueOnce(new Error("network down again"));
@@ -1150,7 +1150,7 @@ describe("WorkAreaPanel 지도 진행 중·미반영 가드 (사용자 이벤트
     // 원래 값이 null이었으면 현재값으로 채우지 않고 null을 보존한다.
     expect(retryBody.supersedes).toBe("wa-site-1-0001");
     expect(retryBody.polygon).toEqual({ type: "Polygon", coordinates: [SENT_RING] });
-    expect(retryBody.name).toBe("기존 구역");
+    expect(retryBody.name).toBe("기존 영역");
   });
 });
 
@@ -1159,31 +1159,31 @@ describe("WorkAreaPanel 이탈 확인 (사용자 이벤트)", () => {
     return [
       area({
         workAreaId: "wa-site-1-0001",
-        name: "기존 1구역",
+        name: "기존 1영역",
         createdAt: "2026-10-01T00:00:00Z",
       }),
       area({
         workAreaId: "wa-site-1-0002",
-        name: "기존 2구역",
+        name: "기존 2영역",
         createdAt: "2026-10-02T00:00:00Z",
       }),
     ];
   }
 
-  it("미반영 입력이 있으면 다른 구역으로 범위 바꾸기 전에 확인하고, 계속하면 보존된다", async () => {
+  it("미반영 입력이 있으면 다른 영역으로 범위 바꾸기 전에 확인하고, 계속하면 보존된다", async () => {
     renderPanel(twoAreas());
     await awaitReady();
     fillForm();
     fireEvent.click(screen.getByRole("button", { name: "미반영 입력" }));
-    // 최신(2구역) 카드의 범위 바꾸기를 누른다 — 최신순 정렬이라 첫 번째다.
-    fireEvent.click(screen.getAllByRole("button", { name: "범위 바꾸기(새 구역)" })[0]!);
+    // 최신(2영역) 카드의 범위 바꾸기를 누른다 — 최신순 정렬이라 첫 번째다.
+    fireEvent.click(screen.getAllByRole("button", { name: "범위 바꾸기(새 영역)" })[0]!);
     expect(screen.getByTestId("work-area-abandon-confirm")).toBeTruthy();
     expect(screen.getByTestId("work-area-abandon-confirm").textContent).toMatch(
       /입력 중인 내용이 있습니다/,
     );
-    // 아직 전환되지 않았다 — 새 구역 등록 폼 그대로, 입력도 그대로다.
-    expect(screen.getByRole("heading", { name: "새 작업구역 등록" })).toBeTruthy();
-    expect((screen.getByPlaceholderText("3공구 성토부") as HTMLInputElement).value).toBe("새 구역");
+    // 아직 전환되지 않았다 — 새 영역 등록 폼 그대로, 입력도 그대로다.
+    expect(screen.getByRole("heading", { name: "새 영역 등록" })).toBeTruthy();
+    expect((screen.getByPlaceholderText("3공구 성토부") as HTMLInputElement).value).toBe("새 영역");
 
     fireEvent.click(screen.getByRole("button", { name: "계속 입력하기" }));
     expect(screen.queryByTestId("work-area-abandon-confirm")).toBeNull();
@@ -1197,37 +1197,37 @@ describe("WorkAreaPanel 이탈 확인 (사용자 이벤트)", () => {
     await awaitReady();
     fillForm();
     fireEvent.click(screen.getByRole("button", { name: "미반영 입력" }));
-    fireEvent.click(screen.getAllByRole("button", { name: "범위 바꾸기(새 구역)" })[0]!);
+    fireEvent.click(screen.getAllByRole("button", { name: "범위 바꾸기(새 영역)" })[0]!);
     expect(screen.getByTestId("work-area-abandon-confirm")).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: "입력 버리고 이동하기" }));
     expect(screen.queryByTestId("work-area-abandon-confirm")).toBeNull();
-    // 2구역 정정 폼으로 전환됐다.
-    expect(screen.getByRole("heading", { name: "구역 다시 그리기" })).toBeTruthy();
+    // 2영역 정정 폼으로 전환됐다.
+    expect(screen.getByRole("heading", { name: "영역 다시 그리기" })).toBeTruthy();
     expect((screen.getByPlaceholderText("3공구 성토부") as HTMLInputElement).value).toBe(
-      "기존 2구역",
+      "기존 2영역",
     );
   });
 
   it("그만두기도 미반영이면 확인하고, 버려야 초기화된다", async () => {
     renderPanel(twoAreas());
     await awaitReady();
-    fireEvent.click(screen.getAllByRole("button", { name: "범위 바꾸기(새 구역)" })[0]!);
-    await screen.findByRole("button", { name: "대신할 구역으로 등록" });
+    fireEvent.click(screen.getAllByRole("button", { name: "범위 바꾸기(새 영역)" })[0]!);
+    await screen.findByRole("button", { name: "대신할 영역으로 등록" });
     fireEvent.click(screen.getByRole("button", { name: "미반영 입력" }));
-    fireEvent.click(screen.getByRole("button", { name: "그만두고 새 구역으로 등록" }));
+    fireEvent.click(screen.getByRole("button", { name: "그만두고 새 영역으로 등록" }));
     expect(screen.getByTestId("work-area-abandon-confirm")).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: "계속 입력하기" }));
     // 정정 폼이 그대로 남는다.
-    expect(screen.getByRole("heading", { name: "구역 다시 그리기" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "영역 다시 그리기" })).toBeTruthy();
     expect((screen.getByPlaceholderText("3공구 성토부") as HTMLInputElement).value).toBe(
-      "기존 2구역",
+      "기존 2영역",
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "그만두고 새 구역으로 등록" }));
+    fireEvent.click(screen.getByRole("button", { name: "그만두고 새 영역으로 등록" }));
     fireEvent.click(screen.getByRole("button", { name: "입력 버리고 이동하기" }));
-    expect(screen.getByRole("heading", { name: "새 작업구역 등록" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "새 영역 등록" })).toBeTruthy();
     expect((screen.getByPlaceholderText("3공구 성토부") as HTMLInputElement).value).toBe("");
     expect(screen.getByTestId("mock-vertex-count").textContent).toBe("0");
   });
@@ -1235,10 +1235,10 @@ describe("WorkAreaPanel 이탈 확인 (사용자 이벤트)", () => {
   it("미반영이 없으면 확인 없이 바로 전환된다", async () => {
     renderPanel(twoAreas());
     await awaitReady();
-    fireEvent.click(screen.getAllByRole("button", { name: "범위 바꾸기(새 구역)" })[0]!);
-    await screen.findByRole("button", { name: "대신할 구역으로 등록" });
+    fireEvent.click(screen.getAllByRole("button", { name: "범위 바꾸기(새 영역)" })[0]!);
+    await screen.findByRole("button", { name: "대신할 영역으로 등록" });
     expect(screen.queryByTestId("work-area-abandon-confirm")).toBeNull();
-    expect(screen.getByRole("heading", { name: "구역 다시 그리기" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "영역 다시 그리기" })).toBeTruthy();
   });
 
   it("새로고침·탭 닫기는 입력이 있으면 브라우저 확인을 띄운다", async () => {
@@ -1304,7 +1304,7 @@ describe("WorkAreaPanel 불명 원본 메모리 한계 고지 (사용자 이벤�
     fireEvent.click(screen.getByRole("button", { name: "외부 지도 변경(B)" }));
     // 입력은 바뀌어도 불명 패널의 원본 표시(이름·수량)는 동결된 A 그대로다.
     const panel = screen.getByTestId("work-area-unknown-panel");
-    expect(panel.textContent).toMatch(/새 구역/);
+    expect(panel.textContent).toMatch(/새 영역/);
     expect(panel.textContent).toMatch(/꼭짓점 3개/);
     expect(screen.getByTestId("mock-vertices-json").textContent).toBe(
       JSON.stringify(A_TRIANGLE),
@@ -1313,7 +1313,7 @@ describe("WorkAreaPanel 불명 원본 메모리 한계 고지 (사용자 이벤�
     // '입력 비우고 새로 시작'은 원본을 파기하지 않고 확인 기록으로 옮긴다.
     fireEvent.click(screen.getByTestId("work-area-abandon-button"));
     const log = await screen.findByTestId("work-area-episode-log");
-    expect(log.textContent).toMatch(/새 구역/);
+    expect(log.textContent).toMatch(/새 영역/);
     expect(log.textContent).toMatch(/확인되지 않은 채 남긴 요청: 1건/);
   });
 
@@ -1381,12 +1381,12 @@ describe("WorkAreaPanel 이탈 확인 접근성 (사용자 이벤트)", () => {
     return [
       area({
         workAreaId: "wa-site-1-0001",
-        name: "기존 1구역",
+        name: "기존 1영역",
         createdAt: "2026-10-01T00:00:00Z",
       }),
       area({
         workAreaId: "wa-site-1-0002",
-        name: "기존 2구역",
+        name: "기존 2영역",
         createdAt: "2026-10-02T00:00:00Z",
       }),
     ];
@@ -1397,7 +1397,7 @@ describe("WorkAreaPanel 이탈 확인 접근성 (사용자 이벤트)", () => {
     await awaitReady();
     fillForm();
     fireEvent.click(screen.getByRole("button", { name: "미반영 입력" }));
-    const switcher = screen.getAllByRole("button", { name: "범위 바꾸기(새 구역)" })[0]!;
+    const switcher = screen.getAllByRole("button", { name: "범위 바꾸기(새 영역)" })[0]!;
     switcher.focus();
     fireEvent.click(switcher);
     return switcher;
@@ -1437,10 +1437,10 @@ describe("WorkAreaPanel 이탈 확인 접근성 (사용자 이벤트)", () => {
     fireEvent.click(switcher);
     fireEvent.click(screen.getByRole("button", { name: "입력 버리고 이동하기" }));
     expect(screen.queryByTestId("work-area-abandon-confirm")).toBeNull();
-    const heading = screen.getByRole("heading", { name: "구역 다시 그리기" });
+    const heading = screen.getByRole("heading", { name: "영역 다시 그리기" });
     expect(document.activeElement).toBe(heading);
     expect((screen.getByPlaceholderText("3공구 성토부") as HTMLInputElement).value).toBe(
-      "기존 2구역",
+      "기존 2영역",
     );
   });
 });

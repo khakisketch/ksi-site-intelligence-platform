@@ -25,7 +25,7 @@ export async function hasAllPermissions(...perms: Permission[]): Promise<boolean
 }
 
 /**
- * F-01 현장 등록 모드 — Core whoami 의 registry metadata 로만 판정한다.
+ * F-01 프로젝트 등록 모드 — Core whoami 의 registry metadata 로만 판정한다.
  *
  * - `MAPPED_BOOTSTRAP`: registry 발급 신원 + SITE_BOOTSTRAP + SITES_WRITE.
  *   서버 발급 siteId 계약(bootstrapRequestId)을 써야 하고, 은퇴한 MISSIONS_ISSUE
@@ -61,7 +61,7 @@ export async function getSiteRegistrationMode(): Promise<SiteRegistrationMode> {
 }
 
 /**
- * 현장 등록 게이트의 3상태 읽기. INV-040(정직한 unavailable) — 예전에는 whoami
+ * 프로젝트 등록 게이트의 3상태 읽기. INV-040(정직한 unavailable) — 예전에는 whoami
  * 실패를 전부 DENIED 로 뭉뚱그려 "권한 없음"으로만 보였다.
  *
  * - `allowed` — 등록 가능 모드 그대로(MAPPED_BOOTSTRAP | LEGACY_SITE_ID).
@@ -73,7 +73,7 @@ export async function getSiteRegistrationMode(): Promise<SiteRegistrationMode> {
  * 이 함수는 읽기 판정만 한다. getSiteRegistrationMode 는 그대로 둔다(호환).
  *
  * `accountFingerprint`는 이 페이지를 렌더한 세션의 서버 확인 신원 지문이다 —
- * 현장 등록 재시도의 계정 연속성 가드가 같은 탭의 원래 신원과 대조하는 재료다.
+ * 프로젝트 등록 재시도의 계정 연속성 가드가 같은 탭의 원래 신원과 대조하는 재료다.
  * 자격 증명·인가가 아니며 Core 계약·권한을 바꾸지 않는다. 신원을 확인할 수
  * 없으면(allowed인데 지문 계산 실패) null이며, 호출자는 이전 계약(보호 없음)
  * 으로 동작한다.

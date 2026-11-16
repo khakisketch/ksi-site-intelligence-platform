@@ -10,7 +10,7 @@ import { NAV_ITEMS } from "./nav-items";
 const STATIC_TITLES: Record<string, string> = {
   "/": "홈",
   "/sites": "현장",
-  "/sites/new": "현장 등록",
+  "/sites/new": "프로젝트 등록",
   "/more": "내 계정",
   "/help": "도움말",
   "/field": "작업",
@@ -36,11 +36,11 @@ export function resolvePageTitle(pathname: string | null, search?: { get(key: st
   if (/^\/sites\/[^/]+\/analysis\/?$/.test(pathname)) return "분석";
   if (/^\/sites\/[^/]+\/data\/?$/.test(pathname)) return "자료";
   if (/^\/sites\/[^/]+\/spatial-assets\/?$/.test(pathname)) return "공간";
-  if (/^\/sites\/[^/]+\/spatial-data-requests\/?$/.test(pathname)) return "구역 자료 준비";
-  if (/^\/sites\/[^/]+\/work-areas\/?$/.test(pathname)) return "작업구역";
+  if (/^\/sites\/[^/]+\/spatial-data-requests\/?$/.test(pathname)) return "영역 자료 준비";
+  if (/^\/sites\/[^/]+\/work-areas\/?$/.test(pathname)) return "영역";
   if (/^\/sites\/[^/]+\/?$/.test(pathname)) {
     const section = normalizeSiteTab(search?.get("section") ?? search?.get("tab"));
-    if (section === "manage") return "현장 설정";
+    if (section === "manage") return "프로젝트 설정";
     if (search?.get("mode") === "results") return "분석 결과";
     return section === "analysis" ? "분석" : "공간";
   }

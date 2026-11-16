@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { siteAreasHref } from "@/components/nav/site-context";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { cache } from "react";
@@ -32,7 +33,7 @@ import { DataTable } from "./DataTable";
 
 const getSiteForData = cache(getSite);
 
-// 문서 head는 AccountDisplayBoundary 밖이다 — 현장 이름·식별자를 싣지 않는다.
+// 문서 head는 AccountDisplayBoundary 밖이다 — 프로젝트 이름·식별자를 싣지 않는다.
 export const metadata: Metadata = { title: SITE_DETAIL_DOCUMENT_TITLE };
 
 type Query = Record<string, string | string[] | undefined>;
@@ -41,7 +42,7 @@ const first = (value: string | string[] | undefined): string | undefined => (Arr
 /**
  * 자료 섹션(ADR-KSI-043) — 프로젝트에 등록된 자료를 표로 보고, 고른 한 건의 상세와 등록 진행을 곁에서 본다.
  *
- * 새 조회·권한·판정을 만들지 않는다. 구역 단위 자료 목록, 선택 자료의 단건 읽기, 등록 이력, 작업 목록은
+ * 새 조회·권한·판정을 만들지 않는다. 영역 단위 자료 목록, 선택 자료의 단건 읽기, 등록 이력, 작업 목록은
  * 모두 공간 뷰어의 자료 패널이 쓰던 같은 읽기다. 분석 적합성은 이 화면에서 평가하지 않는다.
  */
 export default async function SiteDataPage({
@@ -142,7 +143,7 @@ export default async function SiteDataPage({
     : `${sitePath}/spatial-data-requests`;
   const scope: SiteDataScope = { workAreaId: selectedWorkAreaId, q: filters.q, kind: filters.kind, state: filters.state, cursor };
 
-  const issue = areaQueryInvalid ? "작업구역을 확인할 수 없거나 접근 권한이 없습니다. 왼쪽에서 구역을 다시 고르세요."
+  const issue = areaQueryInvalid ? "영역을 확인할 수 없거나 접근 권한이 없습니다. 왼쪽에서 영역을 다시 고르세요."
     : cursorInvalid ? "페이지 주소가 올바르지 않습니다. 목록을 처음부터 다시 여세요."
     : selectionMalformed ? "자료 주소가 올바르지 않습니다. 표에서 다시 선택하세요."
     : assetRefRaw && page && selectedAssetRef === null ? "선택한 자료를 이번 목록에서 찾을 수 없습니다. 표에서 다시 선택하세요."
@@ -166,15 +167,15 @@ export default async function SiteDataPage({
       </header>
 
       {issue && <InlineNotice tone="high" role="alert">{issue}</InlineNotice>}
-      {!areasKnown && <ErrorState message="작업구역을 불러오지 못했습니다. 잠시 후 다시 시도하세요." retryable />}
+      {!areasKnown && <ErrorState message="영역을 불러오지 못했습니다. 잠시 후 다시 시도하세요." retryable />}
       {areasKnown && allAreas.length === 0 && (
-        <EmptyState compact title="등록된 작업구역이 없습니다" description="작업구역을 만든 뒤 자료를 등록할 수 있습니다."
-          action={{ label: "작업구역 관리", href: `${sitePath}/work-areas` }} />
+        <EmptyState compact title="등록된 영역이 없습니다" description="영역을 만든 뒤 자료를 등록할 수 있습니다."
+          action={{ label: "영역 관리", href: siteAreasHref(site.siteId, null, { manage: true }) }} />
       )}
-      {assets.status === "denied" && <InlineNotice tone="high">이 구역의 자료를 볼 권한이 없습니다.</InlineNotice>}
+      {assets.status === "denied" && <InlineNotice tone="high">이 영역의 자료를 볼 권한이 없습니다.</InlineNotice>}
       {assets.status === "unavailable" && <InlineNotice tone="high">자료 목록을 불러오지 못했습니다. 비어 있다는 뜻이 아닙니다. 잠시 후 다시 시도하세요.</InlineNotice>}
       {page && page.assets.length === 0 && (
-        <EmptyState compact title="이 구역에 등록된 자료가 없습니다" description="파일을 제출하고 검사를 마치면 이곳에 나타납니다." />
+        <EmptyState compact title="이 영역에 등록된 자료가 없습니다" description="파일을 제출하고 검사를 마치면 이곳에 나타납니다." />
       )}
       {page && page.assets.length > 0 && filtered.length === 0 && (
         <EmptyState compact title="조건과 일치하는 자료가 없습니다" description="이미 불러온 목록 안에서 찾았습니다. 조건을 바꾸거나 초기화하세요."

@@ -13,7 +13,7 @@ function card(overrides: Partial<HomeAttentionCardView> = {}): HomeAttentionCard
     label: "분석 검토 대기",
     title: "무엇이 달라졌는가",
     detail: "세부 내용",
-    timeLabel: "현장 갱신",
+    timeLabel: "프로젝트 갱신",
     observedAt: "2026. 10. 21. 01:17",
     href: "/sites/site-1",
     actionLabel: "분석 결과 검토",
@@ -29,7 +29,7 @@ describe("HomeAttentionList", () => {
     expect(screen.getByText("분석 검토 대기")).toBeTruthy();
     expect(screen.getByRole("heading", { name: "무엇이 달라졌는가" })).toBeTruthy();
     expect(screen.getByText("세부 내용")).toBeTruthy();
-    expect(screen.getByText("현장 갱신 2026. 10. 21. 01:17")).toBeTruthy();
+    expect(screen.getByText("프로젝트 갱신 2026. 10. 21. 01:17")).toBeTruthy();
     expect(screen.getByRole("link", { name: "분석 결과 검토" }).getAttribute("href")).toBe("/sites/site-1");
     const article = document.querySelector("article")!;
     expect(article.querySelector("figure")).toBeNull();
@@ -39,7 +39,7 @@ describe("HomeAttentionList", () => {
 
   it("is a vertical list with one article per agenda and no paging controls", () => {
     render(<HomeAttentionList items={[card({ key: "a" }), card({ key: "b", siteName: "B 현장" }), card({ key: "c" })]} />);
-    const region = screen.getByRole("region", { name: "확인 필요 현장 목록" });
+    const region = screen.getByRole("region", { name: "확인 필요 프로젝트 목록" });
     expect(within(region).getAllByRole("article")).toHaveLength(3);
     expect(within(region).getAllByRole("listitem")).toHaveLength(3);
     expect(screen.queryByRole("button")).toBeNull();

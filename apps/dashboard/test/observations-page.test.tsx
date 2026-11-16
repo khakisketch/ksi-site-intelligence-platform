@@ -39,20 +39,20 @@ beforeEach(() => {
 afterEach(cleanup);
 
 function expectKnownContext() {
-  // 분석 섹션 틀 — 컨텍스트 패널의 분석 종류와 본문 제목. 현장 이름은 셸의 헤더가 맡는다.
+  // 분석 섹션 틀 — 컨텍스트 패널의 분석 종류와 본문 제목. 프로젝트 이름은 셸의 헤더가 맡는다.
   const views = screen.getByRole("navigation", { name: "분석 보기" });
   expect(views).toBeTruthy();
   expect(within(views).getByRole("link", { name: "외부 비교" }).getAttribute("aria-current")).toBe("page");
   expect(within(views).getByRole("link", { name: "변화 분석" }).getAttribute("href")).toBe("/sites/site-1/analysis");
   expect(screen.getByRole("heading", { name: "외부 비교 이력" })).toBeTruthy();
-  expect(screen.queryByRole("link", { name: "현장으로 돌아가기" })).toBeNull();
+  expect(screen.queryByRole("link", { name: "프로젝트로 돌아가기" })).toBeNull();
 }
 
 it("keeps verified Site context and does not offer futile retry for denied history", async () => {
   mocked.history.mockRejectedValue(new CoreApiError(403, { detail: "denied" }));
   render(await callPage());
   expectKnownContext();
-  expect(screen.getByRole("alert").textContent).toContain("현장 담당자에게 조회 권한을 요청하세요.");
+  expect(screen.getByRole("alert").textContent).toContain("프로젝트 담당자에게 조회 권한을 요청하세요.");
   expect(screen.queryByRole("button", { name: "다시 시도" })).toBeNull();
 });
 
@@ -70,9 +70,9 @@ it("keeps history visible with a notice when only area names fail", async () => 
   // 이력은 그대로 보이고, 이름 실패만 따로 알린다.
   expect(screen.queryByRole("alert")).toBeNull();
   const notice = screen.getByRole("status").textContent ?? "";
-  expect(notice).toMatch(/작업구역 이름을 불러오지 못했습니다/);
+  expect(notice).toMatch(/영역 이름을 불러오지 못했습니다/);
   // 수치 존재를 단정하지 않고 실제 대체 표시를 설명한다.
-  expect(notice).toMatch(/이름이 없는 행은 작업구역으로 표시됩니다/);
+  expect(notice).toMatch(/이름이 없는 행은 영역으로 표시됩니다/);
   expect(notice).not.toMatch(/수치/);
   expect(screen.getByText(/조회된 외부 비교 기록이 없습니다/)).toBeTruthy();
 });
@@ -124,7 +124,7 @@ it("does not disclose a Site name when Site lookup fails transiently", async () 
   mocked.site.mockRejectedValue(new CoreApiError(503, { detail: "unavailable" }));
   render(await callPage());
   expect(screen.queryByText("권한 확인된 현장")).toBeNull();
-  expect(screen.queryByRole("link", { name: "현장으로 돌아가기" })).toBeNull();
+  expect(screen.queryByRole("link", { name: "프로젝트로 돌아가기" })).toBeNull();
   expect(screen.getByRole("alert")).toBeTruthy();
 });
 

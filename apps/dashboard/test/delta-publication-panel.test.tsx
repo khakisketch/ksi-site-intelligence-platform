@@ -23,7 +23,7 @@ const source: DeltaPublicationSource = {
 const props = {
   siteId: "site-1",
   workAreaId: "area-1",
-  workAreaLabel: "1구역",
+  workAreaLabel: "1영역",
   source,
   canRequest: true,
   lifetimeSeconds: 3600,
@@ -250,7 +250,7 @@ describe("delta publication panel", () => {
 
     expect(screen.getByText("미요청")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "내보내기 준비 요청" }));
-    expect(screen.getByText(/현장 쓰기 권한이 있는 담당자에게 요청하세요/)).toBeTruthy();
+    expect(screen.getByText(/프로젝트 쓰기 권한이 있는 담당자에게 요청하세요/)).toBeTruthy();
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
@@ -456,7 +456,7 @@ describe("delta publication identity and download reverification", () => {
     expect(screen.getByText("미요청")).toBeTruthy();
     // 권한 회수 후에는 쓰기 요청이 나가지 않는다.
     fireEvent.click(screen.getByRole("button", { name: "내보내기 준비 요청" }));
-    expect(screen.getByText(/현장 쓰기 권한이 있는 담당자에게 요청하세요/)).toBeTruthy();
+    expect(screen.getByText(/프로젝트 쓰기 권한이 있는 담당자에게 요청하세요/)).toBeTruthy();
   });
 
   it("lets an in-flight download finish across permission revoke and never promises client-side security", async () => {

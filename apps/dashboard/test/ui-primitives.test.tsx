@@ -12,13 +12,13 @@ afterEach(cleanup);
 
 describe("shared console primitives", () => {
   it("step indicator shows order only unless a current step is given", () => {
-    const { rerender } = render(<StepIndicator steps={["작업구역", "파일 제출", "검사 확인"]} label="자료 등록 순서" />);
+    const { rerender } = render(<StepIndicator steps={["영역", "파일 제출", "검사 확인"]} label="자료 등록 순서" />);
     const list = screen.getByRole("list", { name: "자료 등록 순서" });
     expect(within(list).getAllByRole("listitem")).toHaveLength(3);
     expect(list.querySelector("[aria-current]")).toBeNull();
     expect(list.textContent).not.toContain("지난 단계");
 
-    rerender(<StepIndicator steps={["작업구역", "파일 제출", "검사 확인"]} current={1} label="자료 등록 순서" />);
+    rerender(<StepIndicator steps={["영역", "파일 제출", "검사 확인"]} current={1} label="자료 등록 순서" />);
     const current = screen.getByRole("list").querySelector('[aria-current="step"]');
     expect(current?.textContent).toContain("파일 제출");
     expect(screen.getAllByText("(지난 단계)", { exact: false })).toHaveLength(1);

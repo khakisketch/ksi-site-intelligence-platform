@@ -124,7 +124,7 @@ describe("comparisonEligibility", () => {
     expect(canSubmitComparison(result)).toBe(true);
   });
 
-  it("[핵심] 구역을 확정하지 않으면 높이자료가 있어도 부피 비교는 시도되지 않는다", () => {
+  it("[핵심] 영역을 확정하지 않으면 높이자료가 있어도 부피 비교는 시도되지 않는다", () => {
     const result = comparisonEligibility(
       epoch({ jobId: "a" }),
       epoch({ jobId: "b" }),
@@ -136,7 +136,7 @@ describe("comparisonEligibility", () => {
     expect(canSubmitComparison(result)).toBe(true);
   });
 
-  it("구역을 확정하면 부피 비교도 가능해진다", () => {
+  it("영역을 확정하면 부피 비교도 가능해진다", () => {
     const result = comparisonEligibility(epoch({ jobId: "a" }), epoch({ jobId: "b" }), true);
     expect(result.volumeChange).toBe(true);
     expect(result.changeDetection).toBe(true);
@@ -162,7 +162,7 @@ describe("comparisonEligibility", () => {
     expect(canSubmitComparison(result)).toBe(false);
   });
 
-  it("[핵심] 점군만 없고 높이자료·구역은 멀쩡하면 **제출은 된다**(부피만 비교)", () => {
+  it("[핵심] 점군만 없고 높이자료·영역은 멀쩡하면 **제출은 된다**(부피만 비교)", () => {
     // 이 조합이 막다른 길이 아니라는 것이 요점이다 — 예전 사유 문구에는
     // "한쪽에 높이자료가 없어 부피 비교를 할 수 없습니다" 갈래가 있었는데,
     // 그 갈래에 닿으려면 이 조합이 '제출 불가'여야 했다. 실제로는 부분 비교가
@@ -177,7 +177,7 @@ describe("comparisonEligibility", () => {
     expect(result.volumeChange).toBe(true);
   });
 
-  it("점군도 없고 구역도 확정 안 했으면 둘 다 말한다", () => {
+  it("점군도 없고 영역도 확정 안 했으면 둘 다 말한다", () => {
     const result = comparisonEligibility(
       epoch({ jobId: "a", hasPointCloud: false }),
       epoch({ jobId: "b", hasPointCloud: false }),
@@ -185,7 +185,7 @@ describe("comparisonEligibility", () => {
     );
     expect(canSubmitComparison(result)).toBe(false);
     expect(result.blockedReason).toContain("점군이 없어");
-    expect(result.blockedReason).toContain("구역을 확정하지 않아");
+    expect(result.blockedReason).toContain("영역을 확정하지 않아");
   });
 
   it("점군·높이자료가 둘 다 없으면 그렇게 말한다", () => {
@@ -256,7 +256,7 @@ describe("civil quantitative preflight", () => {
 });
 
 describe("toZonePolygon", () => {
-  it("[핵심] GeoJSON 은 경도·위도 순이다 — 뒤집히면 구역이 지구 반대편으로 간다", () => {
+  it("[핵심] GeoJSON 은 경도·위도 순이다 — 뒤집히면 영역이 지구 반대편으로 간다", () => {
     const polygon = toZonePolygon([
       { latDeg: 37.5, lonDeg: 127.0 },
       { latDeg: 37.5, lonDeg: 127.1 },
@@ -314,7 +314,7 @@ describe("toZonesPayload", () => {
     expect(payload!.zoneCrs).toBe(COMPARISON_ZONE_CRS);
   });
 
-  it("확정할 폴리곤이 없으면 null — 호출부가 '구역 미확정'으로 다룬다", () => {
+  it("확정할 폴리곤이 없으면 null — 호출부가 '영역 미확정'으로 다룬다", () => {
     expect(toZonesPayload([])).toBeNull();
   });
 });

@@ -76,7 +76,7 @@ describe("SurveyRegionMap", () => {
 
   it("shows the empty state when no regions were extracted", async () => {
     render(<SurveyRegionMap report={makeReport([])} selectedId={null} onSelect={() => {}} />);
-    expect(await screen.findByText(/후보 구역이 없습니다/)).toBeTruthy();
+    expect(await screen.findByText(/후보 영역이 없습니다/)).toBeTruthy();
     expect(screen.queryByTestId("map-inner")).toBeNull();
   });
 

@@ -26,7 +26,7 @@ function order(overrides: Partial<ObservationWorkOrderView> = {}): ObservationWo
     organizationId: "org-1",
     siteId: "site-opaque-0001",
     purpose: "PROGRESS_QUANTITY",
-    name: "동측 구역 외부 산출물 등록",
+    name: "동측 영역 외부 산출물 등록",
     workAreaIds: [],
     scheduleId: null,
     executionMode: "EXTERNAL_RECONSTRUCTION",

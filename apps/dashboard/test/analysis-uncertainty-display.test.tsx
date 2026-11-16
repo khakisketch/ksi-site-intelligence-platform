@@ -78,7 +78,7 @@ function renderPanel(detail: AnalysisView | null, pageMetrics: { cutM3: number; 
       siteId="site-1"
       organizationId="org-1"
       principalId="operator-1"
-      workAreas={[{ workAreaId: "area-1", name: "1구역" }]}
+      workAreas={[{ workAreaId: "area-1", name: "1영역" }]}
       observations={observations}
       siteObservations={observations}
       initialPage={page as never}
@@ -132,7 +132,7 @@ function renderWorkspaceExplicit(detail: AnalysisView | null) {
   return renderToStaticMarkup(
     <SiteWorkspaceResults
       sitePath="/sites/site-1"
-      areaLabel="1구역"
+      areaLabel="1영역"
       areaAnalyses={[]}
       analysesKnown
       explicitResult={explicit}
@@ -151,7 +151,7 @@ function renderWorkspaceList(metrics: { cutM3: number; fillM3: number; netM3: nu
   return renderToStaticMarkup(
     <SiteWorkspaceResults
       sitePath="/sites/site-1"
-      areaLabel="1구역"
+      areaLabel="1영역"
       areaAnalyses={items as never}
       analysesKnown
       explicitResult={null}
@@ -174,7 +174,7 @@ const taskBase: SpatialTaskView = {
   readiness: null, analysis: null,
 } as unknown as SpatialTaskView;
 const taskOptions: SpatialTaskOptions = {
-  siteId: "site-a", areas: [{ workAreaId: "area-a", name: "동측 구역" }], nextOffset: null,
+  siteId: "site-a", areas: [{ workAreaId: "area-a", name: "동측 영역" }], nextOffset: null,
   observations: ["a", "b"].map((letter, index) => ({
     selector: { workOrderId: `order-${letter}`, submissionRef: `ers-v1-${letter.repeat(64)}`, revision: 1 },
     observationEpochId: `epoch-${letter}`, captureStartedAt: `2026-10-${20 + index}T00:00:00Z`,
@@ -206,7 +206,7 @@ const maskedDigest = maskedFixture.sourceCalculationIdentityDigest as string;
 const maskedBaseProps = {
   siteId: "site-1",
   workAreaId: "area-1",
-  workAreaName: "구역 A",
+  workAreaName: "영역 A",
   canRequest: true,
   maskBudgetBytes: 1024 * 1024,
 };
@@ -269,7 +269,7 @@ describe("recorded volume uncertainty visibility", () => {
         siteId="site-1"
         organizationId="org-1"
         principalId="operator-1"
-        workAreas={[{ workAreaId: "area-1", name: "1구역" }]}
+        workAreas={[{ workAreaId: "area-1", name: "1영역" }]}
         observations={observations}
         siteObservations={observations}
         initialPage={page as never}

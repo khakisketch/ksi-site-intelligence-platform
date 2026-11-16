@@ -17,7 +17,7 @@ describe("현장 초안 저장소 안내", () => {
     render(<SiteRegistrationStorageGate status="unreadable" />);
     expect(screen.getByRole("heading", { name: "저장된 현장 초안을 읽을 수 없습니다" })).toBeTruthy();
     expect(screen.getByText(/원본을 덮어쓰지 않았으며/)).toBeTruthy();
-    const link = screen.getByRole("link", { name: "별도 탭에서 현장 목록 확인하기" });
+    const link = screen.getByRole("link", { name: "별도 탭에서 프로젝트 목록 확인하기" });
     expect(link.getAttribute("href")).toBe("/sites");
     expect(link.getAttribute("target")).toBe("_blank");
     expect(link.getAttribute("rel")).toContain("noopener");

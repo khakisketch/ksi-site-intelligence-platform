@@ -68,9 +68,9 @@ const ISSUE_GUIDANCE: Record<string, AnalysisIssueGuidance> = {
     nextStep: "Core가 해당 근거 기록을 검증했습니다. 이것만으로 물량 정확도·측량·정산 승인을 뜻하지는 않으므로 결과의 제한 사항도 함께 확인하세요.",
   },
   WORK_AREA_UNAVAILABLE: {
-    label: "작업구역을 사용할 수 없음",
-    owner: "현장 작업구역 담당자",
-    nextStep: "선택한 작업구역의 현재 상태와 현장 소속을 확인해야 합니다. 작업구역 담당자가 유효한 구역인지 확인한 뒤 다시 선택하세요.",
+    label: "영역을 사용할 수 없음",
+    owner: "현장 영역 담당자",
+    nextStep: "선택한 영역의 현재 상태와 현장 소속을 확인해야 합니다. 영역 담당자가 유효한 영역인지 확인한 뒤 다시 선택하세요.",
     destination: "work-areas",
   },
   ESSENTIAL_INPUT_UNAVAILABLE: {
@@ -138,10 +138,10 @@ const ISSUE_GUIDANCE: Record<string, AnalysisIssueGuidance> = {
   HORIZONTAL_CRS_UNAVAILABLE_OR_MISMATCH: {
     label: "수평 좌표 기준을 확인할 수 없거나 서로 다름",
     owner: "공간 자료 담당자",
-    nextStep: "작업구역과 두 관측의 기록된 좌표 기준을 확인하세요. 기준을 UI에서 임의로 바꾸거나 좌표를 추정해 맞추지 마세요.",
+    nextStep: "영역과 두 관측의 기록된 좌표 기준을 확인하세요. 기준을 UI에서 임의로 바꾸거나 좌표를 추정해 맞추지 마세요.",
     destination: "spatial-assets",
     selfServiceNextStep:
-      "파일과 작업구역의 실제 좌표 기준 및 현재 분석의 지원 범위를 확인하세요. 기준이 파일에 있어도 지원 정책과 다르면 계산되지 않습니다. 통과시키기 위해 좌표계 이름을 바꾸거나 추정해 맞추지 마세요.",
+      "파일과 영역의 실제 좌표 기준 및 현재 분석의 지원 범위를 확인하세요. 기준이 파일에 있어도 지원 정책과 다르면 계산되지 않습니다. 통과시키기 위해 좌표계 이름을 바꾸거나 추정해 맞추지 마세요.",
   },
   CRS_MISMATCH: {
     label: "관측 좌표 기준이 서로 다름",
@@ -162,18 +162,18 @@ const ISSUE_GUIDANCE: Record<string, AnalysisIssueGuidance> = {
   EMPTY_COMMON_VALID_COVERAGE: {
     label: "두 관측에서 함께 유효한 범위 없음",
     owner: "공간 자료 담당자",
-    nextStep: "확인된 자료에는 두 시점이 함께 유효한 범위가 없습니다. 담당자가 실제 관측 범위와 작업구역을 확인하고 다른 기록된 조합이 있는지 검토하세요. 좌표를 추정해 옮기지 마세요.",
+    nextStep: "확인된 자료에는 두 시점이 함께 유효한 범위가 없습니다. 담당자가 실제 관측 범위와 영역을 확인하고 다른 기록된 조합이 있는지 검토하세요. 좌표를 추정해 옮기지 마세요.",
     destination: "spatial-assets",
     selfServiceNextStep:
-      "두 시점이 함께 유효한 구역이 있는지 export 범위와 NoData 설정에서 확인하세요. 좌표를 옮겨 맞추지 않습니다.",
+      "두 시점이 함께 유효한 영역이 있는지 export 범위와 NoData 설정에서 확인하세요. 좌표를 옮겨 맞추지 않습니다.",
   },
   INSUFFICIENT_COMMON_VALID_COVERAGE: {
     label: "공통 유효 범위가 분석 조건에 미달함",
     owner: "공간 자료 담당자",
-    nextStep: "공통으로 유효한 범위가 현재 분석 조건을 충족하지 않습니다. 담당자가 자료와 작업구역을 검토한 뒤 다른 관측 조합을 확인하세요.",
+    nextStep: "공통으로 유효한 범위가 현재 분석 조건을 충족하지 않습니다. 담당자가 자료와 영역을 검토한 뒤 다른 관측 조합을 확인하세요.",
     destination: "spatial-assets",
     selfServiceNextStep:
-      "두 시점이 함께 유효한 범위가 현재 분석 조건에 얼마나 되는지 확인하고, 넓은 구역이 필요하면 더 넓게 export한 자료 조합을 검토하세요.",
+      "두 시점이 함께 유효한 범위가 현재 분석 조건에 얼마나 되는지 확인하고, 넓은 영역이 필요하면 더 넓게 export한 자료 조합을 검토하세요.",
   },
   EPOCH_SUBJECT_NOT_DISTINCT: {
     label: "기준·현재 관측이 서로 다르지 않음",
@@ -192,7 +192,7 @@ const ISSUE_GUIDANCE: Record<string, AnalysisIssueGuidance> = {
   EPOCH_SITE_MISMATCH: {
     label: "관측이 같은 현장에 속하지 않음",
     owner: "현장·관측 자료 담당자",
-    nextStep: "같은 현장에 등록된 관측 선택지를 사용하세요. 문제가 계속되면 자료의 Site 연결을 담당자가 확인해야 합니다.",
+    nextStep: "같은 프로젝트에 등록된 관측 선택지를 사용하세요. 문제가 계속되면 자료의 Site 연결을 담당자가 확인해야 합니다.",
   },
   SUBJECT_OUT_OF_SCOPE: {
     label: "현재 권한 범위에서 관측을 확인할 수 없음",

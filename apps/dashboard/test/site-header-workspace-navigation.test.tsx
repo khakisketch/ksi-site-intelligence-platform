@@ -44,7 +44,7 @@ describe("site header workspace navigation", () => {
     }
     expect(nav).not.toContain("작업 기록");
     expect(nav).not.toContain("section=work-orders");
-    expect(nav).not.toContain("현장 메뉴");
+    expect(nav).not.toContain("프로젝트 메뉴");
   });
 
   it("marks the current section with aria-current in the two-link nav", () => {

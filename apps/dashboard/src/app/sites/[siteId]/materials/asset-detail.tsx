@@ -15,7 +15,7 @@ import type { SpatialAssetCatalogItem, SpatialAssetInspection, SpatialAssetInspe
 function TechnicalFileInfo({ item, workName, areaName }: { item: SpatialAssetCatalogItem; workName?: string | null; areaName?: string }) {
   return <div className="flex flex-col gap-1 break-all text-caption text-ink-2">
       <p>등록 파일명 · {item.declared.fileName}</p>
-      {areaName && <p>작업구역명 · {areaName}</p>}
+      {areaName && <p>영역명 · {areaName}</p>}
       <p>등록된 작업명 · {workName ?? "확인 불가"}</p>
       <p>제출 참조 · {item.submissionRef} · 등록 버전 {item.revision}</p>
       <p>등록 버전은 제출한 자료 묶음의 버전이며 촬영 횟수와 다릅니다.</p>
@@ -218,7 +218,7 @@ export function DetailBlock({ detail, workName, areaName, headline, compareHref,
       <CompactFact label="수직 기준" value={detail.inspection.raster?.observedVerticalReference?.identifier ?? "확인 불가"} />
       {detail.inspection.raster && <CompactFact label="파일 범위" value={`${formatCountKo(detail.inspection.raster.width)} × ${formatCountKo(detail.inspection.raster.height)} 픽셀`} />}
     </dl>
-    {availability.retry && retryHref && <p className="text-caption text-high-ink">처리 실패는 <Link className="tap-target underline" href={retryHref}>구역 자료 준비</Link>에서 확인하세요.</p>}
+    {availability.retry && retryHref && <p className="text-caption text-high-ink">처리 실패는 <Link className="tap-target underline" href={retryHref}>영역 자료 준비</Link>에서 확인하세요.</p>}
     {requestProps.canRequest && <AssetRequestDialog triggerLabel="이 자료 새로 준비 요청">{requestAction}</AssetRequestDialog>}
     {compareHref && <p className="text-caption">분석에 사용할 자료는 <Link href={compareHref} className="tap-target underline">분석 조건에서 선택</Link>하세요.</p>}
     <p className="text-caption">요청한 창은 <Link href={requestsHref} className="tap-target underline">준비 기록</Link>에서 확인하세요.</p>

@@ -3,7 +3,7 @@ import type { AoiVertex, WorkArea } from "@/lib/core-api/types";
 import { ACCOUNT_CONTINUITY_MISMATCH as ACCOUNT_CONTINUITY_MISMATCH_CODE } from "@/lib/account-continuity-mismatch";
 
 /**
- * 작업구역 화면의 **순수 판정**(M4-C) — 렌더링에서 떼어내 테스트 가능하게 둔다.
+ * 영역 화면의 **순수 판정**(M4-C) — 렌더링에서 떼어내 테스트 가능하게 둔다.
  *
  * 여기 서버 판정을 복제하지 않는다. 등록 가부(폴리곤 모양·개수 상한·대체 대상)는
  * 전부 Core 가 정하고(`work_areas.py`), 이 파일이 하는 일은 **이미 등록된 것을
@@ -18,13 +18,13 @@ export const WORK_AREA_STATUS_LABEL: Record<
   ACTIVE: {
     label: "사용 중",
     tone: "positive",
-    description: "이후 비교에서 이 구역을 고를 수 있습니다.",
+    description: "이후 비교에서 이 영역을 고를 수 있습니다.",
   },
   ARCHIVED: {
     label: "보관됨",
     tone: "neutral",
     description:
-      "새 비교에서는 더 이상 고를 수 없습니다 — 이미 이 구역으로 낸 리포트는 그대로 남습니다.",
+      "새 비교에서는 더 이상 고를 수 없습니다 — 이미 이 영역으로 낸 리포트는 그대로 남습니다.",
   },
 };
 
@@ -65,13 +65,13 @@ export function polygonToVertices(
 }
 
 /**
- * 작업구역 POST 결과의 정직한 3분류 — **같은 키 재시도가 없는 경로의 전제**다.
+ * 영역 POST 결과의 정직한 3분류 — **같은 키 재시도가 없는 경로의 전제**다.
  *
- * Core `work_areas.register` 는 호출마다 새 sequence 구역을 만든다(멱등 키 없음).
+ * Core `work_areas.register` 는 호출마다 새 sequence 영역을 만든다(멱등 키 없음).
  * 그래서 브라우저가 응답을 잃으면 그 요청이 서버에 닿았는지 알 수 없고, 같은
- * 내용을 다시 보내면 구역이 두 개 생길 수 있다. 이 함수는 그 셋을 가른다:
+ * 내용을 다시 보내면 영역이 두 개 생길 수 있다. 이 함수는 그 셋을 가른다:
  *
- * - `success`: 2xx + 본문의 구역이 **이 요청에 대한 답**일 때뿐이다. 같은 요청
+ * - `success`: 2xx + 본문의 영역이 **이 요청에 대한 답**일 때뿐이다. 같은 요청
  *   Site 일치 + 식별자·필수 필드 판독 + 보낸 원본(name·crs·polygon·supersedes)과
  *   응답의 일치가 모두 확인돼야 한다. 이름·기하 매칭 추정이 아니라, 응답이 보낸
  *   요청을 그대로 돌려줬다는 대조가 성공 근거다.
@@ -115,7 +115,7 @@ export interface WorkAreaSubmitRequest {
 }
 
 /**
- * 본문의 구역이 **이 요청에 대한 답**인지 검증한다. 다음이 모두 맞아야 한다:
+ * 본문의 영역이 **이 요청에 대한 답**인지 검증한다. 다음이 모두 맞아야 한다:
  * `siteId` 일치·식별자 존재·필수 필드 판독·보낸 원본(name·crs·polygon·supersedes)과
  * 응답의 일치·fresh 등록 상태(ACTIVE)·등록 verdict(REGISTERED).
  *
@@ -226,7 +226,7 @@ function isReadableWorkArea(item: unknown, siteId: string): boolean {
 }
 
 /**
- * 고를 수 있는 것과 지나간 것을 가른다 — 한 목록에 섞어 놓으면 보관된 구역을
+ * 고를 수 있는 것과 지나간 것을 가른다 — 한 목록에 섞어 놓으면 보관된 영역을
  * 고르려 들고, 그 시도는 서버까지 갔다가 `WORK_AREA_UNUSABLE` 로 돌아온다.
  *
  * 정렬(최신 등록이 위)은 화면이 정하는 것이다 — 서버 응답 순서에 기대지 않는다.

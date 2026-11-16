@@ -284,7 +284,7 @@ beforeEach(() => {
     updatedAt: "2026-10-01T00:00:00Z",
   });
   mocked.permissions.mockResolvedValue(true);
-  mocked.areas.mockResolvedValue({ workAreas: [areaFixture("tiny-1", "미세 분석 구역")] });
+  mocked.areas.mockResolvedValue({ workAreas: [areaFixture("tiny-1", "미세 분석 영역")] });
   mocked.orders.mockResolvedValue([]);
   mocked.history.mockResolvedValue({ items: [], nextCursor: null });
   mocked.analyses.mockResolvedValue({ siteId: "site-1", items: [], nextCursor: null });
@@ -351,7 +351,7 @@ describe("usability-first explore", () => {
     expect(options.some((text) => text?.includes("날짜만 확인"))).toBe(true);
     // 값은 정확한 assetRef이며, 선택 상태가 현재 선택을 가리킨다.
     expect(select.value).toBe("disp-2022");
-    // 폼은 같은 GET 경로에 구역 범위를 함께 싣는다 — Back/새로고침이 의도를 살린다.
+    // 폼은 같은 GET 경로에 영역 범위를 함께 싣는다 — Back/새로고침이 의도를 살린다.
     const form = select.closest("form")!;
     expect(form.getAttribute("method")).toBe("get");
     expect(form.querySelector('input[name="workAreaId"]')).toBeTruthy();
@@ -361,9 +361,9 @@ describe("usability-first explore", () => {
   it("keeps the compact header to one site name without a redundant label", async () => {
     await renderOverview({});
     expect(screen.getAllByRole("heading", { name: "현장 하나" })).toHaveLength(1);
-    expect(screen.queryByText("현장명")).toBeNull();
+    expect(screen.queryByText("프로젝트명")).toBeNull();
     // 집중 모드 한 줄 머리 — 기본 머리의 펼침 대신 설정 메뉴를 둔다.
-    expect(screen.getByRole("link", { name: "현장 설정" })).toBeTruthy();
+    expect(screen.getByRole("link", { name: "프로젝트 설정" })).toBeTruthy();
     expect(screen.queryByText("현장 정보·범위")).toBeNull();
   });
 });

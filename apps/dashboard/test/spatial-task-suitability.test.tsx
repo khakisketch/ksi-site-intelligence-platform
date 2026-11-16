@@ -14,7 +14,7 @@ const base: SpatialTaskView = {
   readiness: null, analysis: null,
 };
 const options: SpatialTaskOptions = {
-  siteId: "site-a", areas: [{ workAreaId: "area-a", name: "동측 구역" }], nextOffset: null,
+  siteId: "site-a", areas: [{ workAreaId: "area-a", name: "동측 영역" }], nextOffset: null,
   observations: ["a", "b"].map((letter, index) => ({
     selector: { workOrderId: `order-${letter}`, submissionRef: `ers-v1-${letter.repeat(64)}`, revision: 1 },
     observationEpochId: `epoch-${letter}`, captureStartedAt: `2026-10-${20 + index}T00:00:00Z`,

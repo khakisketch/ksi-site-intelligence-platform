@@ -167,13 +167,13 @@ export function SpatialDataRequestAction({
         return;
       }
       if (!isRecord(body) || typeof body.jobId !== "string" || !isSpatialDataExecutionState(body.executionState)) {
-        setMessage("Core 응답의 요청 식별자 또는 상태를 확인할 수 없습니다. 구역 자료 준비에서 확인하세요.");
+        setMessage("Core 응답의 요청 식별자 또는 상태를 확인할 수 없습니다. 영역 자료 준비에서 확인하세요.");
         return;
       }
       setAccepted({ jobId: body.jobId, state: body.executionState });
-      setMessage(`받기 요청을 만들었습니다 · 상태 ${STATE_LABEL[body.executionState] ?? body.executionState}. 준비가 끝나면 구역 자료 준비에서 받을 수 있습니다.`);
+      setMessage(`받기 요청을 만들었습니다 · 상태 ${STATE_LABEL[body.executionState] ?? body.executionState}. 준비가 끝나면 영역 자료 준비에서 받을 수 있습니다.`);
     } catch {
-      setMessage("Core 응답을 받지 못했습니다. 구역 자료 준비에서 현재 상태를 다시 확인하세요.");
+      setMessage("Core 응답을 받지 못했습니다. 영역 자료 준비에서 현재 상태를 다시 확인하세요.");
     } finally {
       setBusy(false);
     }
@@ -277,7 +277,7 @@ export function SpatialDataRequestAction({
             (원점 {resolution.value.window[0]}, {resolution.value.window[1]} · 너비 {resolution.value.width} × 높이 {resolution.value.height} 네이티브 픽셀)</p>
           <p className="mt-0.5 break-all">요청 범위(네이티브 좌표) · {formatBounds(resolution.value.requestedBounds)}</p>
           <p className="mt-0.5 text-caption text-ink-muted">
-            실제 출력 범위는 준비가 끝난 뒤 구역 자료 준비의 출력 정보(실제 범위)에서 확인하세요.
+            실제 출력 범위는 준비가 끝난 뒤 영역 자료 준비의 출력 정보(실제 범위)에서 확인하세요.
           </p>
         </div>
         : <p className="mt-2 text-caption leading-5 text-high-ink" role="status">{PIXEL_WINDOW_BLOCKER_COPY[resolution.reason]}</p>)}
@@ -287,7 +287,7 @@ export function SpatialDataRequestAction({
         <button type="button" className="btn btn-primary min-h-11" disabled={!canSubmit} onClick={() => void request()}>
           {busy ? "요청 만드는 중…" : accepted ? "요청 만듦" : "받기 요청 만들기"}
         </button>
-        <Link href={requestsHref} className="btn min-h-11">구역 자료 준비에서 확인</Link>
+        <Link href={requestsHref} className="btn min-h-11">영역 자료 준비에서 확인</Link>
       </div>
     </ResponsiveActionBoundary>
     {message && <p role="status" aria-live="polite" className="mt-3 rounded-md border border-line bg-sunk px-3 py-2 text-caption leading-5 text-ink-2">{message}</p>}

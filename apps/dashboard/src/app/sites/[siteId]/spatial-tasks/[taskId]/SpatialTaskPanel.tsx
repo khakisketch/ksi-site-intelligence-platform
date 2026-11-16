@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { siteAreasHref } from "@/components/nav/site-context";
 import { useEffect, useRef, useState } from "react";
 import { WorkAreaChoiceMap } from "@/components/map/WorkAreaChoiceMap";
 import { AnalysisCoverage } from "@/components/analysis/AnalysisCoverage";
@@ -106,7 +107,7 @@ export function SpatialTaskPanel({ initialView, initialOptions, siteName, areas,
   const saveHintId = "task-save-hint";
   const saveHint = !dirty && !locked && canWrite && !complete
     ? purpose === "CLARIFY" ? "무엇을 확인할지 먼저 선택하세요."
-    : !areaId ? "어느 구역인지 선택하면 ‘이 선택으로 계속’을 누를 수 있습니다."
+    : !areaId ? "어느 영역인지 선택하면 ‘이 선택으로 계속’을 누를 수 있습니다."
     : !supported ? null
     : "서로 다른 이전·이후 관측을 선택하면 저장할 수 있습니다."
     : null;
@@ -246,7 +247,7 @@ export function SpatialTaskPanel({ initialView, initialOptions, siteName, areas,
         if (nextExecution === "COMPLETED" && previousExecution !== "COMPLETED") {
           setNotice("분석이 완료되었습니다. 같은 작업의 결과와 근거를 아래에서 확인하세요.");
         } else if (value.state === "SELECTION_UNAVAILABLE") {
-          setNotice("저장된 구역이나 자료를 지금 사용할 수 없습니다. 사용 가능한 후보로 바꾸거나 담당자에게 권한을 확인하세요.");
+          setNotice("저장된 영역이나 자료를 지금 사용할 수 없습니다. 사용 가능한 후보로 바꾸거나 담당자에게 권한을 확인하세요.");
         } else if (nextExecution === "FAILED" || nextExecution === "NOT_STARTED") {
           setNotice("분석 진행 상태가 바뀌었습니다. 아래 사유와 보완 방법을 확인하세요.");
         } else {
@@ -296,7 +297,7 @@ export function SpatialTaskPanel({ initialView, initialOptions, siteName, areas,
       setError("무엇을 확인할지 먼저 선택하세요."); document.getElementById("task-purpose")?.focus(); return;
     }
     if (action === "selection" && Boolean(baselineKey || currentKey) && (!baseline || !current || baselineKey === currentKey)) {
-      setError("서로 다른 이전·이후 관측을 함께 선택하세요. 구역만 저장하려면 두 관측 선택을 모두 비우세요.");
+      setError("서로 다른 이전·이후 관측을 함께 선택하세요. 영역만 저장하려면 두 관측 선택을 모두 비우세요.");
       document.getElementById(!baseline ? "task-baseline" : "task-current")?.focus(); return;
     }
     trackBusy(action); setError(""); setNotice("");
@@ -341,8 +342,8 @@ export function SpatialTaskPanel({ initialView, initialOptions, siteName, areas,
   if (accessLost) return <div className="mx-auto max-w-5xl p-5">
     <h1 className="text-xl font-bold">작업을 다시 확인하세요</h1>
     <p role="alert" className="mt-3 text-sm leading-6 text-high-ink">{error}</p>
-    <p className="mt-2 text-sm leading-6 text-ink-2">이 화면의 구역·자료·결과는 더 이상 표시하지 않습니다. 기존 분석 기록을 삭제하거나 새 계산을 요청하지는 않았습니다.</p>
-    <Link className="btn mt-4 inline-flex min-h-11 items-center" href="/sites">현장 목록으로 돌아가기</Link>
+    <p className="mt-2 text-sm leading-6 text-ink-2">이 화면의 영역·자료·결과는 더 이상 표시하지 않습니다. 기존 분석 기록을 삭제하거나 새 계산을 요청하지는 않았습니다.</p>
+    <Link className="btn mt-4 inline-flex min-h-11 items-center" href="/sites">프로젝트 목록으로 돌아가기</Link>
   </div>;
   return <div className="mx-auto max-w-7xl p-4 sm:p-6">
     <header className="mb-5 flex flex-wrap items-start justify-between gap-3">
@@ -352,7 +353,7 @@ export function SpatialTaskPanel({ initialView, initialOptions, siteName, areas,
     </header>
     <div role="alert">{error && <p className="mb-4 rounded border border-line bg-crit-bg p-3 text-sm text-crit-ink">{error}</p>}</div>
     <ConfirmDialog open={confirmReload} title="저장하지 않은 변경이 있습니다"
-      description="구역·관측 선택 등 저장하지 않은 변경이 사라지고 저장된 선택으로 돌아갑니다. 외부 대화와 이어지는 작업 자체는 유지됩니다."
+      description="영역·관측 선택 등 저장하지 않은 변경이 사라지고 저장된 선택으로 돌아갑니다. 외부 대화와 이어지는 작업 자체는 유지됩니다."
       confirmLabel="저장된 선택 불러오기"
       onConfirm={() => { setConfirmReload(false); void request("refresh"); }}
       onCancel={() => setConfirmReload(false)} />
@@ -366,7 +367,7 @@ export function SpatialTaskPanel({ initialView, initialOptions, siteName, areas,
     {pending && <p className="mb-3 text-sm leading-6 text-ink-2">{followPaused ? "자동 확인이 일시 중지되었습니다." : "실행 중인 같은 작업의 결과를 자동으로 확인합니다. 이 확인으로 새 계산을 요청하지 않습니다."}
       {followPaused && <button type="button" className="btn ml-2 min-h-11" onClick={() => { trackFollowPaused(false); setError(""); setFollowGeneration((value) => value + 1); }}>진행 상태 다시 확인</button>}
     </p>}
-    {view.state === "SELECTION_UNAVAILABLE" && <p className="mb-4 text-sm text-high-ink">저장된 구역이나 자료를 지금 사용할 수 없습니다. 사용 가능한 후보로 바꾸거나 담당자에게 권한을 확인하세요.</p>}
+    {view.state === "SELECTION_UNAVAILABLE" && <p className="mb-4 text-sm text-high-ink">저장된 영역이나 자료를 지금 사용할 수 없습니다. 사용 가능한 후보로 바꾸거나 담당자에게 권한을 확인하세요.</p>}
     {!canWrite && <p className="mb-4 text-sm text-ink-2">열람 권한으로 접속했습니다. 선택 변경은 권한이 있는 담당자에게 요청하세요.</p>}
     <div className="grid gap-5 lg:grid-cols-[300px_minmax(0,1fr)] xl:grid-cols-[336px_minmax(0,1fr)]">
       <section aria-label="작업 선택" className="space-y-5">
@@ -377,23 +378,23 @@ export function SpatialTaskPanel({ initialView, initialOptions, siteName, areas,
           </select>
           {(purpose === "DAILY_TARGET" || purpose === "DESIGN_REMAINING") && <p className="mt-2 text-sm text-high-ink">{purpose === "DESIGN_REMAINING" ? "설계면을 기준으로 한 잔여량 계산은 아직 지원하지 않습니다." : "오늘의 작업 목표에는 계획·기한·작업 여건이 필요하며, 현재 분석으로 결정하지 않습니다."} 두 관측 사이 변화로 자동 대체하지 않습니다.</p>}
         </div>
-        <fieldset disabled={!canAct || locked}><legend className="mb-2 text-sm font-semibold">어느 구역인가요?</legend>
+        <fieldset disabled={!canAct || locked}><legend className="mb-2 text-sm font-semibold">어느 영역인가요?</legend>
           <div className="max-h-64 overflow-y-auto divide-y divide-line border-y border-line">
             {options.areas.map((area) => <label key={area.workAreaId} className="flex min-h-12 cursor-pointer items-center gap-3 px-2 py-3 text-sm hover:bg-sunk">
               <input type="radio" name="task-area" value={area.workAreaId} checked={areaId === area.workAreaId} onChange={() => { setDraftFields({ areaId: area.workAreaId, baselineKey: "", currentKey: "" }); }} />
               <span className="break-words">{area.name}</span>
             </label>)}
           </div>
-          {options.areas.length === 0 && <p className="mt-2 text-sm text-ink-2">선택 가능한 작업구역이 없습니다. 담당자에게 구역 등록과 이 요청의 접근 범위를 확인해 달라고 요청하세요.</p>}
+          {options.areas.length === 0 && <p className="mt-2 text-sm text-ink-2">선택 가능한 영역이 없습니다. 담당자에게 영역 등록과 이 요청의 접근 범위를 확인해 달라고 요청하세요.</p>}
         </fieldset>
-        <p className="text-sm leading-6 text-ink-2">새 범위는 <Link className="underline underline-offset-4" href={`/sites/${encodeURIComponent(siteId)}/work-areas`}>작업구역 관리</Link>에서 등록합니다. 외부 AI의 허용 범위가 자동으로 넓어지지는 않습니다. 이 작업 링크는 그대로 보관하세요.</p>
+        <p className="text-sm leading-6 text-ink-2">새 범위는 <Link className="underline underline-offset-4" href={siteAreasHref(siteId, null, { manage: true })}>영역 관리</Link>에서 등록합니다. 외부 AI의 허용 범위가 자동으로 넓어지지는 않습니다. 이 작업 링크는 그대로 보관하세요.</p>
       </section>
       <section aria-label="선택 범위와 관측" className="min-w-0">
-        <h2 className="mb-2 text-base font-semibold">{selectedArea?.name ?? "구역을 고르면 경계를 보여드립니다"}</h2>
+        <h2 className="mb-2 text-base font-semibold">{selectedArea?.name ?? "영역을 고르면 경계를 보여드립니다"}</h2>
         {areas.length ? <WorkAreaChoiceMap areas={areas} selectedId={areaId} disabled={!canAct || locked}
           onSelect={(id) => { if (id !== areaId) { setDraftFields({ areaId: id, baselineKey: "", currentKey: "" }); } }} />
-          : <div className="flex min-h-80 items-center justify-center rounded-lg border border-line bg-sunk px-6 text-sm text-ink-2">지도에 표시할 작업구역이 없습니다.</div>}
-        <p className="mt-2 text-xs leading-5 text-ink-muted">등록된 구역 경계의 위치 확인용 지도입니다. 배경 지도는 현장 관측 영상이 아니며 정확도·정산 적합성을 증명하지 않습니다.</p>
+          : <div className="flex min-h-80 items-center justify-center rounded-lg border border-line bg-sunk px-6 text-sm text-ink-2">지도에 표시할 영역이 없습니다.</div>}
+        <p className="mt-2 text-xs leading-5 text-ink-muted">등록된 영역 경계의 위치 확인용 지도입니다. 배경 지도는 현장 관측 영상이 아니며 정확도·정산 적합성을 증명하지 않습니다.</p>
         {supported && <fieldset className="mt-5 grid gap-3 sm:grid-cols-2" disabled={!canAct || locked || !areaId}>
           <legend className="mb-2 text-sm font-semibold">언제와 언제를 비교할까요?</legend>
           {(["baseline", "current"] as const).map((side) => <label key={side} className="block text-sm">
@@ -402,7 +403,7 @@ export function SpatialTaskPanel({ initialView, initialOptions, siteName, areas,
               <option value="">관측 선택</option>{candidates.map((item, index) => <option key={selectorKey(item.selector)} value={selectorKey(item.selector)}>{formatKoreanDateTime(item.captureStartedAt)} · 관측 {index + 1} · 자료 개정 {item.selector.revision}</option>)}
             </select>
           </label>)}
-          {areaId && candidates.length < 2 && <p className="text-sm text-high-ink sm:col-span-2">이 구역에는 현재 선택할 수 있는 관측이 두 개 미만입니다. 자료 등록·봉인과 접근 범위를 확인하세요. <Link className="underline underline-offset-4" href={`/sites/${encodeURIComponent(siteId)}?panel=materials&workAreaId=${encodeURIComponent(areaId)}`}>등록 자료와 검사 상태 확인</Link></p>}
+          {areaId && candidates.length < 2 && <p className="text-sm text-high-ink sm:col-span-2">이 영역에는 현재 선택할 수 있는 관측이 두 개 미만입니다. 자료 등록·봉인과 접근 범위를 확인하세요. <Link className="underline underline-offset-4" href={`/sites/${encodeURIComponent(siteId)}?panel=materials&workAreaId=${encodeURIComponent(areaId)}`}>등록 자료와 검사 상태 확인</Link></p>}
           {baselineKey && baselineKey === currentKey && <p className="text-sm text-high-ink sm:col-span-2">서로 다른 두 관측을 선택하세요.</p>}
         </fieldset>}
         {options.nextOffset !== null && <button type="button" className="btn mt-3 min-h-11" disabled={Boolean(busy)} onClick={() => void more()}>관측 더 불러오기</button>}
@@ -418,7 +419,7 @@ export function SpatialTaskPanel({ initialView, initialOptions, siteName, areas,
           </div>
         </ResponsiveActionBoundary>}
         {locked && <p className="mt-3 text-sm text-ink-2">분석을 요청한 선택은 고정됩니다. 다른 범위·관측은 외부 대화에서 새 작업으로 시작하세요. ‘같은 분석 다시 확인’은 저장된 결과를 다시 불러오며, 새 계산을 요청하지 않습니다.</p>}
-        {!dirty && view.analysis && <section aria-label="같은 구역의 분석 결과" className="mt-5 border-t border-line pt-4">
+        {!dirty && view.analysis && <section aria-label="같은 영역의 분석 결과" className="mt-5 border-t border-line pt-4">
           <h2 className="text-base font-semibold">{({ NOT_STARTED: "분석이 아직 시작되지 않았습니다", QUEUED: "분석을 기다리고 있습니다", RUNNING: "변화량을 계산하고 있습니다", COMPLETED: "두 관측 사이 지형 변화", FAILED: "분석을 완료하지 못했습니다" })[view.analysis.executionState]}</h2>
           {resumeFailed && result && <div className="mt-2 flex flex-wrap items-center gap-2 text-sm leading-6 text-high-ink">
             <p role="status">이전에 불러온 결과이며 새로 확인되지 않았습니다. 새 계산을 요청하지 않았습니다.</p>
@@ -436,7 +437,7 @@ export function SpatialTaskPanel({ initialView, initialOptions, siteName, areas,
               <p className="mt-2 break-words text-sm leading-6 text-ink-2 tabular-nums">{`불확실성 ±${shownNumber(result.metrics.uncertaintyM3)} m³ (기록값)`}</p>
             ) : null}
             <p className="mt-3 text-sm leading-6 text-ink-2">위 지도 경계와 선택한 두 관측에 대한 Core 계산입니다. 공통 유효 범위 {shownNumber(result.coverage.commonValidAreaM2)} m² / 선택 범위 {shownNumber(result.coverage.selectedAreaM2)} m². 자료가 없는 셀 {formatCountKo(result.coverage.unavailableCellCount)}개는 0으로 채운 영역이 아닙니다.</p>
-            <p className="mt-1 text-xs leading-5 text-ink-muted">지도는 등록된 구역 경계이며, 유효·제외 셀의 분포를 그린 레이어는 아닙니다.</p>
+            <p className="mt-1 text-xs leading-5 text-ink-muted">지도는 등록된 영역 경계이며, 유효·제외 셀의 분포를 그린 레이어는 아닙니다.</p>
             <AnalysisCoverage detail={view.analysis} />
             <p className="mt-2 text-sm leading-6 text-ink-2">{suitabilityNote(view.analysis.suitabilityState)}</p>
             {result.limitationCodes.length > 0 && <ul aria-label="결과 제한 사항" className="mt-2 space-y-1 text-sm leading-6 text-ink-2">

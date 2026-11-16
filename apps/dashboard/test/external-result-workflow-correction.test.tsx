@@ -157,12 +157,12 @@ it("retires a delayed old review when a different retained request is selected",
   await select(0);
   fireEvent.click(await screen.findByRole("button", { name: "결과 검토 기록" }));
   await select(1);
-  expect(await screen.findByText(/비교 구역 new-area · 구역 버전 1$/)).toBeTruthy();
+  expect(await screen.findByText(/비교 영역 new-area · 영역 버전 1$/)).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "결과 검토 기록" }));
   expect(await screen.findByText("결과 검토 기록 중")).toBeTruthy();
   resolveReview();
   await waitFor(() => expect(screen.getByText("결과 검토 기록 중")).toBeTruthy());
-  expect(screen.queryByText(/비교 구역 old-area · 구역 버전 1$/)).toBeNull();
+  expect(screen.queryByText(/비교 영역 old-area · 영역 버전 1$/)).toBeNull();
   resolveNewReview();
   expect(await screen.findByText("결과 검토를 기록했습니다.")).toBeTruthy();
 });
@@ -184,11 +184,11 @@ it("retires a delayed old proposal rather than restoring it after selection chan
   }));
   render(<ExternalResultWorkflowPanel workOrderId="work-1" siteId="site-1" decision={null} permissions={["WORK_ORDERS_WRITE"]} />);
   await select(0);
-  fireEvent.click(await screen.findByRole("button", { name: "이 작업구역으로 재관측 제안" }));
+  fireEvent.click(await screen.findByRole("button", { name: "이 영역으로 재관측 제안" }));
   await select(1);
-  expect(await screen.findByText(/비교 구역 new-area · 구역 버전 1$/)).toBeTruthy();
+  expect(await screen.findByText(/비교 영역 new-area · 영역 버전 1$/)).toBeTruthy();
   resolveProposal();
-  await waitFor(() => expect(screen.getByText(/비교 구역 new-area · 구역 버전 1$/)).toBeTruthy());
+  await waitFor(() => expect(screen.getByText(/비교 영역 new-area · 영역 버전 1$/)).toBeTruthy());
   expect(screen.queryByText(`제안 ${proposalRef} · v1`)).toBeNull();
 });
 
@@ -211,9 +211,9 @@ it("retires a delayed old approval without navigating after selection changes", 
   await select(0);
   fireEvent.click(await screen.findByRole("button", { name: "재관측 후속 작업 승인" }));
   await select(1);
-  expect(await screen.findByText(/비교 구역 new-area · 구역 버전 1$/)).toBeTruthy();
+  expect(await screen.findByText(/비교 영역 new-area · 영역 버전 1$/)).toBeTruthy();
   resolveApproval();
-  await waitFor(() => expect(screen.getByText(/비교 구역 new-area · 구역 버전 1$/)).toBeTruthy());
+  await waitFor(() => expect(screen.getByText(/비교 영역 new-area · 영역 버전 1$/)).toBeTruthy());
   expect(router.push).not.toHaveBeenCalled();
   expect(router.refresh).not.toHaveBeenCalled();
 });
@@ -245,9 +245,9 @@ it("retires an old approval worklist refresh after selection changes", async () 
   fireEvent.click(await screen.findByRole("button", { name: "재관측 후속 작업 승인" }));
   await worklistStarted;
   await select(1);
-  expect(await screen.findByText(/비교 구역 new-area · 구역 버전 1$/)).toBeTruthy();
+  expect(await screen.findByText(/비교 영역 new-area · 영역 버전 1$/)).toBeTruthy();
   resolveWorklist();
-  await waitFor(() => expect(screen.getByText(/비교 구역 new-area · 구역 버전 1$/)).toBeTruthy());
+  await waitFor(() => expect(screen.getByText(/비교 영역 new-area · 영역 버전 1$/)).toBeTruthy());
   expect(screen.queryByText("Core 작업 목록에서 후속 작업을 새로 고쳤습니다.")).toBeNull();
   expect(router.push).not.toHaveBeenCalled();
 });
@@ -303,7 +303,7 @@ it("retains a just-created nonfirst actual-Core proposal through refresh and app
   vi.stubGlobal("fetch", fetchMock);
   render(<ExternalResultWorkflowPanel workOrderId="work-1" siteId="site-1" decision={null} permissions={["WORK_ORDERS_WRITE", "REOBSERVATION_APPROVE"]} />);
   await select(0);
-  fireEvent.click(await screen.findByRole("button", { name: "이 작업구역으로 재관측 제안" }));
+  fireEvent.click(await screen.findByRole("button", { name: "이 영역으로 재관측 제안" }));
   await waitFor(() => expect(reportReads).toBe(2));
   await waitFor(() => expect(screen.queryByText((_, element) => element?.tagName === "P" && element.textContent?.includes(`제안 ${actualCoreFirstProposalRef} · v1`) === true)).toBeNull());
   expect(screen.getByText((_, element) => element?.tagName === "P" && element.textContent?.includes(`제안 ${actualCoreLaterProposalRef} · v1`) === true)).toBeTruthy();

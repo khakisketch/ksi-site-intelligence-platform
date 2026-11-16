@@ -12,7 +12,7 @@ const digest = (character: string) => `sha256:${character.repeat(64)}`;
 const reportRef = `external-relative-volume-report-${"c".repeat(32)}`;
 const reviewPath = `/api/external-relative-volume-reports/${reportRef}/reviews`;
 const proposalRef = `erop-v1-${"d".repeat(64)}`;
-const targetLabel = "대상: 이 비교에 사용한 작업구역";
+const targetLabel = "대상: 이 비교에 사용한 영역";
 const reviewReason = "비교 결과 검토 기록은 노트북 이상의 화면에서 진행합니다.";
 
 function response(value: unknown, ok = true) {
@@ -119,14 +119,14 @@ it("freezes the proposal attempt and replays the same key and body after closure
   const { rerender } = render(<ExternalResultReviewActions {...base} />);
 
   fireEvent.change(screen.getByLabelText("재관측 제안 사유"), { target: { value: "현장 확인" } });
-  fireEvent.click(screen.getByRole("button", { name: "이 작업구역으로 재관측 제안" }));
-  expect(await screen.findByText("재관측 제안 상태를 확인하지 못했습니다. 같은 보고서와 작업구역으로 재시도합니다.")).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "이 영역으로 재관측 제안" }));
+  expect(await screen.findByText("재관측 제안 상태를 확인하지 못했습니다. 같은 보고서와 영역으로 재시도합니다.")).toBeTruthy();
   expect(posts[0].method).toBe("POST");
   expect(JSON.parse(String(posts[0].body))).toEqual({ reportRef, targetWorkAreaIds: ["area-1"], reason: "현장 확인" });
   expect((posts[0].headers as Record<string, string>)["idempotency-key"]).toBe("console-stable-key");
 
   rerender(<ExternalResultReviewActions {...base} newIntentAllowed={false} />);
-  fireEvent.click(screen.getByRole("button", { name: "이 작업구역으로 재관측 제안" }));
+  fireEvent.click(screen.getByRole("button", { name: "이 영역으로 재관측 제안" }));
   await waitFor(() => expect(posts).toHaveLength(2));
   expect(posts[1].body).toBe(posts[0].body);
   expect(posts[1].headers).toEqual(posts[0].headers);
@@ -137,13 +137,13 @@ it("records the proposal for the exact target work area and stops offering a sec
   const onProposal = vi.fn();
   render(<ExternalResultReviewActions {...props({ review: reviewReceipt(), onProposal })} />);
 
-  fireEvent.click(screen.getByRole("button", { name: "이 작업구역으로 재관측 제안" }));
+  fireEvent.click(screen.getByRole("button", { name: "이 영역으로 재관측 제안" }));
   expect(await screen.findByText("재관측 제안이 기록되었습니다.")).toBeTruthy();
   const [url] = fetchMock.mock.calls[0] as [string, RequestInit];
   expect(url).toBe("/api/external-reobservation-proposals");
   // The proposal form and the recorded proposal both name the same Core-bound target.
   expect(screen.getAllByText(targetLabel)).toHaveLength(2);
-  expect(screen.queryByRole("button", { name: "이 작업구역으로 재관측 제안" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "이 영역으로 재관측 제안" })).toBeNull();
   expect(onProposal).toHaveBeenCalledWith(proposalView());
 });
 
@@ -193,7 +193,7 @@ it("names the missing permission for each action in a popover without offering t
   const reviewTrigger = await screen.findByRole("button", { name: "결과 검토 기록" });
   expect(reviewTrigger.hasAttribute("disabled")).toBe(false);
   fireEvent.click(reviewTrigger);
-  expect(await screen.findByText("결과 검토를 기록할 권한이 없습니다. 현장 담당자에게 확인하세요.")).toBeTruthy();
+  expect(await screen.findByText("결과 검토를 기록할 권한이 없습니다. 프로젝트 담당자에게 확인하세요.")).toBeTruthy();
   expect(fetchMock).not.toHaveBeenCalled();
 
   rerender(<ExternalResultReviewActions {...props({
@@ -202,14 +202,14 @@ it("names the missing permission for each action in a popover without offering t
     hasReviewPermission: false,
     canApprovePermission: false,
   })} />);
-  const proposalTrigger = await screen.findByRole("button", { name: "이 작업구역으로 재관측 제안" });
+  const proposalTrigger = await screen.findByRole("button", { name: "이 영역으로 재관측 제안" });
   expect(proposalTrigger.hasAttribute("disabled")).toBe(false);
   fireEvent.click(proposalTrigger);
-  expect(await screen.findByText("재관측 제안을 기록할 권한이 없습니다. 현장 담당자에게 확인하세요.")).toBeTruthy();
+  expect(await screen.findByText("재관측 제안을 기록할 권한이 없습니다. 프로젝트 담당자에게 확인하세요.")).toBeTruthy();
   const approvalTrigger = await screen.findByRole("button", { name: "재관측 후속 작업 승인" });
   expect(approvalTrigger.hasAttribute("disabled")).toBe(false);
   fireEvent.click(approvalTrigger);
-  expect(await screen.findByText("후속 작업을 승인할 권한이 없습니다. 현장 담당자에게 확인하세요.")).toBeTruthy();
+  expect(await screen.findByText("후속 작업을 승인할 권한이 없습니다. 프로젝트 담당자에게 확인하세요.")).toBeTruthy();
   expect(screen.queryByLabelText("재관측 제안 사유")).toBeNull();
   expect(fetchMock).not.toHaveBeenCalled();
 });

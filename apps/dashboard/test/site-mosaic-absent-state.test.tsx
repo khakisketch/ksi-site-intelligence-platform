@@ -152,7 +152,7 @@ describe("mosaic absent-pixel state from current jobs", () => {
     const fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);
     renderMosaic([], true, true);
-    expect(screen.getByRole("link", { name: /^구역 자료 준비$/ }).getAttribute("href"))
+    expect(screen.getByRole("link", { name: /^영역 자료 준비$/ }).getAttribute("href"))
       .toBe("/sites/site-1/spatial-data-requests?workAreaId=area-1");
     expect(screen.queryByText("아래에서 미리보기를 준비할 수 있습니다.")).toBeNull();
     expect(screen.queryByRole("button", { name: /^미리보기 준비$/ })).toBeNull();
@@ -259,7 +259,7 @@ describe("mosaic absent-pixel state from current jobs", () => {
       "/sites/site-1?panel=materials&workAreaId=area-1&assetRef=ksa-v1-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb&info=1#asset-ksa-v1-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
     );
     // 요청 이력은 보조 안내로만 둔다.
-    expect(screen.getByText("요청 이력은 구역 자료 준비에서 확인합니다.")).toBeTruthy();
+    expect(screen.getByText("요청 이력은 영역 자료 준비에서 확인합니다.")).toBeTruthy();
     const trigger = screen.getByRole("button", { name: "보기 도구" });
     const folded = document.getElementById(trigger.getAttribute("popovertarget")!)!;
     expect(folded.getAttribute("popover")).toBe("auto");

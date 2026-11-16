@@ -122,14 +122,14 @@ export type TrendPoint = { analysisId: string; sortKey: string; label: string; m
 const TREND_LIMIT = 6;
 
 /**
- * 비교할 수 있는 같은 구역의 결과를 관측일 순으로 나란히 — 위쪽이 쌓임, 아래쪽이 깎임이다.
+ * 비교할 수 있는 같은 영역의 결과를 관측일 순으로 나란히 — 위쪽이 쌓임, 아래쪽이 깎임이다.
  * 이번 결과를 진하게 두고 나머지는 연하게 둔다. 모든 막대는 같은 눈금이며 눈금 끝 값을
  * 옆에 적는다. 같은 조건인지는 호출하는 쪽이 확인한 기록만 넘기고, 여기서는 그리기만 한다.
  */
 export function ResultTrend({ points, currentId, conditions }: {
   points: TrendPoint[];
   currentId: string | null;
-  /** 이 점들이 같은 조건이라고 말할 수 있는 근거 한 줄(구역·임계값·셀 크기). */
+  /** 이 점들이 같은 조건이라고 말할 수 있는 근거 한 줄(영역·임계값·셀 크기). */
   conditions?: string;
 }) {
   const sorted = [...points]
@@ -154,7 +154,7 @@ export function ResultTrend({ points, currentId, conditions }: {
         preserveAspectRatio="none"
         className="h-28 min-w-0 flex-1"
         role="img"
-        aria-label={`같은 구역 관측일별 결과 ${sorted.length}건의 깎임과 쌓임 비교`}
+        aria-label={`같은 영역 관측일별 결과 ${sorted.length}건의 깎임과 쌓임 비교`}
       >
         <line x1="0" x2={width} y1={mid} y2={mid} className="stroke-line-strong" strokeWidth="0.6" vectorEffect="non-scaling-stroke" />
         {sorted.map((point, index) => {
@@ -187,11 +187,11 @@ export function ResultTrend({ points, currentId, conditions }: {
         <span className="inline-flex items-center gap-1.5"><span aria-hidden="true" className="size-2 rounded-sm bg-ink-1" />아래 깎임</span>
       </span>
       <Disclosure label="비교 조건">
-        <p className="mt-1 text-ink-muted">현재 관측일 기준 · {conditions ?? "같은 구역"}</p>
+        <p className="mt-1 text-ink-muted">현재 관측일 기준 · {conditions ?? "같은 영역"}</p>
       </Disclosure>
     </figcaption>
     <table className="sr-only">
-      <caption>같은 구역 관측일별 깎임과 쌓임(m³)</caption>
+      <caption>같은 영역 관측일별 깎임과 쌓임(m³)</caption>
       <thead><tr><th scope="col">관측일</th><th scope="col">깎임</th><th scope="col">쌓임</th></tr></thead>
       <tbody>
         {sorted.map((point) => <tr key={point.analysisId}>

@@ -28,13 +28,13 @@ export function siteWorkspaceScenario(siteId: string, name = "E2E 현장 작업�
 }
 
 /**
- * WorkOrder 초안을 만들 수 있는 실제 Core 경로를 위한 최소 작업구역이다. 이 좌표는
+ * WorkOrder 초안을 만들 수 있는 실제 Core 경로를 위한 최소 영역이다. 이 좌표는
  * 브라우저 회귀의 결정적 fixture일 뿐 측량·현장·비행 데이터가 아니다.
  */
 export function siteWorkspaceWorkArea(index: number) {
   const origin = 127 + index * 0.01;
   return {
-    name: `E2E 작업구역 ${index + 1}`,
+    name: `E2E 영역 ${index + 1}`,
     crs: "EPSG:4326",
     polygon: {
       type: "Polygon",

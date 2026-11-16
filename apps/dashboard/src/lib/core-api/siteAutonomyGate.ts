@@ -1,6 +1,6 @@
 // 정본: packages/domain/src/ksi_domain/enums.py requires_autonomy_approval
 // (ADR-KSI-015 D2). 서버가 최종 권위이고(403 은 여전히 서버가 검사한다), 이
-// 파일은 현장 상세 전이 UI(SiteTransitionActions.tsx)가 관리자 전용 대상을
+// 파일은 프로젝트 상세 전이 UI(SiteTransitionActions.tsx)가 관리자 전용 대상을
 // 미리 숨기기 위한 미러다 — 서버 403 을 마지막에 만나게 하지 않는다.
 //
 // **간선(cur, nxt) 쌍 기준 판정이다 — 목적지 상태만으로 가르지 않는다.**

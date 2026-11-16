@@ -1,7 +1,7 @@
 /**
- * 작업·구역 이름 표시(presentation-only) 헬퍼.
+ * 작업·영역 이름 표시(presentation-only) 헬퍼.
  *
- * Core가 인증 범위로 내려준 `name`을 그대로 옮길 뿐, 이름으로 구역 소속·분석
+ * Core가 인증 범위로 내려준 `name`을 그대로 옮길 뿐, 이름으로 영역 소속·분석
  * 준비 상태·권한을 추론하지 않는다(INV-053/060/061). 회차는
  * `workOrder.cycleNumber` 원값만 쓰고 이름 접미사(t1/t2 등)에서 유도하지
  * 않는다. 이름이 없으면 ID를 지어내지 않고 "확인 불가"로 정직하게 둔다.
@@ -11,8 +11,8 @@
 import { formatKoreanDateTime } from "@/lib/datetime";
 import { formatCountKo } from "@/lib/number-format";
 
-export const SITE_NAME_UNAVAILABLE = "현장 이름 확인 불가";
-export const WORK_AREA_NAME_UNAVAILABLE = "구역 이름 확인 불가";
+export const SITE_NAME_UNAVAILABLE = "프로젝트 이름 확인 불가";
+export const WORK_AREA_NAME_UNAVAILABLE = "영역 이름 확인 불가";
 
 /** 이미 읽어 둔 WorkArea 목록을 id → name 색인으로 접는다. 보관 상태는 제외하지 않는다. */
 export function indexWorkAreaNames(
@@ -29,7 +29,7 @@ export function indexWorkAreaNames(
 }
 
 /**
- * 현장별 구역 이름 색인. 작업구역 ID는 현장 안에서만 유일하므로
+ * 현장별 영역 이름 색인. 영역 ID는 현장 안에서만 유일하므로
  * 현장끼리 평평하게 합치지 않는다 — 다른 현장의 같은 ID가 섞이지 않게 한다.
  */
 export function indexWorkAreaNamesBySite(
@@ -51,7 +51,7 @@ export interface WorkAreaDisplayNames {
   unknownCount: number;
 }
 
-/** 작업의 구역 ID들을 알려진 이름과 미확인 건수로 나눈다. 순서는 원장 순서를 따른다. */
+/** 작업의 영역 ID들을 알려진 이름과 미확인 건수로 나눈다. 순서는 원장 순서를 따른다. */
 export function selectWorkAreaDisplayNames(
   workAreaIds: readonly string[],
   nameById: ReadonlyMap<string, string>,
@@ -68,7 +68,7 @@ export function selectWorkAreaDisplayNames(
 }
 
 /**
- * 구역 요약 한 줄. 알려진 이름이 앞서고 나머지는 개수만 적는다 —
+ * 영역 요약 한 줄. 알려진 이름이 앞서고 나머지는 개수만 적는다 —
  * 미확인 ID를 문장 주어로 쓰지 않고 회차를 유도하지도 않는다.
  */
 export function formatWorkAreaSummary(
@@ -76,13 +76,13 @@ export function formatWorkAreaSummary(
   nameById: ReadonlyMap<string, string>,
   maxShown = 2,
 ): string {
-  if (workAreaIds.length === 0) return "구역 지정 없음";
+  if (workAreaIds.length === 0) return "영역 지정 없음";
   const { known } = selectWorkAreaDisplayNames(workAreaIds, nameById);
   const shown = known.slice(0, Math.max(1, maxShown));
   const remaining = workAreaIds.length - shown.length;
-  if (shown.length === 0) return `${formatCountKo(workAreaIds.length)}개 구역 (${WORK_AREA_NAME_UNAVAILABLE})`;
+  if (shown.length === 0) return `${formatCountKo(workAreaIds.length)}개 영역 (${WORK_AREA_NAME_UNAVAILABLE})`;
   if (remaining === 0) return shown.join(" · ");
-  return `${shown.join(" · ")} 외 ${formatCountKo(remaining)}개 구역`;
+  return `${shown.join(" · ")} 외 ${formatCountKo(remaining)}개 영역`;
 }
 
 export interface WorkQueueRowContext {
@@ -94,7 +94,7 @@ export interface WorkQueueRowContext {
   updatedAt: string;
 }
 
-/** 작업 목록 행의 맥락 한 줄: 현장 · 구역 · 정식 회차 · 갱신 시각. */
+/** 작업 목록 행의 맥락 한 줄: 현장 · 영역 · 정식 회차 · 갱신 시각. */
 export function formatWorkQueueRowContext(context: WorkQueueRowContext): string {
   const site = context.siteName ?? SITE_NAME_UNAVAILABLE;
   const areas = formatWorkAreaSummary(context.workAreaIds, context.nameById);
@@ -125,7 +125,7 @@ export interface WorkQueueRowContextNeed {
 }
 
 /**
- * 사람이 읽는 맥락이 빠져 있는 행. 이름이 비었거나 현장·구역 이름을
+ * 사람이 읽는 맥락이 빠져 있는 행. 이름이 비었거나 현장·영역 이름을
  * 확인하지 못하면 행 기술 참조를 둔다(진단 ID는 상세 화면에 남는다).
  */
 export function isWorkQueueContextMissing(row: WorkQueueRowContextNeed): boolean {
@@ -137,7 +137,7 @@ export function isWorkQueueContextMissing(row: WorkQueueRowContextNeed): boolean
 export interface WorkQueueRowDisclosureNeed {
   rowKey: string;
   name: string;
-  /** 화면에 그대로 찍히는 맥락 한 줄(현장 · 구역 · 회차 · 갱신). */
+  /** 화면에 그대로 찍히는 맥락 한 줄(현장 · 영역 · 회차 · 갱신). */
   contextLine: string;
   missingContext: boolean;
 }
@@ -173,7 +173,7 @@ export interface HomeAnalysisReviewCardContext {
   areaName: string | null;
 }
 
-/** Home은 해야 할 행동으로 이끌고, 실제 구역 이름은 대상 맥락으로 보존한다. */
+/** Home은 해야 할 행동으로 이끌고, 실제 영역 이름은 대상 맥락으로 보존한다. */
 export function homeAnalysisReviewCardText(context: HomeAnalysisReviewCardContext): {
   title: string;
   detail: string;
@@ -182,23 +182,23 @@ export function homeAnalysisReviewCardText(context: HomeAnalysisReviewCardContex
   if (context.areaName) {
     return {
       title: "분석 결과를 검토하세요.",
-      detail: `대상 구역 · ${context.areaName}. 현재 결과의 검토 기록이 없습니다. 결과와 근거를 확인하세요.`,
+      detail: `대상 영역 · ${context.areaName}. 현재 결과의 검토 기록이 없습니다. 결과와 근거를 확인하세요.`,
     };
   }
   return {
     title: "완료된 분석 결과를 검토하세요.",
-    detail: `${site} — 완료된 분석 결과에 현재 결과를 대상으로 한 검토 기록이 없습니다. 구역 이름을 확인하지 못했습니다. 결과와 근거를 확인하세요.`,
+    detail: `${site} — 완료된 분석 결과에 현재 결과를 대상으로 한 검토 기록이 없습니다. 영역 이름을 확인하지 못했습니다. 결과와 근거를 확인하세요.`,
   };
 }
 
-/** 기술 참조용 구역 ID 나열. 같은 이름에 접힌 구역 ID도 여기서 모두 보인다. */
+/** 기술 참조용 영역 ID 나열. 같은 이름에 접힌 영역 ID도 여기서 모두 보인다. */
 export function formatWorkAreaTechnicalRefs(workAreaIds: readonly string[]): string {
   return workAreaIds.length > 0 ? workAreaIds.join(", ") : "지정 없음";
 }
 
 /** 카드에 접어 두는 기술 참조 한 줄(키보드 도달 가능 details의 본문용). */
 export function formatHomeReviewTechnicalRef(analysisId: string, workAreaId: string): string {
-  return `분석 ${analysisId} · 작업구역 ${workAreaId}`;
+  return `분석 ${analysisId} · 영역 ${workAreaId}`;
 }
 
 export interface InboxTargetContext {

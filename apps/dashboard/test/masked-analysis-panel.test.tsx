@@ -12,7 +12,7 @@ const fixture = JSON.parse(
 const baseProps = {
   siteId: "site-1",
   workAreaId: "area-1",
-  workAreaName: "구역 A",
+  workAreaName: "영역 A",
   canRequest: true,
   maskBudgetBytes: 1024 * 1024,
 };

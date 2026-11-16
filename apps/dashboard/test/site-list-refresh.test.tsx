@@ -91,11 +91,11 @@ it('failed list announces recovery and explicit retry checks account before show
  vi.stubGlobal('fetch',fetcher);
  render(<SiteListProvider sites={[]} fingerprint={fingerprint}><SiteListRefreshNotice/><Shell/></SiteListProvider>);
  fireEvent.click(screen.getByRole('button',{name:'현장 브리핑으로 이동'}));
- expect(await screen.findByText(/현장 메뉴를 확인하지 못했습니다/)).toBeTruthy();
+ expect(await screen.findByText(/프로젝트 메뉴를 확인하지 못했습니다/)).toBeTruthy();
  expect(screen.getByTestId('count').textContent).toBe('0');
- fail=false; fireEvent.click(screen.getByRole('button',{name:'현장 메뉴 다시 확인'}));
+ fail=false; fireEvent.click(screen.getByRole('button',{name:'프로젝트 메뉴 다시 확인'}));
  await screen.findByText('복구 현장');
- expect(screen.queryByText(/현장 메뉴를 확인하지 못했습니다/)).toBeNull();
+ expect(screen.queryByText(/프로젝트 메뉴를 확인하지 못했습니다/)).toBeNull();
  expect(fetcher.mock.calls.filter(([url]) => url === '/api/account-identity')).toHaveLength(3);
 });
 it.each([401,403,500])('withholds new data on list status %s', async status => {
@@ -103,7 +103,7 @@ it.each([401,403,500])('withholds new data on list status %s', async status => {
  vi.stubGlobal('fetch',vi.fn(async (url:string)=>url==='/api/account-identity' ? new Response(JSON.stringify({fingerprint})) : new Response('{}',{status})));
  render(<SiteListProvider sites={[]} fingerprint={fingerprint}><SiteListRefreshNotice/><Shell/></SiteListProvider>);
  fireEvent.click(screen.getByRole('button',{name:'현장 브리핑으로 이동'}));
- await screen.findByText(/현장 메뉴를 확인하지 못했습니다/); expect(screen.getByTestId('count').textContent).toBe('0');
+ await screen.findByText(/프로젝트 메뉴를 확인하지 못했습니다/); expect(screen.getByTestId('count').textContent).toBe('0');
 });
 
 it('uses the refreshed site for header scope when opening the palette after first registration', async () => {
@@ -112,13 +112,13 @@ it('uses the refreshed site for header scope when opening the palette after firs
  vi.stubGlobal('fetch', vi.fn(async (url: string) => new Response(JSON.stringify(url === '/api/shell-sites' ? {fingerprint, sites:[{siteId:'new-id', name:'신규 현장', status:'UNMAPPED'}]} : {fingerprint}))));
  function Parts() {
    const refresh = useSiteListRefresh(); const sites = useSidebarSites();
-   return <><span data-testid="refreshed-sites">{sites.map(site => site.name).join(',')}</span><button onClick={() => void refresh('new-id')}>현장 목록 확인</button>
+   return <><span data-testid="refreshed-sites">{sites.map(site => site.name).join(',')}</span><button onClick={() => void refresh('new-id')}>프로젝트 목록 확인</button>
      <header data-site-nav="true" data-site-id="new-id" data-work-area-id="wa-a" data-asset-ref={ref}/>
      <CommandPalette items={[]} /></>;
  }
  env.path='/sites/new-id/analysis'; window.history.replaceState({}, '', '/sites/new-id/analysis');
  render(<SiteListProvider sites={[]} fingerprint={fingerprint}><Parts/></SiteListProvider>);
- fireEvent.click(screen.getByRole('button',{name:'현장 목록 확인'}));
+ fireEvent.click(screen.getByRole('button',{name:'프로젝트 목록 확인'}));
  await waitFor(() => expect(screen.getByTestId('refreshed-sites').textContent).toBe('신규 현장'));
  fireEvent.keyDown(window,{key:'k',ctrlKey:true});
  expect(screen.getByRole('dialog',{name:'검색 및 이동'}).textContent).toContain('신규 현장');
@@ -165,7 +165,7 @@ it('failed refresh retains the original confirmed site bridge without authorizin
    <CommandPalette items={[{key:'site:old-id',label:'기존 현장',group:'현장',href:'/sites/old-id'}]}/></>; }
  env.path='/sites/old-id/analysis'; window.history.replaceState({}, '', env.path);
  render(<SiteListProvider sites={[{siteId:'old-id',name:'기존 현장',status:'UNMAPPED'}]} fingerprint={fingerprint}><Parts/></SiteListProvider>);
- fireEvent.click(screen.getByRole('button',{name:'목록 확인'})); await screen.findByText(/현장 메뉴를 확인하지 못했습니다/);
+ fireEvent.click(screen.getByRole('button',{name:'목록 확인'})); await screen.findByText(/프로젝트 메뉴를 확인하지 못했습니다/);
  fireEvent.keyDown(window,{key:'k',ctrlKey:true});
  fireEvent.click(screen.getAllByRole('option').find(item=>item.textContent?.startsWith('자료'))!);
  expect(env.push).toHaveBeenCalledWith(`/sites/old-id?panel=materials&workAreaId=wa-old&assetRef=${ref}`);

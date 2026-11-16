@@ -80,7 +80,7 @@ async function goToConfirmMapped() {
   fireEvent.change(screen.getByPlaceholderText("EPSG:5186"), { target: { value: "EPSG:5186" } });
   fireEvent.change(screen.getByPlaceholderText("KNGeoid2018"), { target: { value: "KNGeoid2018" } });
   fireEvent.click(screen.getByRole("button", { name: "다음" }));
-  await screen.findByRole("button", { name: "현장 등록" });
+  await screen.findByRole("button", { name: "프로젝트 등록" });
 }
 
 const requestMock = vi.fn();
@@ -103,8 +103,8 @@ afterEach(() => {
 it("successful mapped registration refreshes only on explicit briefing click", async () => {
  const issued="site-12345678-1234-1234-1234-123456789012";
  requestMock.mockImplementation(async (input: RequestInfo | URL) => String(input)==="/api/sites" ? jsonResponse(echoSite(issued,"현장 A"),201) : jsonResponse({fingerprint:FINGERPRINT,sites:[{siteId:issued,name:"현장 A",status:"UNMAPPED"}]},200));
- await goToConfirmMapped(); fireEvent.click(screen.getByRole("button",{name:"현장 등록"}));
- await screen.findByText("현장이 등록되었습니다.");
+ await goToConfirmMapped(); fireEvent.click(screen.getByRole("button",{name:"프로젝트 등록"}));
+ await screen.findByText("프로젝트가 등록되었습니다.");
  expect(requestMock.mock.calls.filter(x=>String(x[0])==="/api/shell-sites")).toHaveLength(0);
  fireEvent.click(screen.getByRole("button",{name:"현장 브리핑으로 이동"}));
  await waitFor(()=>expect(screen.getByTestId("summary").textContent).toBe("현장 A"));

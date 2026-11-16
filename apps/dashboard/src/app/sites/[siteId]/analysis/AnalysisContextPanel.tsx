@@ -30,7 +30,7 @@ export function AnalysisContextPanel({ siteId, active, spaceHref = null }: { sit
       </ul>
     </nav>
     {spaceHref && (
-      // 탐색하던 구역·자료 맥락을 그대로 들고 공간으로 돌아간다.
+      // 탐색하던 영역·자료 맥락을 그대로 들고 공간으로 돌아간다.
       <Link href={spaceHref} className="tap-target flex items-center rounded-md border border-line px-2.5 text-body text-ink-2 hover:bg-sunk">공간으로 돌아가기</Link>
     )}
     </div>

@@ -71,7 +71,7 @@ export function selectableEpochs(
  * 임무 소속이든 되지만, current 는 아니다: 비교 요청은 "이 임무가 만든 결과를
  * 과거와 견준다"는 지시로 그 임무 밑에 남는다. 화면이 이 비대칭을 모르고 site
  * 전체 목록을 두 드롭다운에 똑같이 띄우면, baseline/current 를 뒤집어 고른
- * 조합은 지도까지 다 채운 뒤(구역 확정 포함)에야 제출에서 거부된다 — 실
+ * 조합은 지도까지 다 채운 뒤(영역 확정 포함)에야 제출에서 거부된다 — 실
  * 인프라 재현에서 실제로 이렇게 막힌 사례(2026-08-10) 이후 추가.
  */
 export function currentMissionEpochs(
@@ -84,7 +84,7 @@ export function currentMissionEpochs(
 export interface ComparisonEligibility {
   /** 점군 변화탐지를 시도할 수 있는가(양쪽에 point_cloud 가 있어야 한다). */
   changeDetection: boolean;
-  /** 체적 비교를 시도할 수 있는가(양쪽 dsm + 확정된 구역이 있어야 한다). */
+  /** 체적 비교를 시도할 수 있는가(양쪽 dsm + 확정된 영역이 있어야 한다). */
   volumeChange: boolean;
   /** 둘 다 불가면 제출 자체가 거부된다(NOTHING_TO_COMPARE) — 그 사유. */
   blockedReason: string | null;
@@ -93,9 +93,9 @@ export interface ComparisonEligibility {
 /**
  * 고른 두 epoch 로 무엇을 잴 수 있는지 — 제출 전 안내.
  *
- * `zonesConfirmed` 가 false 면 체적은 시도되지 않는다: 구역을 확정하지 않은 채
+ * `zonesConfirmed` 가 false 면 체적은 시도되지 않는다: 영역을 확정하지 않은 채
  * 제출하면 서버가 `zones=null` 로 받아 체적 비교를 건너뛴다. "확정 안 함"과
- * "구역이 없음"을 화면이 같은 말로 뭉뚱그리지 않기 위해 이 인자를 분리했다.
+ * "영역이 없음"을 화면이 같은 말로 뭉뚱그리지 않기 위해 이 인자를 분리했다.
  */
 export function comparisonEligibility(
   baseline: ComparisonEpoch | null,
@@ -125,8 +125,8 @@ export function comparisonEligibility(
   if (!changeDetection && !volumeChange) {
     // 여기 오는 조합은 둘뿐이다. changeDetection 이 false 이므로 **점군은 반드시
     // 빠져 있고**(그게 곧 "양쪽에 점군이 있다"의 부정), 동시에 부피도 안 되려면
-    // 높이자료가 없거나 구역이 확정되지 않아야 한다. 셋 중 하나만 어긋난
-    // 경우(예: 점군만 없고 높이자료·구역은 멀쩡)는 부분 비교가 가능해 위에서
+    // 높이자료가 없거나 영역이 확정되지 않아야 한다. 셋 중 하나만 어긋난
+    // 경우(예: 점군만 없고 높이자료·영역은 멀쩡)는 부분 비교가 가능해 위에서
     // 이미 제출 가능으로 빠져나간다 — 그래서 갈래가 둘이다.
     //
     // 예전에는 여기 "한쪽에 높이자료가 없어 부피 비교를 할 수 없습니다" 갈래가
@@ -134,7 +134,7 @@ export function comparisonEligibility(
     const missingDsm = !baseline.hasDsm || !current.hasDsm;
     const reason = missingDsm
       ? "고른 두 결과에 비교할 자료가 없습니다(점군·높이자료 모두 없음)."
-      : "점군이 없어 변화 비교를 할 수 없고, 구역을 확정하지 않아 부피 비교도 할 수 없습니다.";
+      : "점군이 없어 변화 비교를 할 수 없고, 영역을 확정하지 않아 부피 비교도 할 수 없습니다.";
     return { changeDetection: false, volumeChange: false, blockedReason: reason };
   }
   return { changeDetection, volumeChange, blockedReason: null };
@@ -235,15 +235,15 @@ export function canSubmitCivilComparison(
 }
 
 /**
- * 지도에서 확정한 폴리곤을 서버가 받는 구역 형태로 옮긴다.
+ * 지도에서 확정한 폴리곤을 서버가 받는 영역 형태로 옮긴다.
  *
  * **좌표 순서가 이 함수의 핵심이다.** 화면은 위도·경도(`AoiVertex`)로 다루고
- * GeoJSON 은 경도·위도 순이다 — 뒤집으면 구역이 지구 반대편으로 가고, 그러면
- * 서버는 "구역 안에 유효한 높이자료 셀이 없다"로 실패한다(실제로 그렇게
+ * GeoJSON 은 경도·위도 순이다 — 뒤집으면 영역이 지구 반대편으로 가고, 그러면
+ * 서버는 "영역 안에 유효한 높이자료 셀이 없다"로 실패한다(실제로 그렇게
  * 실패하는 경로가 이미 있다). 링은 첫 점으로 닫는다(GeoJSON 요구사항).
  *
  * 정점이 3개 미만이면 폴리곤이 될 수 없으므로 `null` — 호출부는 이 경우
- * "구역 미확정"으로 다룬다(체적 비교를 건너뛴다).
+ * "영역 미확정"으로 다룬다(체적 비교를 건너뛴다).
  */
 export function toZonePolygon(
   vertices: readonly AoiVertex[],
@@ -256,7 +256,7 @@ export function toZonePolygon(
   return { type: "Polygon", coordinates: [ring] };
 }
 
-/** 서버가 받는 `zones` 한 벌 — 지금은 사용자가 구역 하나만 확정한다. */
+/** 서버가 받는 `zones` 한 벌 — 지금은 사용자가 영역 하나만 확정한다. */
 export const COMPARISON_ZONE_ID = "comparison-zone";
 export const COMPARISON_ZONE_CRS = "EPSG:4326";
 

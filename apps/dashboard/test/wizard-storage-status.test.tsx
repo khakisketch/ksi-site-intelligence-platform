@@ -10,7 +10,7 @@ describe("wizard draft status", () => {
   it("does not claim auto-save when the caller reports a write failure", () => {
     render(
       <WizardShell
-        title="현장 등록"
+        title="프로젝트 등록"
         layout="steps"
         stepLabels={["기본정보", "범위", "확인"]}
         currentStep={0}

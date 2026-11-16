@@ -115,8 +115,8 @@ function pairSummary(matched: PairFacts): { line: string | null; warning: string
 type TrendResult = { points: TrendPoint[]; currentId: string; conditions: string };
 
 /**
- * 같은 구역에서 비교할 수 있다고 말할 수 있는 결과만 관측일 순으로 모은다.
- * - 완료됐고 결과 수치가 있으며 같은 작업구역일 것
+ * 같은 영역에서 비교할 수 있다고 말할 수 있는 결과만 관측일 순으로 모은다.
+ * - 완료됐고 결과 수치가 있으며 같은 영역일 것
  * - 임계값·셀 크기가 같을 것(다른 조건의 수치를 한 눈금에 올리지 않는다)
  * - 현재 관측을 현재 관측 목록에서 찾아 관측일을 알 수 있을 것
  * - 같은 기준·현재 쌍을 다시 계산한 기록은 가장 나중 것 하나만 쓴다
@@ -154,7 +154,7 @@ function buildTrend(focal: AnalysisView, peers: readonly AnalysisView[], facts: 
   return {
     points,
     currentId: focal.analysisId,
-    conditions: `같은 구역 · 임계값 ${formatNumberKo(base.metrics.thresholdM, 2)} m · 셀 ${formatNumberKo(base.coverage.cellAreaM2 ** 0.5, 2)} m`,
+    conditions: `같은 영역 · 임계값 ${formatNumberKo(base.metrics.thresholdM, 2)} m · 셀 ${formatNumberKo(base.coverage.cellAreaM2 ** 0.5, 2)} m`,
   };
 }
 
@@ -275,7 +275,7 @@ function CompactRecord({ item, evidenceHref }: { item: AnalysisListItem; evidenc
 /**
  * 결과 모드 — 기존 분석 기록·근거와 그 한계를 새 요청보다 먼저 둔다.
  *
- * - 명시적 기록 링크는 원래 기록 그대로(정확한 입력·구역) 보여주거나 막는다.
+ * - 명시적 기록 링크는 원래 기록 그대로(정확한 입력·영역) 보여주거나 막는다.
  *   모르면 최신으로 바꾸지 않는다.
  * - V2 계산 기록과 외부 비교 기록을 한 카드에 합치지 않는다.
  */
@@ -308,7 +308,7 @@ export function SiteWorkspaceResults({
   scopedCompareHref: string;
   /** 탐색 중이던 시각 쌍 맥락 — 결과의 frozen 입력과 구분해 복귀한다. */
   visualContext?: { workAreaId: string; visualAAssetRef: string; visualBAssetRef: string } | null;
-  /** 같은 구역의 다른 완료 결과 상세 — 추이에 쓸 수 있는지는 buildTrend가 가린다. */
+  /** 같은 영역의 다른 완료 결과 상세 — 추이에 쓸 수 있는지는 buildTrend가 가린다. */
   peerDetails?: readonly AnalysisView[];
   /** 지금 보는 결과의 사람 검토 요약. */
   reviewSummary?: ResultReviewSummary | null;
@@ -338,8 +338,8 @@ export function SiteWorkspaceResults({
     : null;
   const leadPair = pairSummary(leadMatched);
   const leadPairUnknown = Boolean(leadItem && leadDetail && leadDetail.analysisId === leadItem.analysisId && leadPair.line === null);
-  // 탐색 복귀 주소 — 검증된 시각 쌍 맥락만 싣는다. 구역이 바뀌면 쌍을 싣지 않고
-  // 비교 모드 주소로만 둔다(조용히 다른 구역의 쌍을 복원하지 않는다).
+  // 탐색 복귀 주소 — 검증된 시각 쌍 맥락만 싣는다. 영역이 바뀌면 쌍을 싣지 않고
+  // 비교 모드 주소로만 둔다(조용히 다른 영역의 쌍을 복원하지 않는다).
   // 탐색 복귀 쿼리 — 정식 맥락에서만 덧붙인다. frozen 기록 식별자는 그대로 둔다.
   const visualQuery = normalizedVisualContext
     ? `&visualAAssetRef=${encodeURIComponent(normalizedVisualContext.visualAAssetRef)}&visualBAssetRef=${encodeURIComponent(normalizedVisualContext.visualBAssetRef)}`
@@ -386,11 +386,11 @@ export function SiteWorkspaceResults({
       />
     ) : !analysesKnown || areaAnalyses === null ? (
       <p className="rounded-lg border border-line bg-surface px-4 py-3 text-body leading-5 text-ink-2" role="status">
-        분석 기록을 확인할 수 없습니다. 잠시 후 다시 확인하세요. 빈 목록으로 단정하지 않습니다.
+        분석 기록을 확인할 수 없습니다. 잠시 후 다시 확인하세요.
       </p>
     ) : areaAnalyses.length === 0 ? (
       <p className="rounded-lg border border-line bg-surface px-4 py-3 text-body leading-5 text-ink-2" role="status">
-        이 구역에 조회된 분석 결과가 없습니다.
+        이 영역에 조회된 분석 결과가 없습니다.
       </p>
     ) : (
       <div className="flex flex-col gap-4">

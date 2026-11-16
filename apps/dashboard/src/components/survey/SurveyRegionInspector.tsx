@@ -36,7 +36,7 @@ export function SurveyRegionInspector(props: {
     : null;
 
   return (
-    <section aria-label="후보 구역 지표" className="rounded border border-line px-3 py-2">
+    <section aria-label="후보 영역 지표" className="rounded border border-line px-3 py-2">
       <p className="text-xs leading-5 text-ink-2">
         {reference.kind === "survey-run"
           ? `전수측량 실행 ${reference.id}`
@@ -46,7 +46,7 @@ export function SurveyRegionInspector(props: {
       {region === null ? (
         <p className="py-3 text-center text-sm leading-6 text-ink-2">
           {props.selectedId === null
-            ? "지도에서 후보 구역을 선택하면 지표를 표시합니다."
+            ? "지도에서 후보 영역을 선택하면 지표를 표시합니다."
             : `선택한 후보(${props.selectedId})가 이 계산에 없습니다. 목록에서 다시 선택하세요.`}
         </p>
       ) : (

@@ -1,5 +1,5 @@
 /**
- * 현장 목록 미리보기 선택(presentation-only 순수 판정).
+ * 프로젝트 목록 미리보기 선택(presentation-only 순수 판정).
  *
  * Core가 내려준 작업 목록 안에서, 지금 이 자리에서 보여줄 수 있는 준비된
  * 출력 하나를 고른다. 판정 규칙:
@@ -8,14 +8,14 @@
  *   된다. RETENTION_EXPIRED·ACCESS_REVOKED·ACCESS_EXPIRED·UNAVAILABLE 등
  *   현재 권리가 없는 출력은 고르지 않는다 — 만료·회수된 픽셀을 붙들지 않는다.
  *   실행 중·대기·실패·취소·기한 만료 작업도 후보가 아니다.
- * - 요청한 현장·구역·요청 식별자와 영수증의 귀속이 모두 맞아야 한다.
+ * - 요청한 현장·영역·요청 식별자와 영수증의 귀속이 모두 맞아야 한다.
  *   어긋난 DTO로는 URL을 조립하지 않는다(실패 닫힘).
  * - 종류는 정사영상(ortho) 우선, 높이자료(DSM)는 대체다. Core 반환 순서
  *   안에서 고를 뿐, 등록·작업·준비 시각으로 재정렬하지 않는다 — '최신
  *   촬영' 같은 시간 추론을 하지 않는다.
- * - 작업구역을 합치지 않는다. 대표는 반드시 하나의 구역·하나의 요청이며,
- *   표시와 링크가 같은 자산 참조·구역을 가리킨다.
- * - 대표 미리보기는 언제나 부분 범위다. 단일 준비 창이 전체 현장·전체
+ * - 영역을 합치지 않는다. 대표는 반드시 하나의 영역·하나의 요청이며,
+ *   표시와 링크가 같은 자산 참조·영역을 가리킨다.
+ * - 대표 미리보기는 언제나 부분 범위다. 단일 준비 창이 전체 프로젝트·전체
  *   자산을 증명할 수는 없으므로, 커버리지가 입증되지 않는 한 '부분 범위'
  *   라벨을 단다. 실제·요청 범위가 같아도 전체 주장으로 바꾸지 않는다
  *   (픽셀 창의 좌표 해석을 화면이 새로 정하지 않는다).
@@ -27,13 +27,13 @@
 
 import type { SpatialDataJobView, SpatialDataReceipt } from "./core-api/spatial-data-types";
 
-/** 한 번의 목록 진입에서 훑는 작업구역 수 상한 — N+1 팬아웃 방지. */
+/** 한 번의 목록 진입에서 훑는 영역 수 상한 — N+1 팬아웃 방지. */
 export const SITE_PREVIEW_MAX_AREAS = 6;
 
-/** 한 요청 페이지의 행 수 — 구역 간/이어지는 페이지에 같은 크기를 쓴다. */
+/** 한 요청 페이지의 행 수 — 영역 간/이어지는 페이지에 같은 크기를 쓴다. */
 export const SITE_PREVIEW_REQUESTS_PER_AREA = 8;
 
-/** 기존 6구역 × 1페이지의 총 호출/행 예산을 유지하며 남는 호출만 이어 읽는다. */
+/** 기존 6영역 × 1페이지의 총 호출/행 예산을 유지하며 남는 호출만 이어 읽는다. */
 export const SITE_PREVIEW_MAX_REQUEST_PAGES = SITE_PREVIEW_MAX_AREAS;
 
 export interface SitePreviewAreaInput {
@@ -48,8 +48,8 @@ export interface SitePreviewPick {
 }
 
 /**
- * 한 구역의 bounded 요청 목록에서 미리보기 후보 하나를 고른다.
- * null이면 이 구역에는 지금 표시할 준비된 출력이 없다(없음이지, 등록 자료
+ * 한 영역의 bounded 요청 목록에서 미리보기 후보 하나를 고른다.
+ * null이면 이 영역에는 지금 표시할 준비된 출력이 없다(없음이지, 등록 자료
  * 부재가 아니다). Core 반환 순서를 유지하고 시간으로 다시 정렬하지 않는다.
  */
 export function pickAreaPreviewJob(
@@ -99,7 +99,7 @@ export interface SitePreviewDescriptor {
   preparedAt: string;
   asset: SitePreviewAssetFacts;
   partial: boolean;
-  /** 미리보기 클릭이 여는 정확한 현장 주소(구역+자산 참조 고정). */
+  /** 미리보기 클릭이 여는 정확한 현장 주소(영역+자산 참조 고정). */
   siteHref: string;
 }
 
@@ -108,7 +108,7 @@ export type SitePreviewLookup =
   | { available: false; reason: "no-output" | "unknown" };
 
 /**
- * BFF가 Core에서 읽어 온 구역·요청·자산 사실을 표시 기술서로 접는다.
+ * BFF가 Core에서 읽어 온 영역·요청·자산 사실을 표시 기술서로 접는다.
  * 자산 상세를 못 읽었으면(거부·없음) 라벨만 미상으로 접고 픽셀 자격에는
  * 손대지 않는다 — 바이트는 BFF가 어차피 다시 대조한다.
  */
@@ -158,7 +158,7 @@ export function buildSitePreviewDescriptor(input: {
       attribution: asset?.attribution ?? receipt.attribution,
       modificationNotice: receipt.modificationNotice,
     },
-    // 대표 미리보기는 언제나 부분 범위다. 단일 준비 창이 전체 현장·전체
+    // 대표 미리보기는 언제나 부분 범위다. 단일 준비 창이 전체 프로젝트·전체
     // 자산을 증명할 수는 없으므로, 커버리지가 입증되지 않는 한 부분 라벨을
     // 단다. 실제·요청 범위가 같아도 전체 주장으로 바꾸지 않는다.
     partial: true,

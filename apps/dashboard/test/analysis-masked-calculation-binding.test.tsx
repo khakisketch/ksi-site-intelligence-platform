@@ -56,7 +56,7 @@ describe("masked V3 result/export composition", () => {
   it("removes the V3 export handoff when a current read loses admission, without needing V2 numeric success", () => {
     mocked.available = available;
     mocked.current = { ...available, disposition: "REASSESSMENT_REQUIRED", report: null } as MaskedCalculationDetailWire;
-    render(<AnalysisMaskedCalculation detail={detail} pages={pages} workAreaName="합성 구역" canRequest
+    render(<AnalysisMaskedCalculation detail={detail} pages={pages} workAreaName="합성 영역" canRequest
       maskBudgetBytes={1000000} delivery={{ lifetimeSeconds: 60, downloadBudgetBytes: 1000000 }} />);
     fireEvent.click(screen.getByRole("button", { name: "합성 V3 결과 읽기" }));
     expect(screen.getByRole("region", { name: "V3 내보내기 인계" })).toBeTruthy();
@@ -66,7 +66,7 @@ describe("masked V3 result/export composition", () => {
 
   it("clears a stale export after mask access is denied or inspection is rejected", () => {
     mocked.available = available;
-    render(<AnalysisMaskedCalculation detail={detail} pages={pages} workAreaName="합성 구역" canRequest
+    render(<AnalysisMaskedCalculation detail={detail} pages={pages} workAreaName="합성 영역" canRequest
       maskBudgetBytes={1000000} delivery={{ lifetimeSeconds: 60, downloadBudgetBytes: 1000000 }} />);
     fireEvent.click(screen.getByRole("button", { name: "합성 V3 결과 읽기" }));
     expect(screen.getByRole("region", { name: "V3 내보내기 인계" })).toBeTruthy();
@@ -76,7 +76,7 @@ describe("masked V3 result/export composition", () => {
 
   it("passes only the server session scope and drops another principal's in-memory export", () => {
     mocked.available = available;
-    const props = { detail, pages, workAreaName: "합성 구역", canRequest: true, maskBudgetBytes: 1000000,
+    const props = { detail, pages, workAreaName: "합성 영역", canRequest: true, maskBudgetBytes: 1000000,
       delivery: { lifetimeSeconds: 60, downloadBudgetBytes: 1000000 } };
     const { rerender } = render(<AnalysisMaskedCalculation {...props}
       sessionScope={{ organizationId: "org-1", principalId: "operator-a" }} />);
@@ -93,7 +93,7 @@ describe("masked V3 result/export composition", () => {
 
   it("offers an explicit read-only next action before the AP source evidence is loaded", () => {
     const load = vi.fn();
-    render(<AnalysisMaskedCalculation detail={detail} pages={[]} workAreaName="합성 구역" canRequest
+    render(<AnalysisMaskedCalculation detail={detail} pages={[]} workAreaName="합성 영역" canRequest
       maskBudgetBytes={1000000} delivery={null} onLoadSource={load} />);
     expect(load).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: "원본 근거 불러오기" }));

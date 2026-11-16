@@ -124,11 +124,11 @@ export function spatialTaskError(code: string | undefined, status: number): stri
   if (status === 410) return "선택 링크가 만료되었습니다. 외부 대화에서 새 요청을 시작하세요. 기존 분석 결과는 삭제되지 않습니다.";
   const messages: Record<string, string> = {
     SPATIAL_TASK_REVISION_CONFLICT: "다른 화면에서 선택이 바뀌었습니다. 저장된 선택을 새로 불러온 뒤 계속하세요.",
-    SPATIAL_TASK_SELECTION_UNAVAILABLE: "선택한 구역이나 자료를 현재 사용할 수 없습니다. 새로 불러온 후보에서 다시 선택하세요.",
+    SPATIAL_TASK_SELECTION_UNAVAILABLE: "선택한 영역이나 자료를 현재 사용할 수 없습니다. 새로 불러온 후보에서 다시 선택하세요.",
     SPATIAL_TASK_SELECTION_LOCKED: "이미 분석을 요청한 범위입니다. 범위를 바꾸려면 외부 대화에서 새 작업을 시작하세요.",
     SPATIAL_TASK_PURPOSE_UNSUPPORTED: "이 목적의 계산은 아직 지원하지 않습니다. 두 관측 사이 변화로 자동 대체하지 않습니다.",
     ANALYSIS_ACTIVATION_UNAVAILABLE: "분석 실행 환경이 준비되지 않았습니다. 선택은 보관되어 있습니다. 운영 담당자에게 확인하세요.",
-    SPATIAL_TASK_SELECTION_REQUIRED: "작업구역과 서로 다른 두 관측을 선택하세요.",
+    SPATIAL_TASK_SELECTION_REQUIRED: "영역과 서로 다른 두 관측을 선택하세요.",
     SPATIAL_TASK_REVISION_LIMIT: "이 작업의 변경 한도에 도달했습니다. 외부 대화에서 저장된 선택을 새 작업에 이어서 사용하세요. 분석은 시작되지 않았습니다.",
   };
   return messages[code ?? ""] ?? "작업을 처리하지 못했습니다. 선택은 화면에 유지됩니다. 연결을 확인하고 다시 시도하세요.";

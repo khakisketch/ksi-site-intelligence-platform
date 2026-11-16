@@ -59,7 +59,7 @@ function call(
   });
 }
 
-describe("작업구역 제출 결과 분류 (strict)", () => {
+describe("영역 제출 결과 분류 (strict)", () => {
   it("코드 있는 5xx도 unknown이다 (commit 뒤 upstream 유실 가능)", () => {
     expect(call(503, { code: "STORE_UNAVAILABLE", detail: null, workArea: null })).toEqual({
       kind: "unknown",

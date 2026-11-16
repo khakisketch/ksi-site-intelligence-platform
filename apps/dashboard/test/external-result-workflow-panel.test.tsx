@@ -128,12 +128,12 @@ it("opens only a server-validated exact report link without inventing a request 
       siteId="site-1"
       decision={null}
       permissions={[]}
-      initialReport={{ reportRef, reportDigest: digest("d"), view, workAreaName: "동측 절성토 구역" }}
+      initialReport={{ reportRef, reportDigest: digest("d"), view, workAreaName: "동측 절성토 영역" }}
     />,
   );
 
   expect(await screen.findByRole("heading", { name: "외부 상대 물량 비교 결과" })).toBeTruthy();
-  expect(screen.getByText(/작업구역 동측 절성토 구역/)).toBeTruthy();
+  expect(screen.getByText(/영역 동측 절성토 영역/)).toBeTruthy();
   expect(screen.getByText("절토")).toBeTruthy();
   expect(screen.getByText("4 m³")).toBeTruthy();
   expect(screen.getByText("순변화")).toBeTruthy();
@@ -176,7 +176,7 @@ it("hydrates a retained proposal from an exact initial report and links its Core
   );
 
   expect(await screen.findByText("재관측 제안이 기록되었습니다.")).toBeTruthy();
-  expect(screen.queryByRole("button", { name: "이 작업구역으로 재관측 제안" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "이 영역으로 재관측 제안" })).toBeNull();
   expect(screen.getByRole("link", { name: "후속 작업 보기" }).getAttribute("href")).toBe("/field/work-orders/successor-1");
 });
 
@@ -246,10 +246,10 @@ it("replays a frozen proposal after closure and a lost response", async () => {
   };
   const { rerender } = render(<ExternalResultWorkflowPanel {...props} />);
 
-  fireEvent.click(await screen.findByRole("button", { name: "이 작업구역으로 재관측 제안" }));
-  await screen.findByText("재관측 제안 상태를 확인하지 못했습니다. 같은 보고서와 작업구역으로 재시도합니다.");
+  fireEvent.click(await screen.findByRole("button", { name: "이 영역으로 재관측 제안" }));
+  await screen.findByText("재관측 제안 상태를 확인하지 못했습니다. 같은 보고서와 영역으로 재시도합니다.");
   rerender(<ExternalResultWorkflowPanel {...props} newIntentAllowed={false} />);
-  fireEvent.click(screen.getByRole("button", { name: "이 작업구역으로 재관측 제안" }));
+  fireEvent.click(screen.getByRole("button", { name: "이 영역으로 재관측 제안" }));
   await waitFor(() => expect(posts).toHaveLength(2));
   expect(posts[1].body).toBe(posts[0].body);
   expect(posts[1].headers).toEqual(posts[0].headers);
@@ -818,7 +818,7 @@ it("loads a retained work-order report without a current pair decision, renders 
   expect(await screen.findByText("4 m³")).toBeTruthy();
   expect(screen.getByText("불확실성은 아직 산정되지 않았습니다. independent checkpoint RMSE is retained by Core evidence")).toBeTruthy();
   fireEvent.click(screen.getByText("파일·식별 상세"));
-  expect(screen.getByText(`비교 구역 area-1 · 구역 버전 1 · 구역 정의 확인값(해시) ${digest("8")}`)).toBeTruthy();
+  expect(screen.getByText(`비교 영역 area-1 · 영역 버전 1 · 영역 정의 확인값(해시) ${digest("8")}`)).toBeTruthy();
   expect(screen.getByText(`독립 검사점 증거 기록: ${digest("5")}`)).toBeTruthy();
 });
 
@@ -956,7 +956,7 @@ it("records review, proposes the exact report zone, approves separately, refresh
   fireEvent.click(await screen.findByRole("button", { name: "결과 검토 기록" }));
   await screen.findByText("결과 검토를 기록했습니다.");
   fireEvent.change(screen.getByLabelText("재관측 제안 사유"), { target: { value: "현장 확인" } });
-  fireEvent.click(screen.getByRole("button", { name: "이 작업구역으로 재관측 제안" }));
+  fireEvent.click(screen.getByRole("button", { name: "이 영역으로 재관측 제안" }));
   await screen.findByText("재관측 제안이 기록되었습니다.");
   const proposalCall = fetchMock.mock.calls.find(([url]) => url === "/api/external-reobservation-proposals")?.[1] as RequestInit;
   expect(JSON.parse(String(proposalCall.body))).toEqual({ reportRef, targetWorkAreaIds: ["area-1"], reason: "현장 확인" });
@@ -1154,8 +1154,8 @@ describe("SINGLE_VOLUME measurement", () => {
     fireEvent.click(screen.getByRole("button", { name: "결과 검토 기록" }));
     await screen.findByText("결과 검토를 기록했습니다.");
     expect(fetchMock.mock.calls.some(([url]) => String(url) === `/api/external-single-volume-reports/${singleReportRef}/reviews`)).toBe(true);
-    expect(screen.getByText("대상: 이 측정에 사용한 작업구역")).toBeTruthy();
-    expect(screen.queryByText("대상: 이 비교에 사용한 작업구역")).toBeNull();
+    expect(screen.getByText("대상: 이 측정에 사용한 영역")).toBeTruthy();
+    expect(screen.queryByText("대상: 이 비교에 사용한 영역")).toBeNull();
   });
 
   it("proposes the exact single report zone, approves the successor, and shows only the target audit detail", async () => {
@@ -1182,9 +1182,9 @@ describe("SINGLE_VOLUME measurement", () => {
     });
     render(<ExternalResultWorkflowPanel workOrderId="work-1" siteId="site-1" decision={null} singleVolumeDecision={singleDecision} permissions={["WORK_ORDERS_WRITE", "REOBSERVATION_APPROVE"]} />);
     fireEvent.click(await screen.findByRole("button", { name: "체적 요청 상태" }));
-    expect(await screen.findByText("대상: 이 측정에 사용한 작업구역")).toBeTruthy();
+    expect(await screen.findByText("대상: 이 측정에 사용한 영역")).toBeTruthy();
     fireEvent.change(screen.getByLabelText("재관측 제안 사유"), { target: { value: "현장 확인" } });
-    fireEvent.click(screen.getByRole("button", { name: "이 작업구역으로 재관측 제안" }));
+    fireEvent.click(screen.getByRole("button", { name: "이 영역으로 재관측 제안" }));
     await screen.findByText("재관측 제안이 기록되었습니다.");
     const proposalCall = fetchMock.mock.calls.find(([url]) => url === "/api/external-reobservation-proposals")?.[1] as RequestInit;
     expect(JSON.parse(String(proposalCall.body))).toEqual({ reportRef: singleReportRef, targetWorkAreaIds: ["pile-1"], reason: "현장 확인" });
@@ -1233,13 +1233,13 @@ describe("SINGLE_VOLUME measurement", () => {
       if (url === `/api/external-single-volume-reports/${singleReportRef}`) return response(view);
       throw new Error(`unexpected fetch ${url}`);
     });
-    render(<ExternalResultWorkflowPanel workOrderId="work-1" siteId="site-1" decision={null} singleVolumeDecision={null} permissions={[]} workAreaNames={{ "pile-1": "남측 적치 구역" }} />);
+    render(<ExternalResultWorkflowPanel workOrderId="work-1" siteId="site-1" decision={null} singleVolumeDecision={null} permissions={[]} workAreaNames={{ "pile-1": "남측 적치 영역" }} />);
     expect(await screen.findByText("현재 선택에서 단일 시점 체적 결정을 요청하세요.")).toBeTruthy();
     fireEvent.click(await screen.findByRole("button", { name: "체적 요청 상태" }));
     expect(await screen.findByText("불확도 미산정")).toBeTruthy();
     expect(screen.getByText("1,234.5 m³")).toBeTruthy();
-    expect(screen.getByText("작업구역 남측 적치 구역")).toBeTruthy();
-    expect(screen.getByText("비교 구역 pile-1 · 구역 버전 1").closest("details")).toBeTruthy();
+    expect(screen.getByText("영역 남측 적치 영역")).toBeTruthy();
+    expect(screen.getByText("비교 영역 pile-1 · 영역 버전 1").closest("details")).toBeTruthy();
 
     view = singleReportView({ boundaryValidFraction: 0.5 });
     fireEvent.click(screen.getByRole("button", { name: "체적 요청 상태" }));
@@ -1273,12 +1273,12 @@ describe("SINGLE_VOLUME measurement", () => {
     const relativeTrigger = await screen.findByRole("button", { name: "상대 물량 비교 요청" });
     expect(relativeTrigger.hasAttribute("disabled")).toBe(false);
     fireEvent.click(relativeTrigger);
-    expect(await screen.findByText("상대 물량 비교 요청에는 현장 쓰기 권한이 필요합니다. 권한 있는 담당자에게 요청하세요.")).toBeTruthy();
+    expect(await screen.findByText("상대 물량 비교 요청에는 프로젝트 쓰기 권한이 필요합니다. 권한 있는 담당자에게 요청하세요.")).toBeTruthy();
 
     const singleTrigger = await screen.findByRole("button", { name: "단일 시점 체적 측정 요청" });
     expect(singleTrigger.hasAttribute("disabled")).toBe(false);
     fireEvent.click(singleTrigger);
-    expect(await screen.findByText("단일 시점 체적 측정 요청에는 현장 쓰기 권한이 필요합니다. 권한 있는 담당자에게 요청하세요.")).toBeTruthy();
+    expect(await screen.findByText("단일 시점 체적 측정 요청에는 프로젝트 쓰기 권한이 필요합니다. 권한 있는 담당자에게 요청하세요.")).toBeTruthy();
 
     expect(document.body.textContent).not.toContain("SITES_WRITE");
     expect(fetchMock.mock.calls.every(([, init]) => !init?.method || init.method === "GET")).toBe(true);
@@ -1933,7 +1933,7 @@ describe("scoped release account (legacyDecisionClosed)", () => {
     expect(await screen.findByText(/이 화면의 상대 물량 비교 요청은 현재 계정의 배포 범위에 열려 있지 않습니다/)).toBeTruthy();
     expect(screen.queryByText("현재 선택에서 상대 물량 비교를 요청하세요.")).toBeNull();
     expect(screen.queryByRole("button", { name: "상대 물량 비교 요청" })).toBeNull();
-    expect(screen.getByText(/새로운 두 시점 관측 변화 분석은 현장의 분석 화면에서 진행합니다/)).toBeTruthy();
+    expect(screen.getByText(/새로운 두 시점 관측 변화 분석은 프로젝트의 분석 화면에서 진행합니다/)).toBeTruthy();
     const handoff = screen.getByRole("link", { name: "분석 화면 열기" });
     expect(handoff.getAttribute("href")).toBe("/sites/site-1/analysis");
 

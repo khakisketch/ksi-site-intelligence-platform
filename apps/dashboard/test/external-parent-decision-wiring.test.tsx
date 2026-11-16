@@ -94,7 +94,7 @@ describe("parent decision wiring (real parent + real child + real workflow)", ()
       fetchMock.mockImplementation((url: string, init?: RequestInit) => {
         if (url.endsWith("/evidence")) return Promise.resolve(response({ items: [] }));
         if (url === "/api/sites/site-1/work-areas") {
-          return Promise.resolve(response({ workAreas: [{ workAreaId: "area-1", name: "A구역", status: "ACTIVE" }, { workAreaId: "area-2", name: "B구역", status: "ACTIVE" }] }));
+          return Promise.resolve(response({ workAreas: [{ workAreaId: "area-1", name: "A영역", status: "ACTIVE" }, { workAreaId: "area-2", name: "B영역", status: "ACTIVE" }] }));
         }
         if (url === "/api/sites/site-1/observation-work-orders") {
           return Promise.resolve(response({
@@ -175,7 +175,7 @@ describe("parent decision wiring (real parent + real child + real workflow)", ()
       fireEvent.change(screen.getByLabelText("비교할 이전 등록 버전"), {
         target: { value: `current:${sameWorkOrderBaseline.submissionRef}:2` },
       });
-      fireEvent.change(screen.getByLabelText("변화 분석 구역"), { target: { value: "area-1" } });
+      fireEvent.change(screen.getByLabelText("변화 분석 영역"), { target: { value: "area-1" } });
       fireEvent.click(screen.getByRole("button", { name: "변화 분석 다시 확인" }));
 
       // The real parent receiver forwards the ELIGIBLE decision to the real workflow.
@@ -199,7 +199,7 @@ describe("parent decision wiring (real parent + real child + real workflow)", ()
 
       // Draft change: switch the zone. No new POST, no abort of the in-flight
       // issue; the retained attempt surfaces as an orphan banner, not a new key.
-      fireEvent.change(screen.getByLabelText("변화 분석 구역"), { target: { value: "area-2" } });
+      fireEvent.change(screen.getByLabelText("변화 분석 영역"), { target: { value: "area-2" } });
       expect(await screen.findByText(/이전 상대 물량 비교 요청의 결과를 확인하지 못했습니다/)).toBeTruthy();
       expect(posts).toHaveLength(1);
 
@@ -214,7 +214,7 @@ describe("parent decision wiring (real parent + real child + real workflow)", ()
       expect(posts).toHaveLength(1);
 
       // Return to the original draft: the retained attempt replays the same key.
-      fireEvent.change(screen.getByLabelText("변화 분석 구역"), { target: { value: "area-1" } });
+      fireEvent.change(screen.getByLabelText("변화 분석 영역"), { target: { value: "area-1" } });
       await waitFor(() => expect(screen.queryByText(/이전 상대 물량 비교 요청의 결과를 확인하지 못했습니다/)).toBeNull());
       fireEvent.click(await screen.findByRole("button", { name: "상대 물량 비교 요청" }));
       await waitFor(() => expect(posts).toHaveLength(2));
@@ -236,8 +236,8 @@ describe("parent decision wiring (real parent + real child + real workflow)", ()
       if (url.endsWith("/evidence")) return Promise.resolve(response({ items: [] }));
       if (url === "/api/sites/site-1/work-areas") {
         return Promise.resolve(response({ workAreas: [
-          { workAreaId: "area-1", name: "A구역", status: "ACTIVE" },
-          { workAreaId: "area-2", name: "B구역", status: "ACTIVE" },
+          { workAreaId: "area-1", name: "A영역", status: "ACTIVE" },
+          { workAreaId: "area-2", name: "B영역", status: "ACTIVE" },
         ] }));
       }
       if (url === "/api/sites/site-1/observation-work-orders") {
@@ -302,16 +302,16 @@ describe("parent decision wiring (real parent + real child + real workflow)", ()
       fireEvent.change(screen.getByLabelText("비교할 이전 등록 버전"), {
         target: { value: `current:${sameWorkOrderBaseline.submissionRef}:2` },
       });
-      fireEvent.change(screen.getByLabelText("변화 분석 구역"), { target: { value: "area-1" } });
+      fireEvent.change(screen.getByLabelText("변화 분석 영역"), { target: { value: "area-1" } });
       fireEvent.click(screen.getByRole("button", { name: "변화 분석 다시 확인" }));
       fireEvent.click(await screen.findByRole("button", { name: "상대 물량 비교 요청" }));
       expect(await screen.findByText(/요청 처리를 지금 시작할 수 없습니다. 같은 선택으로 다시 시도합니다/)).toBeTruthy();
       expect(posts).toHaveLength(1);
       const firstKey = posts[0].key;
 
-      fireEvent.change(screen.getByLabelText("변화 분석 구역"), { target: { value: "area-2" } });
+      fireEvent.change(screen.getByLabelText("변화 분석 영역"), { target: { value: "area-2" } });
       expect(await screen.findByText(/이전 상대 물량 비교 요청의 결과를 확인하지 못했습니다/)).toBeTruthy();
-      fireEvent.change(screen.getByLabelText("변화 분석 구역"), { target: { value: "area-1" } });
+      fireEvent.change(screen.getByLabelText("변화 분석 영역"), { target: { value: "area-1" } });
       await waitFor(() => expect(screen.queryByText(/이전 상대 물량 비교 요청의 결과를 확인하지 못했습니다/)).toBeNull());
 
       // The server returns the same id with a different digest. The old

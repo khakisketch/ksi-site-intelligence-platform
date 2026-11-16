@@ -53,20 +53,20 @@ test.describe("F-01 mapped site bootstrap", () => {
     await login(page);
 
     await page.goto("/sites/new");
-    await expect(page.getByRole("heading", { name: "현장 등록" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "프로젝트 등록" })).toBeVisible();
     // Mapped mode hides the client-chosen id entirely.
     await expect(page.getByLabel("현장 ID")).toHaveCount(0);
     // The disabled-next reason must be visible at the standard desktop viewport,
     // not hidden below the fold.
-    await expect(page.getByText("현장 이름을 입력하세요.")).toBeInViewport();
+    await expect(page.getByText("프로젝트 이름을 입력하세요.")).toBeInViewport();
 
     const name = `F-01 e2e 현장 ${Date.now()}`;
-    await page.getByLabel("현장 이름").fill(name);
+    await page.getByLabel("프로젝트 이름").fill(name);
     await page.getByRole("button", { name: "다음" }).click();
 
     // Draw a small quad on the AOI map: choose the polygon tool, click four
     // points, then click the first point again to finish (Leaflet.draw).
-    await page.getByRole("link", { name: "현장 범위 다각형 그리기" }).click();
+    await page.getByRole("link", { name: "프로젝트 범위 다각형 그리기" }).click();
     const map = page.locator(".leaflet-container").first();
     const box = await map.boundingBox();
     expect(box).not.toBeNull();
@@ -107,10 +107,10 @@ test.describe("F-01 mapped site bootstrap", () => {
     // Confirm step: no phantom client id row in mapped mode.
     await expect(page.getByRole("heading", { name: "등록 내용을 확인하세요" })).toBeVisible();
     const summary = page.locator("main dl");
-    await expect(summary).toContainText("현장 범위");
+    await expect(summary).toContainText("프로젝트 범위");
     await expect(summary).not.toContainText("현장 ID");
 
-    await page.getByRole("button", { name: "현장 등록" }).click();
+    await page.getByRole("button", { name: "프로젝트 등록" }).click();
 
     // Success shows the receipt state; navigation happens on the explicit
     // follow-up action. The follow-up target is the server-issued id.

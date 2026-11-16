@@ -118,10 +118,10 @@ describe("exact site report detail", () => {
     render(await SiteObservationDetailPage({ params: Promise.resolve({ siteId: "site-1", reportRef }) }));
 
     // 보관 결과는 그대로 보이고, 이름 실패만 따로 알린다. 이름 없는 행은
-    // '작업구역'으로 표시되며 권한 없는 이름은 노출되지 않는다.
+    // '영역'으로 표시되며 권한 없는 이름은 노출되지 않는다.
     expect(screen.getByText("현장 1")).toBeTruthy();
     expect(screen.queryByText("이 관측 결과를 확인할 권한이 없습니다.")).toBeNull();
-    expect(screen.getByRole("status").textContent).toMatch(/작업구역 이름을 불러오지 못했습니다/);
+    expect(screen.getByRole("status").textContent).toMatch(/영역 이름을 불러오지 못했습니다/);
     expect(screen.getByTestId("display-pair")).toBeTruthy();
   });
 
@@ -162,7 +162,7 @@ describe("exact site report detail", () => {
     // 보관 결과는 그대로 보이고, 이름 실패만 따로 알린다.
     expect(screen.getByText("현장 1")).toBeTruthy();
     expect(screen.queryByText("관측 결과를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.")).toBeNull();
-    expect(screen.getByRole("status").textContent).toMatch(/작업구역 이름을 불러오지 못했습니다/);
+    expect(screen.getByRole("status").textContent).toMatch(/영역 이름을 불러오지 못했습니다/);
     expect(screen.getByTestId("display-pair")).toBeTruthy();
   });
 

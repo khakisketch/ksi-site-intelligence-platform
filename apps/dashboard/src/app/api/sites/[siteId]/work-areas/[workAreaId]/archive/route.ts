@@ -7,7 +7,7 @@ import { coreApiErrorResponse } from "@/lib/core-api/route-handler-util";
 import { getSessionToken } from "@/lib/core-api/session";
 
 /**
- * 작업구역 보관 — **삭제가 아니다.** 이 구역으로 낸 리포트들이 zoneId 로 이 id 를
+ * 영역 보관 — **삭제가 아니다.** 이 영역으로 낸 리포트들이 zoneId 로 이 id 를
  * 들고 있어, 지우면 그 리포트들이 무슨 범위였는지를 잃는다(M4-C).
  */
 export async function POST(

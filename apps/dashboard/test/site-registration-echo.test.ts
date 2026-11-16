@@ -80,7 +80,7 @@ describe("2xx 응답 결속 (성공은 전체 일치뿐)", () => {
     ).toEqual({ ok: false });
   });
 
-  it("다른 현장 범위는 성공이 아니다", () => {
+  it("다른 프로젝트 범위는 성공이 아니다", () => {
     expect(
       verifySitePostEcho(
         legacyEcho({ aoi: { vertices: [{ latDeg: 0, lonDeg: 0 }] } }),

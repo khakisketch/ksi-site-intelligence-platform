@@ -31,7 +31,7 @@ describe("Operations Console 접근성 셸", () => {
 
   it("전역 핵심 화면은 브라우저 탭에서도 현재 화면 이름을 밝힌다", () => {
     expect(source("src/app/page.tsx")).toContain('title: "홈 · KSI"');
-    expect(source("src/app/sites/page.tsx")).toContain('title: "현장 · KSI"');
+    expect(source("src/app/sites/page.tsx")).toContain('title: "프로젝트 · KSI"');
     expect(source("src/app/field/page.tsx")).toContain('title: "작업 · KSI"');
   });
 

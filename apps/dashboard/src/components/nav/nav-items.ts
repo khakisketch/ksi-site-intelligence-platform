@@ -76,9 +76,10 @@ export const MOBILE_TAB_ITEMS: NavItem[] = [
   SHELL_ACCOUNT_ITEM,
 ];
 
-/** 프로젝트 안의 휴대폰 하단 탭 — 공간·자료·분석과 전역 작업. */
+/** 프로젝트 안의 휴대폰 하단 탭 — 홈으로 나가는 길, 공간·자료·분석, 전역 작업. */
 export function projectMobileTabItems(siteId: string): NavItem[] {
   return [
+    SHELL_HOME_ITEM,
     ...PROJECT_SECTIONS.map<NavItem>((section) => ({
       key: `project-${section.key}`,
       label: section.label,

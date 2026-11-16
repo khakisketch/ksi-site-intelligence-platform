@@ -75,7 +75,7 @@ import SiteDetailPage from "@/app/sites/[siteId]/page";
 
 const digest = (letter: string) => `sha256:${letter.repeat(64)}`;
 const assetRef = `ksa-v1-${"a".repeat(64)}`;
-const workArea = { workAreaId: "area-1", name: "북측 작업구역", status: "ACTIVE" };
+const workArea = { workAreaId: "area-1", name: "북측 영역", status: "ACTIVE" };
 
 function asset(
   workAreaId = "area-1",
@@ -343,8 +343,8 @@ describe("selected asset registration history (V3 submission record)", () => {
 
   it("says when no loaded record matches the filter instead of pretending the area is empty", async () => {
     const html = renderToStaticMarkup(await callPage({ workAreaId: "area-1", q: "없는파일" }));
-    // 필터가 빗나가도 선택 미리보기는 그대로 둔다 — 빈 구역으로 단정하지 않는다.
-    expect(html).not.toContain("이 작업구역에 등록된 자료가 없습니다");
+    // 필터가 빗나가도 선택 미리보기는 그대로 둔다 — 빈 영역으로 단정하지 않는다.
+    expect(html).not.toContain("이 영역에 등록된 자료가 없습니다");
     expect(html).toContain("q=%EC%97%86%EB%8A%94%ED%8C%8C%EC%9D%BC");
   });
 
@@ -374,12 +374,12 @@ describe("selected asset registration history (V3 submission record)", () => {
 
   it("keeps the selected work area in the toolbar control", async () => {
     const single = renderToStaticMarkup(await callPage({ workAreaId: "area-1" }));
-    // 구역이 하나뿐이면 선택 상자 없이 구역명을 둔다.
+    // 영역이 하나뿐이면 선택 상자 없이 영역명을 둔다.
     expect(single).toContain('id="workspace-catalog-area"');
-    expect(single).toContain("작업구역 · 북측 작업구역");
-    mocked.areas.mockResolvedValue({ workAreas: [workArea, { workAreaId: "area-2", name: "남측 작업구역", status: "ACTIVE" }] });
+    expect(single).toContain("영역 · 북측 영역");
+    mocked.areas.mockResolvedValue({ workAreas: [workArea, { workAreaId: "area-2", name: "남측 영역", status: "ACTIVE" }] });
     const multi = renderToStaticMarkup(await callPage());
-    // 작업구역은 필수, 필터 select 는 값이 비어도(전체) 제출되어야 한다.
+    // 영역은 필수, 필터 select 는 값이 비어도(전체) 제출되어야 한다.
     expect(multi).toMatch(/id="workspace-catalog-area"[^>]*required|required[^>]*id="workspace-catalog-area"/);
     expect(multi).not.toMatch(/id="spatial-kind"[^>]*required/);
     expect(multi).not.toMatch(/id="spatial-state"[^>]*required/);
@@ -489,8 +489,8 @@ describe("materials panel in the canonical space", () => {
   });
 
   it("rejects invalid cursors and foreign or repeated WorkAreas before reading materials", async () => {
-    expect(renderToStaticMarkup(await callPage({ workAreaId: "foreign" }))).toContain("작업구역을 확인할 수 없거나 접근 권한이 없습니다");
-    expect(renderToStaticMarkup(await callPage({ workAreaId: ["area-1", "foreign"] }))).toContain("작업구역을 확인할 수 없거나 접근 권한이 없습니다");
+    expect(renderToStaticMarkup(await callPage({ workAreaId: "foreign" }))).toContain("영역을 확인할 수 없거나 접근 권한이 없습니다");
+    expect(renderToStaticMarkup(await callPage({ workAreaId: ["area-1", "foreign"] }))).toContain("영역을 확인할 수 없거나 접근 권한이 없습니다");
     expect(renderToStaticMarkup(await callPage({ workAreaId: "area-1", cursor: ["a", "b"] }))).toContain("페이지 주소가 올바르지 않습니다");
     expect(mocked.catalog).not.toHaveBeenCalled();
     expect(mocked.detail).not.toHaveBeenCalled();

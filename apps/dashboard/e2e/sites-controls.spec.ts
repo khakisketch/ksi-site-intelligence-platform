@@ -46,7 +46,7 @@ test("폭에 맞춰 검색·정렬과 장식의 우선순위를 바꾼다", asyn
   await expect(search).toBeVisible();
   if (phone) await expect(sort).toBeHidden();
   else await expect(sort).toBeVisible();
-  await expect(search).toHaveAttribute("placeholder", "현장명 또는 ID");
+  await expect(search).toHaveAttribute("placeholder", "프로젝트명 또는 ID");
   await expect(main.getByRole("button", { name: "검색", exact: true })).toHaveCount(0);
   const searchBox = await search.boundingBox();
   expect(searchBox!.height).toBeGreaterThanOrEqual(testInfo.project.name.startsWith("desktop") ? 36 : 44);
@@ -55,7 +55,7 @@ test("폭에 맞춰 검색·정렬과 장식의 우선순위를 바꾼다", asyn
     await expect(page.getByText("상태 필터", { exact: true })).toBeHidden();
     await openPhoneFilters(page);
     await expect(sort).toBeVisible();
-    await expect(page.getByRole("combobox", { name: "현장 상태" })).toBeVisible();
+    await expect(page.getByRole("combobox", { name: "프로젝트 상태" })).toBeVisible();
     await page.getByRole("button", { name: "필터·정렬", exact: true }).click();
   } else {
     const sortBox = await sort.boundingBox();
@@ -68,17 +68,17 @@ test("폭에 맞춰 검색·정렬과 장식의 우선순위를 바꾼다", asyn
     // 기본값은 실제 미리보기 비주얼 카드다 — 각 카드에 미리보기 영역이 있다.
     await expect(main.locator("[data-site-card]:visible").first()).toBeVisible();
     await expect(main.locator("[data-site-card]:visible").first().locator("[data-site-preview]")).toBeAttached();
-    await expect(main.getByRole("link", { name: "현장 열기", exact: true }).first()).toBeVisible();
+    await expect(main.getByRole("link", { name: "프로젝트 열기", exact: true }).first()).toBeVisible();
   } else {
-    await expect(page.getByRole("region", { name: "현장 목록" })).toBeVisible();
-    await expect(page.getByRole("link", { name: "현장 열기", exact: true }).first()).toBeVisible();
+    await expect(page.getByRole("region", { name: "프로젝트 목록" })).toBeVisible();
+    await expect(page.getByRole("link", { name: "프로젝트 열기", exact: true }).first()).toBeVisible();
   }
   // 장식 표지·기본 이미지 문구가 없다 — 카드의 전부는 식별 정보와 다음 행동이다.
   await expect(main.getByText("기본 표지", { exact: true })).toHaveCount(0);
   await expect(main.getByText("기본 이미지", { exact: true })).toHaveCount(0);
   await expect(main.locator("[data-site-cover]")).toHaveCount(0);
   if (phone) {
-    const open = page.getByRole("link", { name: "현장 열기", exact: true }).first();
+    const open = page.getByRole("link", { name: "프로젝트 열기", exact: true }).first();
     const actionBox = await open.boundingBox();
     // Compact directory uses distinct links, not a full-width black button per card.
     expect(actionBox!.width).toBeGreaterThanOrEqual(44);
@@ -157,7 +157,7 @@ test("한글 조합 중에는 검색하지 않고 빈 결과에서도 입력과 
   expect(new URL(page.url()).searchParams.has("q")).toBe(false);
   await search.dispatchEvent("compositionend");
   await expect.poll(() => new URL(page.url()).searchParams.get("q")).toBe("검색 검증용 없는 현장");
-  await expect(page.getByRole("main").getByText("조건에 맞는 현장이 없습니다", { exact: true })).toBeVisible();
+  await expect(page.getByRole("main").getByText("조건에 맞는 프로젝트가 없습니다", { exact: true })).toBeVisible();
   await expect(search).toBeEnabled();
   await page.getByRole("link", { name: "필터 초기화", exact: true }).click();
   await expect(page).toHaveURL(/\/sites$/);
@@ -193,7 +193,7 @@ test("느린 필터 응답 중 이전 검색 타이머가 선택한 묶음을 �
   const search = page.getByRole("searchbox", { name: "현장 찾기" });
   // Zero-count groups render no chip (attention is 0 in the isolated fixture):
   // race the slow response against a chip that actually exists in this ledger.
-  const chip = page.getByRole("group", { name: "현장 상태 필터" }).getByRole("link", { name: /등록됨|준비 중|순찰 가능|확인 필요|운영 중단/ }).first();
+  const chip = page.getByRole("group", { name: "프로젝트 상태 필터" }).getByRole("link", { name: /등록됨|준비 중|순찰 가능|확인 필요|운영 중단/ }).first();
   const chipGroup = new URL((await chip.getAttribute("href"))!, page.url()).searchParams.get("group")!;
   await page.route((url) => url.pathname === "/sites" && url.searchParams.get("group") === chipGroup, async (route) => {
     await new Promise((resolve) => setTimeout(resolve, 700)); // Deliberately slower than the search debounce.
@@ -211,7 +211,7 @@ test("느린 필터 응답 중 이전 검색 타이머가 선택한 묶음을 �
 test("빈 결과의 초기화도 아직 적용되지 않은 검색을 취소한다", async ({ page }) => {
   await page.goto("/sites?q=처음부터 없는 현장");
   const search = page.getByRole("searchbox", { name: "현장 찾기" });
-  await expect(page.getByRole("main").getByText("조건에 맞는 현장이 없습니다", { exact: true })).toBeVisible();
+  await expect(page.getByRole("main").getByText("조건에 맞는 프로젝트가 없습니다", { exact: true })).toBeVisible();
   await page.route((url) => url.pathname === "/sites" && !url.searchParams.has("q"), async (route) => {
     await new Promise((resolve) => setTimeout(resolve, 700));
     await route.continue();
@@ -233,7 +233,7 @@ test("찾은 현장을 열었다 돌아와도 검색과 정렬 조건이 남는�
   await expect.poll(() => new URL(page.url()).searchParams.get("q")).toBe(id);
   await selectSort(page, "name", testInfo.project.name === "mobile-390");
   await expect.poll(() => new URL(page.url()).searchParams.get("sort")).toBe("name");
-  const open = page.getByRole("link", { name: "현장 열기", exact: true });
+  const open = page.getByRole("link", { name: "프로젝트 열기", exact: true });
   await expect(open).toHaveAttribute("href", `/sites/${encodeURIComponent(id)}`);
   await open.click();
   await expect.poll(() => new URL(page.url()).pathname).toBe(`/sites/${encodeURIComponent(id)}`);
@@ -251,7 +251,7 @@ test("휴대폰 필터는 선택만으로 적용되지 않고 최신 검색 초�
   const search = page.getByRole("searchbox", { name: "현장 찾기" });
   const toggle = await openPhoneFilters(page);
   const sort = page.getByRole("combobox", { name: "정렬 기준" });
-  const group = page.getByRole("combobox", { name: "현장 상태" });
+  const group = page.getByRole("combobox", { name: "프로젝트 상태" });
   await sort.selectOption("name");
   await group.selectOption("all");
   await page.waitForTimeout(400);

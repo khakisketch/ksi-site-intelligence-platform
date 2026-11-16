@@ -36,7 +36,7 @@ export async function POST(request: NextRequest) {
   }
   if (continuity.status === "present") {
     // Core bootstrap 멱등 namespace는 (organizationId, actor, requestKey)다.
-    // 응답 유실 뒤 계정이 바뀌면 같은 키 재시도가 별도 현장을 만든다 — Core
+    // 응답 유실 뒤 계정이 바뀌면 같은 키 재시도가 별도 프로젝트를 만든다 — Core
     // POST 없이 여기서 끊는다. 헤더 없는 호출자는 이전 계약 그대로 두며
     // 보호하지 않는다고 명시한다(아래 else 없음 = 통과).
     let current;
@@ -49,7 +49,7 @@ export async function POST(request: NextRequest) {
       const blocked = NextResponse.json(
         {
           message:
-            "계정이 바뀌어 같은 현장 등록 요청을 다시 보내지 않았습니다. 이전 요청이 처리되었는지는 알 수 없습니다. 원래 계정으로 다시 로그인한 뒤 같은 요청으로 다시 시도하세요.",
+            "계정이 바뀌어 같은 프로젝트 등록 요청을 다시 보내지 않았습니다. 이전 요청이 처리되었는지는 알 수 없습니다. 원래 계정으로 다시 로그인한 뒤 같은 요청으로 다시 시도하세요.",
           code: ACCOUNT_CONTINUITY_MISMATCH,
         },
         { status: 409 },

@@ -90,8 +90,8 @@ describe("WorkAreaPanel archive confirmation", () => {
     vi.stubGlobal("fetch", fetchMock);
     render(<WorkAreaPanel siteId="site-1" siteCrs="EPSG:4326" canWrite initialWorkAreas={[activeArea()]} workAreaListError={null} accountIdentity={{ fingerprint: FP_A }} />);
     await awaitReady();
-    fireEvent.click(screen.getByRole("button", { name: "구역 보관" }));
-    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "구역 보관" }));
+    fireEvent.click(screen.getByRole("button", { name: "영역 보관" }));
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "영역 보관" }));
     await waitFor(() => expect(postCalls(fetchMock)).toHaveLength(1));
     fireEvent.blur(window);
     fingerprint = `v1-${"b".repeat(64)}`;
@@ -115,8 +115,8 @@ describe("WorkAreaPanel archive confirmation", () => {
     vi.stubGlobal("fetch", fetchMock);
     render(<WorkAreaPanel siteId="site-1" siteCrs="EPSG:4326" canWrite initialWorkAreas={[activeArea()]} workAreaListError={null} accountIdentity={{ fingerprint: FP_A }} />);
     await awaitReady();
-    fireEvent.click(screen.getByRole("button", { name: "구역 보관" }));
-    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "구역 보관" }));
+    fireEvent.click(screen.getByRole("button", { name: "영역 보관" }));
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "영역 보관" }));
     await waitFor(() => expect(postCalls(fetchMock)).toHaveLength(1));
     fireEvent.blur(window);
     fingerprint = `v1-${"b".repeat(64)}`;
@@ -130,13 +130,13 @@ describe("WorkAreaPanel archive confirmation", () => {
       else resolveArchive(new Response(JSON.stringify(outcome === "success" ? {workArea: {...activeArea(), status: "ARCHIVED"}} : {message: "A의 민감한 오류"}), {status: outcome === "success" ? 200 : 503}));
     });
     await waitFor(() => expect(resolveList).toBeTypeOf("function"));
-    expect(screen.queryByRole("button", {name: "구역 보관"})).toBeNull();
+    expect(screen.queryByRole("button", {name: "영역 보관"})).toBeNull();
     await act(async () => resolveList(new Response(JSON.stringify({workAreas: [{...activeArea(), status: "ARCHIVED"}]}), {status: 200})));
     await awaitReady();
     expect(notifyMock).not.toHaveBeenCalled();
     expect(document.body.textContent).not.toContain("A의 민감한 오류");
     expect(postCalls(fetchMock)).toHaveLength(1);
-    expect(screen.queryByRole("button", {name: "구역 보관"})).toBeNull();
+    expect(screen.queryByRole("button", {name: "영역 보관"})).toBeNull();
   });
 
   it("discards an interrupted recovery list and keeps the panel concealed on a failed reread", async () => {
@@ -151,8 +151,8 @@ describe("WorkAreaPanel archive confirmation", () => {
     vi.stubGlobal("fetch", fetchMock);
     render(<WorkAreaPanel siteId="site-1" siteCrs="EPSG:4326" canWrite initialWorkAreas={[activeArea()]} workAreaListError={null} accountIdentity={{fingerprint: FP_A}} />);
     await awaitReady();
-    fireEvent.click(screen.getByRole("button", {name: "구역 보관"}));
-    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", {name: "구역 보관"}));
+    fireEvent.click(screen.getByRole("button", {name: "영역 보관"}));
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", {name: "영역 보관"}));
     await waitFor(() => expect(postCalls(fetchMock)).toHaveLength(1));
     fireEvent.blur(window);
     await act(async () => resolveArchive(new Response("{}", {status: 503})));
@@ -165,7 +165,7 @@ describe("WorkAreaPanel archive confirmation", () => {
     expect(document.body.textContent).not.toContain("오래된 목록");
     await act(async () => listResolvers[1]!(new Response("{}", {status: 503})));
     await screen.findByText(/현재 계정을 확인하지 못해 입력을 숨겼습니다/);
-    expect(screen.queryByRole("button", {name: "구역 보관"})).toBeNull();
+    expect(screen.queryByRole("button", {name: "영역 보관"})).toBeNull();
     expect(postCalls(fetchMock)).toHaveLength(1);
     expect(notifyMock).not.toHaveBeenCalled();
   });
@@ -180,8 +180,8 @@ describe("WorkAreaPanel archive confirmation", () => {
     vi.stubGlobal("fetch", fetchMock);
     const view = render(<WorkAreaPanel siteId="site-1" siteCrs="EPSG:4326" canWrite initialWorkAreas={[activeArea()]} workAreaListError={null} accountIdentity={{fingerprint: FP_A}} />);
     await awaitReady();
-    fireEvent.click(screen.getByRole("button", {name: "구역 보관"}));
-    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", {name: "구역 보관"}));
+    fireEvent.click(screen.getByRole("button", {name: "영역 보관"}));
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", {name: "영역 보관"}));
     await waitFor(() => expect(postCalls(fetchMock)).toHaveLength(1));
     if (transition === "hidden") {
       vi.spyOn(document, "visibilityState", "get").mockReturnValue("hidden");
@@ -211,11 +211,11 @@ describe("WorkAreaPanel archive confirmation", () => {
     render(<WorkAreaPanel siteId="site-1" siteCrs="EPSG:4326" canWrite initialWorkAreas={[activeArea()]} workAreaListError={null} accountIdentity={{fingerprint: FP_A}} />);
     await awaitReady();
     fireEvent.change(screen.getByPlaceholderText("3공구 성토부"), {target: {value: "보존할 초안"}});
-    fireEvent.click(screen.getByRole("button", {name: "구역 보관"}));
-    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", {name: "구역 보관"}));
+    fireEvent.click(screen.getByRole("button", {name: "영역 보관"}));
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", {name: "영역 보관"}));
     await screen.findByText(/보관 결과를 확인하지 못했습니다/);
     fireEvent.click(screen.getByRole("button", {name: "보관 다시 시도"}));
-    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", {name: "구역 보관"}));
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", {name: "영역 보관"}));
     await screen.findByText(/현재 계정을 확인하지 못해 입력을 숨겼습니다/);
     expect(notifyMock).not.toHaveBeenCalled();
     identity = FP_A;
@@ -231,12 +231,12 @@ describe("WorkAreaPanel archive confirmation", () => {
     vi.stubGlobal("fetch", fetchMock);
     render(<WorkAreaPanel siteId="site-1" siteCrs="EPSG:4326" canWrite initialWorkAreas={[activeArea()]} workAreaListError={null} accountIdentity={accountIdentity} />);
     await screen.findByText(/계정 또는 임시 저장 내용을 확인하지 못했습니다/);
-    expect(screen.queryByRole("button", {name: "구역 보관"})).toBeNull();
+    expect(screen.queryByRole("button", {name: "영역 보관"})).toBeNull();
     expect(postCalls(fetchMock)).toHaveLength(0);
   });
 
   it.each([
-    ["other area", {verdict: "ARCHIVED", workArea: {...activeArea(), workAreaId: "other", status: "ARCHIVED", name: "다른 구역"}}],
+    ["other area", {verdict: "ARCHIVED", workArea: {...activeArea(), workAreaId: "other", status: "ARCHIVED", name: "다른 영역"}}],
     ["other site", {verdict: "ARCHIVED", workArea: {...activeArea(), siteId: "other", status: "ARCHIVED"}}],
     ["active", {verdict: "ARCHIVED", workArea: activeArea()}],
     ["changed name", {verdict: "ARCHIVED", workArea: {...activeArea(), name: "잘못된 이름", status: "ARCHIVED"}}],
@@ -257,13 +257,13 @@ describe("WorkAreaPanel archive confirmation", () => {
     vi.stubGlobal("fetch", fetchMock);
     render(<WorkAreaPanel siteId="site-1" siteCrs="EPSG:4326" canWrite initialWorkAreas={[activeArea()]} workAreaListError={null} accountIdentity={{fingerprint: FP_A}} />);
     await awaitReady();
-    fireEvent.click(screen.getByRole("button", {name: "구역 보관"}));
-    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", {name: "구역 보관"}));
+    fireEvent.click(screen.getByRole("button", {name: "영역 보관"}));
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", {name: "영역 보관"}));
     await screen.findByText(/보관 결과를 확인하지 못했습니다/);
     expect(notifyMock).not.toHaveBeenCalled();
     expect(screen.getByText("동측 절토면")).toBeTruthy();
     expect(document.body.textContent).not.toContain("잘못된 이름");
-    expect(document.body.textContent).not.toContain("다른 구역");
+    expect(document.body.textContent).not.toContain("다른 영역");
     expect(postCalls(fetchMock)).toHaveLength(1);
   });
 
@@ -276,8 +276,8 @@ describe("WorkAreaPanel archive confirmation", () => {
     vi.stubGlobal("fetch", fetchMock);
     render(<WorkAreaPanel siteId="site-1" siteCrs="EPSG:4326" canWrite initialWorkAreas={[activeArea()]} workAreaListError={null} accountIdentity={{fingerprint: FP_A}} />);
     await awaitReady();
-    fireEvent.click(screen.getByRole("button", {name: "구역 보관"}));
-    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", {name: "구역 보관"}));
+    fireEvent.click(screen.getByRole("button", {name: "영역 보관"}));
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", {name: "영역 보관"}));
     const message = await screen.findByText(/보관 결과를 확인하지 못했습니다/);
     expect(message.textContent).not.toContain("실패");
     expect(notifyMock).not.toHaveBeenCalled();
@@ -299,12 +299,12 @@ describe("WorkAreaPanel archive confirmation", () => {
     vi.stubGlobal("fetch", fetchMock);
     render(<WorkAreaPanel siteId="site-1" siteCrs="EPSG:4326" canWrite initialWorkAreas={[activeArea()]} workAreaListError={null} accountIdentity={{fingerprint: FP_A}} />);
     await awaitReady();
-    fireEvent.click(screen.getByRole("button", {name:"구역 보관"}));
-    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", {name:"구역 보관"}));
+    fireEvent.click(screen.getByRole("button", {name:"영역 보관"}));
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", {name:"영역 보관"}));
     await screen.findByText(/보관 결과를 확인하지 못했습니다/);
     expect(committed).toBe(true); expect(notifyMock).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", {name:"보관 다시 시도"}));
-    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", {name:"구역 보관"}));
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", {name:"영역 보관"}));
     await screen.findByText(/이번 보관 요청/);
     expect(screen.getAllByText(/이전.*결과.*확인/).length).toBeGreaterThan(0);
     expect(postCalls(fetchMock)).toHaveLength(2);
@@ -322,8 +322,8 @@ describe("WorkAreaPanel archive confirmation", () => {
     vi.stubGlobal("fetch", fetchMock);
     render(<WorkAreaPanel siteId="site-1" siteCrs="EPSG:4326" canWrite initialWorkAreas={[activeArea()]} workAreaListError={null} accountIdentity={{fingerprint: FP_A}} />);
     await awaitReady();
-    fireEvent.click(screen.getByRole("button", {name:"구역 보관"}));
-    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", {name:"구역 보관"}));
+    fireEvent.click(screen.getByRole("button", {name:"영역 보관"}));
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", {name:"영역 보관"}));
     await screen.findByText(/보관 결과를 확인하지 못했습니다/);
     fireEvent.click(screen.getByRole("button", {name:"보관 상태 목록 다시 읽기"}));
     await screen.findByText(/이 목록은 조회 시점의 상태이며 이전 요청의 최종 결과를 증명하지 않습니다/);
@@ -342,8 +342,8 @@ describe("WorkAreaPanel archive confirmation", () => {
     vi.stubGlobal("fetch", fetchMock);
     render(<WorkAreaPanel siteId="site-1" siteCrs="EPSG:4326" canWrite initialWorkAreas={[activeArea()]} workAreaListError={null} accountIdentity={{fingerprint: FP_A}} />);
     await awaitReady();
-    fireEvent.click(screen.getByRole("button", {name:"구역 보관"}));
-    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", {name:"구역 보관"}));
+    fireEvent.click(screen.getByRole("button", {name:"영역 보관"}));
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", {name:"영역 보관"}));
     expect((await screen.findByText(/보관 결과를 확인하지 못했습니다/)).textContent).not.toContain("실패했습니다");
     expect(postCalls(fetchMock)).toHaveLength(1);
     expect(notifyMock).not.toHaveBeenCalled();
@@ -360,8 +360,8 @@ describe("WorkAreaPanel archive confirmation", () => {
     vi.stubGlobal("fetch", fetchMock);
     render(<WorkAreaPanel siteId="site-1" siteCrs="EPSG:4326" canWrite initialWorkAreas={[activeArea()]} workAreaListError={null} accountIdentity={{fingerprint: FP_A}} />);
     await awaitReady();
-    fireEvent.click(screen.getByRole("button", {name:"구역 보관"}));
-    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", {name:"구역 보관"}));
+    fireEvent.click(screen.getByRole("button", {name:"영역 보관"}));
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", {name:"영역 보관"}));
     await screen.findByText(/보관 결과를 확인하지 못했습니다/);
     fireEvent.click(screen.getByRole("button", {name:"보관 상태 목록 다시 읽기"}));
     await waitFor(() => expect(resolveList).toBeTypeOf("function"));
@@ -383,8 +383,8 @@ describe("WorkAreaPanel archive confirmation", () => {
     const props = {siteId:"site-1", siteCrs:"EPSG:4326", canWrite:true, initialWorkAreas:[activeArea()], workAreaListError:null, accountIdentity:{fingerprint:FP_A}};
     const view = render(<WorkAreaPanel {...props} />);
     await awaitReady();
-    fireEvent.click(screen.getByRole("button", {name:"구역 보관"}));
-    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", {name:"구역 보관"}));
+    fireEvent.click(screen.getByRole("button", {name:"영역 보관"}));
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", {name:"영역 보관"}));
     await screen.findByText(/보관 결과를 확인하지 못했습니다/);
     expect(committed).toBe(true);
     view.unmount();
@@ -407,11 +407,11 @@ describe("WorkAreaPanel archive confirmation", () => {
     const props = {siteId:"site-1", siteCrs:"EPSG:4326", canWrite:true, initialWorkAreas:[activeArea()], workAreaListError:null, accountIdentity:{fingerprint:FP_A}};
     const a = render(<WorkAreaPanel {...props} />);
     await awaitReady();
-    fireEvent.click(screen.getByRole("button", {name:"구역 보관"}));
-    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", {name:"구역 보관"}));
+    fireEvent.click(screen.getByRole("button", {name:"영역 보관"}));
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", {name:"영역 보관"}));
     await screen.findByText(/보관 결과를 확인하지 못했습니다/);
     fireEvent.click(screen.getByRole("button", {name:"보관 다시 시도"}));
-    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", {name:"구역 보관"}));
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", {name:"영역 보관"}));
     await screen.findByText(/이 시도 거부/);
     expect(screen.getByText(/시도 1: 동측 절토면.*결과 미확인/)).toBeTruthy();
     a.unmount();
@@ -444,8 +444,8 @@ describe("WorkAreaPanel archive confirmation", () => {
     });
     render(<WorkAreaPanel siteId="site-1" siteCrs="EPSG:4326" canWrite initialWorkAreas={[activeArea()]} workAreaListError={null} accountIdentity={{fingerprint: FP_A}} />);
     await awaitReady();
-    fireEvent.click(screen.getByRole("button", {name:"구역 보관"}));
-    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", {name:"구역 보관"}));
+    fireEvent.click(screen.getByRole("button", {name:"영역 보관"}));
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", {name:"영역 보관"}));
     await screen.findByText(/기록을 안전하게 저장하지 못해 이번 요청을 보내지 않았습니다/);
     expect(postCalls(fetchMock)).toHaveLength(0);
   });
@@ -470,8 +470,8 @@ describe("WorkAreaPanel archive confirmation", () => {
     vi.stubGlobal("fetch",fetchMock);
     const props={siteId:"site-1",siteCrs:"EPSG:4326",canWrite:true,initialWorkAreas:[activeArea()],workAreaListError:null,accountIdentity:{fingerprint:FP_A}};
     const first=render(<WorkAreaPanel {...props} />); await awaitReady();
-    fireEvent.click(screen.getByRole("button",{name:"구역 보관"}));
-    const confirm=within(screen.getByRole("dialog")).getByRole("button",{name:"구역 보관"});
+    fireEvent.click(screen.getByRole("button",{name:"영역 보관"}));
+    const confirm=within(screen.getByRole("dialog")).getByRole("button",{name:"영역 보관"});
     fireEvent.click(confirm); fireEvent.click(confirm);
     expect(postCalls(fetchMock)).toHaveLength(1);
     first.unmount();
@@ -491,11 +491,11 @@ describe("WorkAreaPanel archive confirmation", () => {
     });
     render(<WorkAreaPanel siteId="site-1" siteCrs="EPSG:4326" canWrite initialWorkAreas={[activeArea()]} workAreaListError={null} accountIdentity={{fingerprint:FP_A}} />);
     await awaitReady();
-    fireEvent.click(screen.getByRole("button",{name:"구역 보관"}));
-    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button",{name:"구역 보관"}));
+    fireEvent.click(screen.getByRole("button",{name:"영역 보관"}));
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button",{name:"영역 보관"}));
     await screen.findByText(/기록을 안전하게 저장하지 못해/);
     fireEvent.click(screen.getByRole("button",{name:"보관 다시 시도"}));
-    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button",{name:"구역 보관"}));
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button",{name:"영역 보관"}));
     expect(postCalls(fetchMock)).toHaveLength(0);
     expect(Object.keys(window.sessionStorage).some(key => key.startsWith("ksi.work-area.archive.v1:") && window.sessionStorage.getItem(key) === "{")).toBe(true);
   });
@@ -516,8 +516,8 @@ describe("WorkAreaPanel archive confirmation", () => {
     vi.stubGlobal("fetch",fetchMock);
     const props={siteId:"site-1",siteCrs:"EPSG:4326",canWrite:true,initialWorkAreas:[activeArea()],workAreaListError:null,accountIdentity:{fingerprint:FP_A}};
     const view=render(<WorkAreaPanel {...props} />); await awaitReady();
-    fireEvent.click(screen.getByRole("button",{name:"구역 보관"}));
-    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button",{name:"구역 보관"}));
+    fireEvent.click(screen.getByRole("button",{name:"영역 보관"}));
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button",{name:"영역 보관"}));
     await screen.findByText(/보관 결과를 확인하지 못했습니다/);
     // 이후 :result 쓰기만 quota로 실패시킨다. 기존 기록은 시드로 승계된다.
     installFakeSessionStorage({
@@ -527,7 +527,7 @@ describe("WorkAreaPanel archive confirmation", () => {
       },
     });
     fireEvent.click(screen.getByRole("button",{name:"보관 다시 시도"}));
-    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button",{name:"구역 보관"}));
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button",{name:"영역 보관"}));
     const warning = await screen.findByText(/이번 응답이 탭 기록에 저장됐는지 확인하지 못했습니다/);
     expect(warning.textContent).toContain(outcome === "success" ? "보관 성공 응답을 확인했습니다" : "요청 거부 응답을 확인했습니다");
     expect(warning.textContent).toContain("탭을 닫으면 사라질 수 있습니다");
@@ -562,8 +562,8 @@ describe("WorkAreaPanel archive confirmation", () => {
         return read(key);
       },
     });
-    fireEvent.click(screen.getByRole("button",{name:"구역 보관"}));
-    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button",{name:"구역 보관"}));
+    fireEvent.click(screen.getByRole("button",{name:"영역 보관"}));
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button",{name:"영역 보관"}));
     const warning=await screen.findByText(/이번 응답이 탭 기록에 저장됐는지 확인하지 못했습니다/);
     expect(warning.textContent).toContain(outcome === "success" ? "보관 성공 응답을 확인했습니다" : "요청 거부 응답을 확인했습니다");
     expect(warning.textContent).toContain("결과 미확인으로 표시될 수 있습니다");
@@ -586,8 +586,8 @@ describe("WorkAreaPanel archive confirmation", () => {
     render(<WorkAreaPanel siteId="site-1" siteCrs="EPSG:4326" canWrite initialWorkAreas={[activeArea()]} workAreaListError={null} accountIdentity={{ fingerprint: FP_A }} />);
     await awaitReady();
 
-    fireEvent.click(screen.getByRole("button", { name: "구역 보관" }));
-    const dialog = screen.getByRole("dialog", { name: "구역을 보관할까요?" });
+    fireEvent.click(screen.getByRole("button", { name: "영역 보관" }));
+    const dialog = screen.getByRole("dialog", { name: "영역을 보관할까요?" });
     expect(within(dialog).getByText(/동측 절토면/)).toBeTruthy();
     expect(within(dialog).getByText(/이 화면에서 되돌릴 수 없습니다/)).toBeTruthy();
     expect(within(dialog).getByText(/이미 낸 리포트는 그대로 유지됩니다/)).toBeTruthy();
@@ -613,8 +613,8 @@ describe("WorkAreaPanel archive confirmation", () => {
     render(<WorkAreaPanel siteId="site-1" siteCrs="EPSG:4326" canWrite initialWorkAreas={[activeArea()]} workAreaListError={null} accountIdentity={{ fingerprint: FP_A }} />);
     await awaitReady();
 
-    fireEvent.click(screen.getByRole("button", { name: "구역 보관" }));
-    fireEvent.click(within(screen.getByRole("dialog", { name: "구역을 보관할까요?" })).getByRole("button", { name: "구역 보관" }));
+    fireEvent.click(screen.getByRole("button", { name: "영역 보관" }));
+    fireEvent.click(within(screen.getByRole("dialog", { name: "영역을 보관할까요?" })).getByRole("button", { name: "영역 보관" }));
     await waitFor(() => expect(postCalls(fetchMock)).toHaveLength(1));
     expect(postCalls(fetchMock)[0]?.[0]).toBe("/api/sites/site-1/work-areas/area-1/archive");
     expect(new Headers((postCalls(fetchMock)[0]?.[1] as RequestInit).headers).get("x-ksi-continuity-fingerprint")).toBe(FP_A);
@@ -623,7 +623,7 @@ describe("WorkAreaPanel archive confirmation", () => {
 
   it("toasts a complete registration and keeps the no-permission listing as a blocked action", async () => {
     window.sessionStorage.clear();
-    const created = activeArea("새 구역");
+    const created = activeArea("새 영역");
     // 실제 Core register는 요청 값을 그대로 저장해 돌려주므로, 목도 요청 본문을
     // 에코한다 — 고정 픽스처 polygon으로는 원본 대조(unknown)가 된다.
     const fetchMock = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
@@ -643,17 +643,17 @@ describe("WorkAreaPanel archive confirmation", () => {
     const { unmount } = render(<WorkAreaPanel siteId="site-1" siteCrs="EPSG:4326" canWrite initialWorkAreas={[]} workAreaListError={null} accountIdentity={{ fingerprint: FP_A }} />);
     await awaitReady();
 
-    fireEvent.change(screen.getByPlaceholderText("3공구 성토부"), { target: { value: "새 구역" } });
+    fireEvent.change(screen.getByPlaceholderText("3공구 성토부"), { target: { value: "새 영역" } });
     fireEvent.click(screen.getByRole("button", { name: "꼭짓점 추가" }));
     fireEvent.click(screen.getByRole("button", { name: "등록" }));
     await waitFor(() => expect(postCalls(fetchMock)).toHaveLength(1));
-    await waitFor(() => expect(notifyMock).toHaveBeenCalledWith('작업구역 "새 구역"을 등록했습니다.'));
+    await waitFor(() => expect(notifyMock).toHaveBeenCalledWith('영역 "새 영역"을 등록했습니다.'));
     unmount();
     cleanup();
 
     render(<WorkAreaPanel siteId="site-1" siteCrs="EPSG:4326" canWrite={false} initialWorkAreas={[activeArea()]} workAreaListError={null} />);
-    expect(screen.getByText("작업구역 등록")).toBeTruthy();
-    expect(screen.getByText("현재 계정으로는 작업구역을 등록하거나 보관할 수 없습니다. 현장 담당자에게 문의하세요.")).toBeTruthy();
+    expect(screen.getByText("영역 등록")).toBeTruthy();
+    expect(screen.getByText("현재 계정으로는 영역을 등록하거나 보관할 수 없습니다. 프로젝트 담당자에게 문의하세요.")).toBeTruthy();
     expect(document.body.textContent).not.toContain("SITES_WRITE");
     expect(screen.getByText("동측 절토면")).toBeTruthy();
   });
@@ -675,8 +675,8 @@ describe("WorkAreaPanel archive confirmation", () => {
     render(<WorkAreaPanel siteId="site-1" siteCrs="EPSG:4326" canWrite initialWorkAreas={[activeArea(), other]} workAreaListError={null} accountIdentity={{ fingerprint: FP_A }} />);
     await awaitReady();
 
-    fireEvent.click(screen.getAllByRole("button", { name: "구역 보관" })[0]!);
-    fireEvent.click(within(screen.getByRole("dialog", { name: "구역을 보관할까요?" })).getByRole("button", { name: "구역 보관" }));
+    fireEvent.click(screen.getAllByRole("button", { name: "영역 보관" })[0]!);
+    fireEvent.click(within(screen.getByRole("dialog", { name: "영역을 보관할까요?" })).getByRole("button", { name: "영역 보관" }));
     await waitFor(() => expect(postCalls(fetchMock)).toHaveLength(1));
 
     const alerts = screen.getAllByRole("alert");
@@ -690,8 +690,8 @@ describe("WorkAreaPanel archive confirmation", () => {
 
     fireEvent.click(within(card as HTMLElement).getByRole("button", { name: "보관 다시 시도" }));
     expect(postCalls(fetchMock)).toHaveLength(1);
-    expect(screen.getByRole("dialog", { name: "구역을 보관할까요?" })).toBeTruthy();
-    fireEvent.click(within(screen.getByRole("dialog", { name: "구역을 보관할까요?" })).getByRole("button", { name: "구역 보관" }));
+    expect(screen.getByRole("dialog", { name: "영역을 보관할까요?" })).toBeTruthy();
+    fireEvent.click(within(screen.getByRole("dialog", { name: "영역을 보관할까요?" })).getByRole("button", { name: "영역 보관" }));
     await waitFor(() => expect(postCalls(fetchMock)).toHaveLength(2));
     await waitFor(() => expect(notifyMock).toHaveBeenCalledWith('"동측 절토면"을 보관했습니다.'));
     expect(screen.queryByRole("alert")).toBeNull();

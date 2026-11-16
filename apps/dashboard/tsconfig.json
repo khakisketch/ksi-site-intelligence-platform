@@ -56,7 +56,9 @@
     ".next-uiux-followthrough/types/**/*.ts",
     ".next-uiux-followthrough/dev/types/**/*.ts",
     ".next-uiux-run/types/**/*.ts",
-    ".next-uiux-run/dev/types/**/*.ts"
+    ".next-uiux-run/dev/types/**/*.ts",
+    ".next-data-states/types/**/*.ts",
+    ".next-data-states/dev/types/**/*.ts"
   ],
   "exclude": [
     "node_modules",

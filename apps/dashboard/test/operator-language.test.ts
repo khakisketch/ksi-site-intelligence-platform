@@ -189,7 +189,7 @@ describe("operator language for registered materials", () => {
     expect(compacted.length).toBeLessThan(longAscii.length);
     expect(compacted).toContain("…");
     expect(compacted.endsWith(".tif")).toBe(true);
-    const unicode = `현장관측자료_북측작업구역_지표면높이_${"관".repeat(40)}.tif`;
+    const unicode = `현장관측자료_북측영역_지표면높이_${"관".repeat(40)}.tif`;
     expect([...compactFileName(unicode)].length).toBeLessThanOrEqual(48);
     expect(compactFileName("no-extension-at-all-" + "y".repeat(60))).toContain("…");
   });

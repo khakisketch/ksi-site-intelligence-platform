@@ -26,7 +26,7 @@ export function AoiPolygonMap(props: {
   initialSnapshot?: AoiRawSnapshot;
   onSnapshotChange?: (snapshot: AoiRawSnapshot) => void;
   center?: [number, number];
-  /** true 면 편집 컨트롤 없이 폴리곤만 표시한다(현장 상세처럼 보여주기 전용 자리). */
+  /** true 면 편집 컨트롤 없이 폴리곤만 표시한다(프로젝트 상세처럼 보여주기 전용 자리). */
   readOnly?: boolean;
 }) {
   return (

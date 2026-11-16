@@ -164,7 +164,7 @@ describe("SiteListView", () => {
     renderView("list");
     expect(screen.getByText("목록판")).toBeTruthy();
     expect(screen.queryByText("카드판")).toBeNull();
-    const group = screen.getByRole("group", { name: "현장 보기 방식" });
+    const group = screen.getByRole("group", { name: "프로젝트 보기 방식" });
     expect(within(group).getByRole("button", { name: "카드" }).getAttribute("aria-pressed")).toBe("false");
     expect(within(group).getByRole("button", { name: "목록" }).getAttribute("aria-pressed")).toBe("true");
     const root = document.querySelector('[data-site-list-view="list"]') as HTMLElement;
@@ -340,7 +340,7 @@ describe("SiteListView", () => {
         cardsSummary="1–4 / 5곳 표시"
         list={
           <div>
-            <h2>현장 상태</h2>
+            <h2>프로젝트 상태</h2>
             <p>목록판</p>
             <SiteListPager page={1} totalPages={2} base={{ sort: "attention" }} />
           </div>
@@ -361,7 +361,7 @@ describe("SiteListView", () => {
         cardsSummary="5–5 / 5곳 표시"
         list={
           <div>
-            <h2>현장 상태</h2>
+            <h2>프로젝트 상태</h2>
             <p>목록판</p>
             <SiteListPager page={2} totalPages={2} base={{ sort: "attention" }} />
           </div>
@@ -370,7 +370,7 @@ describe("SiteListView", () => {
         listSummary="5–5 / 5곳 표시"
       />,
     );
-    expect(document.activeElement?.textContent).toContain("현장 상태");
+    expect(document.activeElement?.textContent).toContain("프로젝트 상태");
     expect(screen.getByRole("status").textContent).toContain("2페이지");
   });
 
@@ -385,7 +385,7 @@ describe("SiteListView", () => {
         cardsSummary="1–4 / 5곳 표시"
         list={
           <div>
-            <h2>현장 상태</h2>
+            <h2>프로젝트 상태</h2>
             <p>목록판</p>
             <SiteListPager page={1} totalPages={2} base={{ sort: "attention" }} />
           </div>
@@ -407,7 +407,7 @@ describe("SiteListView", () => {
         cardsSummary="5–5 / 5곳 표시"
         list={
           <div>
-            <h2>현장 상태</h2>
+            <h2>프로젝트 상태</h2>
             <p>목록판</p>
             <SiteListPager page={2} totalPages={2} base={{ sort: "attention" }} />
           </div>
@@ -523,21 +523,21 @@ describe("sites desktop view wiring", () => {
   });
 
   it("보기 전환기는 의미 그대로 노출된다", () => {
-    expect(VIEW).toContain('aria-label="현장 보기 방식"');
+    expect(VIEW).toContain('aria-label="프로젝트 보기 방식"');
     expect(VIEW).toMatch(/>\s*카드\s*</);
     expect(VIEW).toMatch(/>\s*목록\s*</);
     expect(VIEW).toContain("aria-pressed");
     expect(VIEW).toContain("data-site-list-view={view}");
   });
 
-  it("현장 열기가 중심 동작이고 자료·분석은 조용한 텍스트다", () => {
-    // 공유 카드: 현장 열기 하나만 두고 이웃(자료·분석)은 조용한 텍스트다.
-    expect((DIRECTORY_CARD.match(/현장 열기/g) ?? []).length).toBe(1);
+  it("프로젝트 열기가 중심 동작이고 자료·분석은 조용한 텍스트다", () => {
+    // 공유 카드: 프로젝트 열기 하나만 두고 이웃(자료·분석)은 조용한 텍스트다.
+    expect((DIRECTORY_CARD.match(/프로젝트 열기/g) ?? []).length).toBe(1);
     expect(DIRECTORY_CARD).toContain("조치 필요");
     expect(DIRECTORY_CARD).not.toContain("btn btn-primary");
     expect(DIRECTORY_CARD).toContain("/data");
     expect(DIRECTORY_CARD).toContain("/analysis");
-    expect((DENSE.match(/label="현장 열기"/g) ?? []).length).toBe(1);
+    expect((DENSE.match(/label="프로젝트 열기"/g) ?? []).length).toBe(1);
     expect(DENSE).toMatch(/<TableAction[\s\S]*?primary[\s\S]*?\/>/);
     // 머리말은 등록 진입 하나만 소유한다 — 큰 trailing 타일을 두지 않는다.
     expect(PAGE).toContain("RegisterSiteAction");
@@ -570,7 +570,7 @@ describe("sites desktop view wiring", () => {
     expect(DIRECTORY_CARD).not.toContain("only:col-span");
     expect(DIRECTORY_CARD).not.toContain("h-[180px]");
     expect(DIRECTORY_CARD).not.toMatch(/위성|항공|실측 이미지|현장 사진|미리보기 없음|기본 이미지/);
-    expect((DIRECTORY_CARD.match(/현장 열기/g) ?? []).length).toBe(1);
+    expect((DIRECTORY_CARD.match(/프로젝트 열기/g) ?? []).length).toBe(1);
     expect(DIRECTORY_CARD).not.toContain("<img");
   });
 
@@ -593,19 +593,19 @@ describe("sites page initial view", () => {
     ];
   }
 
-  it("조회된 현장 목록이 비면 조직 전체 부재 대신 현재 계정의 범위를 설명한다", async () => {
+  it("조회된 프로젝트 목록이 비면 조직 전체 부재 대신 현재 계정의 범위를 설명한다", async () => {
     mockedSites.items = [];
     render(await SitesPage({ searchParams: Promise.resolve({}) }));
-    expect(screen.getByRole("heading", { name: "현재 계정에서 볼 수 있는 현장이 없습니다" })).toBeTruthy();
-    expect(screen.getByText("찾는 현장이 이미 있다면 관리자에게 이 계정의 현장 접근 권한을 확인해 주세요.")).toBeTruthy();
-    expect(screen.queryByText("조건에 맞는 현장이 없습니다")).toBeNull();
+    expect(screen.getByRole("heading", { name: "현재 계정에서 볼 수 있는 프로젝트가 없습니다" })).toBeTruthy();
+    expect(screen.getByText("찾는 프로젝트가 이미 있다면 관리자에게 이 계정의 프로젝트 접근 권한을 확인해 주세요.")).toBeTruthy();
+    expect(screen.queryByText("조건에 맞는 프로젝트가 없습니다")).toBeNull();
   });
 
   it("쿠키 list 면 밀도표로 시작한다", async () => {
     mockedCookies.value = "list";
     mockSites();
     render(await SitesPage({ searchParams: Promise.resolve({}) }));
-    expect(screen.getByRole("heading", { name: "현장 상태" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "프로젝트 상태" })).toBeTruthy();
     expect(screen.queryByText("기본 표지")).toBeNull();
     expect(screen.getByRole("button", { name: "목록" }).getAttribute("aria-pressed")).toBe("true");
   });
@@ -614,7 +614,7 @@ describe("sites page initial view", () => {
     mockSites();
     render(await SitesPage({ searchParams: Promise.resolve({}) }));
     expect(screen.queryByText("기본 표지")).toBeNull();
-    expect(screen.queryByRole("heading", { name: "현장 상태" })).toBeNull();
+    expect(screen.queryByRole("heading", { name: "프로젝트 상태" })).toBeNull();
     expect(screen.getByRole("button", { name: "카드" }).getAttribute("aria-pressed")).toBe("true");
     const gallery = document.querySelector('[data-site-list-view="cards"]') as HTMLElement;
     expect(within(gallery).getByRole("heading", { name: "현장" })).toBeTruthy();
@@ -651,12 +651,12 @@ describe("sites page initial view", () => {
     mockedCookies.value = "list";
     mockSites();
     render(await SitesPage({ searchParams: Promise.resolve({ q: "없는현장" }) }));
-    expect(screen.queryByRole("heading", { name: "현장 상태" })).toBeNull();
-    expect(screen.getAllByText("조건에 맞는 현장이 없습니다")).toHaveLength(1);
-    expect(screen.queryByRole("heading", { name: "현재 계정에서 볼 수 있는 현장이 없습니다" })).toBeNull();
+    expect(screen.queryByRole("heading", { name: "프로젝트 상태" })).toBeNull();
+    expect(screen.getAllByText("조건에 맞는 프로젝트가 없습니다")).toHaveLength(1);
+    expect(screen.queryByRole("heading", { name: "현재 계정에서 볼 수 있는 프로젝트가 없습니다" })).toBeNull();
     // 도구모음·전환기는 그대로 쓸 수 있다(반응형 두 벌 중 보이는 쪽).
     expect(screen.getAllByRole("searchbox", { name: "현장 찾기" }).length).toBeGreaterThanOrEqual(1);
-    expect(screen.getByRole("group", { name: "현장 보기 방식" })).toBeTruthy();
+    expect(screen.getByRole("group", { name: "프로젝트 보기 방식" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "카드" })).toBeTruthy();
   });
 });
@@ -761,32 +761,32 @@ describe("SiteListPager", () => {
 describe("SiteListCreateTile", () => {
   it("허용이면 새 현장 링크 타일이다", () => {
     render(<SiteListCreateTile availability={{ status: "allowed", mode: "MAPPED_BOOTSTRAP" }} />);
-    const link = screen.getByRole("link", { name: "새 현장 추가" });
+    const link = screen.getByRole("link", { name: "새 프로젝트 추가" });
     expect(link.getAttribute("href")).toBe("/sites/new");
     expect(link.getAttribute("data-site-create-card")).toBe("new");
   });
 
   it("거부면 이동 없이 사유만 연다", () => {
     render(<SiteListCreateTile availability={{ status: "denied" }} />);
-    expect(screen.queryByRole("link", { name: "새 현장 추가" })).toBeNull();
-    const trigger = screen.getByRole("button", { name: "새 현장 추가" });
+    expect(screen.queryByRole("link", { name: "새 프로젝트 추가" })).toBeNull();
+    const trigger = screen.getByRole("button", { name: "새 프로젝트 추가" });
     expect(trigger.querySelector('[data-site-create-card="new"]')).toBeTruthy();
     fireEvent.click(trigger);
-    expect(screen.getByText(/현재 계정으로는 현장을 등록할 수 없습니다/)).toBeTruthy();
+    expect(screen.getByText(/현재 계정으로는 프로젝트를 등록할 수 없습니다/)).toBeTruthy();
     expect(document.querySelector('a[href="/sites/new"]')).toBeNull();
-    expect(trigger.textContent).toContain("새 현장 추가");
+    expect(trigger.textContent).toContain("새 프로젝트 추가");
   });
 
   it("확인 실패면 재시도와 함께 사유를 연다", () => {
     render(<SiteListCreateTile availability={{ status: "unavailable" }} />);
-    fireEvent.click(screen.getByRole("button", { name: "새 현장 추가" }));
+    fireEvent.click(screen.getByRole("button", { name: "새 프로젝트 추가" }));
     expect(screen.getByText(/확인할 수 없었습니다/)).toBeTruthy();
     expect(screen.getByRole("button", { name: "권한 다시 확인" })).toBeTruthy();
   });
 
   it("닫으면 트리거로 포커스가 돌아온다", () => {
     render(<SiteListCreateTile availability={{ status: "denied" }} />);
-    const trigger = screen.getByRole("button", { name: "새 현장 추가" });
+    const trigger = screen.getByRole("button", { name: "새 프로젝트 추가" });
     fireEvent.click(trigger);
     expect(screen.getByText(/현재 계정으로는/)).toBeTruthy();
     fireEvent.keyDown(document, { key: "Escape" });
@@ -815,7 +815,7 @@ describe("sites desktop pagination", () => {
     render(await SitesPage({ searchParams: Promise.resolve({ q: "" }) }));
     const panel = desktopPanel();
     expect(within(panel).getAllByRole("heading", { level: 3 })).toHaveLength(4);
-    expect(within(panel).queryByText("새 현장 추가")).toBeNull();
+    expect(within(panel).queryByText("새 프로젝트 추가")).toBeNull();
     expect(within(panel).getByText("1–4 / 5곳 표시")).toBeTruthy();
     const pager = screen.getByRole("navigation", { name: "현장 페이지" });
     expect(within(pager).getByRole("link", { name: "2" })).toBeTruthy();
@@ -829,7 +829,7 @@ describe("sites desktop pagination", () => {
     const panel = desktopPanel();
     expect(within(panel).getAllByRole("heading", { level: 3 })).toHaveLength(1);
     // 등록 진입은 머리말 RegisterSiteAction이 소유한다 — 큰 trailing 타일을 두지 않는다.
-    expect(within(panel).queryByText("새 현장 추가")).toBeNull();
+    expect(within(panel).queryByText("새 프로젝트 추가")).toBeNull();
     expect(within(panel).getByText("5–5 / 5곳 표시")).toBeTruthy();
     expect(screen.getByRole("link", { name: "2" }).getAttribute("aria-current")).toBe("page");
   });
@@ -840,7 +840,7 @@ describe("sites desktop pagination", () => {
     render(await SitesPage({ searchParams: Promise.resolve({ page: "99" }) }));
     const panel = desktopPanel();
     expect(within(panel).getAllByRole("heading", { level: 3 })).toHaveLength(1);
-    expect(within(panel).queryByText("새 현장 추가")).toBeNull();
+    expect(within(panel).queryByText("새 프로젝트 추가")).toBeNull();
   });
 
   it("깨진 페이지 값은 1페이지로 떨어진다", async () => {
@@ -857,21 +857,21 @@ describe("sites desktop pagination", () => {
     expect(screen.queryByRole("navigation", { name: "현장 페이지" })).toBeNull();
     const panel = document.querySelector('[data-site-list-view="list"]') as HTMLElement;
     expect(within(panel).getByText("5 / 5곳 표시")).toBeTruthy();
-    expect(within(panel).getAllByText("현장 열기")).toHaveLength(5);
+    expect(within(panel).getAllByText("프로젝트 열기")).toHaveLength(5);
   });
 
   it("빈 결과는 EmptyState 하나만 말한다", async () => {
     mockFiveSites();
     render(await SitesPage({ searchParams: Promise.resolve({ q: "없는현장" }) }));
     expect(screen.queryByText("기본 표지")).toBeNull();
-    expect(screen.getAllByText("조건에 맞는 현장이 없습니다")).toHaveLength(1);
-    expect(screen.getByRole("group", { name: "현장 보기 방식" })).toBeTruthy();
+    expect(screen.getAllByText("조건에 맞는 프로젝트가 없습니다")).toHaveLength(1);
+    expect(screen.getByRole("group", { name: "프로젝트 보기 방식" })).toBeTruthy();
   });
 
   it("폰·태블릿 목록은 페이지를 무시하고 전체를 둔다", async () => {
     mockFiveSites();
     render(await SitesPage({ searchParams: Promise.resolve({ page: "2" }) }));
-    const mobile = document.querySelector('section[aria-label="현장 목록"]') as HTMLElement;
-    expect(within(mobile).getAllByRole("link", { name: "현장 열기" })).toHaveLength(5);
+    const mobile = document.querySelector('section[aria-label="프로젝트 목록"]') as HTMLElement;
+    expect(within(mobile).getAllByRole("link", { name: "프로젝트 열기" })).toHaveLength(5);
   });
 });

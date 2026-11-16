@@ -178,7 +178,7 @@ describe("delta publication chunk ranges", () => {
 
 describe("delta publication closed response validation", () => {
   it("rejects scope mismatch instead of attributing foreign bytes to this scope", () => {
-    // 의도: 요청 범위와 다른 구역이면 범위 오류로 버린다.
+    // 의도: 요청 범위와 다른 영역이면 범위 오류로 버린다.
     expect(() => parseDeltaPublicationIntent(
       { ...intentShape(), workAreaId: "area-2" }, scope,
     )).toThrow("요청 범위");

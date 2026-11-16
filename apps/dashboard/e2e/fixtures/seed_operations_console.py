@@ -132,7 +132,7 @@ def seed(
 
             area_result = work_area_store.register(
                 site_id,
-                name=f"E2E 작업구역 {index + 1}",
+                name=f"E2E 영역 {index + 1}",
                 crs="EPSG:4326",
                 polygon={
                     "type": "Polygon",

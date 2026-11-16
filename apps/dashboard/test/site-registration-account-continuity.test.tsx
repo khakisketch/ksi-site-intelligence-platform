@@ -49,7 +49,7 @@ const AOI = [
   { latDeg: 37.5, lonDeg: 127.01 },
 ];
 
-describe("현장 등록 요청을 보내는 중 화면을 떠날 때", () => {
+describe("프로젝트 등록 요청을 보내는 중 화면을 떠날 때", () => {
   for (const kind of ["mapped", "legacy"] as const) {
     it(`${kind} 요청은 POST 전에 원래 신원·본문 결속을 저장하고, 재진입 후 편집해도 지우지 않는다`, async () => {
       if (kind === "mapped") await goToConfirmMapped(ALICE);
@@ -60,7 +60,7 @@ describe("현장 등록 요청을 보내는 중 화면을 떠날 때", () => {
         storedWhenSent = JSON.parse(window.sessionStorage.getItem("ksi-wizard-site-registration-only") ?? "null");
         return new Promise<Response>(() => {});
       });
-      fireEvent.click(screen.getByRole("button", { name: "현장 등록" }));
+      fireEvent.click(screen.getByRole("button", { name: "프로젝트 등록" }));
       expect(requestMock).toHaveBeenCalledTimes(1);
       const key = kind === "mapped" ? sentBody().bootstrapRequestId : sentBody().siteId;
       expect(storedWhenSent).toMatchObject({
@@ -91,7 +91,7 @@ describe("현장 등록 요청을 보내는 중 화면을 떠날 때", () => {
       // jsdom 26의 sessionStorage는 전역 Storage.prototype을 공유하지 않아
       // prototype spy가 가로채지 못한다. quota 시뮬레이션은 가짜 저장소로 한다.
       installFakeSessionStorage({ setItem: () => { throw new Error("quota"); } });
-      fireEvent.click(screen.getByRole("button", { name: "현장 등록" }));
+      fireEvent.click(screen.getByRole("button", { name: "프로젝트 등록" }));
       expect(await screen.findByText(/등록 요청 정보를 저장하지 못해 요청을 보내지 않았습니다/)).toBeTruthy();
       expect(requestMock).not.toHaveBeenCalled();
       expect(window.sessionStorage.getItem(key)).toBe(original);
@@ -103,7 +103,7 @@ describe("현장 등록 요청을 보내는 중 화면을 떠날 때", () => {
       Object.defineProperty(window.navigator, "onLine", { value: false, configurable: true });
       act(() => { window.dispatchEvent(new Event("offline")); });
       try {
-        fireEvent.click(screen.getByRole("button", { name: "현장 등록" }));
+        fireEvent.click(screen.getByRole("button", { name: "프로젝트 등록" }));
         expect(await screen.findByText(/연결이 끊겨 요청을 보내지 않았습니다/)).toBeTruthy();
         expect(requestMock).not.toHaveBeenCalled();
         // 모름 기록이 아니다 — 보내지 않았음이 확실하므로 불명 목록에 남지 않는다.
@@ -117,7 +117,7 @@ describe("현장 등록 요청을 보내는 중 화면을 떠날 때", () => {
       if (kind === "mapped") await goToConfirmMapped(ALICE);
       else await goToConfirmLegacy(ALICE);
       requestMock.mockResolvedValueOnce(jsonResponse({ message: "형식을 확인하세요." }, 422));
-      fireEvent.click(screen.getByRole("button", { name: "현장 등록" }));
+      fireEvent.click(screen.getByRole("button", { name: "프로젝트 등록" }));
       expect(await screen.findByText("형식을 확인하세요.")).toBeTruthy();
       await waitFor(() => {
         const draft = JSON.parse(window.sessionStorage.getItem("ksi-wizard-site-registration-only") ?? "null");
@@ -129,7 +129,7 @@ describe("현장 등록 요청을 보내는 중 화면을 떠날 때", () => {
       if (kind === "mapped") await goToConfirmMapped(ALICE);
       else await goToConfirmLegacy(ALICE);
       requestMock.mockImplementation(() => new Promise<Response>(() => {}));
-      const button = screen.getByRole("button", { name: "현장 등록" });
+      const button = screen.getByRole("button", { name: "프로젝트 등록" });
       act(() => {
         button.click();
         button.click();
@@ -209,7 +209,7 @@ async function goToConfirmLegacy(accountFingerprint: string | null = ALICE) {
   fireEvent.change(screen.getByPlaceholderText("EPSG:5186"), { target: { value: "EPSG:5186" } });
   fireEvent.change(screen.getByPlaceholderText("KNGeoid2018"), { target: { value: "KNGeoid2018" } });
   fireEvent.click(screen.getByRole("button", { name: "다음" }));
-  await screen.findByRole("button", { name: "현장 등록" });
+  await screen.findByRole("button", { name: "프로젝트 등록" });
 }
 
 async function goToConfirmMapped(accountFingerprint: string | null = ALICE) {
@@ -222,7 +222,7 @@ async function goToConfirmMapped(accountFingerprint: string | null = ALICE) {
   fireEvent.change(screen.getByPlaceholderText("EPSG:5186"), { target: { value: "EPSG:5186" } });
   fireEvent.change(screen.getByPlaceholderText("KNGeoid2018"), { target: { value: "KNGeoid2018" } });
   fireEvent.click(screen.getByRole("button", { name: "다음" }));
-  await screen.findByRole("button", { name: "현장 등록" });
+  await screen.findByRole("button", { name: "프로젝트 등록" });
 }
 
 beforeEach(() => {
@@ -239,27 +239,27 @@ afterEach(() => {
   vi.resetAllMocks();
 });
 
-describe("현장 등록 계정 연속성 (사용자 이벤트)", () => {
+describe("프로젝트 등록 계정 연속성 (사용자 이벤트)", () => {
   it("첫 제출에 현재 계정 지문을 싣는다", async () => {
     await goToConfirmMapped(ALICE);
     const issued = "site-12345678-1234-1234-1234-123456789012";
     requestMock.mockResolvedValueOnce(jsonResponse(echoSite(issued, "현장 A"), 201));
-    fireEvent.click(screen.getByRole("button", { name: "현장 등록" }));
-    expect(await screen.findByText("현장이 등록되었습니다.")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "프로젝트 등록" }));
+    expect(await screen.findByText("프로젝트가 등록되었습니다.")).toBeTruthy();
     expect(sentHeaders(0).get("x-ksi-continuity-fingerprint")).toBe(ALICE);
   });
 
   it("응답 유실 뒤 같은 키·같은 지문으로 재시도한다 (원래 계정 복구)", async () => {
     await goToConfirmMapped(ALICE);
     requestMock.mockRejectedValueOnce(new Error("network down"));
-    fireEvent.click(screen.getByRole("button", { name: "현장 등록" }));
+    fireEvent.click(screen.getByRole("button", { name: "프로젝트 등록" }));
     expect(await screen.findByText(/등록 결과를 확인하지 못했습니다/)).toBeTruthy();
     const firstKey = sentBody(0).bootstrapRequestId;
 
     const issued = "site-12345678-1234-1234-1234-123456789012";
     requestMock.mockResolvedValueOnce(jsonResponse(echoSite(issued, "현장 A"), 201));
     fireEvent.click(screen.getByRole("button", { name: "다시 시도" }));
-    expect(await screen.findByText("현장이 등록되었습니다.")).toBeTruthy();
+    expect(await screen.findByText("프로젝트가 등록되었습니다.")).toBeTruthy();
     expect(sentBody(1).bootstrapRequestId).toBe(firstKey);
     expect(sentHeaders(1).get("x-ksi-continuity-fingerprint")).toBe(ALICE);
   });
@@ -269,11 +269,11 @@ describe("현장 등록 계정 연속성 (사용자 이벤트)", () => {
     requestMock.mockResolvedValueOnce(
       jsonResponse({ message: "계정이 바뀌었습니다.", code: "ACCOUNT_CONTINUITY_MISMATCH" }, 409),
     );
-    fireEvent.click(screen.getByRole("button", { name: "현장 등록" }));
+    fireEvent.click(screen.getByRole("button", { name: "프로젝트 등록" }));
 
     expect(await screen.findByText(/입력은 그대로 있습니다/)).toBeTruthy();
     expect(screen.getByRole("button", { name: "계정 정보 새로고침" })).toBeTruthy();
-    expect(screen.queryByText("현장이 등록되었습니다.")).toBeNull();
+    expect(screen.queryByText("프로젝트가 등록되었습니다.")).toBeNull();
     expect(mocked.push).not.toHaveBeenCalled();
     // 입력과 요청 키는 그대로 — 다음 행동(원래 계정 복귀·목록 확인)이 가능하다.
     expect(window.sessionStorage.getItem("ksi-wizard-site-registration-only")).toContain("현장 A");
@@ -284,7 +284,7 @@ describe("현장 등록 계정 연속성 (사용자 이벤트)", () => {
     requestMock.mockResolvedValueOnce(
       jsonResponse({ message: "계정이 바뀌었습니다.", code: "ACCOUNT_CONTINUITY_MISMATCH" }, 409),
     );
-    fireEvent.click(screen.getByRole("button", { name: "현장 등록" }));
+    fireEvent.click(screen.getByRole("button", { name: "프로젝트 등록" }));
     await screen.findByText(/입력은 그대로 있습니다/);
     const callsBefore = requestMock.mock.calls.length;
 
@@ -297,14 +297,14 @@ describe("현장 등록 계정 연속성 (사용자 이벤트)", () => {
     await goToConfirmMapped(ALICE);
     const issued = "site-12345678-1234-1234-1234-123456789012";
     requestMock.mockResolvedValueOnce(jsonResponse(echoSite(issued, "현장 A"), 201));
-    fireEvent.click(screen.getByRole("button", { name: "현장 등록" }));
-    expect(await screen.findByText("현장이 등록되었습니다.")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "프로젝트 등록" }));
+    expect(await screen.findByText("프로젝트가 등록되었습니다.")).toBeTruthy();
 
     cleanup();
     requestMock.mockClear();
     render(<SiteRegistrationOnlyWizard mode="MAPPED_BOOTSTRAP" accountFingerprint={BOB} />);
     await waitFor(() => {
-      expect(screen.queryByText("현장이 등록되었습니다.")).toBeNull();
+      expect(screen.queryByText("프로젝트가 등록되었습니다.")).toBeNull();
     });
     expect(requestMock).not.toHaveBeenCalled();
   });
@@ -312,13 +312,13 @@ describe("현장 등록 계정 연속성 (사용자 이벤트)", () => {
   it("401 뒤에도 이전 불명은 실패로 덮지 않는다 (같은 키 복구 가능)", async () => {
     await goToConfirmMapped(ALICE);
     requestMock.mockRejectedValueOnce(new Error("network down"));
-    fireEvent.click(screen.getByRole("button", { name: "현장 등록" }));
+    fireEvent.click(screen.getByRole("button", { name: "프로젝트 등록" }));
     expect(await screen.findByText(/등록 결과를 확인하지 못했습니다/)).toBeTruthy();
 
     requestMock.mockResolvedValueOnce(jsonResponse({ message: "세션이 만료되었습니다." }, 401));
     fireEvent.click(screen.getByRole("button", { name: "다시 시도" }));
     expect(await screen.findByText(/이전 요청의 결과는 여전히/)).toBeTruthy();
-    expect(screen.queryByText("현장이 등록되었습니다.")).toBeNull();
+    expect(screen.queryByText("프로젝트가 등록되었습니다.")).toBeNull();
   });
 
   it("지문을 얻지 못한 새 초안은 POST하지 않고 계정 확인으로 fail-closed한다", async () => {
@@ -354,7 +354,7 @@ describe("현장 등록 계정 연속성 (사용자 이벤트)", () => {
     render(<SiteRegistrationOnlyWizard mode="MAPPED_BOOTSTRAP" accountFingerprint={ALICE} />);
     expect(await screen.findByText("주인을 확인할 수 없는 입력입니다")).toBeTruthy();
     expect(screen.queryByDisplayValue("현장 A")).toBeNull();
-    expect(screen.queryByRole("button", { name: "현장 등록" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "프로젝트 등록" })).toBeNull();
     expect(requestMock).not.toHaveBeenCalled();
     // 원본은 그대로 보존된다 — 지우거나 현재 계정 것으로 바꾸지 않는다.
     const kept = JSON.parse(
@@ -370,7 +370,7 @@ describe("현장 등록 계정 연속성 (사용자 이벤트)", () => {
     requestMock.mockResolvedValueOnce(
       jsonResponse({ message: "계정이 바뀌었습니다.", code: "ACCOUNT_CONTINUITY_MISMATCH" }, 409),
     );
-    fireEvent.click(screen.getByRole("button", { name: "현장 등록" }));
+    fireEvent.click(screen.getByRole("button", { name: "프로젝트 등록" }));
     await screen.findByText(/입력은 그대로 있습니다/);
     const blockedKey = sentBody(0).bootstrapRequestId;
 
@@ -380,7 +380,7 @@ describe("현장 등록 계정 연속성 (사용자 이벤트)", () => {
     const issued = "site-12345678-1234-1234-1234-123456789012";
     requestMock.mockResolvedValueOnce(jsonResponse(echoSite(issued, "현장 A"), 201));
     fireEvent.click(retryButton);
-    expect(await screen.findByText("현장이 등록되었습니다.")).toBeTruthy();
+    expect(await screen.findByText("프로젝트가 등록되었습니다.")).toBeTruthy();
     expect(sentBody(1).bootstrapRequestId).toBe(blockedKey);
     expect(sentHeaders(1).get("x-ksi-continuity-fingerprint")).toBe(ALICE);
   });
@@ -388,7 +388,7 @@ describe("현장 등록 계정 연속성 (사용자 이벤트)", () => {
   it("B에게 A 입력 삭제 수단은 없고 원본이 그대로 보존된다", async () => {
     await goToConfirmMapped(ALICE);
     requestMock.mockRejectedValueOnce(new Error("network down"));
-    fireEvent.click(screen.getByRole("button", { name: "현장 등록" }));
+    fireEvent.click(screen.getByRole("button", { name: "프로젝트 등록" }));
     expect(await screen.findByText(/등록 결과를 확인하지 못했습니다/)).toBeTruthy();
 
     // 같은 탭에 B로 재진입 — 게이트가 A 입력을 숨기고 전송을 막는다.
@@ -414,11 +414,11 @@ describe("현장 등록 계정 연속성 (사용자 이벤트)", () => {
     expect(await screen.findByDisplayValue("현장 A")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "다음" }));
     fireEvent.click(screen.getByRole("button", { name: "다음" }));
-    await screen.findByRole("button", { name: "현장 등록" });
+    await screen.findByRole("button", { name: "프로젝트 등록" });
     const issued = "site-bbbbbbbb-1234-1234-1234-123456789012";
     requestMock.mockResolvedValueOnce(jsonResponse(echoSite(issued, "현장 A"), 201));
-    fireEvent.click(screen.getByRole("button", { name: "현장 등록" }));
-    expect(await screen.findByText("현장이 등록되었습니다.")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "프로젝트 등록" }));
+    expect(await screen.findByText("프로젝트가 등록되었습니다.")).toBeTruthy();
     const lastCall = requestMock.mock.calls.length - 1;
     expect(sentHeaders(lastCall).get("x-ksi-continuity-fingerprint")).toBe(ALICE);
   });
@@ -426,7 +426,7 @@ describe("현장 등록 계정 연속성 (사용자 이벤트)", () => {
   it("B→A 왕복에서 A 입력·요청이 보존되고 같은 키로 복구된다", async () => {
     await goToConfirmMapped(ALICE);
     requestMock.mockRejectedValueOnce(new Error("network down"));
-    fireEvent.click(screen.getByRole("button", { name: "현장 등록" }));
+    fireEvent.click(screen.getByRole("button", { name: "프로젝트 등록" }));
     expect(await screen.findByText(/등록 결과를 확인하지 못했습니다/)).toBeTruthy();
     const firstKey = sentBody(0).bootstrapRequestId as string;
 
@@ -440,12 +440,12 @@ describe("현장 등록 계정 연속성 (사용자 이벤트)", () => {
     expect(await screen.findByDisplayValue("현장 A")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "다음" }));
     fireEvent.click(screen.getByRole("button", { name: "다음" }));
-    await screen.findByRole("button", { name: "현장 등록" });
+    await screen.findByRole("button", { name: "프로젝트 등록" });
 
     const issued = "site-12345678-1234-1234-1234-123456789012";
     requestMock.mockResolvedValueOnce(jsonResponse(echoSite(issued, "현장 A"), 201));
-    fireEvent.click(screen.getByRole("button", { name: "현장 등록" }));
-    expect(await screen.findByText("현장이 등록되었습니다.")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "프로젝트 등록" }));
+    expect(await screen.findByText("프로젝트가 등록되었습니다.")).toBeTruthy();
     const lastCall = requestMock.mock.calls.length - 1;
     expect(sentBody(lastCall).bootstrapRequestId).toBe(firstKey);
     expect(sentHeaders(lastCall).get("x-ksi-continuity-fingerprint")).toBe(ALICE);
@@ -485,11 +485,11 @@ describe("현장 등록 계정 연속성 (사용자 이벤트)", () => {
     await screen.findByDisplayValue("현장 A");
     fireEvent.click(screen.getByRole("button", { name: "다음" }));
     fireEvent.click(screen.getByRole("button", { name: "다음" }));
-    await screen.findByRole("button", { name: "현장 등록" });
+    await screen.findByRole("button", { name: "프로젝트 등록" });
 
     // 6번째 키는 보내기 전 차단된다 — 조용히 버리지 않는다.
-    fireEvent.click(screen.getByRole("button", { name: "현장 등록" }));
-    expect(await screen.findByText(/새로 보내기 전에 현장 목록에서/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "프로젝트 등록" }));
+    expect(await screen.findByText(/새로 보내기 전에 프로젝트 목록에서/)).toBeTruthy();
     expect(requestMock).not.toHaveBeenCalled();
 
     // 명시적 정리 뒤 같은 입력으로 등록된다.
@@ -499,7 +499,7 @@ describe("현장 등록 계정 연속성 (사용자 이벤트)", () => {
     const issued = "site-12345678-1234-1234-1234-123456789012";
     requestMock.mockResolvedValueOnce(jsonResponse(echoSite(issued, "현장 A"), 201));
     fireEvent.click(screen.getByRole("button", { name: "다시 시도" }));
-    expect(await screen.findByText("현장이 등록되었습니다.")).toBeTruthy();
+    expect(await screen.findByText("프로젝트가 등록되었습니다.")).toBeTruthy();
     expect(screen.getByText(/확인되지 않은 이전 요청이 4건 있습니다/)).toBeTruthy();
 
     // 성공 후 이동해도 미해결 4건은 남는다.
@@ -526,7 +526,7 @@ describe("현장 등록 계정 연속성 (사용자 이벤트)", () => {
     fireEvent.change(screen.getByPlaceholderText("EPSG:5186"), { target: { value: "EPSG:5186" } });
     fireEvent.change(screen.getByPlaceholderText("KNGeoid2018"), { target: { value: "KNGeoid2018" } });
     fireEvent.click(screen.getByRole("button", { name: "다음" }));
-    await screen.findByRole("button", { name: "현장 등록" });
+    await screen.findByRole("button", { name: "프로젝트 등록" });
     // 확인 단계에서 미해결 4건이 그대로 안내되고, 보내지 않은 채로 남아 있다.
     expect(screen.getAllByRole("button", { name: "기록 지우기" })).toHaveLength(4);
     expect(requestMock).not.toHaveBeenCalled();
@@ -536,8 +536,8 @@ describe("현장 등록 계정 연속성 (사용자 이벤트)", () => {
     await goToConfirmMapped(ALICE);
     const issued = "site-12345678-1234-1234-1234-123456789012";
     requestMock.mockResolvedValueOnce(jsonResponse(echoSite(issued, "현장 A"), 201));
-    fireEvent.click(screen.getByRole("button", { name: "현장 등록" }));
-    expect(await screen.findByText("현장이 등록되었습니다.", { selector: "p" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "프로젝트 등록" }));
+    expect(await screen.findByText("프로젝트가 등록되었습니다.", { selector: "p" })).toBeTruthy();
 
     // prototype spy는 jsdom 26 저장소에 닿지 않으므로 가짜 저장소로 1회 실패를 건다.
     let moveWrites = 0;
@@ -551,7 +551,7 @@ describe("현장 등록 계정 연속성 (사용자 이벤트)", () => {
     fireEvent.click(screen.getByRole("button", { name: "현장 브리핑으로 이동" }));
     expect(await screen.findByText(/이동 전 정리를 브라우저에 저장하지 못했습니다/)).toBeTruthy();
     expect(mocked.push).not.toHaveBeenCalled();
-    expect(screen.queryByText("현장이 등록되었습니다.")).toBeNull();
+    expect(screen.queryByText("프로젝트가 등록되었습니다.")).toBeNull();
   });
 
   it("legacy도 지문이 없으면 POST하지 않는다", async () => {
@@ -564,17 +564,17 @@ describe("현장 등록 계정 연속성 (사용자 이벤트)", () => {
   it("legacy 401 뒤에도 이전 불명은 실패로 덮지 않는다", async () => {
     await goToConfirmLegacy(ALICE);
     requestMock.mockRejectedValueOnce(new Error("network down"));
-    fireEvent.click(screen.getByRole("button", { name: "현장 등록" }));
+    fireEvent.click(screen.getByRole("button", { name: "프로젝트 등록" }));
     expect(await screen.findByText(/등록 결과를 확인하지 못했습니다/)).toBeTruthy();
 
     requestMock.mockResolvedValueOnce(jsonResponse({ message: "세션이 만료되었습니다." }, 401));
     fireEvent.click(screen.getByRole("button", { name: "다시 시도" }));
     expect(await screen.findByText(/이전 요청의 결과는 여전히/)).toBeTruthy();
-    expect(screen.queryByText("현장이 등록되었습니다.")).toBeNull();
+    expect(screen.queryByText("프로젝트가 등록되었습니다.")).toBeNull();
   });
 });
 
-describe("현장 등록 계정 게이트·상세 비공개·라이브 확인", () => {
+describe("프로젝트 등록 계정 게이트·상세 비공개·라이브 확인", () => {
   function seedDraft(overrides: Record<string, unknown> = {}): void {
     window.sessionStorage.setItem(
       "ksi-wizard-site-registration-only",
@@ -618,7 +618,7 @@ describe("현장 등록 계정 게이트·상세 비공개·라이브 확인", (
     await screen.findByDisplayValue("현장 A");
     fireEvent.click(screen.getByRole("button", { name: "다음" }));
     fireEvent.click(screen.getByRole("button", { name: "다음" }));
-    await screen.findByRole("button", { name: "현장 등록" });
+    await screen.findByRole("button", { name: "프로젝트 등록" });
     // 건수는 안내하되 이름·지우기는 공개하지 않는다.
     expect(screen.getByText(/확인되지 않은 이전 요청이 1건 있습니다/)).toBeTruthy();
     expect(screen.getByText(/이름 비공개/)).toBeTruthy();
@@ -638,7 +638,7 @@ describe("현장 등록 계정 게이트·상세 비공개·라이브 확인", (
     render(<SiteRegistrationOnlyWizard mode="MAPPED_BOOTSTRAP" accountFingerprint={BOB} />);
     expect(await screen.findByText("다른 계정의 입력입니다")).toBeTruthy();
     expect(screen.queryByDisplayValue("현장 A")).toBeNull();
-    expect(screen.queryByRole("button", { name: "현장 등록" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "프로젝트 등록" })).toBeNull();
     expect(requestMock).not.toHaveBeenCalled();
   });
 
@@ -646,14 +646,14 @@ describe("현장 등록 계정 게이트·상세 비공개·라이브 확인", (
     await goToConfirmMapped(ALICE);
     const issued = "site-12345678-1234-1234-1234-123456789012";
     requestMock.mockResolvedValueOnce(jsonResponse(echoSite(issued, "현장 A"), 201));
-    fireEvent.click(screen.getByRole("button", { name: "현장 등록" }));
-    expect(await screen.findByText("현장이 등록되었습니다.")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "프로젝트 등록" }));
+    expect(await screen.findByText("프로젝트가 등록되었습니다.")).toBeTruthy();
 
     cleanup();
     requestMock.mockClear();
     render(<SiteRegistrationOnlyWizard mode="MAPPED_BOOTSTRAP" accountFingerprint={BOB} />);
     await waitFor(() => {
-      expect(screen.queryByText("현장이 등록되었습니다.")).toBeNull();
+      expect(screen.queryByText("프로젝트가 등록되었습니다.")).toBeNull();
     });
     // B에게 보여주지 않되 원본 영수증은 보존한다.
     const kept = JSON.parse(
@@ -663,7 +663,7 @@ describe("현장 등록 계정 게이트·상세 비공개·라이브 확인", (
 
     cleanup();
     render(<SiteRegistrationOnlyWizard mode="MAPPED_BOOTSTRAP" accountFingerprint={ALICE} />);
-    expect(await screen.findByText("현장이 등록되었습니다.")).toBeTruthy();
+    expect(await screen.findByText("프로젝트가 등록되었습니다.")).toBeTruthy();
     expect(screen.getByText(issued)).toBeTruthy();
   });
 
@@ -693,7 +693,7 @@ describe("현장 등록 계정 게이트·상세 비공개·라이브 확인", (
   it("A 응답 유실→B 시도→A 복귀에서 같은 본문·키·지문이 복구된다", async () => {
     await goToConfirmMapped(ALICE);
     requestMock.mockRejectedValueOnce(new Error("network down"));
-    fireEvent.click(screen.getByRole("button", { name: "현장 등록" }));
+    fireEvent.click(screen.getByRole("button", { name: "프로젝트 등록" }));
     expect(await screen.findByText(/등록 결과를 확인하지 못했습니다/)).toBeTruthy();
     const unknownKey = sentBody(0).bootstrapRequestId as string;
 
@@ -711,11 +711,11 @@ describe("현장 등록 계정 게이트·상세 비공개·라이브 확인", (
     expect(await screen.findByDisplayValue("현장 A")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "다음" }));
     fireEvent.click(screen.getByRole("button", { name: "다음" }));
-    await screen.findByRole("button", { name: "현장 등록" });
+    await screen.findByRole("button", { name: "프로젝트 등록" });
     const issued = "site-12345678-1234-1234-1234-123456789012";
     requestMock.mockResolvedValueOnce(jsonResponse(echoSite(issued, "현장 A"), 201));
-    fireEvent.click(screen.getByRole("button", { name: "현장 등록" }));
-    expect(await screen.findByText("현장이 등록되었습니다.", { selector: "p" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "프로젝트 등록" }));
+    expect(await screen.findByText("프로젝트가 등록되었습니다.", { selector: "p" })).toBeTruthy();
     const lastCall = requestMock.mock.calls.length - 1;
     expect(sentBody(lastCall).bootstrapRequestId).toBe(unknownKey);
     expect(sentHeaders(lastCall).get("x-ksi-continuity-fingerprint")).toBe(ALICE);
@@ -753,7 +753,7 @@ describe("현장 등록 계정 게이트·상세 비공개·라이브 확인", (
         write(key, value);
       },
     });
-    fireEvent.click(screen.getByRole("button", { name: "현장 등록" }));
+    fireEvent.click(screen.getByRole("button", { name: "프로젝트 등록" }));
     expect(await screen.findByText(/등록 요청 정보를 저장하지 못해/)).toBeTruthy();
     expect(requestMock).not.toHaveBeenCalled();
 
@@ -771,8 +771,8 @@ describe("현장 등록 계정 게이트·상세 비공개·라이브 확인", (
     });
     const issued = "site-12345678-1234-1234-1234-123456789012";
     requestMock.mockResolvedValueOnce(jsonResponse(echoSite(issued, "현장 A"), 201));
-    fireEvent.click(screen.getByRole("button", { name: "현장 등록" }));
-    expect(await screen.findByText("현장이 등록되었습니다.")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "프로젝트 등록" }));
+    expect(await screen.findByText("프로젝트가 등록되었습니다.")).toBeTruthy();
     expect(screen.getByText(/이 확인은 이 화면에서만 유지됩니다/)).toBeTruthy();
   });
 });
@@ -821,7 +821,7 @@ describe("동일 키 충돌 기록의 신원 결속 (저장→복원)", () => {
     await screen.findByDisplayValue("현장 A");
     fireEvent.click(screen.getByRole("button", { name: "다음" }));
     fireEvent.click(screen.getByRole("button", { name: "다음" }));
-    await screen.findByRole("button", { name: "현장 등록" });
+    await screen.findByRole("button", { name: "프로젝트 등록" });
 
     // A 항목은 이름·지우기 공개, B 항목은 이름 비공개·지우기 없음.
     // (확인 화면 요약에도 같은 이름이 나와 2건이다.)
@@ -850,7 +850,7 @@ describe("동일 키 충돌 기록의 신원 결속 (저장→복원)", () => {
     await screen.findByDisplayValue("현장 A");
     fireEvent.click(screen.getByRole("button", { name: "다음" }));
     fireEvent.click(screen.getByRole("button", { name: "다음" }));
-    await screen.findByRole("button", { name: "현장 등록" });
+    await screen.findByRole("button", { name: "프로젝트 등록" });
 
     // A 항목만 지운다 — B 항목은 남는다 (확인 화면 요약의 이름은 그대로).
     fireEvent.click(screen.getByRole("button", { name: "기록 지우기" }));
@@ -878,12 +878,12 @@ describe("동일 키 충돌 기록의 신원 결속 (저장→복원)", () => {
     await screen.findByDisplayValue("현장 A");
     fireEvent.click(screen.getByRole("button", { name: "다음" }));
     fireEvent.click(screen.getByRole("button", { name: "다음" }));
-    await screen.findByRole("button", { name: "현장 등록" });
+    await screen.findByRole("button", { name: "프로젝트 등록" });
 
     const issued = "site-12345678-1234-1234-1234-123456789012";
     requestMock.mockResolvedValueOnce(jsonResponse(echoSite(issued, "현장 A"), 201));
-    fireEvent.click(screen.getByRole("button", { name: "현장 등록" }));
-    expect(await screen.findByText("현장이 등록되었습니다.")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "프로젝트 등록" }));
+    expect(await screen.findByText("프로젝트가 등록되었습니다.")).toBeTruthy();
     const afterSuccess = readDraft().priorUnknowns as Array<Record<string, unknown>>;
     expect(afterSuccess).toHaveLength(1);
     expect(afterSuccess[0]).toMatchObject({ key: COLLISION_KEY, originFingerprint: BOB });
@@ -901,7 +901,7 @@ describe("동일 키 충돌 기록의 신원 결속 (저장→복원)", () => {
     await screen.findByDisplayValue("현장 A");
     fireEvent.click(screen.getByRole("button", { name: "다음" }));
     fireEvent.click(screen.getByRole("button", { name: "다음" }));
-    await screen.findByRole("button", { name: "현장 등록" });
+    await screen.findByRole("button", { name: "프로젝트 등록" });
     let atReceipt: unknown = null;
     installFakeSessionStorage({
       setItem: (key, value, write) => {
@@ -911,7 +911,7 @@ describe("동일 키 충돌 기록의 신원 결속 (저장→복원)", () => {
       },
     });
     requestMock.mockResolvedValueOnce(jsonResponse(echoSite("site-12345678-1234-1234-1234-123456789012", "현장 A"), 201));
-    fireEvent.click(screen.getByRole("button", { name: "현장 등록" }));
+    fireEvent.click(screen.getByRole("button", { name: "프로젝트 등록" }));
     await waitFor(() => expect(atReceipt).not.toBeNull());
     expect(atReceipt).toEqual([expect.objectContaining({ key: COLLISION_KEY, originFingerprint: BOB })]);
     expect(readDraft().priorUnknowns).toEqual([expect.objectContaining({ key: COLLISION_KEY, originFingerprint: BOB })]);
@@ -926,14 +926,14 @@ describe("동일 키 충돌 기록의 신원 결속 (저장→복원)", () => {
     await screen.findByDisplayValue("현장 A");
     fireEvent.click(screen.getByRole("button", { name: "다음" }));
     fireEvent.click(screen.getByRole("button", { name: "다음" }));
-    await screen.findByRole("button", { name: "현장 등록" });
+    await screen.findByRole("button", { name: "프로젝트 등록" });
     requestMock.mockResolvedValueOnce(jsonResponse(echoSite("site-12345678-1234-1234-1234-123456789012", "현장 A"), 201));
-    fireEvent.click(screen.getByRole("button", { name: "현장 등록" }));
-    await screen.findByText("현장이 등록되었습니다.");
+    fireEvent.click(screen.getByRole("button", { name: "프로젝트 등록" }));
+    await screen.findByText("프로젝트가 등록되었습니다.");
     cleanup();
     expect(readDraft().priorUnknowns).toEqual([expect.objectContaining({ originFingerprint: BOB, key: COLLISION_KEY })]);
     render(<SiteRegistrationOnlyWizard mode="MAPPED_BOOTSTRAP" accountFingerprint={ALICE} />);
-    await screen.findByText("현장이 등록되었습니다.");
+    await screen.findByText("프로젝트가 등록되었습니다.");
     expect(readDraft().priorUnknowns).toEqual([expect.objectContaining({ originFingerprint: BOB, key: COLLISION_KEY })]);
     expect(screen.queryByText("현장 B")).toBeNull();
   });
@@ -947,10 +947,10 @@ describe("동일 키 충돌 기록의 신원 결속 (저장→복원)", () => {
     await screen.findByDisplayValue("현장 A");
     fireEvent.click(screen.getByRole("button", { name: "다음" }));
     fireEvent.click(screen.getByRole("button", { name: "다음" }));
-    await screen.findByRole("button", { name: "현장 등록" });
+    await screen.findByRole("button", { name: "프로젝트 등록" });
     let resolve: (response: Response) => void = () => {};
     requestMock.mockImplementationOnce(() => new Promise<Response>((r) => { resolve = r; }));
-    fireEvent.click(screen.getByRole("button", { name: "현장 등록" }));
+    fireEvent.click(screen.getByRole("button", { name: "프로젝트 등록" }));
     const prepared = window.sessionStorage.getItem("ksi-wizard-site-registration-only");
     let receiptWritten = false;
     installFakeSessionStorage({
@@ -965,7 +965,7 @@ describe("동일 키 충돌 기록의 신원 결속 (저장→복원)", () => {
       },
     });
       await act(async () => resolve(jsonResponse(echoSite("site-12345678-1234-1234-1234-123456789012", "현장 A"), 201)));
-      expect(await screen.findByText("현장이 등록되었습니다.")).toBeTruthy();
+      expect(await screen.findByText("프로젝트가 등록되었습니다.")).toBeTruthy();
       expect(screen.getByText(/초안 또는 영수증 저장·정리를 확인하지 못했습니다/)).toBeTruthy();
       expect(screen.getByText(/남은 백업은 자동으로 복구하거나 삭제하지 않습니다/)).toBeTruthy();
       expect(screen.queryByText(/요청 결과가 확정되는 것은 아닙니다/)).toBeNull();
@@ -1014,7 +1014,7 @@ describe("동일 키 충돌 기록의 신원 결속 (저장→복원)", () => {
     let resolvePost: ((value: Response) => void) | null = null;
     requestMock.mockImplementation(async () => new Promise<Response>((resolve) => { resolvePost = resolve; }));
     await goToConfirmMapped(ALICE);
-    fireEvent.click(screen.getByRole("button", { name: "현장 등록" }));
+    fireEvent.click(screen.getByRole("button", { name: "프로젝트 등록" }));
     // POST가 진행 중인 동안 B 확인이 도착한다.
     await waitFor(() => {
       expect(requestMock.mock.calls.some(([url]) => String(url).includes("/api/sites"))).toBe(true);
@@ -1027,7 +1027,7 @@ describe("동일 키 충돌 기록의 신원 결속 (저장→복원)", () => {
     resolvePost!(jsonResponse(echoSite(issued, "현장 A"), 201));
     // A 응답이 와도 성공으로 단정하지 않는다 — 불명 안내 + B에게 A 이름 비공개.
     expect(await screen.findByText(/등록 결과를 확인하지 못했습니다/)).toBeTruthy();
-    expect(screen.queryByText("현장이 등록되었습니다.")).toBeNull();
+    expect(screen.queryByText("프로젝트가 등록되었습니다.")).toBeNull();
     expect(screen.queryByDisplayValue("현장 A")).toBeNull();
     const draft = readDraft();
     expect(
@@ -1068,7 +1068,7 @@ describe("동일 키 충돌 기록의 신원 결속 (저장→복원)", () => {
     // 확인 단계에서 유효 6건은 보이고, 격리분은 개수만 보인다.
     fireEvent.click(screen.getByRole("button", { name: "다음" }));
     fireEvent.click(screen.getByRole("button", { name: "다음" }));
-    await screen.findByRole("button", { name: "현장 등록" });
+    await screen.findByRole("button", { name: "프로젝트 등록" });
     expect(screen.getByText(/확인되지 않은 이전 요청이 6건 있습니다/)).toBeTruthy();
     expect(screen.getByText(/읽을 수 없는 이전 기록이 3건 보존되어 있습니다/)).toBeTruthy();
     expect(screen.queryByText("깨진 항목")).toBeNull();
@@ -1094,11 +1094,11 @@ describe("동일 키 충돌 기록의 신원 결속 (저장→복원)", () => {
     expect(readDraft().quarantinedUnknowns).toEqual([damaged]);
     fireEvent.click(screen.getByRole("button", { name: "다음" }));
     fireEvent.click(screen.getByRole("button", { name: "다음" }));
-    await screen.findByRole("button", { name: "현장 등록" });
+    await screen.findByRole("button", { name: "프로젝트 등록" });
     expect(screen.queryByText("private-0")).toBeNull();
     expect(screen.getByText(/읽을 수 없는 이전 기록이 1건/)).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "현장 등록" }));
-    expect(await screen.findByText(/새로 보내기 전에 현장 목록에서/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "프로젝트 등록" }));
+    expect(await screen.findByText(/새로 보내기 전에 프로젝트 목록에서/)).toBeTruthy();
     expect(requestMock).not.toHaveBeenCalled();
     expect(readDraft().priorUnknowns).toEqual(valid);
     expect(readDraft().quarantinedUnknowns).toEqual([damaged]);
@@ -1108,7 +1108,7 @@ describe("동일 키 충돌 기록의 신원 결속 (저장→복원)", () => {
     await goToConfirmLegacy(ALICE);
     // 첫 요청 X: 미확인.
     requestMock.mockRejectedValueOnce(new Error("network down"));
-    fireEvent.click(screen.getByRole("button", { name: "현장 등록" }));
+    fireEvent.click(screen.getByRole("button", { name: "프로젝트 등록" }));
     expect(await screen.findByText(/등록 결과를 확인하지 못했습니다/)).toBeTruthy();
 
     // 같은 siteId로 내용을 바꿔 다시 시도 → 두 번째 불명 Y. X는 지워지지 않는다.
@@ -1119,9 +1119,9 @@ describe("동일 키 충돌 기록의 신원 결속 (저장→복원)", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "다음" }));
     fireEvent.click(screen.getByRole("button", { name: "다음" }));
-    await screen.findByRole("button", { name: "현장 등록" });
+    await screen.findByRole("button", { name: "프로젝트 등록" });
     requestMock.mockRejectedValueOnce(new Error("network down"));
-    fireEvent.click(screen.getByRole("button", { name: "현장 등록" }));
+    fireEvent.click(screen.getByRole("button", { name: "프로젝트 등록" }));
     expect(await screen.findByText(/등록 결과를 확인하지 못했습니다/)).toBeTruthy();
 
     // remount 뒤에도 두 결속이 그대로 보존된다(같은 siteId, 다른 내용).
@@ -1136,11 +1136,11 @@ describe("동일 키 충돌 기록의 신원 결속 (저장→복원)", () => {
     // 같은 키·같은 내용(Y)으로 재시도하면 Y만 해소되고 X는 남는다.
     fireEvent.click(screen.getByRole("button", { name: "다음" }));
     fireEvent.click(screen.getByRole("button", { name: "다음" }));
-    await screen.findByRole("button", { name: "현장 등록" });
+    await screen.findByRole("button", { name: "프로젝트 등록" });
     // legacy: 서버 발급이 아니라 요청한 siteId 그대로 돌려받아야 성공이다.
     requestMock.mockResolvedValueOnce(jsonResponse(echoSite("site-A", "현장 B"), 201));
-    fireEvent.click(screen.getByRole("button", { name: "현장 등록" }));
-    expect(await screen.findByText("현장이 등록되었습니다.", { selector: "p" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "프로젝트 등록" }));
+    expect(await screen.findByText("프로젝트가 등록되었습니다.", { selector: "p" })).toBeTruthy();
     const afterSuccess = readDraft().priorUnknowns as Array<Record<string, unknown>>;
     expect(afterSuccess).toHaveLength(1);
     expect(afterSuccess[0]).toMatchObject({ key: "site-A", name: "현장 A" });
@@ -1158,7 +1158,7 @@ describe("동일 인스턴스 영수증 계정 복귀", () => {
     expect(screen.queryByText("A 영수증 현장")).toBeNull();
     currentIdentity = ALICE;
     await act(async () => window.dispatchEvent(new Event("focus")));
-    expect(await screen.findByText("현장이 등록되었습니다.")).toBeTruthy();
+    expect(await screen.findByText("프로젝트가 등록되었습니다.")).toBeTruthy();
     expect(screen.getByText("A 영수증 현장")).toBeTruthy();
     expect(screen.getByText("site-receipt-a")).toBeTruthy();
     currentIdentity = BOB;
@@ -1190,7 +1190,7 @@ describe("동일 인스턴스 영수증 계정 복귀", () => {
     currentIdentity = ALICE;
     await act(async () => window.dispatchEvent(new Event("focus")));
     expect(await screen.findByText("다른 계정의 입력입니다")).toBeTruthy();
-    expect(screen.queryByText("현장이 등록되었습니다.")).toBeNull();
+    expect(screen.queryByText("프로젝트가 등록되었습니다.")).toBeNull();
     expect(screen.queryByText("A 영수증 현장")).toBeNull();
     expect(sessionStorage.getItem("ksi-wizard-site-registration-only")).toBe(before);
     currentIdentity = BOB;
@@ -1207,8 +1207,8 @@ describe("손상된 영수증 원문 보존", () => {
     sessionStorage.setItem(key, raw);
     await goToConfirmMapped(ALICE);
     requestMock.mockResolvedValueOnce(jsonResponse(echoSite("site-12345678-1234-1234-1234-123456789012", "현장 A"), 201));
-    fireEvent.click(screen.getByRole("button", { name: "현장 등록" }));
-    expect(await screen.findByText("현장이 등록되었습니다.")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "프로젝트 등록" }));
+    expect(await screen.findByText("프로젝트가 등록되었습니다.")).toBeTruthy();
     expect(sessionStorage.getItem(key)).toBe(raw);
     expect(screen.getByText(/이 확인은 이 화면에서만 유지됩니다/)).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "이전" }));
@@ -1222,8 +1222,8 @@ it("같은 계정의 다른 mode 영수증도 삭제하거나 새 영수증으�
   sessionStorage.setItem(key, raw);
   await goToConfirmMapped(ALICE);
   requestMock.mockResolvedValueOnce(jsonResponse(echoSite("site-12345678-1234-1234-1234-123456789012", "현장 A"), 201));
-  fireEvent.click(screen.getByRole("button", { name: "현장 등록" }));
-  expect(await screen.findByText("현장이 등록되었습니다.")).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "프로젝트 등록" }));
+  expect(await screen.findByText("프로젝트가 등록되었습니다.")).toBeTruthy();
   expect(screen.getByText(/이 확인은 이 화면에서만 유지됩니다/)).toBeTruthy();
   expect(sessionStorage.getItem(key)).toBe(raw);
   fireEvent.click(screen.getByRole("button", { name: "이전" }));

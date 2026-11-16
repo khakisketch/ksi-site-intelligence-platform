@@ -50,7 +50,7 @@ function searchbox() {
 }
 
 function searchForm() {
-  return screen.getByRole("search", { name: "현장 검색과 정렬" });
+  return screen.getByRole("search", { name: "프로젝트 검색과 정렬" });
 }
 
 function phoneToggle() {
@@ -80,7 +80,7 @@ function sortSelect() {
 }
 
 function phoneGroupSelect() {
-  return within(phoneForm()).getByRole("combobox", { name: "현장 상태" }) as HTMLSelectElement;
+  return within(phoneForm()).getByRole("combobox", { name: "프로젝트 상태" }) as HTMLSelectElement;
 }
 
 function phoneSortSelect() {
@@ -142,7 +142,7 @@ describe("site list query", () => {
 describe("SiteListControls", () => {
   it("보이는 검색 버튼 없이 돋보기 내장 입력 하나만 둔다", () => {
     renderControls({ query: "서쪽" });
-    expect(searchbox().placeholder).toBe("현장명 또는 ID");
+    expect(searchbox().placeholder).toBe("프로젝트명 또는 ID");
     expect(searchbox().value).toBe("서쪽");
     expect(screen.queryByRole("button", { name: "검색" })).toBeNull();
     expect(sortSelect()).toBeTruthy();
@@ -784,8 +784,8 @@ describe("sites page wiring", () => {
     // 폰·태블릿 목록은 공유 카드(SiteDirectoryCard) 하나로 그린다.
     expect(card).toContain("SiteDirectoryCard");
     expect(DIRECTORY_CARD).toContain('<SitePreviewThumb siteId={site.siteId} siteName={site.name} size="card" footprint={site.aoi?.vertices ?? null} />');
-    expect(DIRECTORY_CARD).toContain("현장 열기");
-    expect(DIRECTORY_CARD.match(/현장 열기/g)).toHaveLength(1);
+    expect(DIRECTORY_CARD).toContain("프로젝트 열기");
+    expect(DIRECTORY_CARD.match(/프로젝트 열기/g)).toHaveLength(1);
     // 이웃은 조용한 텍스트 바로가기(자료·분석)다.
     expect(DIRECTORY_CARD).toContain("/data");
     expect(DIRECTORY_CARD).toContain("/analysis");

@@ -91,7 +91,7 @@ export async function TopBar() {
     }
     // UX 목표 §5 "401 — 재로그인 유도(원래 화면으로 복귀 가능해야 함)" —
     // 복귀 주소(경로+쿼리)를 next 로 실어 재로그인 후 원래 화면에 복귀시킨다
-    // (독립 재검토 2차 P3-1). 비교 쌍·구역 선택 쿼리를 잃지 않는다. 값은
+    // (독립 재검토 2차 P3-1). 비교 쌍·영역 선택 쿼리를 잃지 않는다. 값은
     // 로그인 동작의 safeNextPath 가 살균하므로 외부·비정상 복귀를 만들지
     // 않으며, 헤더가 없으면 기존 경로 폴백을 쓴다.
     const returnTo = headerStore.get(RETURN_TO_HEADER) ?? currentPathname;

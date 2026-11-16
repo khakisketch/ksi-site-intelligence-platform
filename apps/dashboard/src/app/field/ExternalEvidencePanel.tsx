@@ -195,9 +195,9 @@ function DecisionBindings({ decision }: { decision: Decision }) {
       {pair && (
         <>
           <p>
-            비교 구역: {decision.zone ? `${decision.zone.zoneId} · 구역 버전 ${decision.zone.revision}` : "분석 시스템 기록 없음"}
+            비교 영역: {decision.zone ? `${decision.zone.zoneId} · 영역 버전 ${decision.zone.revision}` : "분석 시스템 기록 없음"}
           </p>
-          <p>작업구역 정의 확인값(해시): {coreValue(decision.zone?.definitionDigest)}</p>
+          <p>영역 정의 확인값(해시): {coreValue(decision.zone?.definitionDigest)}</p>
           <p>관측 좌표계 확인값(해시): {coreValue(decision.zone?.observedCrsDigest)}</p>
           <p>관측 수직 기준 확인값(해시): {coreValue(decision.zone?.observedVerticalReferenceDigest)}</p>
           <p>호환성 매핑 확인값(해시): {coreValue(decision.compatibilityMappingDigest)}</p>
@@ -564,7 +564,7 @@ export function ExternalEvidencePanel({
   ].join("|"), [current]);
 
   // 슬롯 조회·확인이 쓰는 현재 선택의 의도. 동결 의도와 같은 규칙으로 묶는다:
-  // 기준은 비교 두 시점에만, 구역은 체적 측정에만 쓴다.
+  // 기준은 비교 두 시점에만, 영역은 체적 측정에만 쓴다.
   const draftIntentFor = useCallback((use: DecisionUse): string => {
     const pairForDraft = use === "VISUAL_COMPARISON" || use === "RELATIVE_VOLUME";
     const singleVolumeForDraft = use === "SINGLE_VOLUME";
@@ -776,7 +776,7 @@ export function ExternalEvidencePanel({
               : "다시 보낸 증거 요청이 세션 만료로 접수되지 않았습니다. 이전 요청이 처리되었는지는 알 수 없습니다. 입력과 요청은 이 화면에 그대로 있습니다. 같은 계정으로 다시 로그인한 뒤 같은 파일과 선언으로 다시 시도하세요. 계정을 바꾸기 전에 먼저 기록에서 원래 요청의 증거가 이미 있는지 확인하세요.", true);
           } else if (declaredResponse.status === 403) {
             say(definitive
-              ? "이 증거를 선언할 권한이 없습니다. 증거는 기록되지 않았습니다. 현장 담당자에게 권한을 확인하세요. 등록된 증거와 이미 기록된 판정은 그대로 볼 수 있습니다."
+              ? "이 증거를 선언할 권한이 없습니다. 증거는 기록되지 않았습니다. 프로젝트 담당자에게 권한을 확인하세요. 등록된 증거와 이미 기록된 판정은 그대로 볼 수 있습니다."
               : "다시 보낸 증거 요청이 권한 부족으로 접수되지 않았습니다. 이전 요청이 처리되었는지는 알 수 없습니다. 같은 파일과 선언으로 다시 시도하거나, 먼저 기록에서 원래 요청의 증거가 이미 있는지 확인하세요.", true);
           } else if (declaredResponse.status === 404) {
             say(definitive
@@ -970,11 +970,11 @@ export function ExternalEvidencePanel({
       return;
     }
     if (use === "RELATIVE_VOLUME" && !zone) {
-      sayForUse(use, "변화 분석 구역을 선택하세요.", true);
+      sayForUse(use, "변화 분석 영역을 선택하세요.", true);
       return;
     }
     if (singleVolume && !singleZone) {
-      sayForUse(use, "한 시점 측정 구역을 선택하세요.", true);
+      sayForUse(use, "한 시점 측정 영역을 선택하세요.", true);
       return;
     }
     if ((use === "HEIGHT" || use === "RELATIVE_VOLUME" || singleVolume) && !hasDsm(target)) {
@@ -1133,7 +1133,7 @@ export function ExternalEvidencePanel({
               : "다시 보낸 요청이 세션 만료로 접수되지 않았습니다. 이전 요청이 처리되었는지는 알 수 없습니다. 입력과 요청은 이 화면에 그대로 있습니다. 같은 계정으로 다시 로그인한 뒤 같은 요청으로 다시 시도하세요. 계정을 바꾸기 전에 기록에서 원래 요청의 판정이 이미 있는지 먼저 확인하세요.", true);
           } else if (response.status === 403) {
             sayForUse(use, definitive
-              ? "이 확인을 요청할 권한이 없습니다. 판정은 기록되지 않았습니다. 현장 담당자에게 권한을 확인하세요. 증거와 이미 기록된 판정은 그대로 볼 수 있습니다. 새로운 정량 비교는 현장의 분석 화면에서 진행합니다."
+              ? "이 확인을 요청할 권한이 없습니다. 판정은 기록되지 않았습니다. 프로젝트 담당자에게 권한을 확인하세요. 증거와 이미 기록된 판정은 그대로 볼 수 있습니다. 새로운 정량 비교는 프로젝트의 분석 화면에서 진행합니다."
               : "다시 보낸 요청이 권한 부족으로 접수되지 않았습니다. 이전 요청이 처리되었는지는 알 수 없습니다. 같은 요청으로 다시 시도하거나, 먼저 기록에서 원래 요청의 판정이 이미 있는지 확인하세요. 증거와 이미 기록된 판정은 그대로 볼 수 있습니다.", true);
           } else if (response.status === 404) {
             sayForUse(use, definitive
@@ -1152,7 +1152,7 @@ export function ExternalEvidencePanel({
       // 생산 계약은 후보 전체를 그대로 실어 보낸다(Core model_dump → BFF
       // 직렬화, TS 타입은 정적 부분집합). 원래 요청과 대조할 수 있는 것은
       // use·decisionId·판정 형태·표시 필드, 그리고 subject 계열의
-      // workOrderId·siteId·revision과 구역(zoneId)이다.
+      // workOrderId·siteId·revision과 영역(zoneId)이다.
       // submissionId는 Core 내부 불투명 식별자로, 화면이 가진 제출 참조와
       // 변환·대조하지 않는다(독립 증인 없음).
       const responseRecord = (decision && typeof decision === "object" ? decision : null) as unknown as Record<string, unknown> | null;
@@ -1187,9 +1187,9 @@ export function ExternalEvidencePanel({
         if (attempt.endpoint === "single" || attempt.endpoint === "single-volume") {
           scopeBound = subjectMatches(subjectOf("subject"), attempt.workOrderId, attempt.siteId, attempt.revision);
           if (scopeBound && (attempt.endpoint === "single-volume" || expectedResponseUse === "RELATIVE_VOLUME")) {
-            // 구역이 계약상 존재하는 경우(단일 체적·상대 체적의 적격 판정)에만
-            // 동결 구역과 대조한다. BLOCKED는 구역 없이도 차단 표시를 살린다.
-            // 비교 확인(VISUAL_COMPARISON)은 구역을 요구하지 않는다.
+            // 영역이 계약상 존재하는 경우(단일 체적·상대 체적의 적격 판정)에만
+            // 동결 영역과 대조한다. BLOCKED는 영역 없이도 차단 표시를 살린다.
+            // 비교 확인(VISUAL_COMPARISON)은 영역을 요구하지 않는다.
             scopeBound = responseVerdict === "BLOCKED" || zoneIdOf === frozenBody.zoneId;
           } else if (scopeBound && expectedResponseUse === "VISUAL_COMPARISON") {
             scopeBound = zoneOf === null;
@@ -1198,7 +1198,7 @@ export function ExternalEvidencePanel({
           const baselineSubject = subjectOf("baselineSubject");
           const currentSubject = subjectOf("currentSubject");
           // 동결 siteId는 두 subject 모두의 실제 증인이다(쌍 workOrder 목록이
-          // 현장 범위로 얼고, Core도 쌍의 조직·현장 일치를 강제한다).
+          // 프로젝트 범위로 얼고, Core도 쌍의 조직·현장 일치를 강제한다).
           // 조직은 따로 얼린 증인이 없으므로, 양쪽이 원문으로 있을 때만 서로
           // 대조한다. submissionId(불투명 내부 식별자)는 대조하지 않는다.
           const baselineOrg = baselineSubject?.organizationId;
@@ -1216,11 +1216,11 @@ export function ExternalEvidencePanel({
           }
         }
       }
-      // 다른 용도·범위·구역·현장·조직의 2xx, 빈 식별자, 계약에 없는 판정·형태는
+      // 다른 용도·범위·영역·현장·조직의 2xx, 빈 식별자, 계약에 없는 판정·형태는
       // 이 요청의 준비 완료가 될 수 없으므로 원래 동결을 유지한 채 모름으로
       // 둔다. 발급 경로 오염을 막는다. 부모가 이미 적격 판정을 가졌다면
       // effect가 null로 닫는다. submissionId(불투명 내부 식별자)·단일 subject의
-      // 조직(대조할 다른 subject 없음)·구역 밖 식별자는 대조하지 않는다.
+      // 조직(대조할 다른 subject 없음)·영역 밖 식별자는 대조하지 않는다.
       if (!scopeBound) {
         throw new Error("decision binding changed");
       }
@@ -1305,10 +1305,10 @@ export function ExternalEvidencePanel({
         })}
       </ul>
 
-      {!legacyDecisionClosed && pairLoad === "loading" && <p>비교할 이전 등록 버전과 작업구역을 읽는 중입니다.</p>}
+      {!legacyDecisionClosed && pairLoad === "loading" && <p>비교할 이전 등록 버전과 영역을 읽는 중입니다.</p>}
       {!legacyDecisionClosed && (pairLoad === "error" || pairLoad === "partial") && (
         <div role="alert" className="flex flex-wrap items-center gap-2">
-          <p>비교할 이전 등록 버전 또는 작업구역을 읽지 못했습니다.</p>
+          <p>비교할 이전 등록 버전 또는 영역을 읽지 못했습니다.</p>
           {pairLoad === "partial" && (
             <p>
               일부 같은 작업의 비교 대상을 읽지 못했습니다: {pairLoadFailures.map((failure) => failure.label).join(", ")}. 목록이 완전하지 않습니다.
@@ -1392,7 +1392,7 @@ export function ExternalEvidencePanel({
                 <div role="status" className="flex flex-col gap-2 rounded-lg border border-line bg-sunk px-3 py-2">
                   <h3 className="text-lead font-bold">사용 결정 요청 닫힘</h3>
                   <p className="text-caption leading-5 text-ink-2">이 화면의 사용 결정 요청(화면·높이·비교·측정 확인)은 현재 계정의 배포 범위에 열려 있지 않아 보낼 수 없습니다. 이 화면에서는 새로운 사용 결정 요청을 보내지 않습니다. 노트북 화면에서도 마찬가지입니다. 등록된 증거·검사 상태·봉인 기록은 그대로 볼 수 있습니다.</p>
-                  <p className="text-caption leading-5 text-ink-2">새로운 두 시점 관측 변화 분석은 현장의 분석 화면에서 진행합니다.</p>
+                  <p className="text-caption leading-5 text-ink-2">새로운 두 시점 관측 변화 분석은 프로젝트의 분석 화면에서 진행합니다.</p>
                   <a className="btn w-fit" href={`/sites/${encodeURIComponent(siteId)}/analysis`}>분석 화면 열기</a>
                 </div>
               )}
@@ -1541,9 +1541,9 @@ export function ExternalEvidencePanel({
 
                 {hasDsm(target) && (
                   <>
-                    <label className="flex flex-col gap-1 font-semibold">변화 분석 구역
+                    <label className="flex flex-col gap-1 font-semibold">변화 분석 영역
                     <select
-                      aria-label="변화 분석 구역"
+                      aria-label="변화 분석 영역"
                       value={zone}
                       disabled={!newIntentAllowed}
                       onChange={(event) => {
@@ -1551,7 +1551,7 @@ export function ExternalEvidencePanel({
                         setZone(event.target.value);
                       }}
                     >
-                      <option value="">작업구역 선택</option>
+                      <option value="">영역 선택</option>
                       {areas.map((area) => <option key={area.workAreaId} value={area.workAreaId}>{area.name}</option>)}
                     </select>
                     </label>
@@ -1575,9 +1575,9 @@ export function ExternalEvidencePanel({
                 )}
 
                 <h3 className="text-lead font-bold">한 시점 측정</h3>
-                <label className="flex flex-col gap-1 font-semibold">한 시점 측정 구역
+                <label className="flex flex-col gap-1 font-semibold">한 시점 측정 영역
                 <select
-                  aria-label="한 시점 측정 구역"
+                  aria-label="한 시점 측정 영역"
                   value={singleZone}
                   disabled={!newIntentAllowed}
                   onChange={(event) => {
@@ -1585,7 +1585,7 @@ export function ExternalEvidencePanel({
                     setSingleZone(event.target.value);
                   }}
                 >
-                  <option value="">작업구역 선택</option>
+                  <option value="">영역 선택</option>
                   {areas.map((area) => <option key={area.workAreaId} value={area.workAreaId}>{area.name}</option>)}
                 </select>
                 </label>

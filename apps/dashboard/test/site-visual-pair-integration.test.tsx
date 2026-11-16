@@ -21,7 +21,7 @@ const area = {
   schemaVersion: "1.0",
   siteId: "site-1",
   workAreaId: "area-1",
-  name: "구역",
+  name: "영역",
   polygon: { type: "Polygon", coordinates: [[[[0, 0], [1, 0], [1, 1], [0, 0]]]] },
   crs: "EPSG:5186",
   status: "ACTIVE",
@@ -150,7 +150,7 @@ describe("visual pair routed integration (rendered)", () => {
     const html = renderToStaticMarkup(
       <SiteWorkspaceResults
         sitePath="/sites/site-1"
-        areaLabel="구역"
+        areaLabel="영역"
         areaAnalyses={[{
           analysisId: "analysis-1",
           siteId: "site-1",
@@ -264,7 +264,7 @@ describe("analysis handoff panel (rendered draft, frozen inputs, no auto POST)",
       siteId="site-1"
       organizationId="org-1"
       principalId="operator-1"
-      workAreas={[{ workAreaId: "area-1", name: "1구역" }]}
+      workAreas={[{ workAreaId: "area-1", name: "1영역" }]}
       observations={observations}
       siteObservations={observations}
       initialPage={{ siteId: "site-1", items: [], nextCursor: null }}
@@ -291,7 +291,7 @@ describe("analysis handoff panel (rendered draft, frozen inputs, no auto POST)",
       siteId="site-1"
       organizationId="org-1"
       principalId="operator-1"
-      workAreas={[{ workAreaId: "area-1", name: "1구역" }]}
+      workAreas={[{ workAreaId: "area-1", name: "1영역" }]}
       observations={observations}
       siteObservations={observations}
       initialPage={{ siteId: "site-1", items: [], nextCursor: null }}

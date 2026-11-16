@@ -44,7 +44,7 @@ describe("field/new site rows", () => {
     render(await FieldNewObservationPage());
     expect(screen.queryByText("이 현장에서 외부 산출물 등록 또는 비행 계획을 시작합니다.")).toBeNull();
     // UNMAPPED 는 외부 관측 등록 뒤에도 유지된다. 경계나 관측 부재를 추론하지 않는다.
-    expect(screen.getByText("현장 등록됨")).toBeTruthy();
+    expect(screen.getByText("프로젝트 등록됨")).toBeTruthy();
     expect(screen.queryByText("경계 미설정")).toBeNull();
     expect(screen.queryByText("관측 시작 전")).toBeNull();
     expect(screen.getByText("순찰 준비 완료")).toBeTruthy();

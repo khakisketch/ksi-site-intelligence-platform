@@ -26,7 +26,7 @@ function order(overrides: Partial<ObservationWorkOrderView> = {}): ObservationWo
     organizationId: "org-1",
     siteId: "site-opaque-0001",
     purpose: "PROGRESS_QUANTITY",
-    name: "동측 구역 외부 산출물 등록",
+    name: "동측 영역 외부 산출물 등록",
     workAreaIds: [],
     scheduleId: null,
     executionMode: "EXTERNAL_RECONSTRUCTION",
@@ -63,7 +63,7 @@ describe("Field work list page", () => {
     // 보기 전환은 탭으로, 한 줄 목적만 둔다(설명벽을 주 내비로 쓰지 않는다).
     const nav = screen.getByRole("navigation", { name: "작업 보기 방식" });
     expect(nav).toBeTruthy();
-    expect(screen.getByText(/조직의 작업 기록을 현장별로 확인하세요/)).toBeTruthy();
+    expect(screen.getByText(/조직의 작업 기록을 프로젝트별로 확인하세요/)).toBeTruthy();
     expect(screen.getByRole("link", { name: "전체 작업" }).getAttribute("href")).toBe("/field");
     expect(screen.getByRole("link", { name: "받은 작업" }).getAttribute("href")).toBe("/field/inbox");
   });
@@ -81,7 +81,7 @@ describe("Field work list page", () => {
   });
   it("does not describe an unknown operations state as an inspection task", async () => {
     render(await FieldWorkListPage({}));
-    const task = screen.getByRole("link", { name: /동측 구역 외부 산출물 등록/ });
+    const task = screen.getByRole("link", { name: /동측 영역 외부 산출물 등록/ });
     expect(task.textContent).toContain("담당·기한 상태 확인");
     expect(task.textContent).not.toContain("자료 등록·검사 확인");
     expect(screen.getByRole("link", { name: /운영 상태 확인 필요/ })).toBeTruthy();
@@ -91,7 +91,7 @@ describe("Field work list page", () => {
   it("lets a closed operation lead to history even when its retained observation is approved", async () => {
     mocked.operations.mockResolvedValueOnce([{ workOrderId: "obs-work-opaque-0001", workflowStatus: "CLOSED" }]);
     render(await FieldWorkListPage({}));
-    expect(screen.getByRole("link", { name: /동측 구역 외부 산출물 등록/ }).textContent).toContain("이력 보기");
+    expect(screen.getByRole("link", { name: /동측 영역 외부 산출물 등록/ }).textContent).toContain("이력 보기");
   });
 
   it("summarizes all four queue groups and keeps opaque IDs out of task rows", async () => {
@@ -104,7 +104,7 @@ describe("Field work list page", () => {
     expect(summary.getByText("완료")).toBeTruthy();
     expect(summary.getByRole("link", { name: "운영 상태 확인 필요 1" }).getAttribute("href")).toBe("/field?group=operationsUnavailable");
 
-    const task = screen.getByRole("link", { name: /동측 구역 외부 산출물 등록/ });
+    const task = screen.getByRole("link", { name: /동측 영역 외부 산출물 등록/ });
     expect(task.getAttribute("href")).toBe("/field/work-orders/obs-work-opaque-0001");
     // Primary row text leads with human names, never raw IDs.
     expect(task.textContent).not.toContain("site-opaque-0001");
@@ -121,7 +121,7 @@ describe("Field work list page", () => {
   it("filters existing records by query and state without replacing the unknown operations state", async () => {
     mocked.workOrders.mockResolvedValueOnce([order(), order({ workOrderId: "obs-2", name: "서측 등록" })]);
     render(await FieldWorkListPage({ searchParams: Promise.resolve({ q: "동측", group: "operationsUnavailable" }) }));
-    expect(screen.getByRole("link", { name: /동측 구역 외부 산출물 등록/ })).toBeTruthy();
+    expect(screen.getByRole("link", { name: /동측 영역 외부 산출물 등록/ })).toBeTruthy();
     expect(screen.queryByRole("link", { name: /서측 등록/ })).toBeNull();
     expect(screen.getByRole("link", { name: /결정 필요/ }).getAttribute("href")).toBe("/field?q=%EB%8F%99%EC%B8%A1&group=decisionRequired");
     expect(screen.queryByText("이 구분에 표시할 작업이 없습니다.")).toBeNull();
@@ -130,9 +130,9 @@ describe("Field work list page", () => {
   it("distinguishes a filtered empty list and accepts repeated URL parameters without crashing", async () => {
     render(await FieldWorkListPage({ searchParams: Promise.resolve({ q: "없는 작업", site: "unavailable-site" }) }));
     expect(screen.getByText("조건에 맞는 작업이 없습니다")).toBeTruthy();
-    expect(screen.queryByRole("link", { name: /동측 구역 외부 산출물 등록/ })).toBeNull();
+    expect(screen.queryByRole("link", { name: /동측 영역 외부 산출물 등록/ })).toBeNull();
     cleanup();
     render(await FieldWorkListPage({ searchParams: Promise.resolve({ q: ["a", "b"], group: ["completed", "inFlight"] }) }));
-    expect(screen.getByRole("link", { name: /동측 구역 외부 산출물 등록/ })).toBeTruthy();
+    expect(screen.getByRole("link", { name: /동측 영역 외부 산출물 등록/ })).toBeTruthy();
   });
 });

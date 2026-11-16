@@ -41,7 +41,7 @@ import { SpatialDataRequestActions } from "./SpatialDataRequestActions";
 import { SpatialDataReceiptPreview } from "./SpatialDataReceiptPreview";
 import { WorkAreaHistorySelect } from "./WorkAreaHistorySelect";
 
-export const metadata = { title: "구역 자료 준비 · KSI" };
+export const metadata = { title: "영역 자료 준비 · KSI" };
 
 type SearchValue = string | string[] | undefined;
 type SearchParams = { workAreaId?: SearchValue; cursor?: SearchValue; requestId?: SearchValue; assetRef?: SearchValue };
@@ -49,7 +49,7 @@ type SearchParams = { workAreaId?: SearchValue; cursor?: SearchValue; requestId?
 const REQUEST_ID_PATTERN = /^sdj-v1-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const ASSET_REF_PATTERN = /^ksa-v1-[0-9a-f]{64}$/;
 const ACTIVE_STATES: readonly SpatialDataExecutionState[] = ["QUEUED", "RUNNING"];
-const READ_PERMISSION_MESSAGE = "이 현장의 구역 자료 준비 기록을 볼 권한이 없습니다. 현장 담당자에게 접근 권한을 요청하세요.";
+const READ_PERMISSION_MESSAGE = "이 현장의 영역 자료 준비 기록을 볼 권한이 없습니다. 프로젝트 담당자에게 접근 권한을 요청하세요.";
 
 const STATE_PRESENTATION: Record<SpatialDataExecutionState, { label: string; tone: "neutral" | "progress" | "caution" | "positive" | "warning" }> = {
   QUEUED: { label: "대기", tone: "progress" },
@@ -114,23 +114,23 @@ function errorView(error: unknown, scope: "areas" | "list" | "detail", siteId: s
   if (error instanceof CoreApiError) {
     if (error.status === 404) {
       if (scope === "areas") {
-        return <ErrorState message="작업구역 목록을 확인할 수 없습니다." tone="high" action={{ label: "현장으로 돌아가기", href: `/sites/${encodeURIComponent(siteId)}` }} />;
+        return <ErrorState message="영역 목록을 확인할 수 없습니다." tone="high" action={{ label: "프로젝트로 돌아가기", href: `/sites/${encodeURIComponent(siteId)}` }} />;
       }
       return <ErrorState
-        message={scope === "list" ? "작업구역을 확인할 수 없거나 요청 목록을 조회할 수 없습니다." : "요청을 찾을 수 없거나 현재 조회할 수 없습니다."}
+        message={scope === "list" ? "영역을 확인할 수 없거나 요청 목록을 조회할 수 없습니다." : "요청을 찾을 수 없거나 현재 조회할 수 없습니다."}
         tone="high"
-        action={{ label: "구역을 다시 선택", href: `/sites/${encodeURIComponent(siteId)}/spatial-data-requests` }}
+        action={{ label: "영역을 다시 선택", href: `/sites/${encodeURIComponent(siteId)}/spatial-data-requests` }}
       />;
     }
     if (error.status === 403) {
       return <ErrorState message={READ_PERMISSION_MESSAGE} tone="high" />;
     }
     if (error.status === 503 || error.status >= 500) {
-      return <ErrorState message="구역 자료 준비 기록을 일시적으로 불러오지 못했습니다." retryable retryAfterSeconds={error.retryAfterSeconds} />;
+      return <ErrorState message="영역 자료 준비 기록을 일시적으로 불러오지 못했습니다." retryable retryAfterSeconds={error.retryAfterSeconds} />;
     }
     return <ErrorState message="요청 정보를 확인할 수 없습니다." tone="high" />;
   }
-  return <ErrorState message="구역 자료 준비 정보를 불러오지 못했습니다." retryable />;
+  return <ErrorState message="영역 자료 준비 정보를 불러오지 못했습니다." retryable />;
 }
 
 function Fact({ label, value, mono = false }: { label: string; value: string; mono?: boolean }) {
@@ -391,9 +391,9 @@ function RequestPageHeader({
   const assetHref = requestCreationHref(siteId, workAreaId, assetRef);
   return (
     <PageHeader
-      title="구역 자료 준비"
+      title="영역 자료 준비"
       headingLevel={2}
-      description="작업구역별 준비 상태와 요청한 파일을 확인하세요. 준비 완료는 정확도나 분석 적합성 판단과 별개입니다."
+      description="영역별 준비 상태와 요청한 파일을 확인하세요. 준비 완료는 정확도나 분석 적합성 판단과 별개입니다."
       actions={<>
         <Link href={assetHref} className={canRequestData ? "btn btn-primary" : "btn btn-quiet"}>
           {canRequestData ? (assetRef ? "이 자료 새로 준비 요청" : "자료에서 새 준비 요청") : "등록 자료"}
@@ -442,7 +442,7 @@ export default async function SpatialDataRequestsPage({
 
   const { workAreaId: areaParam, cursor: cursorParam, requestId: requestParam, assetRef: assetParam } = query;
   if (Array.isArray(areaParam)) {
-    return <div className="mx-auto flex max-w-5xl flex-col gap-4 p-4 sm:p-5">{header()}<ErrorState message="작업구역을 하나만 선택하세요." tone="high" action={{ label: "목록으로 돌아가기", href: basePath }} /></div>;
+    return <div className="mx-auto flex max-w-5xl flex-col gap-4 p-4 sm:p-5">{header()}<ErrorState message="영역을 하나만 선택하세요." tone="high" action={{ label: "목록으로 돌아가기", href: basePath }} /></div>;
   }
   if (Array.isArray(cursorParam) || typeof cursorParam === "string" && cursorParam.length > 2048) {
     return <div className="mx-auto flex max-w-5xl flex-col gap-4 p-4 sm:p-5">{header()}<ErrorState message="페이지 커서가 올바르지 않습니다. 목록을 처음부터 다시 열어 주세요." tone="high" action={{ label: "처음부터 보기", href: basePath }} /></div>;
@@ -472,7 +472,7 @@ export default async function SpatialDataRequestsPage({
 
   const selectedArea = areas?.workAreas.find((area) => area.workAreaId === workAreaId);
   if (workAreaId && !selectedArea) {
-    return <div className="mx-auto flex max-w-5xl flex-col gap-4 p-4 sm:p-5">{header()}<ErrorState message="작업구역을 확인할 수 없거나 접근 권한이 없습니다." tone="high" action={{ label: "다른 작업구역 선택", href: basePath }} /></div>;
+    return <div className="mx-auto flex max-w-5xl flex-col gap-4 p-4 sm:p-5">{header()}<ErrorState message="영역을 확인할 수 없거나 접근 권한이 없습니다." tone="high" action={{ label: "다른 영역 선택", href: basePath }} /></div>;
   }
 
   let page: Awaited<ReturnType<typeof listSpatialDataRequests>> | null = null;
@@ -497,7 +497,7 @@ export default async function SpatialDataRequestsPage({
 
   const canRequestData = session.principal.permissions.includes("SPATIAL_DATA_REQUEST");
   const canCancel = canRequestData;
-  // 원본 파일명·종류는 사람용 표시 전용으로, 선택된 구역에서 최대 1회만 읽는다.
+  // 원본 파일명·종류는 사람용 표시 전용으로, 선택된 영역에서 최대 1회만 읽는다.
   // 실패해도 목록·상세는 그대로 두며, 원본 삭제·부재로 해석하지 않는다.
   let catalogInfo: Record<string, CatalogAssetInfo> | null = null;
   if (workAreaId && !pageError) {
@@ -563,17 +563,17 @@ export default async function SpatialDataRequestsPage({
 
     <section className="rounded-lg border border-line bg-surface px-4 py-3">
       <form action={basePath} method="get" className="flex flex-wrap items-end gap-2">
-        <label className="flex min-w-56 flex-col gap-1 text-caption font-semibold" htmlFor="spatial-request-work-area">작업구역 선택
+        <label className="flex min-w-56 flex-col gap-1 text-caption font-semibold" htmlFor="spatial-request-work-area">영역 선택
           <WorkAreaHistorySelect key={workAreaId ?? ""} value={workAreaId ?? ""}>
-            <option value="" disabled>작업구역을 선택하세요</option>
+            <option value="" disabled>영역을 선택하세요</option>
             {areas?.workAreas.map((area) => <option key={area.workAreaId} value={area.workAreaId}>{area.name}{area.status === "ARCHIVED" ? " · 보관됨" : ""}</option>)}
           </WorkAreaHistorySelect>
         </label>
         <button className="btn" type="submit">요청 이력 불러오기</button>
       </form>
-      <p id="spatial-request-work-area-help" className="mt-2 text-caption leading-5 text-ink-muted">구역을 바꾸면 요청 이력을 불러옵니다. 자동으로 열리지 않으면 조회 버튼을 누르세요.</p>
-      {areas?.workAreas.length === 0 && <p className="mt-3 text-body leading-5 text-ink-2">요청 이력을 조회할 작업구역이 없습니다. 현장 담당자에게 작업구역 등록 여부를 확인하세요.</p>}
-      {!workAreaId && <p className="mt-3 text-body leading-5 text-ink-2">작업구역을 선택해 해당 구역의 자료 준비 요청을 확인하세요.</p>}
+      <p id="spatial-request-work-area-help" className="mt-2 text-caption leading-5 text-ink-muted">영역을 바꾸면 요청 이력을 불러옵니다. 자동으로 열리지 않으면 조회 버튼을 누르세요.</p>
+      {areas?.workAreas.length === 0 && <p className="mt-3 text-body leading-5 text-ink-2">요청 이력을 조회할 영역이 없습니다. 프로젝트 담당자에게 영역 등록 여부를 확인하세요.</p>}
+      {!workAreaId && <p className="mt-3 text-body leading-5 text-ink-2">영역을 선택해 해당 영역의 자료 준비 요청을 확인하세요.</p>}
       {workAreaId && selectedArea && <p className="mt-2 text-caption text-ink-muted">선택: {selectedArea.name}{selectedArea.status === "ARCHIVED" ? " · 보관됨" : ""} · 페이지당 최대 50건</p>}
     </section>
 
@@ -593,7 +593,7 @@ export default async function SpatialDataRequestsPage({
         {scopedItems.length === 0
           ? <div className="p-4"><EmptyState
             compact
-            title={cursor ? "이 페이지에 표시할 요청이 없습니다" : "이 작업구역의 자료 준비 요청이 없습니다"}
+            title={cursor ? "이 페이지에 표시할 요청이 없습니다" : "이 영역의 자료 준비 요청이 없습니다"}
             description={cursor
               ? "Core가 반환한 현재 페이지가 비어 있습니다. 처음부터 다시 열어 첫 페이지를 확인하세요."
               : "등록 자료에서 이 자료 받기 요청을 만들면 상태와 출력 근거가 이곳에 표시됩니다."}

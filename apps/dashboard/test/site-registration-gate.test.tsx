@@ -28,25 +28,25 @@ afterEach(() => {
 describe("RegisterSiteAction", () => {
   it("허용이면 등록 링크를 그대로 둔다", () => {
     render(<RegisterSiteAction availability={{ status: "allowed", mode: "MAPPED_BOOTSTRAP" }} />);
-    const link = screen.getByRole("link", { name: "현장 등록" });
+    const link = screen.getByRole("link", { name: "프로젝트 등록" });
     expect(link.getAttribute("href")).toBe("/sites/new");
   });
 
   it("확정 거부면 클릭해야 사유가 열리고 링크는 없다", () => {
     render(<RegisterSiteAction availability={{ status: "denied" }} />);
-    expect(screen.queryByRole("link", { name: "현장 등록" })).toBeNull();
-    const trigger = screen.getByRole("button", { name: "현장 등록" });
+    expect(screen.queryByRole("link", { name: "프로젝트 등록" })).toBeNull();
+    const trigger = screen.getByRole("button", { name: "프로젝트 등록" });
     expect((trigger as HTMLButtonElement).disabled).toBe(false);
     fireEvent.click(trigger);
     expect(
-      screen.getByText("현재 계정으로는 현장을 등록할 수 없습니다. 관리자에게 문의하세요."),
+      screen.getByText("현재 계정으로는 프로젝트를 등록할 수 없습니다. 관리자에게 문의하세요."),
     ).toBeTruthy();
     expect(screen.queryByRole("button", { name: "권한 다시 확인" })).toBeNull();
   });
 
   it("미확인이면 재시도 문구와 함께 권한 다시 확인을 둔다", () => {
     render(<RegisterSiteAction availability={{ status: "unavailable" }} />);
-    fireEvent.click(screen.getByRole("button", { name: "현장 등록" }));
+    fireEvent.click(screen.getByRole("button", { name: "프로젝트 등록" }));
     expect(
       screen.getByText("등록 권한을 확인하지 못했습니다. 잠시 후 다시 확인하세요."),
     ).toBeTruthy();
@@ -77,7 +77,7 @@ describe("NewSitePage", () => {
   it("모바일에는 같은 계정과 탭에 남은 지도 입력의 한계를 안내한다", async () => {
     mocked.availability.mockResolvedValue({ status: "allowed", mode: "MAPPED_BOOTSTRAP" });
     render(await NewSitePage());
-    const notice = screen.getByText(/같은 계정으로 현장 목록을 열어 시작하세요/);
+    const notice = screen.getByText(/같은 계정으로 프로젝트 목록을 열어 시작하세요/);
     expect(notice.textContent).toContain("이 탭의 화면 폭을 1024px 이상으로 넓혀 완료하거나 취소하세요");
     expect(notice.textContent).toContain("이 탭의 입력은 다른 기기로 옮겨지지 않습니다");
     expect(screen.getByTestId("registration-wizard").parentElement?.className).toContain("hidden lg:contents");
@@ -86,7 +86,7 @@ describe("NewSitePage", () => {
   it("확정 거부면 기존 거부 화면을 보이고 마법사는 열지 않는다", async () => {
     mocked.availability.mockResolvedValue({ status: "denied" });
     render(await NewSitePage());
-    expect(screen.getByText("현장 등록 권한이 없습니다")).toBeTruthy();
+    expect(screen.getByText("프로젝트 등록 권한이 없습니다")).toBeTruthy();
     expect(screen.queryByTestId("registration-wizard")).toBeNull();
   });
 
@@ -98,7 +98,7 @@ describe("NewSitePage", () => {
     ).toBeTruthy();
     expect(screen.getByRole("button", { name: "다시 시도" })).toBeTruthy();
     expect(screen.queryByTestId("registration-wizard")).toBeNull();
-    expect(screen.queryByText("현장 등록 권한이 없습니다")).toBeNull();
+    expect(screen.queryByText("프로젝트 등록 권한이 없습니다")).toBeNull();
   });
 });
 
@@ -110,30 +110,30 @@ describe("SiteOnboarding", () => {
     { status: "unavailable" as const },
   ])("빈 목록은 등록 권한 $status에서도 현재 계정의 조회 범위만 설명한다", (availability) => {
     render(<SiteOnboarding availability={availability} />);
-    expect(screen.getByRole("heading", { name: "현재 계정에서 볼 수 있는 현장이 없습니다" })).toBeTruthy();
-    expect(screen.getByText("찾는 현장이 이미 있다면 관리자에게 이 계정의 현장 접근 권한을 확인해 주세요.")).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "현재 계정에서 볼 수 있는 프로젝트가 없습니다" })).toBeTruthy();
+    expect(screen.getByText("찾는 프로젝트가 이미 있다면 관리자에게 이 계정의 프로젝트 접근 권한을 확인해 주세요.")).toBeTruthy();
     expect(screen.queryByText(/첫 실행|등록된 현장 0곳|첫 현장/)).toBeNull();
   });
 
-  it("허용이면 현장 등록 링크를 둔다", () => {
+  it("허용이면 프로젝트 등록 링크를 둔다", () => {
     render(<SiteOnboarding availability={{ status: "allowed", mode: "LEGACY_SITE_ID" }} />);
-    const link = screen.getByRole("link", { name: "현장 등록하기" });
+    const link = screen.getByRole("link", { name: "프로젝트 등록하기" });
     expect(link.getAttribute("href")).toBe("/sites/new");
   });
 
   it("확정 거부면 거부 사유를 클릭형으로 보이고 링크는 없다", () => {
     render(<SiteOnboarding availability={{ status: "denied" }} />);
-    expect(screen.queryByRole("link", { name: "현장 등록하기" })).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "현장 등록하기" }));
+    expect(screen.queryByRole("link", { name: "프로젝트 등록하기" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "프로젝트 등록하기" }));
     expect(
-      screen.getByText("현재 계정으로는 현장을 등록할 수 없습니다. 관리자에게 문의하세요."),
+      screen.getByText("현재 계정으로는 프로젝트를 등록할 수 없습니다. 관리자에게 문의하세요."),
     ).toBeTruthy();
     expect(screen.queryByRole("button", { name: "권한 다시 확인" })).toBeNull();
   });
 
   it("미확인을 거부로 속이지 않고 재시도형으로 보인다", () => {
     render(<SiteOnboarding availability={{ status: "unavailable" }} />);
-    fireEvent.click(screen.getByRole("button", { name: "현장 등록하기" }));
+    fireEvent.click(screen.getByRole("button", { name: "프로젝트 등록하기" }));
     expect(
       screen.getByText("등록 권한을 확인하지 못했습니다. 잠시 후 다시 확인하세요."),
     ).toBeTruthy();

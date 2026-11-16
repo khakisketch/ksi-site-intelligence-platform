@@ -56,7 +56,7 @@ beforeEach(() => {
   });
   mocked.operations.mockResolvedValue([]);
   mocked.sites.mockResolvedValue([{ siteId: "site-1", name: "한강 현장" }]);
-  mocked.areas.mockResolvedValue({ workAreas: [{ workAreaId: "area-1", name: "동측 구역" }] });
+  mocked.areas.mockResolvedValue({ workAreas: [{ workAreaId: "area-1", name: "동측 영역" }] });
 });
 
 afterEach(() => { cleanup(); vi.resetAllMocks(); });
@@ -77,7 +77,7 @@ describe("Field work queue technical disclosure", () => {
       expect(link.textContent).not.toContain("site-1");
       expect(link.textContent).not.toContain("area-1");
     }
-    expect(first.textContent).toContain("한강 현장 · 동측 구역 · 1회차");
+    expect(first.textContent).toContain("한강 현장 · 동측 영역 · 1회차");
     // 펼침이 없어 스캔 밀도가 유지된다.
     expect(first.closest("li")?.querySelector("details")).toBeNull();
     expect(second.closest("li")?.querySelector("details")).toBeNull();

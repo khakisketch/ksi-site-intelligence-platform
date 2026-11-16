@@ -34,8 +34,8 @@ it('identity deadline locks the original subtree, then permits account recovery 
  const root=document.querySelector<HTMLElement>('[data-account-display-root]')!;
  expect(root.hidden).toBe(true); expect(input.isConnected).toBe(true); expect(input.value).toBe('unsaved');
  hang=false; fireEvent.click(screen.getByText('계정 다시 확인')); await act(async()=>{for(let i=0;i<15;i++) await Promise.resolve();});
- expect(root.hidden).toBe(false); expect(screen.getByText('현장 메뉴 다시 확인')).toBeTruthy();
+ expect(root.hidden).toBe(false); expect(screen.getByText('프로젝트 메뉴 다시 확인')).toBeTruthy();
  await act(async()=>{resolve(json({fingerprint:a})); await Promise.resolve();});
- expect(screen.getByText('현장 메뉴 다시 확인')).toBeTruthy(); expect(screen.getByLabelText('raw')).toBe(input); expect(input.value).toBe('unsaved');
+ expect(screen.getByText('프로젝트 메뉴 다시 확인')).toBeTruthy(); expect(screen.getByLabelText('raw')).toBe(input); expect(input.value).toBe('unsaved');
  vi.useRealTimers();
 });

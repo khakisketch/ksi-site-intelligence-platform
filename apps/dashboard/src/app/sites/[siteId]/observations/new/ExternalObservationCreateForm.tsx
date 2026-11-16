@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { siteAreasHref } from "@/components/nav/site-context";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 
@@ -31,7 +32,7 @@ function useHydratedGate(): boolean {
 
 function workAreaLabel(area: WorkAreaOption, index: number): string {
   const name = area.name.trim();
-  return name && name !== area.workAreaId ? name : `이름을 확인할 수 없는 작업구역 ${index + 1}`;
+  return name && name !== area.workAreaId ? name : `이름을 확인할 수 없는 영역 ${index + 1}`;
 }
 
 type CreateAttempt = {
@@ -94,7 +95,7 @@ export function ExternalObservationCreateForm({
       submitAbort.current?.abort();
     };
   }, []);
-  // SSR~hydration 사이 이름·구역·제출은 같은 명시적 준비 게이트로 잠근다. 이 값은
+  // SSR~hydration 사이 이름·영역·제출은 같은 명시적 준비 게이트로 잠근다. 이 값은
   // 외부 스토어 스냅샷이므로 effect 속 setState가 없고, SSR 잠금 HTML과도
   // 일치한다. 잠긴 입력칸에는 실제 사용자 입력이 남을 수 없으므로 보이는 값과
   // state가 갈라질 수 없고, wipe·고착 분기 자체가 생기지 않는다. hydration
@@ -125,9 +126,9 @@ export function ExternalObservationCreateForm({
     : `/sites/${encodeURIComponent(siteId)}`;
   // 동결된 시도의 작업명 그대로 작업 목록를 검색한다 — 모호한 제출 뒤 이미
   // 만들어진 작업이 있는지 확인할 때 목록 전체를 뒤지지 않게 둔다. 큐 검색은
-  // 작업명·현장명 포함 매칭이라 같은 이름 시도가 있으면 바로 보인다.
+  // 작업명·프로젝트명 포함 매칭이라 같은 이름 시도가 있으면 바로 보인다.
   // 같은 탭으로 이동하면 이 화면의 동결 키·본문이 사라져 같은 키 복구가
-  // 불가능해지므로 새 탭으로 연다. 현장 범위를 함께 실어 동명이 타 현장
+  // 불가능해지므로 새 탭으로 연다. 프로젝트 범위를 함께 실어 동명이 타 현장
   // 결과와 섞이지 않게 두되, 이름 일치만으로 성공을 확정하지 않는다.
   const workQueueHref = attempt
     ? `/field?q=${encodeURIComponent(attempt.body.name)}&site=${encodeURIComponent(siteId)}`
@@ -224,15 +225,15 @@ export function ExternalObservationCreateForm({
               ? "다시 보낸 요청이 세션 만료로 접수되지 않았습니다. 이전 요청이 처리되었는지는 알 수 없습니다. 입력과 요청은 이 화면에 그대로 있습니다. 화면을 벗어나면 입력이 사라지니, 다른 탭에서 같은 계정으로 다시 로그인한 뒤 같은 요청으로 다시 시도하세요. 계정을 바꾸기 전에 작업 목록에서 원래 요청의 작업이 이미 만들어졌는지 먼저 확인하세요. 다른 계정에서 같은 요청을 다시 시도하면 이 화면에서 새 작업을 만들지 않습니다."
               : response.status === 403
                 ? "다시 보낸 요청이 권한 부족으로 접수되지 않았습니다. 이전 요청이 처리되었는지는 알 수 없습니다. 입력과 요청은 이 화면에 그대로 있습니다. 권한을 확인한 뒤 같은 요청으로 다시 시도하거나, 작업 목록에서 이미 만들어졌는지 먼저 확인하세요."
-                : "다시 보낸 요청에서 작업 범위를 확인하지 못했습니다. 이전 요청이 처리되었는지는 알 수 없습니다. 입력과 요청은 이 화면에 그대로 있습니다. 작업 목록에서 이미 만들어졌는지 먼저 확인하세요. 작업구역이 바뀐 경우 새로 시작해 범위를 다시 선택하세요.");
+                : "다시 보낸 요청에서 작업 범위를 확인하지 못했습니다. 이전 요청이 처리되었는지는 알 수 없습니다. 입력과 요청은 이 화면에 그대로 있습니다. 작업 목록에서 이미 만들어졌는지 먼저 확인하세요. 영역이 바뀐 경우 새로 시작해 범위를 다시 선택하세요.");
           } else {
             key.current = null;
             setAttempt(null);
             setError(response.status === 401
               ? "세션이 만료되어 작업을 만들지 못했습니다. 입력은 이 화면에 그대로 있습니다. 화면을 벗어나면 입력이 사라지니, 다른 탭에서 같은 계정으로 다시 로그인한 뒤 이 화면에서 새로 요청하세요. 계정을 바꾸기 전에 작업 목록에서 해당 작업이 이미 있는지 먼저 확인하세요."
               : response.status === 403
-                ? "작업 등록 권한이 없어 작업을 만들지 못했습니다. 입력은 이 화면에 그대로 있습니다. 현장 담당자에게 작업 등록 권한을 요청한 뒤(필요하면 다른 탭에서 다시 로그인) 이 화면에서 새로 요청하세요."
-                : "작업 범위를 확인하지 못해 작업을 만들지 못했습니다. 입력은 이 화면에 그대로 있습니다. 작업구역 선택을 확인한 뒤 새로 요청하세요.");
+                ? "작업 등록 권한이 없어 작업을 만들지 못했습니다. 입력은 이 화면에 그대로 있습니다. 프로젝트 담당자에게 작업 등록 권한을 요청한 뒤(필요하면 다른 탭에서 다시 로그인) 이 화면에서 새로 요청하세요."
+                : "작업 범위를 확인하지 못해 작업을 만들지 못했습니다. 입력은 이 화면에 그대로 있습니다. 영역 선택을 확인한 뒤 새로 요청하세요.");
           }
         }
         return;
@@ -258,10 +259,10 @@ export function ExternalObservationCreateForm({
       <div>
         <div className="mt-1 flex flex-wrap items-center justify-between gap-2">
           <h2 className="console-page-title">관측 자료 등록</h2>
-          <Link href={returnHref} className="text-body font-semibold text-accent-text hover:underline">현장으로 돌아가기</Link>
+          <Link href={returnHref} className="text-body font-semibold text-accent-text hover:underline">프로젝트로 돌아가기</Link>
         </div>
         <p className="console-page-description">{siteName}</p>
-        <ol aria-label="자료 등록 흐름" className="mt-5 grid grid-cols-3 gap-3 text-caption"><li aria-current="step" className="border-b-2 border-accent pb-3 font-semibold">1. 작업구역</li><li className="border-b-2 border-line pb-3 text-ink-muted">2. 파일 제출</li><li className="border-b-2 border-line pb-3 text-ink-muted">3. 검사 확인</li></ol>
+        <ol aria-label="자료 등록 흐름" className="mt-5 grid grid-cols-3 gap-3 text-caption"><li aria-current="step" className="border-b-2 border-accent pb-3 font-semibold">1. 영역</li><li className="border-b-2 border-line pb-3 text-ink-muted">2. 파일 제출</li><li className="border-b-2 border-line pb-3 text-ink-muted">3. 검사 확인</li></ol>
       </div>
 
       {/* 1024px 미만에서는 쓰기 경계가 폼을 숨기므로, 변경 없는 범위 정보만
@@ -272,7 +273,7 @@ export function ExternalObservationCreateForm({
           <p className="font-semibold text-ink-1">이 화면의 등록 범위</p>
           {templateNotice ? <p>{templateNotice}</p> : null}
           {scopeNotice ? <p>{scopeNotice}</p> : null}
-          <p>비교 후보 작업구역 {workAreas.length}곳: {workAreas.map((area, index) => workAreaLabel(area, index)).join(", ")}</p>
+          <p>비교 후보 영역 {workAreas.length}곳: {workAreas.map((area, index) => workAreaLabel(area, index)).join(", ")}</p>
           {initialWorkAreaIds.length > 0 && (
             <p>선택 제안: {initialWorkAreaIds.map((workAreaId) => {
               const index = workAreas.findIndex((area) => area.workAreaId === workAreaId);
@@ -284,11 +285,11 @@ export function ExternalObservationCreateForm({
       )}
       {workAreas.length === 0 ? (
         <section className="rounded-xl border border-line bg-surface p-4">
-          <h2 className="text-lead font-bold">먼저 작업구역을 등록하세요</h2>
+          <h2 className="text-lead font-bold">먼저 영역을 등록하세요</h2>
           <p className="mt-1 text-body leading-5 text-ink-2">비교할 범위가 있어야 결과의 위치와 의미를 확인할 수 있습니다.</p>
-          <Link href={`/sites/${encodeURIComponent(siteId)}/work-areas`} className="btn mt-3 lg:hidden">작업구역 목록 보기</Link>
-          <Link href={`/sites/${encodeURIComponent(siteId)}/work-areas`} className="btn mt-3 hidden lg:inline-flex">작업구역 만들기</Link>
-          <p className="mt-2 text-body leading-5 text-ink-2 lg:hidden">모바일에서는 목록을 확인할 수 있습니다. 작업구역 등록은 노트북에서 같은 계정으로 로그인한 뒤 화면 폭 1024px 이상에서 진행하세요.</p>
+          <Link href={siteAreasHref(siteId, null, { manage: true })} className="btn mt-3 lg:hidden">영역 목록 보기</Link>
+          <Link href={siteAreasHref(siteId, null, { manage: true })} className="btn mt-3 hidden lg:inline-flex">영역 만들기</Link>
+          <p className="mt-2 text-body leading-5 text-ink-2 lg:hidden">모바일에서는 목록을 확인할 수 있습니다. 영역 등록은 노트북에서 같은 계정으로 로그인한 뒤 화면 폭 1024px 이상에서 진행하세요.</p>
         </section>
       ) : (
         <ResponsiveActionBoundary action="WORK_ORDERS_WRITE" title="화면 폭 1024px 이상에서 등록" reason="노트북에서 같은 계정으로 로그인하세요. 화면 폭 1024px 이상에서 같은 계정으로 새로 입력해 관측 자료 등록을 진행합니다. 이 화면의 입력은 다른 기기·창으로 옮겨가지 않으며, 권한은 등록 시점에 다시 확인합니다.">
@@ -298,13 +299,13 @@ export function ExternalObservationCreateForm({
               {/* 반복 템플릿 공지는 실제 검증된 반복 진입에서만 page가 넘긴다. 범위 선택만으로 추론하지 않는다. */}
               {templateNotice ? <p className="mt-2 rounded-lg bg-sunk px-3 py-2 text-body leading-5 text-ink-2">{templateNotice}</p> : null}
               {scopeNotice && <p role="status" className="mt-2 rounded-lg bg-sunk px-3 py-2 text-body leading-5 text-ink-2">{scopeNotice}</p>}
-              {!hydrated && <p role="status" className="mt-2 rounded-lg bg-sunk px-3 py-2 text-body leading-5 text-ink-2">화면을 준비하고 있습니다. 입력란이 활성화되면 작업 이름과 작업구역을 확인하고 등록하세요. 이 안내가 계속 보이면 자바스크립트 실행과 연결 상태를 확인하세요.</p>}
+              {!hydrated && <p role="status" className="mt-2 rounded-lg bg-sunk px-3 py-2 text-body leading-5 text-ink-2">화면을 준비하고 있습니다. 입력란이 활성화되면 작업 이름과 영역을 확인하고 등록하세요. 이 안내가 계속 보이면 자바스크립트 실행과 연결 상태를 확인하세요.</p>}
             </div>
             <label className="flex flex-col gap-1 text-body font-semibold">작업 이름
               <input key={hydrated ? "name-live" : "name-ssr"} aria-label="작업 이름" className="input" maxLength={200} value={name} disabled={!hydrated || busy || attempt !== null} onChange={(event) => setName(event.target.value)} placeholder={suggestedName ?? "예: 9월 6일 현황 비교"} />
             </label>
             <fieldset disabled={!hydrated || busy || attempt !== null}>
-              <legend className="text-body font-semibold">비교할 작업구역</legend>
+              <legend className="text-body font-semibold">비교할 영역</legend>
               <div className="mt-2 grid gap-2">
                 {workAreas.map((area, index) => <label key={area.workAreaId} className="flex cursor-pointer items-center gap-2 rounded-lg border border-line px-3 py-2 text-body hover:bg-sunk">
                   <input key={hydrated ? `box-live-${area.workAreaId}` : `box-ssr-${area.workAreaId}`} type="checkbox" aria-label={workAreaLabel(area, index)} checked={selected.includes(area.workAreaId)} onChange={() => toggle(area.workAreaId)} disabled={!hydrated || busy || attempt !== null} />
@@ -314,7 +315,7 @@ export function ExternalObservationCreateForm({
             </fieldset>
             {selected.length > 1 && (
               <p role="status" className="rounded-lg bg-sunk px-3 py-2 text-body leading-5 text-ink-2">
-                작업구역을 {selected.length}개 선택했습니다. 구역별 자료 목록·비교 선택에서는 한 구역씩 확인해야 바로 보입니다. 구역별 비교용이면 하나만 선택하세요. 여러 구역 저장은 그대로 유지됩니다.
+                영역을 {selected.length}개 선택했습니다. 영역별 자료 목록·비교 선택에서는 한 영역씩 확인해야 바로 보입니다. 영역별 비교용이면 하나만 선택하세요. 여러 영역 저장은 그대로 유지됩니다.
               </p>
             )}
             {attempt && <p className="rounded-lg bg-sunk px-3 py-2 text-body text-ink-2">이 요청은 같은 내용으로 재시도합니다. 내용을 바꾸려면 새 요청으로 시작하세요.</p>}
@@ -331,9 +332,9 @@ export function ExternalObservationCreateForm({
             <p className="text-caption leading-5 text-ink-2">계속하면 작업이 만들어집니다. 파일은 다음 화면에서 제출합니다.</p>
             {/* 준비 게이트가 열리기 전에는 필수 입력 안내를 내지 않는다. 잠긴 입력칸에
                 입력하라는 안내는 모순이므로, 준비 안내가 그 자리를 대신한다. */}
-            {hydrated && !busy && !attempt && !name.trim() && selected.length === 0 && <p className="text-body leading-5 text-ink-2">작업 이름을 입력하고 비교할 작업구역을 하나 이상 선택하세요.</p>}
+            {hydrated && !busy && !attempt && !name.trim() && selected.length === 0 && <p className="text-body leading-5 text-ink-2">작업 이름을 입력하고 비교할 영역을 하나 이상 선택하세요.</p>}
             {hydrated && !busy && !attempt && !name.trim() && selected.length > 0 && <p className="text-body leading-5 text-ink-2">작업 이름을 입력하세요.</p>}
-            {hydrated && !busy && !attempt && name.trim() && selected.length === 0 && <p className="text-body leading-5 text-ink-2">비교할 작업구역을 하나 이상 선택하세요.</p>}
+            {hydrated && !busy && !attempt && name.trim() && selected.length === 0 && <p className="text-body leading-5 text-ink-2">비교할 영역을 하나 이상 선택하세요.</p>}
             {error && <p role="alert" className="text-body text-high-ink">{error}{attempt && <> <Link href={workQueueHref} target="_blank" rel="noopener noreferrer" className="font-semibold underline">작업 목록 확인(새 탭)</Link></>}</p>}
             </div>
           </section>

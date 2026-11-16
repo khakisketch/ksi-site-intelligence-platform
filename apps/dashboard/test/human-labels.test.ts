@@ -123,13 +123,13 @@ describe("human labels for spatial assets", () => {
   it("connects work name, area, capture window and registration version in one context line", () => {
     const line = assetContextLine({
       workName: "북측 1차 관측",
-      areaName: "북측 작업구역",
+      areaName: "북측 영역",
       captureWindow: formatAssetCaptureWindow("2026-09-29T23:30:00Z", "2026-09-30T00:30:00Z"),
       revision: 2,
     });
 
     expect(line).toContain("북측 1차 관측");
-    expect(line).toContain("북측 작업구역");
+    expect(line).toContain("북측 영역");
     expect(line).toContain("등록 버전 2");
     expect(line).toContain("2026. 9. 30.");
   });
@@ -185,9 +185,9 @@ describe("human labels for spatial data requests", () => {
   };
 
   it("titles rows with request time, source kind and capture period instead of opaque codes", () => {
-    const [first] = requestRowPresentations([items[0]!], (iso) => iso, assets, "북측 작업구역");
+    const [first] = requestRowPresentations([items[0]!], (iso) => iso, assets, "북측 영역");
 
-    expect(first!.title).toContain("북측 작업구역");
+    expect(first!.title).toContain("북측 영역");
     expect(first!.title).toContain("2026-10-14T10:40:09Z");
     expect(first!.title).toContain("지표면 높이 자료(DSM)");
     expect(first!.title).toContain("촬영");
@@ -198,7 +198,7 @@ describe("human labels for spatial data requests", () => {
   });
 
   it("keeps distinct source kinds at the same time free of raw IDs", () => {
-    const [first, second] = requestRowPresentations(items, (iso) => iso, assets, "북측 작업구역");
+    const [first, second] = requestRowPresentations(items, (iso) => iso, assets, "북측 영역");
 
     expect(first!.title).not.toBe(second!.title);
     expect(first!.title).not.toContain(items[0]!.jobId);
@@ -212,7 +212,7 @@ describe("human labels for spatial data requests", () => {
       { ...items[0]! },
       { ...items[0]!, jobId: "sdj-v1-33333333-3333-3333-3333-333333333333" },
     ];
-    const [first, second] = requestRowPresentations(sameSource, (iso) => iso, assets, "북측 작업구역");
+    const [first, second] = requestRowPresentations(sameSource, (iso) => iso, assets, "북측 영역");
 
     expect(first!.title).not.toBe(second!.title);
     expect(first!.title).toContain(sameSource[0]!.jobId);
@@ -228,17 +228,17 @@ describe("human labels for spatial data requests", () => {
         captureEndedAt: "2026-10-09T05:30:00Z",
       },
     };
-    const [row] = requestRowPresentations([items[0]!], (iso) => iso, unknownAssets, "북측 작업구역");
+    const [row] = requestRowPresentations([items[0]!], (iso) => iso, unknownAssets, "북측 영역");
 
     expect(row!.title).toContain("자료 종류 확인 필요");
     expect(row!.title).not.toContain("future-kind");
     expect(row!.rawSourceKind).toBe("future-kind");
-    const [known] = requestRowPresentations([items[0]!], (iso) => iso, assets, "북측 작업구역");
+    const [known] = requestRowPresentations([items[0]!], (iso) => iso, assets, "북측 영역");
     expect(known!.rawSourceKind).toBeNull();
   });
 
   it("never implies a deleted source when the catalog is unavailable", () => {
-    const [first] = requestRowPresentations([items[0]!], (iso) => iso, null, "북측 작업구역");
+    const [first] = requestRowPresentations([items[0]!], (iso) => iso, null, "북측 영역");
 
     expect(first!.title).toContain("원본 정보 확인 불가");
     expect(first!.sourceLine).toContain("원본 정보 확인 불가");

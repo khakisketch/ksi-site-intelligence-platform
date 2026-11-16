@@ -29,11 +29,11 @@ export type DeltaPublicationPanelProps = {
   /** Core 범위 — 요청·메아리 검증에 그대로 쓴다. */
   siteId: string;
   workAreaId: string;
-  /** 사람용 구역 이름(표시 전용, 검증에 쓰지 않음). */
+  /** 사람용 영역 이름(표시 전용, 검증에 쓰지 않음). */
   workAreaLabel: string;
   /** Core가 확정한 세 출처 확인값 — 요청 본문의 전부다. */
   source: DeltaPublicationSource;
-  /** 현장 쓰기 권한 보유 여부(부모가 Core 세션 권한에서 내려준다). */
+  /** 프로젝트 쓰기 권한 보유 여부(부모가 Core 세션 권한에서 내려준다). */
   canRequest: boolean;
   /** 서버 발행 수명 설정(초, 부모 소유) — 지어내지 않고 그대로 보낸다. */
   lifetimeSeconds: number;
@@ -446,7 +446,7 @@ function requestErrorCopy(error: unknown): { message: string; technical: string 
     // 세션·권한 거부는 같은 요청을 다시 보내도 같은 답이다 — 자동 재시도를 봉쇄한다.
     const message = status === 401
       ? "세션이 만료되었습니다. 다시 로그인한 뒤 요청하세요. 수치 결과에는 영향이 없습니다."
-      : "차분 파일 내보내기 요청 권한이 없습니다. 현장 쓰기 권한이 있는 담당자에게 요청하세요.";
+      : "차분 파일 내보내기 요청 권한이 없습니다. 프로젝트 쓰기 권한이 있는 담당자에게 요청하세요.";
     return { message, technical: code, retryable: false };
   }
   if (status === 409 || code === "DELTA_SOURCE_OR_AUTHORITY_UNAVAILABLE") {
@@ -538,7 +538,7 @@ export function DeltaPublicationPanel(props: DeltaPublicationPanelProps) {
   }, []);
 
   /**
-   * 표시 대상(현장·구역·세 출처)이 바뀌면 이전 결과를 버리고 중단한다.
+   * 표시 대상(현장·영역·세 출처)이 바뀌면 이전 결과를 버리고 중단한다.
    * 새 결과에 낡은 파일·주석을 보여주지 않으며, 다음 요청은 새 식별자를
    * 만든다(낡은 식별자 재사용 금지).
    */
@@ -612,7 +612,7 @@ export function DeltaPublicationPanel(props: DeltaPublicationPanelProps) {
 
   /**
    * 상세 메아리 검증 — Core 상세(`DeltaPublicationViewV1`)는 출처 확인값을
-   * 서술자 안에만 싣는다. 최상위는 범위(현장·구역·식별자)만 대조하고,
+   * 서술자 안에만 싣는다. 최상위는 범위(현장·영역·식별자)만 대조하고,
    * 출처 확인값은 서술자 메아리에서 대조한다.
    */
   const verifyDetailEcho = useCallback((value: DeltaDetailJson, publicationId: string): boolean => {
@@ -1186,7 +1186,7 @@ export function DeltaPublicationPanel(props: DeltaPublicationPanelProps) {
               <div className="mt-3">
                 <ActionUnavailable
                   label="내보내기 준비 요청"
-                  description="차분 파일 내보내기 요청은 현장 쓰기 권한이 있는 담당자에게 요청하세요."
+                  description="차분 파일 내보내기 요청은 프로젝트 쓰기 권한이 있는 담당자에게 요청하세요."
                 />
               </div>
             )}
@@ -1284,7 +1284,7 @@ export function DeltaPublicationPanel(props: DeltaPublicationPanelProps) {
               <div className="mt-3">
                 <ActionUnavailable
                   label="다시 요청"
-                  description="차분 파일 내보내기 요청은 현장 쓰기 권한이 있는 담당자에게 요청하세요."
+                  description="차분 파일 내보내기 요청은 프로젝트 쓰기 권한이 있는 담당자에게 요청하세요."
                 />
               </div>
             )}
@@ -1318,8 +1318,8 @@ export function DeltaPublicationPanel(props: DeltaPublicationPanelProps) {
                 <ActionUnavailable
                   label={phase === "unavailable" ? "다시 요청" : "다시 시도"}
                   description={canRequest
-                    ? "이 오류는 같은 요청을 반복해도 해결되지 않습니다. 현장 쓰기 권한이 있는 담당자에게 확인을 요청하세요."
-                    : "차분 파일 내보내기 요청은 현장 쓰기 권한이 있는 담당자에게 요청하세요."}
+                    ? "이 오류는 같은 요청을 반복해도 해결되지 않습니다. 프로젝트 쓰기 권한이 있는 담당자에게 확인을 요청하세요."
+                    : "차분 파일 내보내기 요청은 프로젝트 쓰기 권한이 있는 담당자에게 요청하세요."}
                 />
               )}
             </div>

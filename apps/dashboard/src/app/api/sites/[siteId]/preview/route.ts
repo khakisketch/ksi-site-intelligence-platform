@@ -21,10 +21,10 @@ import {
 const SITE_ID_PATTERN = /^[^/\\?#\s\x00-\x1f\x7f@]+$/;
 
 /**
- * 현장 목록 미리보기용 읽기 전용 기술서(BFF 집계).
+ * 프로젝트 목록 미리보기용 읽기 전용 기술서(BFF 집계).
  *
- * 같은 세션의 권한으로 Core를 읽는다 — 구역 목록, 구역별 bounded 요청
- * 목록, 선택된 요청의 자산 상세 순이며, 구역·요청·자산 어느 한 번이라도
+ * 같은 세션의 권한으로 Core를 읽는다 — 영역 목록, 영역별 bounded 요청
+ * 목록, 선택된 요청의 자산 상세 순이며, 영역·요청·자산 어느 한 번이라도
  * 거부·없음이면 그 자리에서 멈추고 Core 판정을 그대로 돌려준다(403/404를
  * opaque하게 전달하고, 바이트·서명 URL·원본 키를 절대 내보내지 않는다).
  * 파일 바이트는 이 경로가 주지 않는다 — 준비 파일 BFF가 매번 다시 대조한다.
@@ -44,7 +44,7 @@ export async function GET(
 
     const areas = await listWorkAreas(siteId);
     const scannedAreas = areas.workAreas.slice(0, SITE_PREVIEW_MAX_AREAS);
-    // 묶음 밖 구역은 훑지 않으므로, 후보가 없어도 없음이 아니라 미확인이다.
+    // 묶음 밖 영역은 훑지 않으므로, 후보가 없어도 없음이 아니라 미확인이다.
     let sawUnknown = areas.workAreas.length > scannedAreas.length;
     const pending = scannedAreas.map((area) => ({ area, cursor: undefined as string | undefined, seen: new Set<string>() }));
     for (let calls = 0; pending.length > 0 && calls < SITE_PREVIEW_MAX_REQUEST_PAGES; calls += 1) {
@@ -73,7 +73,7 @@ export async function GET(
           }
         }
       } catch {
-        // 이 구역의 목록을 못 읽으면 다음 구역으로 — 전체 판정은 unknown이다.
+        // 이 영역의 목록을 못 읽으면 다음 영역으로 — 전체 판정은 unknown이다.
         sawUnknown = true;
         continue;
       }

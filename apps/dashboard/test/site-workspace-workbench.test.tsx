@@ -12,9 +12,9 @@ function frame(extra: Record<string, unknown> = {}) {
   const { ...rest } = extra;
   return render(
     <SiteWorkspaceWorkbench
-      contextControls={<span>구역 · 검증 구역</span>}
+      contextControls={<span>영역 · 검증 영역</span>}
       catalogLabel="작업공간 목록"
-      catalog={<p>구역 선택</p>}
+      catalog={<p>영역 선택</p>}
       stage={
         <div>
           <p>실제 화면</p>

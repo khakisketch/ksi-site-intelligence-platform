@@ -18,7 +18,7 @@ async function fetchSitesForNewObservation() {
       sites: null,
       error: error instanceof CoreApiError
         ? humanizeApiError(error.code, error.status, error.serverMessage)
-        : "현장 목록을 불러오지 못했습니다.",
+        : "프로젝트 목록을 불러오지 못했습니다.",
     };
   }
 }
@@ -41,10 +41,10 @@ export default async function FieldNewObservationPage() {
     <div className="console-page !max-w-[800px]">
       <div>
         <h2 className="console-page-title">어느 현장의 자료인가요?</h2>
-        <p className="console-page-description">현장을 고른 뒤 작업구역을 선택합니다.</p>
+        <p className="console-page-description">현장을 고른 뒤 영역을 선택합니다.</p>
       </div>
       {sites.length === 0 ? (
-        <EmptyState title="현재 계정에서 선택할 수 있는 현장이 없습니다" description="찾는 현장이 이미 있다면 관리자에게 이 계정의 현장 접근 권한을 확인해 주세요." action={{ label: "현장 목록", href: "/sites" }} />
+        <EmptyState title="현재 계정에서 선택할 수 있는 프로젝트가 없습니다" description="찾는 프로젝트가 이미 있다면 관리자에게 이 계정의 프로젝트 접근 권한을 확인해 주세요." action={{ label: "프로젝트 목록", href: "/sites" }} />
       ) : (
         <ul className="flex flex-col divide-y divide-line rounded-lg border border-line bg-surface px-4">
           {sites.map((site) => <li key={site.siteId}>

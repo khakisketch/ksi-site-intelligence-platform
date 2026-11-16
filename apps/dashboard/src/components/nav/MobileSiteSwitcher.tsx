@@ -226,7 +226,7 @@ export function MobileSiteSwitcher({
               onClick={() => setOpen(false)}
               className="flex shrink-0 items-center justify-between border-t border-line px-4 py-3 text-caption font-semibold text-ink-2 hover:bg-sunk"
             >
-              <span>전체 현장</span>
+              <span>전체 프로젝트</span>
               <span aria-hidden="true">→</span>
             </Link>
           </>

@@ -145,7 +145,7 @@ export default async function FieldWorkOrderPage({ params, searchParams }: {
     getSite(workOrder.siteId).catch(() => null),
     listReobservationDrafts(workOrder.workOrderId).catch(() => null),
     getExternalReconstructionContext(workOrder.workOrderId).catch(() => null),
-    // 보관 구역 포함 — 과거 작업이 보관된 구역을 가리킬 수 있다.
+    // 보관 영역 포함 — 과거 작업이 보관된 영역을 가리킬 수 있다.
     listWorkAreas(workOrder.siteId, { includeArchived: true }).catch(() => null),
     listSiteExternalVolumeHistory(workOrder.siteId, { limit: 20 }).catch(() => null),
     // 사용 결정 재시도의 계정 연속성 비교값 — 서버에서 확인한 두 식별자의
@@ -211,7 +211,7 @@ export default async function FieldWorkOrderPage({ params, searchParams }: {
     ? await getSiteExternalRelativeVolumeReport(workOrder.siteId, latestItem.reportRef).catch(() => null)
     : null;
   const ownResult = latestItem?.result ?? null;
-  // 단일 현행 활성 구역일 때만 다음 확인 범위를 미리 좁힌다. 여러 구역·보관·
+  // 단일 현행 활성 영역일 때만 다음 확인 범위를 미리 좁힌다. 여러 영역·보관·
   // 모르는 연결이면 좁히지 않는다(목록에서 직접 고른다). 추가 조회 없음.
   const continuation = !planningBinding && externalExecutionContext === "EXTERNAL_INGRESS"
     ? resolveWorkOrderContinuation({
@@ -282,7 +282,7 @@ export default async function FieldWorkOrderPage({ params, searchParams }: {
           <p className="break-keep text-caption text-ink-2">{site?.name ?? SITE_NAME_UNAVAILABLE} · {areaSummary} · {workOrder.cycleNumber}회차</p>
           {canViewSite && <Link href={`/sites/${encodeURIComponent(workOrder.siteId)}/data?progress=1`} className="btn btn-sm w-fit">자료의 등록 진행 보기</Link>}
           <Disclosure label="식별 상세" className="text-ink-muted">
-            <p className="mt-1 break-all">작업 {workOrder.workOrderId} · 현장 {workOrder.siteId} · 구역 {formatWorkAreaTechnicalRefs(workOrder.workAreaIds)}</p>
+            <p className="mt-1 break-all">작업 {workOrder.workOrderId} · 현장 {workOrder.siteId} · 영역 {formatWorkAreaTechnicalRefs(workOrder.workAreaIds)}</p>
           </Disclosure>
         </div>
       </OperationsWorkHeader>
@@ -326,7 +326,7 @@ export default async function FieldWorkOrderPage({ params, searchParams }: {
                 <p className="mt-1 text-caption leading-5 text-ink-2">
                   {continuation.workAreaId
                     ? "파일 검사 결과를 확인한 뒤 분석을 열어 비교 조건을 확인하세요. 분석에 사용할 수 있는 자료인지는 해당 화면에서 다시 확인합니다."
-                    : "이 작업은 여러 구역에 걸쳐 있어 구역을 자동으로 고르지 않았습니다. 목록에서 구역과 관측을 직접 선택하세요."}
+                    : "이 작업은 여러 영역에 걸쳐 있어 영역을 자동으로 고르지 않았습니다. 목록에서 영역과 관측을 직접 선택하세요."}
                 </p>
               </div>
               <div className="flex flex-wrap gap-2">
@@ -384,7 +384,7 @@ export default async function FieldWorkOrderPage({ params, searchParams }: {
             <p className="text-caption text-ink-2">승인 대기 초안은 승인 가능 여부를 추정하지 않고 표시합니다. 제안 생성과 결정은 외부 비교 화면에서 진행합니다.</p>
             {externalWorkflow && <Link className="w-fit text-caption font-semibold text-accent-text underline underline-offset-2" href={initialReport ? "#external-result" : "#external-volume"}>{initialReport ? "결과와 제안 결정으로 이동" : "비교 요청·제안 상태로 이동"}</Link>}
             <ul className="divide-y divide-line">
-              {pendingDrafts.map((draft) => <li key={draft.draftId} className="py-2 text-caption"><p className="font-semibold">{draft.proposedEffort}</p><p className="mt-1 text-ink-muted">{formatCountKo(draft.targetRegionRefs.length)}개 구역 · 만료 {formatKoreanDateTime(draft.expiresAt, { dateStyle: "medium", timeStyle: "short" })}</p></li>)}
+              {pendingDrafts.map((draft) => <li key={draft.draftId} className="py-2 text-caption"><p className="font-semibold">{draft.proposedEffort}</p><p className="mt-1 text-ink-muted">{formatCountKo(draft.targetRegionRefs.length)}개 영역 · 만료 {formatKoreanDateTime(draft.expiresAt, { dateStyle: "medium", timeStyle: "short" })}</p></li>)}
             </ul>
           </section>
         )}

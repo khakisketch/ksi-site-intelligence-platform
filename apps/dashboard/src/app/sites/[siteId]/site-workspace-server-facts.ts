@@ -138,7 +138,7 @@ export function buildWorkspaceServerFacts({
 }: {
   siteId: string;
   areas: readonly WorkArea[];
-  /** 선택 구역의 프로젝션 읽기 결과. 실패는 denied/unavailable로만 둔다. */
+  /** 선택 영역의 프로젝션 읽기 결과. 실패는 denied/unavailable로만 둔다. */
   projection: WorkspaceProjectionState;
   analyses: readonly AnalysisListItem[] | null;
   selectorsById?: ReadonlyMap<string, { baseline: WorkspaceAnalysisRef["baseline"]; current: WorkspaceAnalysisRef["current"] }>;

@@ -113,7 +113,7 @@ describe("ResultTrend", () => {
       <ResultTrend
         points={[point("a", "2026-11-01", "11.1", 10, 20), point("b", "2026-11-02", "11.2", 5, 40)]}
         currentId="b"
-        conditions="같은 구역 · 임계값 0.1 m · 셀 1 m"
+        conditions="같은 영역 · 임계값 0.1 m · 셀 1 m"
       />,
     );
     expect(html).toContain("<table");
@@ -122,7 +122,7 @@ describe("ResultTrend", () => {
     expect(html).toContain("40 m³");
     // 비교 조건은 접힌 상세에 있고, 범례만 앞에 둔다.
     expect(html).toContain("비교 조건");
-    expect(html).toContain("현재 관측일 기준 · 같은 구역 · 임계값 0.1 m · 셀 1 m");
+    expect(html).toContain("현재 관측일 기준 · 같은 영역 · 임계값 0.1 m · 셀 1 m");
   });
 });
 
@@ -225,7 +225,7 @@ function renderTrend(focal: AnalysisView, peers: AnalysisView[], extra: { review
   return renderToStaticMarkup(
     <SiteWorkspaceResults
       sitePath="/sites/site-1"
-      areaLabel="1구역"
+      areaLabel="1영역"
       areaAnalyses={[]}
       analysesKnown
       explicitResult={{ status: "ready", basis: "explicit", analysis: { analysisId: focal.analysisId, workAreaId: focal.workAreaId, baseline: focal.baseline, current: focal.current } } as never}
@@ -255,7 +255,7 @@ describe("SiteWorkspaceResults comparable trend", () => {
     expect(html).not.toContain("50 m³");
     expect(html).not.toContain("60 m³");
     expect(html).not.toContain("70 m³");
-    expect(html).toContain("같은 구역 · 임계값 0.1 m · 셀 1 m");
+    expect(html).toContain("같은 영역 · 임계값 0.1 m · 셀 1 m");
   });
 
   it("keeps only the latest recalculation of the same observation pair", () => {
@@ -294,7 +294,7 @@ describe("SiteWorkspaceResults same-day points", () => {
     const html = renderToStaticMarkup(
       <SiteWorkspaceResults
         sitePath="/sites/site-1"
-        areaLabel="1구역"
+        areaLabel="1영역"
         areaAnalyses={[]}
         analysesKnown
         explicitResult={{ status: "ready", basis: "explicit", analysis: { analysisId: "now", workAreaId: "area-1", baseline: focal.baseline, current: focal.current } } as never}
@@ -316,7 +316,7 @@ describe("SiteWorkspaceResults compact pair line", () => {
     renderToStaticMarkup(
       <SiteWorkspaceResults
         sitePath="/sites/site-1"
-        areaLabel="1구역"
+        areaLabel="1영역"
         areaAnalyses={[]}
         analysesKnown
         explicitResult={{ status: "ready", basis: "explicit", analysis: { analysisId: focal.analysisId, workAreaId: "area-1", baseline: focal.baseline, current: focal.current } } as never}

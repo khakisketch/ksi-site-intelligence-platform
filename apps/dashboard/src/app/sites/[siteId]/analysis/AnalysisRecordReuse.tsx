@@ -50,7 +50,7 @@ export function AnalysisRecordReuse({
           <dd className="break-all">작업 기록 · <code>{selector.workOrderId}</code></dd>
           <dd className="break-all">제출 묶음 · <code>{selector.submissionRef}</code></dd>
         </div>)}
-        <div className="min-w-0"><dt className="text-ink-muted">작업구역</dt><dd className="break-all"><code>{record.workAreaId}</code></dd></div>
+        <div className="min-w-0"><dt className="text-ink-muted">영역</dt><dd className="break-all"><code>{record.workAreaId}</code></dd></div>
         <div className="min-w-0"><dt className="text-ink-muted">요청 기록 시각</dt><dd>{formatKoreanDateTime(record.createdAt, { dateStyle: "medium", timeStyle: "short" })}</dd></div>
         <div className="min-w-0"><dt className="text-ink-muted">분석 기록 ID</dt><dd className="break-all"><code>{record.analysisId}</code></dd></div>
         <div className="min-w-0"><dt className="text-ink-muted">결과 ID</dt><dd className="break-all">{record.result ? <code>{record.result.resultId}</code> : "기록된 계산 결과 없음"}</dd></div>
@@ -66,7 +66,7 @@ export function AnalysisRecordReuse({
       {calculation ? <Disclosure label="계산 조건·실행 버전 상세" className="border-t border-line pt-2">
         <dl className="mt-2 grid gap-3 sm:grid-cols-2">
           <div className="min-w-0"><dt className="text-ink-muted">계산 기록</dt><dd className="break-all"><code>{calculation.calculationId}</code></dd></div>
-          <div className="min-w-0"><dt className="text-ink-muted">작업구역 정의 확인값</dt><dd className="break-all"><code>{calculation.workAreaDefinitionDigest}</code></dd></div>
+          <div className="min-w-0"><dt className="text-ink-muted">영역 정의 확인값</dt><dd className="break-all"><code>{calculation.workAreaDefinitionDigest}</code></dd></div>
           <div className="min-w-0"><dt className="text-ink-muted">계산 프로필</dt><dd className="break-all"><code>{calculation.policy.profileId}</code></dd></div>
           <div className="min-w-0"><dt className="text-ink-muted">프로필 확인값</dt><dd className="break-all"><code>{calculation.policy.profileDigest}</code></dd></div>
           <div className="min-w-0"><dt className="text-ink-muted">적용 정책</dt><dd className="break-all"><code>{calculation.policy.policyId}</code> · 버전 {calculation.policy.version}</dd></div>
@@ -86,7 +86,7 @@ export function AnalysisRecordReuse({
       </p>}
 
       <div className="border-t border-line pt-2">
-        <p>복사한 주소로 같은 기록을 열 수 있습니다. 로그인과 현장 접근 권한을 확인합니다.</p>
+        <p>복사한 주소로 같은 기록을 열 수 있습니다. 로그인과 프로젝트 접근 권한을 확인합니다.</p>
         <p className="mt-1">기록된 계산 결과와 현재 활용 가능 여부는 별개입니다. 이후 근거 평가·검토 상태는 바뀔 수 있으며, 이 정보는 정확도·측량·정산 승인이 아닙니다.</p>
       </div>
       <Disclosure label="API·MCP 조회 상세" className="border-t border-line pt-2">

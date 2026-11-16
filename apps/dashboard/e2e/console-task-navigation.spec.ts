@@ -60,7 +60,7 @@ test("자료 등록의 범위 선택은 현장 맥락을 유지하고 모바일 
     await page.getByRole("textbox", { name: "작업 이름", exact: true }).fill("범위 확인 — 제출하지 않음");
     await expect(page.getByRole("button", { name: "관측 자료 등록 계속", exact: true })).toBeEnabled();
   }
-  await page.getByRole("link", { name: "현장으로 돌아가기", exact: true }).click();
+  await page.getByRole("link", { name: "프로젝트로 돌아가기", exact: true }).click();
   await expect(page).toHaveURL(/\/sites\/e2e-site-workspace\?workAreaId=/);
   expect(new URL(page.url()).searchParams.get("workAreaId")).toBeTruthy();
 });

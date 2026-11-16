@@ -43,9 +43,9 @@ describe("승인된 Home 표시 계약(D7·D8)", () => {
     // D1: 포트폴리오 요약 → 확인할 현장 → 초기 설정 → 최근 업데이트.
     expect(home).toContain("attentionItems.length > 0");
     expect(home).toContain("recentSiteItems.length > 0");
-    expect(home).toContain('regionLabel="최근 현장 목록"');
-    expect(home).toContain("초기 설정이 필요한 현장");
-    expect(home).toContain("현장 전체를 열어 직접 확인하세요.");
+    expect(home).toContain('regionLabel="최근 프로젝트 목록"');
+    expect(home).toContain("초기 설정이 필요한 프로젝트");
+    expect(home).toContain("프로젝트 전체를 열어 직접 확인하세요.");
     expect(home).toContain('<Link href="/sites"');
     expect(home.indexOf("<HomeAttentionList")).toBeLessThan(home.indexOf("<HomeSituationList"));
     // D7: 고정 큰 시각·거대 장식 커버 금지 — 높이는 내용이 정한다.
@@ -65,7 +65,7 @@ describe("승인된 Home 표시 계약(D7·D8)", () => {
     // 시점 라벨은 구조화된 출처 분기가 정한다 — 문자열 추론·촬영일 오독 금지.
     expect(carousel).toContain("timeLabel");
     expect(carousel).not.toMatch(/촬영일|촬영 시각|관측일시/);
-    for (const label of ['timeLabel: "결과 보고"', 'timeLabel: "분석 생성"', 'timeLabel: "작업 갱신"', 'timeLabel: "현장 갱신"']) {
+    for (const label of ['timeLabel: "결과 보고"', 'timeLabel: "분석 생성"', 'timeLabel: "작업 갱신"', 'timeLabel: "프로젝트 갱신"']) {
       expect(home).toContain(label);
     }
     // D8: 가로로 넘기는 캐러셀 없이 모든 폭에서 세로 목록으로 읽는다.

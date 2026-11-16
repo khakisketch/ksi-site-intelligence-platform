@@ -23,9 +23,9 @@ export function SiteAreaPicker({
       </div>
       {sites.length === 0 ? (
         <EmptyState
-          title="등록된 현장이 없습니다"
-          description="먼저 현장을 등록하면 이 영역의 데이터와 결과를 현장별로 확인할 수 있습니다."
-          action={{ label: "현장 등록", href: "/sites/new" }}
+          title="등록된 프로젝트가 없습니다"
+          description="먼저 프로젝트를 등록하면 이 영역의 데이터와 결과를 현장별로 확인할 수 있습니다."
+          action={{ label: "프로젝트 등록", href: "/sites/new" }}
         />
       ) : (
         <ul className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">

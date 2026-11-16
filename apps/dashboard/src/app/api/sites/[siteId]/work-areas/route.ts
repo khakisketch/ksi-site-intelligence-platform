@@ -13,15 +13,15 @@ import { getSessionToken } from "@/lib/core-api/session";
 import type { WorkAreaRegisterInput } from "@/lib/core-api/types";
 
 /**
- * 작업구역 등록 — **기하는 이 순간 굳는다**(M4-C).
+ * 영역 등록 — **기하는 이 순간 굳는다**(M4-C).
  *
- * 고치려면 `supersedes` 로 새 구역을 등록한다 — 이 라우트에 PATCH 가 없는 이유가
+ * 고치려면 `supersedes` 로 새 영역을 등록한다 — 이 라우트에 PATCH 가 없는 이유가
  * 그것이다(design-surfaces 라우트에 "수정" 이 없는 것과 같은 이유).
  *
  * 계정 연속성 가드(선택적): 명시적 재전송이 `x-ksi-continuity-fingerprint` 를
  * 싣고 오면, 같은 요청의 세션 토큰 하나로 현재 신원을 확인해 다르면 Core 호출
- * 없이 409로 끊는다. 작업구역 등록에는 멱등 키가 없어 같은 계정의 재전송도 새
- * 구역을 만든다 — 이 가드는 중복 생성을 막지 않고, 다른 계정·조직의 조용한
+ * 없이 409로 끊는다. 영역 등록에는 멱등 키가 없어 같은 계정의 재전송도 새
+ * 영역을 만든다 — 이 가드는 중복 생성을 막지 않고, 다른 계정·조직의 조용한
  * 재전송만 막는 usability guard다. Core 권한·범위 판단이 아니다.
  * 헤더가 없으면 기존 계약 그대로 Core에 닿는다(가드 보호 밖).
  */
@@ -75,7 +75,7 @@ export async function POST(
   }
 }
 
-/** 그 현장의 작업구역 목록 — 기본은 고를 수 있는 것(ACTIVE)만. */
+/** 그 현장의 영역 목록 — 기본은 고를 수 있는 것(ACTIVE)만. */
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ siteId: string }> },

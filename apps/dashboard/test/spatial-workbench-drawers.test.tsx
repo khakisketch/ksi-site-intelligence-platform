@@ -47,7 +47,8 @@ describe("workbench drawer keyboard ownership", () => {
     await waitFor(() => expect(sheet.style.top).toBe("8px"));
     expect(sheet.getAttribute("data-mobile-sheet")).toBe("catalog");
     expect(sheet.className).toContain("inset-x-2");
-    expect(sheet.className).toContain("z-50");
+    // 시트는 상단 헤더(z-55) 위에 올라 닫기 단추가 가려지지 않는다.
+    expect(sheet.className).toContain("z-[60]");
   });
 
   it("starts overlays below the measured pane controls without resizing the stage", async () => {

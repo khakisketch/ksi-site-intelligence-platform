@@ -72,10 +72,11 @@ describe("MOBILE_TAB_ITEMS", () => {
 });
 
 describe("projectMobileTabItems", () => {
-  it("프로젝트 안의 모바일 탭은 공간·자료·분석·작업이고 프로젝트 주소를 가리킨다", () => {
+  it("프로젝트 안의 모바일 탭은 홈·공간·자료·분석·작업이고 프로젝트 주소를 가리킨다", () => {
     const tabs = projectMobileTabItems("site-1");
-    expect(tabs.map((item) => item.label)).toEqual(["공간", "자료", "분석", "작업"]);
+    expect(tabs.map((item) => item.label)).toEqual(["홈", "공간", "자료", "분석", "작업"]);
     expect(tabs.map((item) => item.href)).toEqual([
+      "/",
       "/sites/site-1",
       "/sites/site-1/data",
       "/sites/site-1/analysis",
@@ -85,6 +86,6 @@ describe("projectMobileTabItems", () => {
   });
 
   it("프로젝트 ID는 주소에 맞게 인코딩한다", () => {
-    expect(projectMobileTabItems("a b/c")[0]!.href).toBe("/sites/a%20b%2Fc");
+    expect(projectMobileTabItems("a b/c")[1]!.href).toBe("/sites/a%20b%2Fc");
   });
 });

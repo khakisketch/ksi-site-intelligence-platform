@@ -33,7 +33,7 @@ export const WINDOWED_VIEWER_ADAPTER_LABEL = "임시 시각화 어댑터 · 실�
 export const WINDOWED_VIEWER_ADAPTER_NOTE =
   "이 보기는 정식 자료 검증·정확도 평가를 대체하지 않습니다. 보여주는 픽셀은 Core 준비 기록과 바이트 전체가 일치할 때만 그립니다.";
 export const WINDOWED_VIEWER_READ_LABEL = "이미 준비된 창 보기";
-export const WINDOWED_VIEWER_REQUEST_LABEL = "이 구역의 창 준비 요청";
+export const WINDOWED_VIEWER_REQUEST_LABEL = "이 영역의 창 준비 요청";
 
 /**
  * 단일 창의 표시용 사실 — 서버가 준 준비 기록 그대로다. 이 화면이 새로

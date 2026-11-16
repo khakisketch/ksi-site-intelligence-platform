@@ -8,6 +8,9 @@ import { SiteHeader } from "./SiteHeader";
 import { ConsoleWork } from "@/components/nav/ConsolePage";
 import type { SiteSpatialAssetsState } from "./SiteSpatialOverview";
 import { SiteWorkspaceShell } from "./SiteWorkspaceShell";
+import { SpaceAreasView } from "./areas/SpaceAreasView";
+import { SpaceAreasManage } from "./areas/SpaceAreasManage";
+import { workAreaListFailure } from "./areas/work-area-list-failure";
 import { buildWorkspaceServerFacts } from "./site-workspace-server-facts";
 import { SiteTransitionActions } from "./SiteTransitionActions";
 import { ResponsiveActionBoundary } from "@/components/responsive/ResponsiveActionBoundary";
@@ -45,7 +48,7 @@ import { formatKoreanDate } from "@/lib/datetime";
 import { SITE_DETAIL_DOCUMENT_TITLE } from "@/lib/site-detail-title";
 import { normalizeSiteTab } from "@/lib/site-epochs";
 import { parseScopeId, pickFootprintAsset, resolveSelectedWorkAreaId } from "./site-spatial";
-import { siteDataHref } from "@/components/nav/site-context";
+import { siteAreasHref, siteDataHref } from "@/components/nav/site-context";
 
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Disclosure } from "@/components/ui/Disclosure";
@@ -70,7 +73,7 @@ export default async function SiteDetailPage({
   searchParams,
 }: {
   params: Promise<{ siteId: string }>;
-  searchParams: Promise<MaterialsSearchParams & { section?: string | string[]; tab?: string | string[]; panel?: string | string[]; mode?: string | string[]; baselineAssetRef?: string | string[]; currentAssetRef?: string | string[]; analysisId?: string | string[] }>;
+  searchParams: Promise<MaterialsSearchParams & { section?: string | string[]; tab?: string | string[]; panel?: string | string[]; mode?: string | string[]; manage?: string | string[]; baselineAssetRef?: string | string[]; currentAssetRef?: string | string[]; analysisId?: string | string[] }>;
 }) {
   const [{ siteId }, query] = await Promise.all([params, searchParams]);
   const firstValue = (value: string | string[] | undefined): string | undefined =>
@@ -90,6 +93,8 @@ export default async function SiteDetailPage({
     }));
   }
   const panel = query.panel === "materials" || query.panel === "intake" ? query.panel : null;
+  // 영역 보기 — 공간 안에서 지도 위 영역을 고르는 화면. 뷰어용 자료·분석 조회는 하지 않는다.
+  const areasView = tab === "space" && query.panel === "areas";
   const cursor = typeof query.cursor === "string" && query.cursor.length <= 1024 ? query.cursor || undefined : undefined;
   const filters = normalizeCatalogFilters({
     q: typeof query.q === "string" ? query.q : undefined,
@@ -139,8 +144,8 @@ export default async function SiteDetailPage({
   const sitePath = `/sites/${encodeURIComponent(site.siteId)}`;
   const status = SITE_STATUS_LABEL[site.status];
 
-  // 공간 읽기는 50건 단위로 한정한다. 구역 선택은 이미 읽은 작업·분석 목록의 연결을 사용한다.
-  const wantSpatial = tab === "space";
+  // 공간 읽기는 50건 단위로 한정한다. 영역 선택은 이미 읽은 작업·분석 목록의 연결을 사용한다.
+  const wantSpatial = tab === "space" && !areasView;
   const analysesResult = wantSpatial
     ? await listAnalyses(site.siteId, { limit: 50 }).then(
       (page) => ({ ok: true as const, page }),
@@ -176,7 +181,7 @@ export default async function SiteDetailPage({
     if (assetsResult.ok) assetsState = { status: "ready", page: assetsResult.page };
     else if (!("skipped" in assetsResult)) assetsState = { status: assetsResult.denied ? "denied" : "unavailable" };
   }
-  // SWX-1 프로젝션 읽기 — 선택 구역의 관측×버전 사실과 서버 기본 진입.
+  // SWX-1 프로젝션 읽기 — 선택 영역의 관측×버전 사실과 서버 기본 진입.
   // 실패해도 unknown으로 두고 빈 목록으로 단정하지 않는다. 권한 거부는
   // denied로만 둔다. 이 읽기는 바이트 권한을 만들지 않는다.
   const workspaceResult = wantSpatial
@@ -266,19 +271,22 @@ export default async function SiteDetailPage({
     ? hintedAssetRef
     : serverViewInCatalog ?? pickFootprintAsset(currentScopeAssets, null)?.assetRef ?? currentScopeAssets[0]?.assetRef ?? null;
   const transitionalSelection = hintedAssetRef === null && serverViewInCatalog === null && selectedAssetRef !== null;
-  const issue = areaQueryInvalid ? "작업구역을 확인할 수 없거나 접근 권한이 없습니다."
+  const issue = areaQueryInvalid ? "영역을 확인할 수 없거나 접근 권한이 없습니다."
     : cursorInvalid ? "페이지 주소가 올바르지 않습니다. 자료 목록을 처음부터 다시 여세요."
     : selectionMalformed ? "자료 주소가 올바르지 않습니다. 자료 목록에서 다시 선택하세요."
     : query.assetRef && hintedAssetRef === null && assetsState.status === "ready"
       ? "자료를 찾을 수 없거나 현재 조회할 수 없습니다."
       : null;
+  const areasViewSelectedId = areasView && areasResult.status === "fulfilled"
+    ? resolveSelectedWorkAreaId(areasResult.value.workAreas, firstValue(query.workAreaId), { workOrderAreaIds: boundWorkOrderAreaIds })
+    : null;
   const requestedWorkAreaId = wantSpatial ? parseScopeId(query.workAreaId) : null;
   const scopeNotice = wantSpatial && !issue && requestedWorkAreaId !== null
     && !allAreas.some((area) => area.workAreaId === requestedWorkAreaId);
   // 헤더 직접 링크용 검증 범위 — 어느 탭에서도 추가 조회 없이 승인된 현행
-  // 활성 구역만 싣는다. 원문 쿼리를 그대로 두지 않고, 조용히 다른 구역으로
+  // 활성 영역만 싣는다. 원문 쿼리를 그대로 두지 않고, 조용히 다른 영역으로
   // 바꾸지도 않는다. 공간 탭에서는 이미 고른 선택을 그대로 쓴다.
-  // 탐색으로 돌아갈 때 정확한 관측을 잃지 않도록, 자산 참조도 작업구역과
+  // 탐색으로 돌아갈 때 정확한 관측을 잃지 않도록, 자산 참조도 영역과
   // 함께일 때만 형식 한계 안에서 싣는다(탐색 진입에서 카탈로그와 재대조한다).
   const activeWorkAreaIds = new Set(allAreas.filter((area) => area.status === "ACTIVE").map((area) => area.workAreaId));
   const spatialSelectedValid = wantSpatial && selectedWorkAreaId && activeWorkAreaIds.has(selectedWorkAreaId)
@@ -331,7 +339,7 @@ export default async function SiteDetailPage({
   // 시각 쌍(독립 보기) — 정량 비교와 별개의 명시 의도다. 날짜만·시점 미상
   // 관측도 나란히 둘 수 있으며, 시간 순서·봉인을 요구하지 않는다. 기존
   // strict 경로의 의미를 바꾸지 않는다. 비교·결과 모드의 복귀 맥락으로 쓰므로
-  // 모드와 무관하게 같은 구역에서 판정한다. 원문 쿼리를 그대로 넘긴다.
+  // 모드와 무관하게 같은 영역에서 판정한다. 원문 쿼리를 그대로 넘긴다.
   let visualPair: VisualPairResolution | { status: "prompt" } = { status: "prompt" };
   if (facts && selectedWorkAreaId && (rawVisualAAssetRef != null || rawVisualBAssetRef != null)) {
     visualPair = resolveExplicitVisualPair(facts, {
@@ -395,7 +403,7 @@ export default async function SiteDetailPage({
     }
   }
 
-  // 추이와 검토 상태 — 지금 보는 결과(링크로 연 것 또는 목록 첫 기록)와 같은 구역의 완료 결과.
+  // 추이와 검토 상태 — 지금 보는 결과(링크로 연 것 또는 목록 첫 기록)와 같은 영역의 완료 결과.
   // 추이에 쓸 수 있는지는 화면이 정확한 선택자·관측일·조건으로 가린다. 읽지 못한 것은 조용히 뺀다.
   const PEER_LIMIT = 5;
   const focalDetail = explicitDetail ?? leadDetail;
@@ -466,8 +474,23 @@ export default async function SiteDetailPage({
           }
         : null}
     />
-    <ConsoleWork className={tab === "space" ? `min-h-0 flex-1 overflow-x-clip${workspaceViewer ? " lg:gap-0 lg:p-0" : ""}` : "flex-1"}>
-      {tab === "space" && <div className="flex min-w-0 min-h-0 flex-1 flex-col gap-2">
+    <ConsoleWork className={tab === "space" ? `min-h-0 flex-1 overflow-x-clip${workspaceViewer || areasView ? " lg:gap-0 lg:p-0" : ""}` : "flex-1"}>
+      {areasView && firstValue(query.manage) === "1" && <SpaceAreasManage
+        site={site}
+        workAreas={allAreas}
+        workAreaError={areasResult.status === "rejected" ? workAreaListFailure(areasResult.reason) : null}
+        canWrite={canTransition}
+        selectedId={areasViewSelectedId}
+      />}
+      {areasView && firstValue(query.manage) !== "1" && <SpaceAreasView
+        siteId={site.siteId}
+        sitePath={sitePath}
+        areas={allAreas}
+        areasState={areasResult.status === "fulfilled" ? "ready" : areasResult.reason instanceof CoreApiError && areasResult.reason.status === 403 ? "denied" : "unavailable"}
+        selectedId={areasViewSelectedId}
+        canWrite={canTransition}
+      />}
+      {tab === "space" && !areasView && <div className="flex min-w-0 min-h-0 flex-1 flex-col gap-2">
         {mode !== "results" && <h2 className="sr-only">공간</h2>}
         <SiteWorkspaceShell
           sitePath={sitePath}
@@ -515,7 +538,7 @@ export default async function SiteDetailPage({
             if (!selectedWorkAreaId || !activeWorkAreaIds.has(selectedWorkAreaId)) return `${sitePath}/analysis`;
             // 분석 인계는 정식으로 resolve된 한 쌍의 사실 그대로만 싣는다 —
             // 힌트 6건 + 복귀 참조 2건의 정식 빌더 하나를 쓴다.
-            // 기존 구역-only 주소와 호환되며, 받는 분석 화면이 후보와 재대조한다.
+            // 기존 영역-only 주소와 호환되며, 받는 분석 화면이 후보와 재대조한다.
             const hintSource = visualPair.status === "ready"
               ? { baseline: visualPair.sideA, current: visualPair.sideB }
               : comparison.status === "ready"
@@ -532,18 +555,18 @@ export default async function SiteDetailPage({
       </div>}
 
       {tab === "manage" && <div className="flex flex-col gap-4">
-        <PageHeader title="현장 설정" headingLevel={2} />
-        <SectionCard title="현장 범위">
+        <PageHeader title="프로젝트 설정" headingLevel={2} />
+        <SectionCard title="프로젝트 범위">
           <div id="site-aoi" className="scroll-mt-5">
-          {site.aoi ? <AoiPolygonMap value={site.aoi.vertices} readOnly /> : site.status === "UNMAPPED" && canTransition ? <ResponsiveActionBoundary action="SITE_DEVICE_TRANSITION" reason={`${site.name}의 전체 경계 편집은 노트북에서 진행하세요. 이 설정 없이도 작업구역의 관측 자료를 확인할 수 있습니다.`}><SiteAoiEditor siteId={site.siteId} siteFrame={site.siteFrame} /></ResponsiveActionBoundary> : <EmptyState compact title="현장 전체 경계는 아직 설정하지 않았습니다" description="전체 경계는 선택 설정입니다. 관측 자료는 각 작업구역에 연결해 사용합니다." />}
+          {site.aoi ? <AoiPolygonMap value={site.aoi.vertices} readOnly /> : site.status === "UNMAPPED" && canTransition ? <ResponsiveActionBoundary action="SITE_DEVICE_TRANSITION" reason={`${site.name}의 전체 경계 편집은 노트북에서 진행하세요. 이 설정 없이도 영역의 관측 자료를 확인할 수 있습니다.`}><SiteAoiEditor siteId={site.siteId} siteFrame={site.siteFrame} /></ResponsiveActionBoundary> : <EmptyState compact title="프로젝트 전체 경계는 아직 설정하지 않았습니다" description="전체 경계는 선택 설정입니다. 관측 자료는 각 영역에 연결해 사용합니다." />}
           </div>
         </SectionCard>
-        <SectionCard title={`현장 상태 · ${status.label}`}>
-          {canTransition ? <SiteTransitionActions siteId={site.siteId} status={site.status} resumeTarget={site.resumeTarget} canApproveAutonomy={canApproveAutonomy} /> : <ActionUnavailable label="현장 상태 변경" description="현재 계정으로는 현장 상태를 변경할 수 없습니다. 현장 쓰기 권한이 있는 담당자에게 문의하세요." />}
+        <SectionCard title={`프로젝트 상태 · ${status.label}`}>
+          {canTransition ? <Disclosure label="관리자용 · 운영 상태 변경"><div className="mt-2"><SiteTransitionActions siteId={site.siteId} status={site.status} resumeTarget={site.resumeTarget} canApproveAutonomy={canApproveAutonomy} /></div></Disclosure> : <ActionUnavailable label="프로젝트 상태 변경" description="현재 계정으로는 프로젝트 상태를 변경할 수 없습니다. 프로젝트 쓰기 권한이 있는 담당자에게 문의하세요." />}
           <dl className="mt-3 grid gap-2 border-t border-line pt-3 text-caption sm:grid-cols-2"><div><dt className="text-ink-muted">등록</dt><dd>{formatKoreanDate(site.registeredAt)}</dd></div><div><dt className="text-ink-muted">최근 갱신</dt><dd>{formatKoreanDate(site.updatedAt)}</dd></div></dl>
           <Disclosure label="좌표계·변환 상세" className="mt-2"><dl className="mt-1 grid gap-1"><div><dt className="text-ink-muted">좌표계</dt><dd>{site.siteFrame.crs}</dd></div><div><dt className="text-ink-muted">변환 버전</dt><dd>{site.siteFrame.transformVersion}</dd></div></dl></Disclosure>
         </SectionCard>
-        <Link href={`${sitePath}/work-areas`} className="btn w-fit">작업구역 관리</Link>
+        <p className="text-caption text-ink-2">자료를 붙여 비교하는 영역은 공간의 <Link href={siteAreasHref(site.siteId)} className="font-semibold underline">영역 탭</Link>에서 만들고 관리합니다.</p>
       </div>}
 
     </ConsoleWork>

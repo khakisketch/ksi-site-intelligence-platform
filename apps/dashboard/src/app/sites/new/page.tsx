@@ -25,8 +25,8 @@ export default async function NewSitePage() {
     return (
       <div className="mx-auto flex max-w-2xl flex-col gap-6 p-4 sm:p-5">
         <EmptyState
-          title="현장 등록 권한이 없습니다"
-          description="현장 등록은 운영 권한을 가진 계정만 할 수 있습니다. 관리자에게 문의하세요."
+          title="프로젝트 등록 권한이 없습니다"
+          description="프로젝트 등록은 운영 권한을 가진 계정만 할 수 있습니다. 관리자에게 문의하세요."
         />
       </div>
     );
@@ -35,7 +35,7 @@ export default async function NewSitePage() {
   return (
     <ResponsiveActionBoundary
       action="SITE_DEVICE_TRANSITION"
-      reason="등록은 노트북 이상의 화면에서 같은 계정으로 현장 목록을 열어 시작하세요. 입력 중인 지도 경계가 있다면 이 탭의 화면 폭을 1024px 이상으로 넓혀 완료하거나 취소하세요. 이 탭의 입력은 다른 기기로 옮겨지지 않습니다."
+      reason="등록은 노트북 이상의 화면에서 같은 계정으로 프로젝트 목록을 열어 시작하세요. 입력 중인 지도 경계가 있다면 이 탭의 화면 폭을 1024px 이상으로 넓혀 완료하거나 취소하세요. 이 탭의 입력은 다른 기기로 옮겨지지 않습니다."
       className="m-4 lg:m-5"
     >
       <SiteRegistrationOnlyWizard

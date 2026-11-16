@@ -6,7 +6,7 @@ import { toZonePolygon } from "@/lib/comparison-submit";
 import { toDisplayVertices } from "@/lib/geo/display-geometry";
 import { registerKoreaProjections } from "@/lib/geo/proj4-defs";
 
-// U02 P1 — 투영좌표(m) 구역을 위경도(°)로 잘못 읽으면 "다시 그리기"가 지구
+// U02 P1 — 투영좌표(m) 영역을 위경도(°)로 잘못 읽으면 "다시 그리기"가 지구
 // 반대편 수평선이 된다. 이 헬퍼는 알려진 좌표계만 화면용 WGS84로 되돌리고,
 // 모르는 것은 막는다. 원본·CRS·계보는 건드리지 않는다.
 
@@ -233,7 +233,7 @@ describe("toDisplayVertices", () => {
       if (!result.ok) {
         // "다시 그리기" 같은 다음 행동 안내는 정정 호출자가 붙인다.
         expect(result.reason).not.toContain("처음부터 그려");
-        expect(result.reason).not.toContain("원래 구역");
+        expect(result.reason).not.toContain("원래 영역");
       }
     }
   });

@@ -30,10 +30,10 @@ function comparisonCopy(result: ExternalResultSummaryView, workAreaName: string 
   const areaLabel = workAreaName ?? result.workAreaId;
   const currentRange = observationRange(result.currentCapturedFrom, result.currentCapturedTo);
   if (result.baselineCapturedFrom === null || result.baselineCapturedTo === null) {
-    return `작업구역 ${areaLabel} · ${currentRange}`;
+    return `영역 ${areaLabel} · ${currentRange}`;
   }
   const baselineRange = observationRange(result.baselineCapturedFrom, result.baselineCapturedTo);
-  return `작업구역 ${areaLabel} · ${baselineRange}와 ${currentRange}를 비교했습니다.`;
+  return `영역 ${areaLabel} · ${baselineRange}와 ${currentRange}를 비교했습니다.`;
 }
 
 function resultLink(result: ExternalResultSummaryView): string {
@@ -101,7 +101,7 @@ function SingleVolumeSummary({
         <div className="min-w-0">
           <h3 className="text-lead font-bold tracking-tight break-keep">단일 시점 체적 결과</h3>
           <p className="mt-1 text-body leading-5 break-keep text-ink-2">
-            작업구역 {workAreaName ?? result.workAreaId} · 촬영 {observationRange(result.currentCapturedFrom, result.currentCapturedTo)}
+            영역 {workAreaName ?? result.workAreaId} · 촬영 {observationRange(result.currentCapturedFrom, result.currentCapturedTo)}
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -207,7 +207,7 @@ export function ExternalSiteResultSummary({
           </dl>
           <div className="border-t border-line bg-sunk px-4 py-3 text-body leading-5 text-ink-2">
             <p>
-              측정 영역 {formatNumber(metrics.measuredAreaM2, 1)} m² / 작업구역 {formatNumber(metrics.zoneAreaM2, 1)} m² · 공통 유효 영역 {formatNumber(metrics.commonValidFraction * 100, 1)}%
+              측정 영역 {formatNumber(metrics.measuredAreaM2, 1)} m² / 영역 {formatNumber(metrics.zoneAreaM2, 1)} m² · 공통 유효 영역 {formatNumber(metrics.commonValidFraction * 100, 1)}%
             </p>
             <p className="mt-1">
               {metrics.uncertaintyM3 === null

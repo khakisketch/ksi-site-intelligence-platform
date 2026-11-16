@@ -46,6 +46,8 @@ import {
   sameDisplayPlane,
 } from "./site-spatial";
 
+import { siteAreasHref } from "@/components/nav/site-context";
+import { AreaLocationMap } from "./areas/AreaLocationMap";
 import { Disclosure } from "@/components/ui/Disclosure";
 import { ActionMenu } from "@/components/ui/ActionMenu";
 import { InlineNotice } from "@/components/ui/InlineNotice";
@@ -119,7 +121,7 @@ function SiteWorkspaceEntryPanel({
   if (projectionState === "denied") {
     return <section aria-label="기본 관측 선택 상태" className="rounded-lg border border-line bg-surface px-4 py-3">
       <p className="text-body font-bold">관측 목록을 조회할 권한이 없습니다</p>
-      <p className="mt-1 text-body leading-5 text-ink-2">담당자에게 조회 권한을 요청하세요. 권한이 없어 빈 목록으로 단정하지 않습니다.</p>
+      <p className="mt-1 text-body leading-5 text-ink-2">담당자에게 조회 권한을 요청하세요.</p>
     </section>;
   }
   if (projectionState === "unavailable" || projectionState === "not-requested") {
@@ -157,7 +159,7 @@ function SiteWorkspaceEntryPanel({
       <p className="text-body font-bold">등록된 관측이 없습니다</p>
       <p className="mt-1 text-body leading-5 text-ink-2">
         {canCreateWorkOrder && workAreaId
-          ? "이 구역의 외부 관측이 등록되면 이 자리에서 확인할 수 있습니다."
+          ? "이 영역의 외부 관측이 등록되면 이 자리에서 확인할 수 있습니다."
           : "외부 관측 등록은 담당자와 확인하세요."}
       </p>
       {canCreateWorkOrder && workAreaId && (
@@ -200,7 +202,7 @@ function SiteWorkspaceEntryPanel({
         {observationCount > 0
           ? `확인된 관측은 ${observationCount}건입니다. `
           : "확인된 관측이 없습니다. "}
-        {"파일을 보려면 아래의 구역 자료 준비에서 직접 요청하세요. 준비가 끝나면 실제 파일을 받을 수 있습니다."}
+        {"파일을 보려면 아래의 영역 자료 준비에서 직접 요청하세요. 준비가 끝나면 실제 파일을 받을 수 있습니다."}
       </p>
       <p className="mt-1 text-body leading-5 text-ink-2">
         {lines.length > 0 ? lines.join(" ") : "언제 준비되는지는 담당자에게 확인하세요."}
@@ -210,7 +212,7 @@ function SiteWorkspaceEntryPanel({
       )}
       <p className="mt-2 flex flex-wrap gap-x-3 text-caption">
         <Link href={`${sitePath}?panel=materials${workAreaId ? `&workAreaId=${encodeURIComponent(workAreaId)}` : ""}`} className="tap-target underline">자료 목록 보기</Link>
-        <Link href={`${sitePath}/spatial-data-requests${workAreaId ? `?workAreaId=${encodeURIComponent(workAreaId)}` : ""}`} className="tap-target underline">구역 자료 준비</Link>
+        <Link href={`${sitePath}/spatial-data-requests${workAreaId ? `?workAreaId=${encodeURIComponent(workAreaId)}` : ""}`} className="tap-target underline">영역 자료 준비</Link>
       </p>
     </section>;
   }
@@ -262,8 +264,8 @@ function modeHref(
   if (mode !== "explore") query.set("mode", mode);
   if (scope.workAreaId) query.set("workAreaId", scope.workAreaId);
   if (scope.assetRef) query.set("assetRef", scope.assetRef);
-  // 시각 쌍 맥락은 모드를 옮겨도 유지한다. 구역이 바뀌면 싣지 않는다 —
-  // 받는 화면이 같은 구역에서 재대조하고, 어긋나면 막는다.
+  // 시각 쌍 맥락은 모드를 옮겨도 유지한다. 영역이 바뀌면 싣지 않는다 —
+  // 받는 화면이 같은 영역에서 재대조하고, 어긋나면 막는다.
   if (visual?.visualAAssetRef && visual?.visualBAssetRef && scope.workAreaId) {
     query.set("visualAAssetRef", visual.visualAAssetRef);
     query.set("visualBAssetRef", visual.visualBAssetRef);
@@ -316,7 +318,7 @@ function viewerHeadingFor(fact: WorkspaceObservationFact): string {
 }
 
 /**
- * 탐색 촬영 시점 선택지 — 같은 구역 관측별 대표 한 줄의 순수 선택 규칙.
+ * 탐색 촬영 시점 선택지 — 같은 영역 관측별 대표 한 줄의 순수 선택 규칙.
  *
  * - 순서는 서버 프로젝션 그대로 두며, 최신 단언·날짜 추측을 하지 않는다.
  * - 목표 층(`currentKind`)이 그 관측에 있으면 유지하고, 없으면 그 관측의
@@ -369,7 +371,7 @@ export function buildExploreCaptureOptions({
  * 현장 공간 작업공간 겉틀 (SWX-2 구조) — 탐색·비교·결과의 작업 방식만 나눈다.
  *
  * - 네 현장 영역 아래 하나의 선택 레일·뷰어 프레임을 공유한다.
- *   이 겉틀은 현장명을 다시 쓰지 않는다(중복 제목 금지).
+ *   이 겉틀은 프로젝트명을 다시 쓰지 않는다(중복 제목 금지).
  * - 탐색은 기존 읽기 전용 공간 확인을 그대로 싣는다(첫 뷰포트: 실제 관측 범위).
  * - 비교는 두 개의 동등한 지도 자리 + 미지원 고지다. 동기화·정합을 지어내지 않는다.
  * - 결과는 기존 기록·근거와 한계를 새 요청보다 먼저 둔다.
@@ -460,7 +462,7 @@ export function SiteWorkspaceShell({
   explicitDetail: AnalysisView | null;
   /** 결과 목록 첫 기록의 상세(선택자 복원용, 1건만) — 없으면 조용히 둔다. */
   leadDetail?: AnalysisView | null;
-  /** 같은 구역의 다른 완료 결과 상세(추이용, 최대 5건). */
+  /** 같은 영역의 다른 완료 결과 상세(추이용, 최대 5건). */
   peerDetails?: readonly AnalysisView[];
   /** 지금 보는 결과의 사람 검토 요약 — 조회하지 못하면 null. */
   reviewSummary?: ResultReviewSummary | null;
@@ -541,7 +543,7 @@ export function SiteWorkspaceShell({
         ? "날짜만 확인 · 시각 미상"
         : "관측 시점 미상"
     : null;
-  // 촬영 시점 선택지 — 같은 구역 관측별 대표 한 줄. 순서는 서버 그대로 두며,
+  // 촬영 시점 선택지 — 같은 영역 관측별 대표 한 줄. 순서는 서버 그대로 두며,
   // 층(정사영상/DSM)은 고른 층을 그 관측에서 유지하고, 없으면 그 관측의
   // 대표 층으로 두되 바꾼 뜻을 밝힌다. 최신 단언·날짜 추측을 하지 않는다.
   const currentKind = catalogAssets.find((item) => item.assetRef === selectedAssetRef)?.kind
@@ -557,7 +559,7 @@ export function SiteWorkspaceShell({
       selectedEpochId: exploreFact?.observationEpochId ?? null,
     })
     : [];
-  // 비교 빈손 회복용 돌아가기 — 같은 구역·선택 자료 그대로 탐색으로 둔다.
+  // 비교 빈손 회복용 돌아가기 — 같은 영역·선택 자료 그대로 탐색으로 둔다.
   const exploreHref = selectedWorkAreaId
     ? `${sitePath}?workAreaId=${encodeURIComponent(selectedWorkAreaId)}${selectedAssetRef ? `&assetRef=${encodeURIComponent(selectedAssetRef)}` : ""}`
     : sitePath;
@@ -712,8 +714,8 @@ export function SiteWorkspaceShell({
       )}
     </div>
   );
-  // 쌍 한쪽의 층 전환 주소 — 같은 구역에서 그쪽만 정확한 참조로
-  // 바꾼다. 다른 쪽·다른 쌍 family·구역·모드는 그대로 둔다(정식 쌍은 받는 쪽이 재대조한다).
+  // 쌍 한쪽의 층 전환 주소 — 같은 영역에서 그쪽만 정확한 참조로
+  // 바꾼다. 다른 쪽·다른 쌍 family·영역·모드는 그대로 둔다(정식 쌍은 받는 쪽이 재대조한다).
   const pairLayerHref = (
     param: "visualAAssetRef" | "visualBAssetRef" | "baselineAssetRef" | "currentAssetRef",
     assetRef: string,
@@ -817,7 +819,7 @@ export function SiteWorkspaceShell({
     viewerJobsState === "denied" ? (
       <WorkbenchMediaState
         headline="준비 기록을 조회할 권한이 없습니다."
-        hint="담당자에게 조회 권한을 요청하세요. 권한이 없어 빈 목록으로 단정하지 않습니다."
+        hint="담당자에게 조회 권한을 요청하세요."
       />
     ) : !viewerCanRead ? (
       <WorkbenchMediaState
@@ -827,7 +829,6 @@ export function SiteWorkspaceShell({
     ) : (
       <WorkbenchMediaState
         headline="준비 기록을 불러오지 못했습니다."
-        detail="빈 목록으로 단정하지 않습니다."
         action={<WorkbenchRefreshButton />}
       />
     )
@@ -837,7 +838,7 @@ export function SiteWorkspaceShell({
   const visualContext = visualAFact && visualBFact && selectedWorkAreaId
     ? { visualAAssetRef: visualAFact.assetRef, visualBAssetRef: visualBFact.assetRef }
     : null;
-  // 탐색 첫 화면의 다음 행동 — 구역 상세 화면과 같은 계산을 공유한다.
+  // 탐색 첫 화면의 다음 행동 — 영역 상세 화면과 같은 계산을 공유한다.
   // 자료·범위 상세(펼침) 안에만 있으면 처음 보는 사람은 무엇을 할 수
   // 있는지 펼치기 전까지 모른다.
   const exploreAreaAnalyses = selected ? analysesForArea(analyses, selected.workAreaId) : null;
@@ -883,28 +884,29 @@ export function SiteWorkspaceShell({
   // 선택을 알리는 회색 상자를 무대 위에 따로 두지 않는다.
   const selectionNotice = scopeNotice ? (
     <p role="status" data-workbench-stage-inset="true" className="shrink-0 break-words rounded-md border border-line bg-sunk/40 px-3 py-1.5 text-caption leading-5 text-ink-2">
-      요청한 작업구역이 조회 범위에 없습니다. {selected ? `${areaLabel}을 표시합니다.` : ""}
+      요청한 영역이 조회 범위에 없습니다. {selected ? `${areaLabel}을 표시합니다.` : ""}
     </p>
   ) : null;
-  // 맥락막대 — 한 줄 맥락(목록·구역) + 작은 보기 방식 전환 + 한 줄 용도만 둔다.
+  // 맥락막대 — 한 줄 맥락(목록·영역) + 작은 보기 방식 전환 + 한 줄 용도만 둔다.
   // 보기 방식은 탭이 아니라 세그먼트다. 목록 토글·검색·정보는 셸이 앞에 둔다.
   const contextControls = (<>
-    <ActionMenu label={areaLabel ? `작업구역 · ${areaLabel}` : "작업구역 선택"} className="min-w-0"
+    <ActionMenu label={areaLabel ? `영역 · ${areaLabel}` : "영역 선택"} className="min-w-0"
       buttonClassName="btn max-w-full" panelClassName="left-0 right-auto w-56">
       {areas.length > 0 && <SiteSelectionForm action={sitePath} className="grid gap-1 p-1">
         {mode === "compare" && <input type="hidden" name="mode" value="compare" />}
         {materialPanel && <input type="hidden" name="panel" value={materialPanel} />}
-        <label htmlFor="workspace-catalog-area" className="text-caption font-semibold">작업구역</label>
+        <label htmlFor="workspace-catalog-area" className="text-caption font-semibold">영역</label>
         <select id="workspace-catalog-area" name="workAreaId" defaultValue={selected?.workAreaId ?? ""} required
           className="tap-target min-w-0 rounded-md border border-line bg-surface px-2 text-body">
-          {!selected && <option value="" disabled>작업구역 선택</option>}
+          {!selected && <option value="" disabled>영역 선택</option>}
           {areas.map((area) => <option key={area.workAreaId} value={area.workAreaId}>
             {areaNames.get(area.workAreaId)?.label ?? area.name}{area.status === "ARCHIVED" ? " · 보관됨" : ""}
           </option>)}
         </select>
       </SiteSelectionForm>}
-      <Link href={`${sitePath}/work-areas${selected ? `?workAreaId=${encodeURIComponent(selected.workAreaId)}` : ""}`} className="tap-target rounded-md px-2 py-1.5 text-caption hover:bg-sunk">작업구역 관리</Link>
+      <Link href={siteAreasHref(facts.siteId, selected?.workAreaId, { manage: true })} className="tap-target rounded-md px-2 py-1.5 text-caption hover:bg-sunk">영역 관리</Link>
     </ActionMenu>
+    <Link href={siteAreasHref(facts.siteId, selected?.workAreaId)} className="btn shrink-0">영역 지도</Link>
     <div className="flex min-w-0 shrink-0 flex-wrap items-center gap-x-2 gap-y-1">
       <span id="workspace-view-mode-label" data-viewer-compact-hide="true" className="sr-only sm:not-sr-only sm:shrink-0 sm:text-caption sm:text-ink-muted">보기 방식</span>
       <nav aria-labelledby="workspace-view-mode-label" className="flex shrink-0 items-center gap-0.5 rounded-full border border-line bg-sunk p-0.5">
@@ -938,7 +940,7 @@ export function SiteWorkspaceShell({
     current: currentFact?.assetRef ?? currentRequestedRef,
     compare: mode === "compare",
   };
-  const filterIssue = !selected && materialIssue ? "다른 작업구역을 선택해 자료를 확인하세요." : null;
+  const filterIssue = !selected && materialIssue ? "다른 영역을 선택해 자료를 확인하세요." : null;
   const materialsPanel = <MaterialsPanel
     siteId={facts.siteId} workAreaId={selectedWorkAreaId}
     page={assetsState.status === "ready" ? assetsState.page : null} issue={filterIssue}
@@ -960,7 +962,7 @@ export function SiteWorkspaceShell({
       />
     : null;
   const inspector = (<>
-    {mode === "explore" && crsMismatch && <InlineNotice>위치 기준이 달라 파일 범위와 작업구역 경계를 함께 표시할 수 없습니다.</InlineNotice>}
+    {mode === "explore" && crsMismatch && <InlineNotice>위치 기준이 달라 파일 범위와 영역 경계를 함께 표시할 수 없습니다.</InlineNotice>}
     {materialDetails.map(({ assetRef, detail, history }) => (
       <div key={assetRef} className="min-w-0">
         {detail && isMetadataOnly(detail) && selectedWorkAreaId ? (
@@ -992,24 +994,24 @@ export function SiteWorkspaceShell({
     && assetsState.status === "ready" && catalogAssets.length === 0 && facts.observations.length === 0
     && visualPair.status === "prompt" && comparison.status === "prompt";
   const areaFirstAction = materialIssue && !selected
-    ? <EmptyCanvas title="작업구역을 열 수 없습니다" reason={materialIssue} action={<Link href={materialsHref(facts.siteId, null)} className="btn btn-primary">작업구역 다시 선택</Link>} />
+    ? <EmptyCanvas title="영역을 열 수 없습니다" reason={materialIssue} action={<Link href={materialsHref(facts.siteId, null)} className="btn btn-primary">영역 다시 선택</Link>} />
     : selected && (!onlyArchivedAreas || browseAsset) ? null : areasState === "denied"
-      ? <InlineNotice tone="high">작업구역 목록을 조회할 권한이 없습니다. 현장 담당자에게 문의하세요.</InlineNotice>
+      ? <InlineNotice tone="high">영역 목록을 조회할 권한이 없습니다. 프로젝트 담당자에게 문의하세요.</InlineNotice>
       : areasState === "unavailable"
-        ? <InlineNotice tone="high" action={<WorkbenchRefreshButton label="작업구역 목록 다시 확인" />}>작업구역 목록을 불러오지 못했습니다.</InlineNotice>
+        ? <InlineNotice tone="high" action={<WorkbenchRefreshButton label="영역 목록 다시 확인" />}>영역 목록을 불러오지 못했습니다.</InlineNotice>
         : <EmptyCanvas
-            title={onlyArchivedAreas ? "활성 작업구역이 없습니다" : areas.length === 0 ? "등록된 작업구역이 없습니다" : "작업구역을 선택하세요"}
-            reason={canCreateWorkArea === "denied" ? "작업구역 등록 권한이 없습니다. 현장 담당자에게 문의하세요."
-              : canCreateWorkArea === "unknown" && (onlyArchivedAreas || areas.length === 0) ? "작업구역 등록 권한을 확인하지 못했습니다."
-              : onlyArchivedAreas ? "관측 자료를 새로 등록하려면 활성 구역이 필요합니다." : "자료를 연결할 범위를 먼저 정하세요."}
+            title={onlyArchivedAreas ? "활성 영역이 없습니다" : areas.length === 0 ? "등록된 영역이 없습니다" : "영역을 선택하세요"}
+            reason={canCreateWorkArea === "denied" ? "영역 등록 권한이 없습니다. 프로젝트 담당자에게 문의하세요."
+              : canCreateWorkArea === "unknown" && (onlyArchivedAreas || areas.length === 0) ? "영역 등록 권한을 확인하지 못했습니다."
+              : onlyArchivedAreas ? "관측 자료를 새로 등록하려면 활성 영역이 필요합니다." : "자료를 연결할 범위를 먼저 정하세요."}
             action={onlyArchivedAreas || areas.length === 0 ? (
               canCreateWorkArea === "allowed" ? (
                 <>
-                  <Link href={`${sitePath}/work-areas`} className="btn btn-primary hidden lg:inline-flex">작업구역 등록</Link>
-                  <Link href={`${sitePath}/work-areas`} className="btn btn-primary lg:hidden">작업구역 목록 보기</Link>
+                  <Link href={siteAreasHref(facts.siteId, null, { manage: true })} className="btn btn-primary hidden lg:inline-flex">영역 등록</Link>
+                  <Link href={siteAreasHref(facts.siteId, null, { manage: true })} className="btn btn-primary lg:hidden">영역 목록 보기</Link>
                 </>
               ) : canCreateWorkArea === "unknown" ? <WorkbenchRefreshButton label="등록 권한 다시 확인" /> : null
-            ) : <Link href={`${sitePath}/work-areas`} className="btn btn-primary">작업구역 관리</Link>}
+            ) : <Link href={siteAreasHref(facts.siteId, null, { manage: true })} className="btn btn-primary">영역 관리</Link>}
           />;
   const stage = (<>
     {mode === "explore" && (
@@ -1065,15 +1067,14 @@ export function SiteWorkspaceShell({
               if (line.includes(selectedCaption)) return `${line} · ${version}`;
               return selectedCaption === version ? `${line} · ${version}` : `${line} · ${selectedCaption} · ${version}`;
             })()}
-            {transitionalSelection ? " · 서버 기본이 아니라 확인된 측정 범위입니다" : ""}
           </p>
         )}
         {!areaFirstAction && exploreIsEmpty && selected && exploreNextAction && (
           <EmptyCanvas
             title={ordinaryEntry.status === "no-server-default" && ordinaryEntry.reason === "NO_OBSERVATIONS"
-              ? `${areaLabel ?? "이 작업구역"}에 확인된 관측이 없습니다` : "이 페이지에 관측 자료가 없습니다"}
+              ? `${areaLabel ?? "이 영역"}에 확인된 관측이 없습니다` : "이 페이지에 관측 자료가 없습니다"}
             reason={selected.status === "ARCHIVED"
-              ? "새 자료는 활성 작업구역에 등록할 수 있습니다."
+              ? "새 자료는 활성 영역에 등록할 수 있습니다."
               : "파일을 제출하고 검사를 마친 뒤 여기에서 확인할 수 있습니다."}
             action={exploreNextAction.primary.label === "관측 자료 등록"
               ? <div className="text-center">
@@ -1126,7 +1127,9 @@ export function SiteWorkspaceShell({
                 : "준비 기록을 불러오지 못했습니다. 잠시 후 목록에서 다시 확인하세요."}
           </p>
         ) : null}
-
+        {selected && selectedGeometry && !exploreIsEmpty && !materialIssue && (
+          <AreaLocationMap area={selected} defaultOpen={viewerRendered && viewerJobsState !== "ready"} />
+        )}
       </section>
     )}
 
@@ -1136,7 +1139,7 @@ export function SiteWorkspaceShell({
         {areaFirstAction}
         {emptyCompare && !areaFirstAction && <EmptyCanvas
           title="비교할 관측 자료가 없습니다"
-          reason="같은 작업구역에 두 시점의 자료가 등록되면 나란히 볼 수 있습니다."
+          reason="같은 영역에 두 시점의 자료가 등록되면 나란히 볼 수 있습니다."
           action={<Link href={exploreHref} className="btn btn-primary">단일 시점으로 돌아가기</Link>}
         />}
         {areasKnown && selected && (comparisonReady || visualReady) && viewerJobsState !== "not-requested" && catalogStatus === null && (

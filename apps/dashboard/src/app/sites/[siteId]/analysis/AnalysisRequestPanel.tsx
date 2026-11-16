@@ -1,6 +1,7 @@
 "use client";
 
 import { Disclosure } from "@/components/ui/Disclosure";
+import { siteAreasHref } from "@/components/nav/site-context";
 import type { DeltaExportDeliveryConfig } from "@/lib/delta-export-config";
 import { AnalysisDeltaPublication } from "./AnalysisDeltaPublication";
 import { AnalysisMaskedCalculation } from "./AnalysisMaskedCalculation";
@@ -232,7 +233,7 @@ type ReadinessPairSide = {
 };
 
 /**
- * 바인딩된 시각 쌍의 카탈로그 해석 — 같은 구역 카탈로그에서 확인한 서버
+ * 바인딩된 시각 쌍의 카탈로그 해석 — 같은 영역 카탈로그에서 확인한 서버
  * 사실이다. 실행 후보 가입과 무관하며, 읽기 전용 조건 확인에만 쓴다.
  */
 export type CatalogInspectSide = ReadinessPairSide & {
@@ -247,7 +248,7 @@ export type CatalogInspectSide = ReadinessPairSide & {
 };
 
 export type CatalogInspectPair = {
-  /** 바인딩된 구역 — 현재 선택 구역과 같을 때만 화면에 둔다. */
+  /** 바인딩된 영역 — 현재 선택 영역과 같을 때만 화면에 둔다. */
   workAreaId: string;
   a: CatalogInspectSide;
   b: CatalogInspectSide;
@@ -436,7 +437,7 @@ function evidenceLines(item: AnalysisEvidenceItem): string[] {
     case "CALCULATION_IDENTITY":
       return [
         `계산 기록 ID · ${item.calculation.calculationId}`,
-        `작업구역 정의 확인값 · ${item.calculation.workAreaDefinitionDigest}`,
+        `영역 정의 확인값 · ${item.calculation.workAreaDefinitionDigest}`,
         `계산 프로필 · ${item.calculation.policy.profileId} · 프로필 확인값 ${item.calculation.policy.profileDigest}`,
         `정책 확인값 · ${item.calculation.policy.policyDigest}`,
         `실행 이미지 · ${item.calculation.runtime.runtimeImageVersion} · 이미지 확인값 ${item.calculation.runtime.runtimeImageOciDigest}`,
@@ -523,7 +524,7 @@ function NewerObservationNotice({ siteId, detail, summaryNewerSiblingIds, observ
       if (notice) return { kind: "epoch" as const, notice, currentEndedAt };
     }
     // 시간 파생이 불가해도 목록 투영(Core 목록의 공유 epoch 연결)이 같은
-    // 작업구역의 continuers를 알면 같은 자리에서 중립 문구로 알린다.
+    // 영역의 continuers를 알면 같은 자리에서 중립 문구로 알린다.
     // 상세·결과·근거 기록은 건드리지 않으며, 두 번째 알림을 만들지 않고
     // 수치·적합성 판정이나 대체 표현을 쓰지 않는다.
     const siblingId = selectCoreNewerSiblingId(
@@ -536,7 +537,7 @@ function NewerObservationNotice({ siteId, detail, summaryNewerSiblingIds, observ
   if (!resolved) return null;
   if (resolved.kind === "sibling") {
     return <p className="border-t border-line px-4 py-2 text-caption leading-5 text-ink-2">
-      이 작업구역에 이 기록의 현재 관측을 기준으로 삼은 새 분석이 있습니다. 이 기록의 수치·상태는 그대로 둡니다.{" "}
+      이 영역에 이 기록의 현재 관측을 기준으로 삼은 새 분석이 있습니다. 이 기록의 수치·상태는 그대로 둡니다.{" "}
       <Link
         className="font-semibold text-accent-text hover:underline"
         href={`/sites/${encodeURIComponent(siteId)}/analysis?analysisId=${encodeURIComponent(resolved.siblingId)}`}
@@ -549,7 +550,7 @@ function NewerObservationNotice({ siteId, detail, summaryNewerSiblingIds, observ
   const newerTime = formatKoreanDateTime(notice.captureEndedAt, { dateStyle: "medium", timeStyle: "short" });
   const currentTime = formatKoreanDateTime(currentEndedAt, { dateStyle: "medium", timeStyle: "short" });
   return <p className="border-t border-line px-4 py-2 text-caption leading-5 text-ink-2">
-    이 작업구역에 더 새 관측이 있습니다. 새 관측 시각 {newerTime}. 이 결과는 {currentTime} 관측 기준 기록입니다.{" "}
+    이 영역에 더 새 관측이 있습니다. 새 관측 시각 {newerTime}. 이 결과는 {currentTime} 관측 기준 기록입니다.{" "}
     {notice.analysisId ? (
       <Link
         className="font-semibold text-accent-text hover:underline"
@@ -603,7 +604,7 @@ function AnalysisCard({ summary, hasBlockers, selected, onSelect, workAreaName, 
 
 /**
  * 선택한 분석의 상세(Inspector) — 새 관측 안내, 확인·보완, 계산 결과, 산출물, 결과 검토, 근거.
- * 이력 줄에 있던 같은 구역을 옮긴 것이며 읽기·권한·판정은 그대로다.
+ * 이력 줄에 있던 같은 영역을 옮긴 것이며 읽기·권한·판정은 그대로다.
  */
 function AnalysisDetail({ summary, detail, evidencePages, siteId, workAreaId, workAreaName, canCreate, reviewState, reviewLoading, reviewError, onRefreshReview, onRefreshAfterReviewConflict, observations, siteObservations, newerAnalyses, deltaExportConfig = null, maskUploadBudgetBytes = null, maskedSessionScope = null, onLoadMaskedSource, maskedSourceLoading = false }: {
   summary: AnalysisListRow;
@@ -735,11 +736,11 @@ function analysisReviewDecisionLabel(decision: AnalysisReviewDecision): string {
 
 function reviewResponseError(status: number): string {
   if (status === 401) return "세션이 만료되었습니다. 다시 로그인하세요.";
-  if (status === 403) return "검토 기록에는 현장 쓰기 권한이 필요합니다. 권한 있는 현장 담당자에게 요청하세요.";
+  if (status === 403) return "검토 기록에는 프로젝트 쓰기 권한이 필요합니다. 권한 있는 프로젝트 담당자에게 요청하세요.";
   if (status === 404) return "이 분석 결과는 아직 검토할 수 없습니다. 변화 분석 상세를 다시 불러오세요.";
   if (status === 409) return "변화 분석 기록이 갱신되었습니다. 상세를 다시 불러온 뒤 검토하세요.";
   if (status === 503) return "검토 기록 저장소를 사용할 수 없습니다. 잠시 후 검토 상태를 확인하세요.";
-  return "검토 기록을 저장하지 못했습니다. 입력과 현장 상태를 확인하세요.";
+  return "검토 기록을 저장하지 못했습니다. 입력과 프로젝트 상태를 확인하세요.";
 }
 
 function analysisReviewLoadError(status: number): string {
@@ -762,7 +763,7 @@ function submitRequestError(status: number): { message: string; needsReLogin: bo
     needsReLogin: true,
   };
   if (status === 403) return {
-    message: "변화 분석 요청 권한이 없습니다. 현장 쓰기 권한이 있는 담당자에게 요청하세요. 보류 요청은 유지되며 권한 확인 뒤 같은 요청 식별자로 다시 시도할 수 있습니다.",
+    message: "변화 분석 요청 권한이 없습니다. 프로젝트 쓰기 권한이 있는 담당자에게 요청하세요. 보류 요청은 유지되며 권한 확인 뒤 같은 요청 식별자로 다시 시도할 수 있습니다.",
     needsReLogin: false,
   };
   if (status === 409) return {
@@ -958,7 +959,7 @@ function AnalysisReviewSection({
         <button type="submit" className="btn" disabled={!canSubmit}>{busy ? "검토 기록 중" : "검토 기록 추가"}</button>
         {!decision || comment.trim().length === 0 ? <p className="text-caption text-ink-muted">결정과 검토 의견을 입력하면 기록할 수 있습니다.</p> : null}
       </div>
-    </form> : <div className="mt-3 border-t border-line pt-3"><ActionUnavailable label="검토 기록 추가" description="검토 기록 추가는 현장 쓰기 권한이 있는 담당자에게 요청하세요." /></div>}
+    </form> : <div className="mt-3 border-t border-line pt-3"><ActionUnavailable label="검토 기록 추가" description="검토 기록 추가는 프로젝트 쓰기 권한이 있는 담당자에게 요청하세요." /></div>}
   </section>;
 }
 
@@ -971,7 +972,7 @@ function AnalysisBlockerItem({ blocker, siteId, workAreaId }: {
   const sitePath = `/sites/${encodeURIComponent(siteId)}`;
   const evidencePath = `${sitePath}/data?workAreaId=${encodeURIComponent(workAreaId)}`;
   const destination = guidance.destination === "work-areas"
-    ? { href: `${sitePath}/work-areas`, label: "작업구역 현황 확인" }
+    ? { href: siteAreasHref(siteId, null, { manage: true }), label: "영역 현황 확인" }
     : guidance.destination === "spatial-assets"
       ? { href: evidencePath, label: "공간 자산 기록 확인" }
       : null;
@@ -1018,7 +1019,7 @@ type ReadinessState =
 
 /**
  * 목적별 조건 확인(읽기) — 고른 쌍을 요청 전에 Core 판독으로 미리 본다.
- * 읽기 전용이며 권한을 주지 않는다. 호출자는 구역·쌍이 바뀔 때마다 다른
+ * 읽기 전용이며 권한을 주지 않는다. 호출자는 영역·쌍이 바뀔 때마다 다른
  * `key`로 다시 두어, 이전 확인 결과를 버리고 진행 중인 확인을 취소한다.
  * 화면 진입·선택 변경만으로는 전송하지 않으며, 작업자의 명시적
  * "조건 확인"에서만 나간다.
@@ -1186,7 +1187,7 @@ function ReadinessCheckSection({
           </div>
         </div>
       ) : readiness.status === "checking" ? (
-        <p role="status" className="mt-2 text-body leading-5 text-ink-2">조건 확인 중입니다. 구역·쌍이 바뀌면 진행 중인 확인을 취소합니다.</p>
+        <p role="status" className="mt-2 text-body leading-5 text-ink-2">조건 확인 중입니다. 영역·쌍이 바뀌면 진행 중인 확인을 취소합니다.</p>
       ) : readiness.status === "denied" ? (
         <div className="mt-2 rounded-md border border-line bg-surface px-3 py-2">
           <p ref={resultLineRef} tabIndex={-1} role="status" className="text-body leading-5 text-ink-2 outline-none">
@@ -1236,7 +1237,7 @@ function ReadinessCheckSection({
               ? "위 쌍의 조건을 Core 판독으로 확인합니다."
               : pairBlocked && pairIssue
                 ? pairIssue.message
-                : "작업구역과 서로 다른 기준·현재 관측을 고르면 조건 확인을 실행할 수 있습니다."}
+                : "영역과 서로 다른 기준·현재 관측을 고르면 조건 확인을 실행할 수 있습니다."}
         </p>
       ) : (
         <div className="mt-2">
@@ -1317,7 +1318,7 @@ export function AnalysisRequestPanel({
   } | null;
   /** 탐색 중이던 시각 쌍 맥락 — frozen 결과 입력과 구분해 복귀한다. */
   visualContext?: { workAreaId: string; visualAAssetRef: string; visualBAssetRef: string } | null;
-  /** 같은 구역 카탈로그에서 확인한 바인딩 쌍(읽기 전용 조건 확인용, 실행 입력 아님). */
+  /** 같은 영역 카탈로그에서 확인한 바인딩 쌍(읽기 전용 조건 확인용, 실행 입력 아님). */
   catalogPair?: CatalogInspectPair | null;
   visualReturnHref?: string | null;
   visualContextNotice?: string | null;
@@ -1335,7 +1336,7 @@ export function AnalysisRequestPanel({
     workAreas: "ready" | "unavailable" | "unconfirmed" | "denied";
     observations: "ready" | "unavailable" | "unconfirmed" | "denied";
     /**
-     * 관측-작업구역 귀속(작업지시 목록) 확인 상태. unavailable이면 귀속을
+     * 관측-영역 귀속(작업지시 목록) 확인 상태. unavailable이면 귀속을
      * 모르므로 후보 있음/없음을 단정하지 않는다. 빈 목록([])은 ready다.
      */
     workOrders: "ready" | "unavailable" | "unconfirmed" | "denied";
@@ -1799,7 +1800,7 @@ export function AnalysisRequestPanel({
       }
       if (!mountedRef.current || controller.signal.aborted || listGeneration.current !== generation) return;
       setPagesAndRef(() => [loaded.page]);
-      // 이력 구역 실패 뒤 다시 불러오기로 읽었으면 서버 상태 안내를 거둔다.
+      // 이력 영역 실패 뒤 다시 불러오기로 읽었으면 서버 상태 안내를 거둔다.
       setHistoryRecovered(true);
       // A completed execution can lose current numeric suitability without changing
       // its execution state. Retire contradicted cached detail before awaiting I/O.
@@ -1952,13 +1953,13 @@ export function AnalysisRequestPanel({
     if (busy) return;
     let nextAttempt: Attempt | null = attempt ?? (() => {
       if (!workAreaId || baselineIndex === "" || currentIndex === "") {
-        setError({ analysisId: null, message: "작업구역과 서로 다른 기준·현재 관측을 선택하세요." });
+        setError({ analysisId: null, message: "영역과 서로 다른 기준·현재 관측을 선택하세요." });
         return null;
       }
       const baseline = pickedBaseline;
       const current = pickedCurrent;
       if (!baseline || !current || sameSelector(baseline.selector, current.selector)) {
-        setError({ analysisId: null, message: "작업구역과 서로 다른 기준·현재 관측을 선택하세요." });
+        setError({ analysisId: null, message: "영역과 서로 다른 기준·현재 관측을 선택하세요." });
         return null;
       }
       // Disabled 버튼만으로는 Enter·프로그래밍 제출을 막지 못한다. 알려진 문제
@@ -2119,15 +2120,15 @@ export function AnalysisRequestPanel({
       };
     });
   const failureMessages = listsState ? [
-    !workAreasReady && (listsState.workAreas === "denied" ? "작업구역 목록을 조회할 권한이 없습니다." : listsState.workAreas === "unconfirmed" ? "작업구역 목록을 확인할 수 없습니다." : "작업구역 목록을 불러오지 못했습니다."),
+    !workAreasReady && (listsState.workAreas === "denied" ? "영역 목록을 조회할 권한이 없습니다." : listsState.workAreas === "unconfirmed" ? "영역 목록을 확인할 수 없습니다." : "영역 목록을 불러오지 못했습니다."),
     !observationsReady && (listsState.observations === "denied" ? "관측 목록을 조회할 권한이 없습니다." : listsState.observations === "unconfirmed" ? "관측 목록을 확인할 수 없습니다." : "관측 목록을 불러오지 못했습니다."),
-    !attributionReady && (listsState.workOrders === "denied" ? "관측과 작업구역의 연결 정보를 조회할 권한이 없습니다." : listsState.workOrders === "unconfirmed" ? "관측과 작업구역의 연결 정보를 확인할 수 없습니다." : "관측과 작업구역의 연결 정보를 불러오지 못했습니다."),
+    !attributionReady && (listsState.workOrders === "denied" ? "관측과 영역의 연결 정보를 조회할 권한이 없습니다." : listsState.workOrders === "unconfirmed" ? "관측과 영역의 연결 정보를 확인할 수 없습니다." : "관측과 영역의 연결 정보를 불러오지 못했습니다."),
   ].filter(Boolean).join(" ") : "";
   const sitePath = `/sites/${encodeURIComponent(siteId)}`;
   const areaQuery = workAreaId ? `workAreaId=${encodeURIComponent(workAreaId)}` : "";
   const materialsHref = `${sitePath}/data${areaQuery ? `?${areaQuery}` : ""}`;
   const spaceHref = areaQuery ? `${sitePath}?${areaQuery}` : sitePath;
-  // 구역 범위 복귀 링크는 후보·이력 상태가 함께 닫힐 때 한 번만 둔다.
+  // 영역 범위 복귀 링크는 후보·이력 상태가 함께 닫힐 때 한 번만 둔다.
   const hasCommonScopeRecovery = listsBlockedForArea && !historyReady && workAreaId !== "";
   const commonScopeRecovery = hasCommonScopeRecovery ? (
     <nav aria-label="공통 범위 복구" className="flex flex-wrap gap-x-4 gap-y-2 text-body leading-5 text-ink-2">
@@ -2157,8 +2158,8 @@ export function AnalysisRequestPanel({
   );
   const noCandidateBlock = noCandidateForArea && (
     <div className="mt-4 border-t border-line pt-3">
-      <p className="text-lead font-bold">이 구역의 분석 후보가 없습니다</p>      <p className="mt-1 text-body leading-5 text-ink-2">
-        이 작업구역에서 요청 입력과 정확히 맞는 분석 후보가 없습니다. 빈 선택지는 요구 조건이 아니므로 고를 것이 없습니다. 후보가 없다는 것은 관측이 부적합하다는 판정이 아닙니다.
+      <p className="text-lead font-bold">이 영역의 분석 후보가 없습니다</p>      <p className="mt-1 text-body leading-5 text-ink-2">
+        이 영역에서 요청 입력과 정확히 맞는 분석 후보가 없습니다. 빈 선택지는 요구 조건이 아니므로 고를 것이 없습니다. 후보가 없다는 것은 관측이 부적합하다는 판정이 아닙니다.
       </p>
       {broughtSides.length > 0 && (
         <div className="mt-2 rounded-md border border-line bg-surface px-3 py-2">
@@ -2195,7 +2196,7 @@ export function AnalysisRequestPanel({
     </div>
   );
   // 카탈로그 해석 쌍의 읽기 전용 조건 확인 — 가져온 쌍이 실행 후보와
-  // 정확히 겹치지 않을 때 둔다. 구역 전체 후보 유무가 아니라 이 쌍의
+  // 정확히 겹치지 않을 때 둔다. 영역 전체 후보 유무가 아니라 이 쌍의
   // 정확한 가입 여부로 판단하므로, 관련 없는 후보가 있어도 검사 길이
   // 열린다. 실행(요청 제출)은 열지 않으며, 촬영·수직 이유를 Core 판독으로 밝힌다.
   const catalogPairExecutable = catalogPair !== null
@@ -2208,7 +2209,7 @@ export function AnalysisRequestPanel({
     <section aria-label="가져온 쌍의 조건 확인" className="mt-4 rounded-lg border border-line bg-sunk/40 px-4 py-3">
       <h3 className="text-lead font-bold">가져온 쌍의 조건 확인</h3>
       <p className="mt-1 text-caption leading-5 text-ink-2">
-        가져온 두 자료는 이 구역의 분석 실행 후보와 정확히 맞지 않아 요청할 수 없습니다. 가져온 쌍의 조건만 Core 판독으로 확인합니다. 읽기 전용이며 권한을 주지 않습니다.
+        가져온 두 자료는 이 영역의 분석 실행 후보와 정확히 맞지 않아 요청할 수 없습니다. 가져온 쌍의 조건만 Core 판독으로 확인합니다. 읽기 전용이며 권한을 주지 않습니다.
       </p>
       <dl className="mt-2 grid gap-1.5 text-caption text-ink-2 sm:grid-cols-2">
         {[catalogPair.a, catalogPair.b].map((side, position) => {
@@ -2291,15 +2292,15 @@ export function AnalysisRequestPanel({
           다른 분석 후보 쌍 선택 — 위 가져온 쌍은 실행 후보와 정확히 맞지 않아 요청 입력으로 쓰지 않습니다. 요청하려면 아래 후보에서 서로 다른 두 관측을 직접 고르세요.
         </p>
       )}
-        <label className="min-w-0 text-body font-semibold lg:col-span-2">작업구역
-          <select className="input mt-1 w-full" value={workAreaId} disabled={busy || !workAreasReady} onChange={(event) => { if (discardAttempt()) { setJustCreatedId(null); setWorkAreaId(event.target.value); setBaselineIndex(""); setCurrentIndex(""); setBaselineTouched(false); setAreaSwitchNotice("작업구역이 바뀌어 기준·현재 선택을 모두 지웠습니다. 바뀐 구역의 후보에서 다시 고르세요."); } }}>
-            <option value="">작업구역 선택</option>
+        <label className="min-w-0 text-body font-semibold lg:col-span-2">영역
+          <select className="input mt-1 w-full" value={workAreaId} disabled={busy || !workAreasReady} onChange={(event) => { if (discardAttempt()) { setJustCreatedId(null); setWorkAreaId(event.target.value); setBaselineIndex(""); setCurrentIndex(""); setBaselineTouched(false); setAreaSwitchNotice("영역이 바뀌어 기준·현재 선택을 모두 지웠습니다. 바뀐 영역의 후보에서 다시 고르세요."); } }}>
+            <option value="">영역 선택</option>
             {workAreas.map((area) => <option key={area.workAreaId} value={area.workAreaId}>{area.name}</option>)}
           </select>
         </label>
         <label className="min-w-0 text-body font-semibold">기준 관측
           <select className="input mt-1 w-full" value={baselineIndex} disabled={busy || !workAreaId || !observationsReady} onChange={(event) => { if (discardAttempt()) { setJustCreatedId(null); setBaselineIndex(event.target.value); setBaselineTouched(true); setAreaSwitchNotice(null); } }}>
-            <option value="">{workAreaId ? "기준 관측 선택" : "먼저 작업구역 선택"}</option>
+            <option value="">{workAreaId ? "기준 관측 선택" : "먼저 영역 선택"}</option>
             {scopedObservations.map(({ item, index }) => <option key={`${item.observationEpochId}-${index}`} value={index}>{choiceLabelByIndex.get(String(index))}</option>)}
           </select>
         </label>
@@ -2315,14 +2316,14 @@ export function AnalysisRequestPanel({
             const selected = scopedObservations.find(({ index }) => String(index) === value)?.item;
             setBaselineIndex(selected ? latestPriorObservationIndex(scopedObservations, selected) : "");
           }}>
-            <option value="">{workAreaId ? "현재 관측 선택" : "먼저 작업구역 선택"}</option>
+            <option value="">{workAreaId ? "현재 관측 선택" : "먼저 영역 선택"}</option>
             {scopedObservations.map(({ item, index }) => <option key={`${item.observationEpochId}-${index}`} value={index}>{choiceLabelByIndex.get(String(index))}</option>)}
           </select>
         </label>
         {candidatesReady && <p className="text-body leading-5 text-ink-2 lg:col-span-2">기준·현재 관측을 고르면 Core가 권한·자료 적합성·계산 실행을 확인합니다. 판단은 요청 시 Core가 하며, 기준이 비어 있을 때만 가장 최근 선행 관측을 제안합니다.</p>}
         <Disclosure label="선택지 상세" className="text-caption text-ink-muted lg:col-span-2">
           <p className="mt-1 leading-5">선택지는 작업명·촬영 구간으로 구분합니다. 겹치는 후보에만 등록 버전을, 그래도 겹치면 관측 기록 정보를 함께 표시합니다.</p>
-          {unattributedObservationCount > 0 && <p className="mt-1 leading-5">작업구역 연결을 확인할 수 없는 관측은 선택지에서 제외했습니다.</p>}
+          {unattributedObservationCount > 0 && <p className="mt-1 leading-5">영역 연결을 확인할 수 없는 관측은 선택지에서 제외했습니다.</p>}
         </Disclosure>
         {canCreate && attempt && <p className="mt-2 text-caption text-ink-2 lg:col-span-2">{activationBlock ? "보류된 요청은 변화 분석 실행 활성화가 복구되기 전에는 처리되지 않습니다. 활성화 상태가 확인된 뒤 다시 시도하거나 보류 요청을 취소하세요." : "중단된 요청이 있습니다. 다시 시도하면 같은 요청 식별자로 Core에 확인합니다."}</p>}
         {areaSwitchNotice && <p role="status" className="rounded-md border border-line bg-sunk/50 px-3 py-2 text-caption leading-5 text-ink-2 lg:col-span-2">{areaSwitchNotice}</p>}
@@ -2352,11 +2353,11 @@ export function AnalysisRequestPanel({
           <button type="submit" className="btn btn-primary" disabled={!canSubmit}>{busy ? "요청 중" : attempt ? "다시 시도" : "변화 분석 요청"}</button>
           {attempt && <button type="button" className="btn" disabled={busy} onClick={discardAttempt}>보류 요청 취소</button>}
           {!busy && !attempt && candidatesReady && !areaSwitchNotice && pairIssue.kind !== "ready" && (workAreaId !== "" || baselineIndex !== "" || currentIndex !== "") && <p role="status" className="basis-full text-caption leading-5 text-ink-2">{pairIssue.message}</p>}
-          {!busy && !attempt && candidatesReady && workAreaId === "" && baselineIndex === "" && currentIndex === "" && <p className="text-caption leading-5 text-ink-2">작업구역과 서로 다른 기준·현재 관측을 고르면 요청할 수 있습니다.</p>}
+          {!busy && !attempt && candidatesReady && workAreaId === "" && baselineIndex === "" && currentIndex === "" && <p className="text-caption leading-5 text-ink-2">영역과 서로 다른 기준·현재 관측을 고르면 요청할 수 있습니다.</p>}
         </div>
       </ResponsiveActionBoundary>
       ) : (
-        <p className="text-caption leading-5 text-ink-2 lg:col-span-2">선택한 쌍의 조건까지 확인할 수 있습니다. 변화 분석 요청 제출은 현장 쓰기 권한이 있는 담당자에게 요청하세요.</p>
+        <p className="text-caption leading-5 text-ink-2 lg:col-span-2">선택한 쌍의 조건까지 확인할 수 있습니다. 변화 분석 요청 제출은 프로젝트 쓰기 권한이 있는 담당자에게 요청하세요.</p>
       )}
       </form>
       </>)}
@@ -2364,8 +2365,8 @@ export function AnalysisRequestPanel({
 
   const workspaceBridgeControls = selectedId && selectedDetail ? (() => {
     // 작업공간 결과 모드로 이어지는 발견 다리 — frozen 기록 신원은 그대로 싣는다.
-    // 구역·기록 ID는 이 화면이 이미 검증해 들고 있는 선택 상세에서만 싣고,
-    // 최신 추론·다른 기록 대체를 하지 않는다. 탐색 쌍 맥락은 같은 구역에서
+    // 영역·기록 ID는 이 화면이 이미 검증해 들고 있는 선택 상세에서만 싣고,
+    // 최신 추론·다른 기록 대체를 하지 않는다. 탐색 쌍 맥락은 같은 영역에서
     // 검증된 경우에만 덧붙이며, 받는 작업공간이 재대조한다.
     const bridgeQuery = new URLSearchParams();
     bridgeQuery.set("mode", "results");
@@ -2388,12 +2389,12 @@ export function AnalysisRequestPanel({
       ? "현재 페이지에 변화 분석 요청이 없습니다. 다음 페이지를 불러와 나머지 이력을 확인하세요."
       : canCreate
         ? "이 현장에는 아직 변화 분석 요청이 없습니다."
-        : "이 현장에는 아직 변화 분석 요청이 없습니다. 권한 있는 현장 담당자가 요청을 제출하면 상태와 근거가 여기에 표시됩니다."}</p>
+        : "이 현장에는 아직 변화 분석 요청이 없습니다. 권한 있는 프로젝트 담당자가 요청을 제출하면 상태와 근거가 여기에 표시됩니다."}</p>
   ) : null;
   // 이력이 하나라도 있거나 목록을 읽는 중·실패·다음 쪽이 있으면 기록 열을
   // 둔다. 완전히 비었을 때는 왼쪽 빈 열을 두지 않고 요청 열만 한 줄로 둔다.
   const recordsActive = rows.length > 0 || listLoading || listLoadError || nextListCursor !== null;
-  // 이력 조회 실패는 기록 구역만의 상태로 둔다 — 요청서·다른 구역까지 닫지
+  // 이력 조회 실패는 기록 영역만의 상태로 둔다 — 요청서·다른 영역까지 닫지
   // 않으며, 실패를 빈 이력으로 말하지 않는다. 다시 불러오기로 읽으면 거둔다.
   const historyErrorBlock = !historyReady && !historyRecovered && (
     <div role="alert" className="flex flex-col gap-x-4 gap-y-2 rounded-lg border border-line bg-surface px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
@@ -2463,7 +2464,7 @@ export function AnalysisRequestPanel({
           hasBlockers={Boolean(details.get(summary.analysisId)?.blockers.length)}
           selected={summary.analysisId === selectedId}
           onSelect={() => choose(summary.analysisId)}
-          workAreaName={workAreaNameById.get(summary.workAreaId) ?? "이름을 확인할 수 없는 구역"}
+          workAreaName={workAreaNameById.get(summary.workAreaId) ?? "이름을 확인할 수 없는 영역"}
           scopeLine={scopeLineByAnalysisId.get(summary.analysisId) ?? null}
           canCreate={canCreate}
         />)}
@@ -2487,7 +2488,7 @@ export function AnalysisRequestPanel({
         evidencePages={selectedEvidencePages}
         siteId={siteId}
         workAreaId={selectedRow.workAreaId}
-        workAreaName={workAreaNameById.get(selectedRow.workAreaId) ?? "이름을 확인할 수 없는 구역"}
+        workAreaName={workAreaNameById.get(selectedRow.workAreaId) ?? "이름을 확인할 수 없는 영역"}
         canCreate={canCreate}
         deltaExportConfig={deltaExportConfig}
         maskUploadBudgetBytes={maskUploadBudgetBytes}

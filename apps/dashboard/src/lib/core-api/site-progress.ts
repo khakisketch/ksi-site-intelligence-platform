@@ -32,8 +32,8 @@ export const SITE_PROGRESS_STAGES: readonly {
   label: string;
 }[] = [
   // 외부 관측 유무는 이 과거 취득 상태에서 추론하지 않는다. 아래 전이 순서는
-  // 보존하되, 최초 단계는 확인되는 현장 등록 사실만 말한다(ADR-KSI-039).
-  { status: "UNMAPPED", label: "현장 등록" },
+  // 보존하되, 최초 단계는 확인되는 프로젝트 등록 사실만 말한다(ADR-KSI-039).
+  { status: "UNMAPPED", label: "프로젝트 등록" },
   { status: "BASELINE_MAPPING", label: "초기 매핑" },
   { status: "MODEL_PROCESSING", label: "모델 처리" },
   { status: "MODEL_VALIDATION", label: "모델 검증" },
@@ -97,7 +97,7 @@ export function siteProgress(status: SiteStatus): SiteProgress {
  * 상태값을 다른 말로 바꾼 것이 아니라, 그 상태가 무엇을 기다리는지를 쓴다 —
  * "모델 처리 중"(상태)과 "처리 결과를 기다리는 중"(할 일)은 다른 문장이고, 목록
  * 에서 유용한 쪽은 뒤다. 링크가 있는 것은 **화면에서 바로 시작할 수 있는 일**뿐이다:
- * 나머지는 기다림이라 갈 곳이 현장 상세 하나뿐이고, 그때는 `href` 를 주지 않는다
+ * 나머지는 기다림이라 갈 곳이 프로젝트 상세 하나뿐이고, 그때는 `href` 를 주지 않는다
  * (행 전체가 이미 현장으로 간다 — 같은 곳으로 가는 버튼을 하나 더 두지 않는다).
  */
 export interface SiteNextAction {
@@ -139,7 +139,7 @@ export function siteNextAction(status: SiteStatus): SiteNextAction {
  * 건 그냥 거짓말이다. 뺄셈은 새 상태가 추가될 때도 조용히 '가능' 쪽으로 흡수한다 —
  * 안전 화면의 파생 지표는 열거를 늘리는 쪽이 틀렸을 때 눈에 띈다.
  *
- * 홈의 지표 타일과 현장 목록의 묶음 필터가 **같은 집합**을 봐야 한다 — 두 화면이 서로
+ * 홈의 지표 타일과 프로젝트 목록의 묶음 필터가 **같은 집합**을 봐야 한다 — 두 화면이 서로
  * 다른 수를 말하면 어느 쪽도 못 믿는다.
  */
 export const PATROLLABLE_SITE_STATUSES: ReadonlySet<SiteStatus> = new Set<SiteStatus>([

@@ -144,8 +144,8 @@ describe("SitePreviewThumb", () => {
     expect(link.textContent).toContain("정사영상");
     expect(link.textContent).toContain("2021");
     expect(link.textContent).toContain("부분 범위");
-    expect(link.textContent).not.toMatch(/최신|전체 현장/);
-    // 작업구역명·등록 버전·GSD는 보이는 자막에 두지 않고 펼침이 맡는다.
+    expect(link.textContent).not.toMatch(/최신|전체 프로젝트/);
+    // 영역명·등록 버전·GSD는 보이는 자막에 두지 않고 펼침이 맡는다.
     expect(link.textContent).not.toContain("Floreat common-extent");
     expect(link.textContent).not.toContain("등록 버전");
     expect(link.textContent).not.toContain("제출 GSD");
@@ -321,7 +321,7 @@ describe("SitePreviewThumb", () => {
     expect(document.querySelector("canvas")).toBeNull();
     expect(document.body.textContent).not.toMatch(/자료 없음|등록된 자료가 없|관측자료 없음|보유 자료 없음/);
     expect(document.body.textContent).toMatch(/등록 자료가 없다는 뜻이 아닙니다/);
-    expect(document.body.textContent).toContain("현장을 열어 자료와 준비 상태를 다시 확인하세요.");
+    expect(document.body.textContent).toContain("프로젝트를 열어 자료와 준비 상태를 다시 확인하세요.");
     expect(screen.queryByRole("link")).toBeNull();
   });
 
@@ -375,7 +375,7 @@ describe("SitePreviewThumb", () => {
         available: true,
         siteId,
         workAreaId: "area-1",
-        workAreaName: "합성 도식 구역",
+        workAreaName: "합성 도식 영역",
         crs: "EPSG:5186",
         ring: [[200000, 549999.8], [200010, 549999.8], [200010, 550009.8], [200000, 549999.8]],
         vertexCount: 4,
@@ -459,7 +459,7 @@ describe("SitePreviewThumb", () => {
     expect(described?.textContent).toContain("Floreat public sample (CC BY 4.0)");
     expect(described?.textContent).toContain("등록 버전 1");
     expect(described?.textContent).toContain("제출 GSD 0.05m");
-    expect(accessibleText).not.toMatch(/전체 현장|최신/);
+    expect(accessibleText).not.toMatch(/전체 프로젝트|최신/);
     expect(link.querySelector("details,summary,input,button")).toBeNull();
   });
 

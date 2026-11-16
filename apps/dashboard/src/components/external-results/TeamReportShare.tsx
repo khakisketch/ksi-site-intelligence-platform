@@ -100,7 +100,7 @@ export function TeamReportShare({ reportRef, siteId, organizationId, principalId
         } else {
           pendingRef.current = null;
           setUnresolved(null);
-          setFeedback("결과를 전달하지 못했습니다. 팀원과 현장 접근 권한을 확인하세요.");
+          setFeedback("결과를 전달하지 못했습니다. 팀원과 프로젝트 접근 권한을 확인하세요.");
         }
         return;
       }
@@ -128,7 +128,7 @@ export function TeamReportShare({ reportRef, siteId, organizationId, principalId
     <ResponsiveActionBoundary action="WORK_ORDERS_WRITE" reason="결과 공유는 노트북 이상의 화면에서 확인하고 전달합니다.">
       <section className="rounded-xl border border-line bg-surface px-4 py-3" aria-labelledby="team-report-share-heading">
         <h2 id="team-report-share-heading" className="text-lead font-bold">팀원에게 결과 공유</h2>
-        <p className="mt-1 text-body leading-5 text-ink-2">로그인 및 현장 접근 권한이 있는 팀원만 결과를 볼 수 있습니다.</p>
+        <p className="mt-1 text-body leading-5 text-ink-2">로그인 및 프로젝트 접근 권한이 있는 팀원만 결과를 볼 수 있습니다.</p>
         {!canWrite ? <ActionUnavailable label="팀원에게 결과 공유" description="이 계정에는 결과 공유 권한이 없습니다." /> : (
           <div className="mt-3 flex flex-wrap items-end gap-2">
             <label className="flex min-w-56 flex-1 flex-col gap-1 text-body font-semibold">공유할 팀원

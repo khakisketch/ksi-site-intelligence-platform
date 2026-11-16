@@ -171,7 +171,7 @@ describe("site mosaic clean map", () => {
     expect(statusBox?.className ?? "").not.toContain("lg:min-h-[55dvh]");
     // Same-plane work area is overlaid; the diagram is labelled as a sketch, not a photo.
     expect(screen.getByText("범위 도식 · 사진 아님")).toBeTruthy();
-    expect(screen.getByText(/실선은 작업구역 경계이며, 점선은 파일 전체 범위입니다/)).toBeTruthy();
+    expect(screen.getByText(/실선은 영역 경계이며, 점선은 파일 전체 범위입니다/)).toBeTruthy();
     // Never pretend NoData-free coverage — the rectangle is the file extent, not valid pixels.
     expect(screen.getByText(/빈틈 없는 유효 픽셀로 읽지 마세요/)).toBeTruthy();
     expect(screen.getByText(/사진이 아니며 정확도를 보증하지 않습니다/)).toBeTruthy();
@@ -205,9 +205,9 @@ describe("site mosaic clean map", () => {
     );
 
     expect(screen.getByText("범위 도식 · 사진 아님")).toBeTruthy();
-    expect(screen.getByText(/작업구역 경계를 겹쳐 표시하지 않았습니다/)).toBeTruthy();
+    expect(screen.getByText(/영역 경계를 겹쳐 표시하지 않았습니다/)).toBeTruthy();
     expect(screen.getByText(/위치 기준이 달라/)).toBeTruthy();
-    expect(screen.queryByText(/실선은 작업구역 경계이며, 점선은 파일 전체 범위입니다/)).toBeNull();
+    expect(screen.queryByText(/실선은 영역 경계이며, 점선은 파일 전체 범위입니다/)).toBeNull();
     // File extent itself is still drawn from the measured transform.
     expect(screen.getByText("0 – 1022")).toBeTruthy();
   });
@@ -242,6 +242,6 @@ describe("site mosaic clean map", () => {
     const mentions = screen.getAllByText(/위치 기준이 달라/);
     expect(mentions.length).toBeGreaterThanOrEqual(1);
     expect(mentions.some((node) => node.closest("details") === null)).toBe(true);
-    expect(screen.queryByText(/실선은 작업구역 경계이며/)).toBeNull();
+    expect(screen.queryByText(/실선은 영역 경계이며/)).toBeNull();
   });
 });

@@ -4,14 +4,14 @@ import { coreFetch, coreFetchWithToken } from "./client";
 import type { WorkAreaListResponse, WorkAreaRegisterInput, WorkAreaResponse } from "./types";
 
 /**
- * 현장의 작업구역(M4-C) 읽기·등록·보관 클라이언트.
+ * 현장의 영역(M4-C) 읽기·등록·보관 클라이언트.
  *
  * `design.ts` 와 같은 규율이다 — 판정을 여기 두지 않는다. 등록 시점 유효성(폴리곤
  * 모양·상한·중복 대체 대상)은 전부 Core 가 정해서 내려주는 verdict/detail 이고,
  * 화면은 그것을 그대로 옮긴다.
  */
 
-/** 그 현장의 작업구역 목록. 기본은 고를 수 있는 것(ACTIVE)만 — 보관된 것을 보려면 명시한다. */
+/** 그 현장의 영역 목록. 기본은 고를 수 있는 것(ACTIVE)만 — 보관된 것을 보려면 명시한다. */
 export async function listWorkAreas(
   siteId: string,
   options?: { includeArchived?: boolean },
@@ -22,10 +22,10 @@ export async function listWorkAreas(
 }
 
 /**
- * 작업구역 등록 — **기하는 이 순간 굳는다.**
+ * 영역 등록 — **기하는 이 순간 굳는다.**
  *
- * 잘못 그렸으면 `supersedes` 로 새 구역을 등록한다(이전 것은 자동으로 보관된다).
- * 제자리 수정 API 는 없다 — 있으면 이미 그 구역으로 낸 리포트가 가리키는 범위가
+ * 잘못 그렸으면 `supersedes` 로 새 영역을 등록한다(이전 것은 자동으로 보관된다).
+ * 제자리 수정 API 는 없다 — 있으면 이미 그 영역으로 낸 리포트가 가리키는 범위가
  * 사후에 바뀐다.
  */
 export async function registerWorkArea(

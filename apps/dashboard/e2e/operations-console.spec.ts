@@ -145,7 +145,7 @@ test("역할에 맞는 전역 메뉴와 반응형 셸을 유지한다", async ({
   // 합성 빈 데이터 스택만 결정적 snapshot 정본으로 삼는다. 외부 Tailnet/Staging은
   // 실제 원장 값이 계속 바뀌므로 레이아웃·overflow·접근성만 검증한다.
   if (!process.env.KSI_DASHBOARD_E2E_BASE_URL) {
-    const previews = page.getByRole("region", { name: "다른 현장 바로가기" });
+    const previews = page.getByRole("region", { name: "다른 프로젝트 바로가기" });
     const cards = previews.getByRole("article");
     for (const card of await cards.all()) {
       await card.scrollIntoViewIfNeeded();
@@ -235,7 +235,7 @@ test("모바일 하단 내비는 안전영역을 포함해 마지막 내용을 �
 test("Home은 합성 운영 원장의 작업·현장 우선순위를 보여 준다", async ({ page }) => {
   test.skip(Boolean(process.env.KSI_DASHBOARD_E2E_BASE_URL), "외부 원장은 읽기 전용이며 fixture를 전제하지 않습니다.");
   await page.goto("/");
-  const attentionList = page.getByRole("region", { name: "확인 필요 현장 목록" });
+  const attentionList = page.getByRole("region", { name: "확인 필요 프로젝트 목록" });
   await expect(attentionList).toBeVisible();
   // The four historical records are excluded unless they need a decision. The
   // only two decision candidates are the awaiting-approval and review-ready rows.
@@ -243,7 +243,7 @@ test("Home은 합성 운영 원장의 작업·현장 우선순위를 보여 준�
   await expect(attentionList.getByRole("heading", { name: "E2E 과거 읽기 전용 · 작업 범위 승인" })).toBeVisible();
   await expect(attentionList.getByRole("heading", { name: "E2E 과거 읽기 전용 · 결과 검토 기록" })).toBeVisible();
 
-  const initialSetup = page.getByRole("region", { name: "초기 설정이 필요한 현장" });
+  const initialSetup = page.getByRole("region", { name: "초기 설정이 필요한 프로젝트" });
   // All seeded Sites already have a work order. Legacy UNMAPPED state must not
   // turn an in-use Site into an instruction to configure its optional AOI.
   await expect(initialSetup).toHaveCount(0);
@@ -293,7 +293,7 @@ test("현장 분석 목적지는 Site 접근은 유지하고 미구성 분석 AP
 
 test("키보드는 내비게이션을 건너뛰고 화면 전환 뒤 본문 맥락을 이어 간다", async ({ page }) => {
   await page.goto("/");
-  await expect(page.getByRole("region", { name: "확인 필요 현장 목록" })).toBeVisible();
+  await expect(page.getByRole("region", { name: "확인 필요 프로젝트 목록" })).toBeVisible();
   await page.keyboard.press("Tab");
   const skipLink = page.getByRole("link", { name: "본문으로 건너뛰기" });
   await expect(skipLink).toBeFocused();
@@ -325,7 +325,7 @@ test("모바일·태블릿의 공용 행동 표면은 44px 터치 기준을 지�
   }
 });
 
-test("현장 목록은 폭에 맞는 비교 표현과 현장 진입을 유지한다", async ({ page }, testInfo) => {
+test("프로젝트 목록은 폭에 맞는 비교 표현과 현장 진입을 유지한다", async ({ page }, testInfo) => {
   await page.goto("/sites");
   const siteLink = page.locator('main a[href^="/sites/"]:not([href="/sites/new"])').first();
   const hasSite = await siteLink
@@ -333,12 +333,12 @@ test("현장 목록은 폭에 맞는 비교 표현과 현장 진입을 유지한
     .then(() => true)
     .catch(() => false);
   if (!hasSite && process.env.KSI_DASHBOARD_E2E_BASE_URL) {
-    test.skip(true, "읽기 전용 외부 원장에 표시할 현장이 없습니다.");
+    test.skip(true, "읽기 전용 외부 원장에 표시할 프로젝트가 없습니다.");
   }
   if (!hasSite) await expect(siteLink).toBeVisible();
 
   if (testInfo.project.name.startsWith("desktop")) {
-    const views = page.getByRole("group", { name: "현장 보기 방식" });
+    const views = page.getByRole("group", { name: "프로젝트 보기 방식" });
     await expect(views).toBeVisible();
     // Human의 시각 식별 피드백: 새 사용자는 카드로, 저장된 목록 선호는 별도
     // view-modes 회귀에서 보존한다. 기본 표지 대신 실제 허용된 미리보기만 쓴다.
@@ -346,9 +346,9 @@ test("현장 목록은 폭에 맞는 비교 표현과 현장 진입을 유지한
     await views.getByRole("button", { name: "목록", exact: true }).click();
     await expect(page.getByText("관리 단계", { exact: true })).toBeVisible();
   } else {
-    const compactList = page.getByRole("region", { name: "현장 목록" });
+    const compactList = page.getByRole("region", { name: "프로젝트 목록" });
     await expect(compactList).toBeVisible();
-    await expect(compactList.getByRole("link", { name: "현장 열기" }).first()).toBeVisible();
+    await expect(compactList.getByRole("link", { name: "프로젝트 열기" }).first()).toBeVisible();
     await expect(page.getByText("관리 단계", { exact: true })).toBeHidden();
   }
   // D7: 실제 Home/Site 미리보기가 없는 자리를 장식 이미지로 채우지 않는다.
@@ -361,9 +361,9 @@ test("현장 목록은 폭에 맞는 비교 표현과 현장 진입을 유지한
   if (testInfo.project.name.startsWith("desktop") && !process.env.KSI_DASHBOARD_E2E_BASE_URL) {
     // This fixture has no Site-bootstrap capability. Do not advertise a link
     // that the exact registration-mode check rejects after navigation.
-    await expect(page.getByRole("link", { name: "현장 등록", exact: true })).toHaveCount(0);
-    const unavailableAction = page.getByRole("button", { name: /현장 등록/ });
-    const reason = page.getByText("현재 계정으로는 현장을 등록할 수 없습니다. 관리자에게 문의하세요.", { exact: true });
+    await expect(page.getByRole("link", { name: "프로젝트 등록", exact: true })).toHaveCount(0);
+    const unavailableAction = page.getByRole("button", { name: /프로젝트 등록/ });
+    const reason = page.getByText("현재 계정으로는 프로젝트를 등록할 수 없습니다. 관리자에게 문의하세요.", { exact: true });
     await expect(reason).toBeHidden();
     await unavailableAction.click();
     await expect(reason).toBeVisible();
@@ -371,9 +371,9 @@ test("현장 목록은 폭에 맞는 비교 표현과 현장 진입을 유지한
     await expect(reason).toBeHidden();
     await expect(unavailableAction).toBeFocused();
   } else if (testInfo.project.name.startsWith("desktop")) {
-    await expect(page.getByRole("link", { name: "현장 등록", exact: true }).or(page.getByRole("button", { name: /현장 등록/ }))).toBeVisible();
+    await expect(page.getByRole("link", { name: "프로젝트 등록", exact: true }).or(page.getByRole("button", { name: /프로젝트 등록/ }))).toBeVisible();
   } else {
-    await expect(page.getByRole("link", { name: "현장 등록", exact: true })).toBeHidden();
+    await expect(page.getByRole("link", { name: "프로젝트 등록", exact: true })).toBeHidden();
   }
   await expectNoHorizontalOverflow(page);
 });
@@ -405,9 +405,9 @@ test("현장의 공간과 분석 메뉴가 자료 패널, 비교, 설정과 옛 
   await page.keyboard.press("Escape");
   await expect(catalog).toBeHidden();
 
-  const areaMenu = page.getByRole("button", { name: /^작업구역 · / });
+  const areaMenu = page.getByRole("button", { name: /^영역 · / });
   await areaMenu.click();
-  await expect(page.getByRole("link", { name: "작업구역 관리", exact: true })).toHaveAttribute("href", /\/work-areas\?workAreaId=/);
+  await expect(page.getByRole("link", { name: "영역 관리", exact: true })).toHaveAttribute("href", /panel=areas&workAreaId=.*&manage=1/);
   await page.keyboard.press("Escape");
   await expect(areaMenu).toBeFocused();
 
@@ -428,8 +428,8 @@ test("현장의 공간과 분석 메뉴가 자료 패널, 비교, 설정과 옛 
   await expectNoHorizontalOverflow(page);
 
   await page.goto(`${sitePath}?section=manage`);
-  await expect(page.getByRole("heading", { name: "현장 범위", exact: true })).toBeVisible();
-  await expect(page.getByRole("main").getByRole("link", { name: "작업구역 관리", exact: true })).toHaveAttribute("href", `${sitePath}/work-areas`);
+  await expect(page.getByRole("heading", { name: "프로젝트 범위", exact: true })).toBeVisible();
+  await expect(page.getByRole("main").getByRole("link", { name: "영역 탭", exact: true })).toHaveAttribute("href", `${sitePath}?panel=areas`);
   await expectNoHorizontalOverflow(page);
 
   await page.goto(`${sitePath}?mode=results`);
@@ -445,7 +445,7 @@ test("현장의 공간과 분석 메뉴가 자료 패널, 비교, 설정과 옛 
   await expectNoHorizontalOverflow(page);
 });
 
-test("자료 섹션은 구역·표·상세·등록 진행을 한 화면에 두고 크기마다 넘치지 않는다", async ({ page }) => {
+test("자료 섹션은 영역·표·상세·등록 진행을 한 화면에 두고 크기마다 넘치지 않는다", async ({ page }) => {
   if (process.env.KSI_DASHBOARD_E2E_BASE_URL) test.skip(true, "이 테스트는 합성 현장과 작업을 사용합니다.");
   const sitePath = `/sites/${encodeURIComponent(syntheticSiteId)}`;
   await page.goto(`${sitePath}/data`);
@@ -456,7 +456,7 @@ test("자료 섹션은 구역·표·상세·등록 진행을 한 화면에 두�
   await expect(frame).toBeVisible();
   await expect(frame.getByRole("complementary", { name: "자료 보기 조건" })).toBeVisible();
   await expect(frame.getByRole("complementary", { name: "선택한 자료 상세" })).toBeVisible();
-  await expect(frame.getByRole("link", { name: /E2E 작업구역 1/ }).first()).toHaveAttribute("aria-current", "true");
+  await expect(frame.getByRole("link", { name: /E2E 영역 1/ }).first()).toHaveAttribute("aria-current", "true");
 
   // 하단 서랍은 접혀 있다가 눌러서 연다.
   const drawer = frame.locator('[data-section-drawer="true"]');

@@ -200,7 +200,7 @@ function CoreBindings({ view }: { view: ExternalRelativeVolumeReportView }) {
       <div className="mt-2 flex flex-col gap-1 break-all">
         <p>기준 대상: {subjectLabel(request.baseline.subject)}</p>
         <p>현재 대상: {subjectLabel(request.current.subject)}</p>
-        <p>비교 구역 {request.zoneSnapshot.workAreaId} · {zoneVersionLabel(request.zoneSnapshot.revision)} · 구역 정의 확인값(해시) {request.zoneSnapshot.definitionDigest ?? "기록 없음"}</p>
+        <p>비교 영역 {request.zoneSnapshot.workAreaId} · {zoneVersionLabel(request.zoneSnapshot.revision)} · 영역 정의 확인값(해시) {request.zoneSnapshot.definitionDigest ?? "기록 없음"}</p>
         <p>정책 확인값(해시): 검증 {request.validationPolicyDigest} · 실행 {executionPolicy.policyDigest ?? request.executionPolicyDigest}</p>
         <p>보고서 확인값(해시): {report.reportDigest ?? "기록 없음"} · 요청 확인값(해시) {request.requestDigest ?? "기록 없음"}</p>
         <p>독립 검사점 증거 기록: {request.evidenceRecordDigests.join(", ")}</p>
@@ -233,15 +233,15 @@ function ReportDetail({
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="px-4 py-3">
           <h3 className="text-title font-bold tracking-tight">외부 상대 물량 비교 결과</h3>
-          <p className="mt-1 leading-5 text-ink-2">작업구역 {workAreaName ?? "이름을 확인할 수 없는 구역"}</p>
-          <Disclosure label="식별 상세" className="mt-1 text-caption text-ink-2"><p className="break-all font-mono">비교 구역 {view.request.zoneSnapshot.workAreaId} · {zoneVersionLabel(view.request.zoneSnapshot.revision)}</p></Disclosure>
+          <p className="mt-1 leading-5 text-ink-2">영역 {workAreaName ?? "이름을 확인할 수 없는 영역"}</p>
+          <Disclosure label="식별 상세" className="mt-1 text-caption text-ink-2"><p className="break-all font-mono">비교 영역 {view.request.zoneSnapshot.workAreaId} · {zoneVersionLabel(view.request.zoneSnapshot.revision)}</p></Disclosure>
         </div>
         <span className="px-4 text-caption text-ink-muted">보고 {formatKoreanDateTime(view.report.reportedAt, { dateStyle: "medium", timeStyle: "short" })}</span>
       </div>
       <div className="border-t border-line bg-sunk px-4 py-3 leading-5 text-ink-2">
         <p>기준 촬영 {observationRange(view.request.baseline.capturedFrom, view.request.baseline.capturedTo)}</p>
         <p>현재 촬영 {observationRange(view.request.current.capturedFrom, view.request.current.capturedTo)}</p>
-        <p className="mt-1 text-caption text-ink-muted">측정 영역 {formatNumber(metrics.measuredAreaM2, 1)} m² / 작업구역 {formatNumber(metrics.zoneAreaM2, 1)} m² · 공통 유효 영역 {formatNumber(metrics.commonValidFraction * 100, 1)}%</p>
+        <p className="mt-1 text-caption text-ink-muted">측정 영역 {formatNumber(metrics.measuredAreaM2, 1)} m² / 영역 {formatNumber(metrics.zoneAreaM2, 1)} m² · 공통 유효 영역 {formatNumber(metrics.commonValidFraction * 100, 1)}%</p>
       </div>
       {coveragePassed ? (
         <>
@@ -285,7 +285,7 @@ function ReviewAuditDetail({ review }: { review: ExternalResultReview }) {
         <p>현재 독립 검사점 RMSE: {reviewRmseLabel(authority.currentRmseM)}</p>
         <p>기준 대상: {subjectLabel(authority.baseline.subject)} · 검사 보고서 확인값(해시) {authority.baseline.inspectionReportDigest}</p>
         <p>현재 대상: {subjectLabel(authority.current.subject)} · 검사 보고서 확인값(해시) {authority.current.inspectionReportDigest}</p>
-        <p>비교 구역: {authority.zoneSnapshot.workAreaId} · {zoneVersionLabel(authority.zoneSnapshot.revision)} · 구역 정의 확인값(해시) {authority.zoneSnapshot.definitionDigest ?? "기록 없음"}</p>
+        <p>비교 영역: {authority.zoneSnapshot.workAreaId} · {zoneVersionLabel(authority.zoneSnapshot.revision)} · 영역 정의 확인값(해시) {authority.zoneSnapshot.definitionDigest ?? "기록 없음"}</p>
         <p>검증 정책 확인값(해시): {authority.validationPolicyDigest} · 실행 정책 확인값(해시): {authority.executionPolicy.policyDigest ?? "기록 없음"}</p>
         <p>호환 매핑 확인값(해시): {authority.compatibilityMappingDigest} · 권한 기록 확인값(해시): {authority.authorityDigest ?? "기록 없음"}</p>
         <p>증거 기록: {authority.evidenceRecordDigests.join(", ")}</p>
@@ -312,7 +312,7 @@ function SingleVolumeReviewAuditDetail({ review }: { review: ExternalSingleVolum
         <p>대상 촬영 {observationRange(request.target.capturedFrom, request.target.capturedTo)}</p>
         <p>대상 독립 검사점 RMSE: {authority.targetRmseM === null ? "기록 없음" : `${authority.targetRmseM}m`}</p>
         <p>대상: {subjectLabel(authority.target.subject)} · 검사 보고서 확인값(해시) {authority.target.inspectionReportDigest}</p>
-        <p>비교 구역: {authority.zoneSnapshot.workAreaId} · {zoneVersionLabel(authority.zoneSnapshot.revision)} · 구역 정의 확인값(해시) {authority.zoneSnapshot.definitionDigest ?? "기록 없음"}</p>
+        <p>비교 영역: {authority.zoneSnapshot.workAreaId} · {zoneVersionLabel(authority.zoneSnapshot.revision)} · 영역 정의 확인값(해시) {authority.zoneSnapshot.definitionDigest ?? "기록 없음"}</p>
         <p>검증 정책 확인값(해시): {authority.validationPolicyDigest} · 실행 정책 확인값(해시): {authority.executionPolicy.policyDigest ?? "기록 없음"}</p>
         <p>호환 매핑 확인값(해시): {authority.compatibilityMappingDigest} · 권한 기록 확인값(해시): {authority.authorityDigest ?? "기록 없음"}</p>
         <p>증거 기록: {authority.evidenceRecordDigests.join(", ")}</p>
@@ -331,8 +331,8 @@ function SingleVolumeReportDetail({ view, workAreaName }: { view: ExternalSingle
       <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3">
         <div>
           <h4 className="text-title font-bold tracking-tight">단일 시점 체적 결과</h4>
-          <p className="mt-1 break-words leading-5 text-ink-2">작업구역 {workAreaName || "이름을 확인할 수 없는 구역"}</p>
-          <Disclosure label="식별 상세" className="mt-1 text-caption text-ink-2"><p className="break-all font-mono">비교 구역 {view.request.zoneSnapshot.workAreaId} · {zoneVersionLabel(view.request.zoneSnapshot.revision)}</p></Disclosure>
+          <p className="mt-1 break-words leading-5 text-ink-2">영역 {workAreaName || "이름을 확인할 수 없는 영역"}</p>
+          <Disclosure label="식별 상세" className="mt-1 text-caption text-ink-2"><p className="break-all font-mono">비교 영역 {view.request.zoneSnapshot.workAreaId} · {zoneVersionLabel(view.request.zoneSnapshot.revision)}</p></Disclosure>
         </div>
         <span className="text-caption text-ink-muted">보고 {formatKoreanDateTime(view.report.reportedAt, { dateStyle: "medium", timeStyle: "short" })}</span>
       </div>
@@ -354,7 +354,7 @@ function SingleVolumeReportDetail({ view, workAreaName }: { view: ExternalSingle
       <Disclosure label="파일·식별 상세" className="mx-4 mb-3 rounded border border-line px-3 py-2 text-caption text-ink-2">
         <div className="mt-2 flex flex-col gap-1 break-all">
           <p>대상: {subjectLabel(view.request.target.subject)}</p>
-          <p>비교 구역 {view.request.zoneSnapshot.workAreaId} · {zoneVersionLabel(view.request.zoneSnapshot.revision)} · 구역 정의 확인값(해시) {view.request.zoneSnapshot.definitionDigest ?? "기록 없음"}</p>
+          <p>비교 영역 {view.request.zoneSnapshot.workAreaId} · {zoneVersionLabel(view.request.zoneSnapshot.revision)} · 영역 정의 확인값(해시) {view.request.zoneSnapshot.definitionDigest ?? "기록 없음"}</p>
           <p>정책 확인값(해시): 검증 {view.request.validationPolicyDigest} · 실행 {view.executionPolicy.policyDigest ?? view.request.executionPolicyDigest}</p>
           <p>경계 셀 {metrics.boundaryCellCount}개 · 경계 표본 {metrics.boundarySampleCount}개</p>
           <p>보고서 확인값(해시): {view.report.reportDigest ?? "기록 없음"} · 요청 확인값(해시) {view.request.requestDigest ?? "기록 없음"}</p>
@@ -792,7 +792,7 @@ function SingleVolumeWorkflow({
       ) : !newIntentAllowed ? (
         <p className="text-ink-2">작업 종료 상태에서는 새 단일 시점 체적 측정을 요청할 수 없습니다.</p>
       ) : (
-        <ActionUnavailable label="단일 시점 체적 측정 요청" description="단일 시점 체적 측정 요청에는 현장 쓰기 권한이 필요합니다. 권한 있는 담당자에게 요청하세요." />
+        <ActionUnavailable label="단일 시점 체적 측정 요청" description="단일 시점 체적 측정 요청에는 프로젝트 쓰기 권한이 필요합니다. 권한 있는 담당자에게 요청하세요." />
       )}
       {currentSingleKey !== null && retained[currentSingleKey]?.outcome === "unknown" && (
         <p role="status" className="rounded-lg border border-line bg-sunk px-3 py-2 text-ink-2">이 선택의 단일 시점 체적 측정 요청 결과를 아직 확인하지 못했습니다. 목록에서 확인하거나 같은 선택으로 다시 시도하세요. 화면을 벗어나거나 새로고침하면 이 복구 정보가 사라집니다.</p>
@@ -839,7 +839,7 @@ function SingleVolumeWorkflow({
           review={report.review ?? null}
           proposals={report.proposals ?? []}
           targetWorkAreaId={report.request.zoneSnapshot.workAreaId}
-          targetLabel="대상: 이 측정에 사용한 작업구역"
+          targetLabel="대상: 이 측정에 사용한 영역"
           reviewReason="단일 시점 결과 검토 기록은 노트북 이상의 화면에서 진행합니다."
           newIntentAllowed={newIntentAllowed}
           hasReviewPermission={hasReviewPermission}
@@ -1263,7 +1263,7 @@ export function ExternalResultWorkflowPanel({
       const current = latestDecision.current;
       if (!current || current.verdict !== "ELIGIBLE" || !canIssue || busy) return;
       if (legacyDecisionClosed) {
-        setMessage("이 화면의 상대 물량 비교 요청은 현재 계정의 배포 범위에 열려 있지 않습니다. 기존 비교 요청 목록과 결과·검토 기록은 그대로 볼 수 있습니다. 새로운 두 시점 관측 변화 분석은 현장의 분석 화면에서 진행합니다.");
+        setMessage("이 화면의 상대 물량 비교 요청은 현재 계정의 배포 범위에 열려 있지 않습니다. 기존 비교 요청 목록과 결과·검토 기록은 그대로 볼 수 있습니다. 새로운 두 시점 관측 변화 분석은 프로젝트의 분석 화면에서 진행합니다.");
         return;
       }
       const key = `${current.decisionId}|${current.decisionDigest}`;
@@ -1354,7 +1354,7 @@ export function ExternalResultWorkflowPanel({
 
       {legacyDecisionClosed ? (
         <div role="status" className="flex flex-col gap-2">
-          <p className="text-ink-2">이 화면의 상대 물량 비교 요청은 현재 계정의 배포 범위에 열려 있지 않습니다. 기존 비교 요청 목록과 결과·검토 기록은 아래에서 그대로 볼 수 있습니다. 새로운 두 시점 관측 변화 분석은 현장의 분석 화면에서 진행합니다.</p>
+          <p className="text-ink-2">이 화면의 상대 물량 비교 요청은 현재 계정의 배포 범위에 열려 있지 않습니다. 기존 비교 요청 목록과 결과·검토 기록은 아래에서 그대로 볼 수 있습니다. 새로운 두 시점 관측 변화 분석은 프로젝트의 분석 화면에서 진행합니다.</p>
           <a className="btn w-fit" href={`/sites/${encodeURIComponent(siteId)}/analysis`}>분석 화면 열기</a>
         </div>
       ) : !decision ? (
@@ -1372,7 +1372,7 @@ export function ExternalResultWorkflowPanel({
           </button>
         </ResponsiveActionBoundary>
       ) : !newIntentAllowed ? null : (
-        <ActionUnavailable label="상대 물량 비교 요청" description="상대 물량 비교 요청에는 현장 쓰기 권한이 필요합니다. 권한 있는 담당자에게 요청하세요." />
+        <ActionUnavailable label="상대 물량 비교 요청" description="상대 물량 비교 요청에는 프로젝트 쓰기 권한이 필요합니다. 권한 있는 담당자에게 요청하세요." />
       )}
       {currentRelativeKey !== null && retained[currentRelativeKey]?.outcome === "unknown" && (
         <p role="status" className="rounded-lg border border-line bg-sunk px-3 py-2 text-ink-2">이 선택의 상대 물량 비교 요청 결과를 아직 확인하지 못했습니다. 목록에서 확인하거나 같은 선택으로 다시 시도하세요. 화면을 벗어나거나 새로고침하면 이 복구 정보가 사라집니다.</p>
@@ -1420,7 +1420,7 @@ export function ExternalResultWorkflowPanel({
           review={report.review ?? null}
           proposals={report.proposals}
           targetWorkAreaId={report.request.zoneSnapshot.workAreaId}
-          targetLabel="대상: 이 비교에 사용한 작업구역"
+          targetLabel="대상: 이 비교에 사용한 영역"
           reviewReason="비교 결과 검토 기록은 노트북 이상의 화면에서 진행합니다."
           newIntentAllowed={newIntentAllowed}
           hasReviewPermission={hasReviewPermission}

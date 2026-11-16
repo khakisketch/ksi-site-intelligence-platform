@@ -18,35 +18,35 @@ async function expectNoHorizontalOverflow(page: Page) {
   expect(overflow.documentWidth).toBeLessThanOrEqual(overflow.viewportWidth + 1);
 }
 
-test("빈 조직은 Home에서 거짓 운영 안건 없이 현장 목록으로 안내한다", async ({ page }) => {
+test("빈 조직은 Home에서 거짓 운영 안건 없이 프로젝트 목록으로 안내한다", async ({ page }) => {
   test.skip(Boolean(process.env.KSI_DASHBOARD_E2E_BASE_URL), "외부 IdP에는 로컬 빈 조직 계정이 없습니다.");
   await loginToEmptyOrganization(page);
 
-  await expect(page.getByText("현재 계정에서 볼 수 있는 현장이 없습니다", { exact: true })).toBeVisible();
-  await expect(page.getByRole("main").getByText("찾는 현장이 이미 있다면 관리자에게 이 계정의 현장 접근 권한을 확인해 주세요.", { exact: true })).toBeVisible();
-  await expect(page.getByRole("main").getByRole("link", { name: "현장 목록", exact: true })).toHaveAttribute("href", "/sites");
-  await expect(page.getByRole("main").getByRole("link", { name: "현장 등록", exact: true })).toHaveCount(0);
-  await expect(page.getByRole("region", { name: "확인 필요 현장 목록" })).toHaveCount(0);
+  await expect(page.getByText("현재 계정에서 볼 수 있는 프로젝트가 없습니다", { exact: true })).toBeVisible();
+  await expect(page.getByRole("main").getByText("찾는 프로젝트가 이미 있다면 관리자에게 이 계정의 프로젝트 접근 권한을 확인해 주세요.", { exact: true })).toBeVisible();
+  await expect(page.getByRole("main").getByRole("link", { name: "프로젝트 목록", exact: true })).toHaveAttribute("href", "/sites");
+  await expect(page.getByRole("main").getByRole("link", { name: "프로젝트 등록", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("region", { name: "확인 필요 프로젝트 목록" })).toHaveCount(0);
   await expectNoHorizontalOverflow(page);
 });
 
-test("빈 현장 목록은 현재 계정의 범위와 현장 등록 제한을 보여 준다", async ({ page }) => {
+test("빈 프로젝트 목록은 현재 계정의 범위와 프로젝트 등록 제한을 보여 준다", async ({ page }) => {
   test.skip(Boolean(process.env.KSI_DASHBOARD_E2E_BASE_URL), "외부 IdP에는 로컬 빈 조직 계정이 없습니다.");
   await loginToEmptyOrganization(page);
 
   await page.goto("/sites");
-  await expect(page.getByRole("heading", { name: "현재 계정에서 볼 수 있는 현장이 없습니다" })).toBeVisible();
-  await expect(page.getByRole("main").getByText("찾는 현장이 이미 있다면 관리자에게 이 계정의 현장 접근 권한을 확인해 주세요.")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "현재 계정에서 볼 수 있는 프로젝트가 없습니다" })).toBeVisible();
+  await expect(page.getByRole("main").getByText("찾는 프로젝트가 이미 있다면 관리자에게 이 계정의 프로젝트 접근 권한을 확인해 주세요.")).toBeVisible();
   const main = page.getByRole("main");
   await expect(main.locator('a[href="/sites/new"]')).toHaveCount(0);
-  const register = main.getByRole("button", { name: "현장 등록하기", exact: true });
+  const register = main.getByRole("button", { name: "프로젝트 등록하기", exact: true });
   await register.click();
-  await expect(main.getByText("현재 계정으로는 현장을 등록할 수 없습니다. 관리자에게 문의하세요.")).toBeVisible();
+  await expect(main.getByText("현재 계정으로는 프로젝트를 등록할 수 없습니다. 관리자에게 문의하세요.")).toBeVisible();
   await expect(page.getByText(/DJI Pilot|KMZ|초기 매핑 비행|두 번째 조사부터 분석/)).toHaveCount(0);
   await expectNoHorizontalOverflow(page);
 });
 
-test("권한 없는 현장 상세는 식별 정보를 노출하지 않는 제목 있는 거부 상태를 보인다", async ({ page }) => {
+test("권한 없는 프로젝트 상세는 식별 정보를 노출하지 않는 제목 있는 거부 상태를 보인다", async ({ page }) => {
   test.skip(Boolean(process.env.KSI_DASHBOARD_E2E_BASE_URL), "외부 IdP에는 로컬 빈 조직 계정이 없습니다.");
   await loginToEmptyOrganization(page);
 
@@ -54,14 +54,14 @@ test("권한 없는 현장 상세는 식별 정보를 노출하지 않는 제목
   await expect(page.getByRole("heading", { level: 1, name: "공간", exact: true })).toBeVisible();
   await expect(page.getByRole("heading", { level: 2, name: "현장을 찾을 수 없습니다", exact: true })).toBeVisible();
   await expect(page.getByRole("main").getByRole("heading", { level: 1 })).toHaveCount(1);
-  await expect(page.getByText("요청한 현장에 접근할 수 없습니다. 현장 목록에서 접근 가능한 현장을 확인하세요.", { exact: true })).toBeVisible();
-  await expect(page.getByRole("link", { name: "현장 목록으로", exact: true })).toHaveAttribute("href", "/sites");
+  await expect(page.getByText("요청한 현장에 접근할 수 없습니다. 프로젝트 목록에서 접근 가능한 현장을 확인하세요.", { exact: true })).toBeVisible();
+  await expect(page.getByRole("link", { name: "프로젝트 목록으로", exact: true })).toHaveAttribute("href", "/sites");
   await expect(page.getByText("E2E 현장 작업공간", { exact: true })).toHaveCount(0);
 
   await page.goto("/sites/e2e-site-workspace/analysis");
   await expect(page.getByRole("main").getByRole("heading", { level: 1, name: "분석", exact: true })).toHaveCount(1);
   await expect(page.getByRole("main").getByRole("heading", { level: 2, name: "현장을 찾을 수 없습니다", exact: true })).toBeVisible();
-  await expect(page.getByText("요청한 현장에 접근할 수 없습니다. 현장 목록에서 접근 가능한 현장을 확인하세요.", { exact: true })).toBeVisible();
+  await expect(page.getByText("요청한 현장에 접근할 수 없습니다. 프로젝트 목록에서 접근 가능한 현장을 확인하세요.", { exact: true })).toBeVisible();
   await expect(page.getByText("E2E 현장 작업공간", { exact: true })).toHaveCount(0);
 
   // 옛 자료 주소는 자료 섹션으로 이관된다 — 접근 불가 현장은 같은 안내를 보인다.
@@ -69,7 +69,7 @@ test("권한 없는 현장 상세는 식별 정보를 노출하지 않는 제목
   await expect(page).toHaveURL(/\/sites\/e2e-site-workspace\/data$/);
   await expect(page.getByRole("main").getByRole("heading", { level: 1, name: "자료", exact: true })).toHaveCount(1);
   await expect(page.getByRole("main").getByRole("heading", { level: 2, name: "현장을 찾을 수 없습니다", exact: true })).toBeVisible();
-  await expect(page.getByText("요청한 현장에 접근할 수 없습니다. 현장 목록에서 접근 가능한 현장을 확인하세요.", { exact: true })).toBeVisible();
+  await expect(page.getByText("요청한 현장에 접근할 수 없습니다. 프로젝트 목록에서 접근 가능한 현장을 확인하세요.", { exact: true })).toBeVisible();
   await expect(page.getByText("E2E 현장 작업공간", { exact: true })).toHaveCount(0);
 });
 
@@ -81,8 +81,8 @@ test("빈 조직의 Work는 typed empty와 다음 행동을 보이고 Events는 
   // EmptyState intentionally renders its title as paragraph text, not a heading.
   const main = page.getByRole("main");
   await expect(main.getByText("등록된 작업이 없습니다", { exact: true })).toBeVisible();
-  await expect(main.getByText("현장 화면에서 작업구역을 확인하고 관측 자료 등록을 시작할 수 있습니다.", { exact: true })).toBeVisible();
-  await expect(page.getByRole("link", { name: "현장 보기", exact: true })).toBeVisible();
+  await expect(main.getByText("프로젝트 화면에서 영역을 확인하고 관측 자료 등록을 시작할 수 있습니다.", { exact: true })).toBeVisible();
+  await expect(page.getByRole("link", { name: "프로젝트 보기", exact: true })).toBeVisible();
   await expect(page.locator('main a[href="/events"], main a[href="/missions"]')).toHaveCount(0);
   await expect(page.getByRole("navigation", { name: "대기열 필터" })).toHaveCount(0);
   await expectNoHorizontalOverflow(page);

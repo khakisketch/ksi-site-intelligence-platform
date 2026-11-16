@@ -164,37 +164,37 @@ describe("Home 현장 조회 범위", () => {
   it("빈 목록은 조직의 첫 실행이 아니라 현재 계정에서 보이는 범위로 설명한다", async () => {
     mockWorld([]);
     render(await HomePage());
-    expect(summaryValue("볼 수 있는 현장")).toBe("0곳");
-    expect(screen.getByText("현재 계정에서 볼 수 있는 현장이 없습니다")).toBeTruthy();
-    expect(screen.getByText("찾는 현장이 이미 있다면 관리자에게 이 계정의 현장 접근 권한을 확인해 주세요.")).toBeTruthy();
-    expect(screen.getByRole("link", { name: "현장 목록" }).getAttribute("href")).toBe("/sites");
-    expect(screen.queryByText("아직 등록된 현장이 없습니다")).toBeNull();
+    expect(summaryValue("볼 수 있는 프로젝트")).toBe("0곳");
+    expect(screen.getByText("현재 계정에서 볼 수 있는 프로젝트가 없습니다")).toBeTruthy();
+    expect(screen.getByText("찾는 프로젝트가 이미 있다면 관리자에게 이 계정의 프로젝트 접근 권한을 확인해 주세요.")).toBeTruthy();
+    expect(screen.getByRole("link", { name: "프로젝트 목록" }).getAttribute("href")).toBe("/sites");
+    expect(screen.queryByText("아직 등록된 프로젝트가 없습니다")).toBeNull();
   });
 
   it("목록 조회 오류는 빈 목록으로 표시하지 않는다", async () => {
     mockWorld([]);
     mockedCore.listSitesCached.mockRejectedValue(new Error("Core unavailable"));
     render(await HomePage());
-    expect(screen.queryByText("현재 계정에서 볼 수 있는 현장이 없습니다")).toBeNull();
-    expect(summaryValue("볼 수 있는 현장")).toBe("—");
+    expect(screen.queryByText("현재 계정에서 볼 수 있는 프로젝트가 없습니다")).toBeNull();
+    expect(summaryValue("볼 수 있는 프로젝트")).toBe("—");
   });
 
-  it("등록 권한이 확인된 계정에는 현장 등록 경로를 제공한다", async () => {
+  it("등록 권한이 확인된 계정에는 프로젝트 등록 경로를 제공한다", async () => {
     mockWorld([]);
     mockedCore.whoAmI.mockResolvedValue({
       principalId: "operator", organizationId: "org-local", registryScoped: true,
       permissions: ["SITES_WRITE"], capabilities: ["SITE_BOOTSTRAP"],
     });
     render(await HomePage());
-    expect(screen.getByRole("link", { name: "현장 등록" }).getAttribute("href")).toBe("/sites/new");
+    expect(screen.getByRole("link", { name: "프로젝트 등록" }).getAttribute("href")).toBe("/sites/new");
   });
 
   it("등록 권한 조회가 실패하면 거부라고 단정하지 않고 목록으로 안내한다", async () => {
     mockWorld([]);
     mockedCore.whoAmI.mockRejectedValue(new Error("identity unavailable"));
     render(await HomePage());
-    expect(screen.getByRole("link", { name: "현장 목록" }).getAttribute("href")).toBe("/sites");
-    expect(screen.queryByText("현장 등록 권한이 없습니다")).toBeNull();
+    expect(screen.getByRole("link", { name: "프로젝트 목록" }).getAttribute("href")).toBe("/sites");
+    expect(screen.queryByText("프로젝트 등록 권한이 없습니다")).toBeNull();
   });
 });
 
@@ -212,12 +212,12 @@ describe("Home 분석-검토 읽기 완전성 (D1 unknown-not-0)", () => {
     expect(screen.queryByText(/분석 결과의 검토 대기 여부를 확인할 수 없습니다/)).toBeNull();
   });
 
-  it("최근 현장 목록이 안건 자리를 대신하면 같은 현장을 '다른 현장'에 다시 싣지 않는다", async () => {
+  it("최근 프로젝트 목록이 안건 자리를 대신하면 같은 현장을 '다른 현장'에 다시 싣지 않는다", async () => {
     mockAnalysisReads();
     render(await HomePage());
 
-    expect(screen.getByRole("region", { name: "최근 현장 목록" })).toBeTruthy();
-    expect(screen.queryByRole("region", { name: "다른 현장 바로가기" })).toBeNull();
+    expect(screen.getByRole("region", { name: "최근 프로젝트 목록" })).toBeTruthy();
+    expect(screen.queryByRole("region", { name: "다른 프로젝트 바로가기" })).toBeNull();
   });
 
   it("분석 목록 읽기가 실패하면 0으로 낮추지 않는다", async () => {
@@ -269,7 +269,7 @@ describe("Home 분석-검토 읽기 완전성 (D1 unknown-not-0)", () => {
 
     render(await HomePage());
 
-    // 알려진 보류 카드는 그대로, 같은 deep CTA에 실제 작업구역을 함께 싣는다.
+    // 알려진 보류 카드는 그대로, 같은 deep CTA에 실제 영역을 함께 싣는다.
     const action = screen.getByRole("link", { name: "분석 결과 검토" });
     expect(action.getAttribute("href")).toBe("/sites/site-1/analysis?analysisId=a1&workAreaId=area-site-1");
     expect(summaryValue("확인 필요")).not.toBe("0곳");
@@ -345,7 +345,7 @@ describe("Home 분석-검토 읽기 완전성 (D1 unknown-not-0)", () => {
     expect(screen.getByRole("link", { name: "분석 결과 검토" })).toBeTruthy();
     expect(screen.getAllByText(/확인 필요 건수를 추측하지 않습니다/).map((node) => node.closest("section"))).toHaveLength(1);
     // 복구 동선은 그대로, 사유는 접힌 상자 안에 발견 가능하다.
-    expect(screen.getByRole("link", { name: "현장 전체를 열어 직접 확인하세요." })).toBeTruthy();
+    expect(screen.getByRole("link", { name: "프로젝트 전체를 열어 직접 확인하세요." })).toBeTruthy();
     const summary = screen.getByText("미확인 항목 상세 (1건)");
     expect(summary.closest("details")?.hasAttribute("open")).toBe(false);
     expect(summary.closest("details")?.textContent).toContain("분석 결과의 검토 대기 여부를 확인할 수 없습니다");

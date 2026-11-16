@@ -28,8 +28,8 @@ const observations: Scoped[] = [
 ];
 
 const workAreas = [
-  { workAreaId: "area-1", name: "1구역" },
-  { workAreaId: "area-2", name: "2구역" },
+  { workAreaId: "area-1", name: "1영역" },
+  { workAreaId: "area-2", name: "2영역" },
 ];
 
 function emptyPage(): AnalysisListPage {
@@ -58,7 +58,7 @@ beforeEach(() => { window.sessionStorage.clear(); });
 describe("AnalysisRequestPanel current preference", () => {
   it("preselects the hinted current observation only for its exact single scope match", () => {
     renderPanel({ initialWorkAreaId: "area-1", initialCurrentWorkOrderId: "work-b1" });
-    expect((screen.getByLabelText("작업구역") as HTMLSelectElement).value).toBe("area-1");
+    expect((screen.getByLabelText("영역") as HTMLSelectElement).value).toBe("area-1");
     // work-b1 is the second candidate of area-1, the only match — preselected, not auto-submitted.
     expect((screen.getByLabelText("현재 관측") as HTMLSelectElement).value).toBe("1");
     expect((screen.getByLabelText("기준 관측") as HTMLSelectElement).value).toBe("");
@@ -69,7 +69,7 @@ describe("AnalysisRequestPanel current preference", () => {
     renderPanel({
       initialWorkAreaId: "area-1",
       initialCurrentWorkOrderId: "work-unknown",
-      currentHintNotice: "요청한 관측은 이 구역의 분석 후보에 없습니다. 현재 관측을 직접 선택하세요.",
+      currentHintNotice: "요청한 관측은 이 영역의 분석 후보에 없습니다. 현재 관측을 직접 선택하세요.",
     });
     expect((screen.getByLabelText("현재 관측") as HTMLSelectElement).value).toBe("");
     expect(screen.getByText(/분석 후보에 없습니다/).textContent).toMatch(/현재 관측을 직접 선택하세요/);
@@ -95,7 +95,7 @@ describe("AnalysisRequestPanel current preference", () => {
     );
     renderPanel({ initialWorkAreaId: "area-1", initialCurrentWorkOrderId: "work-b1", currentHintNotice: "URL 힌트에만 해당하는 공지" });
     await waitFor(() => {
-      expect((screen.getByLabelText("작업구역") as HTMLSelectElement).value).toBe("area-2");
+      expect((screen.getByLabelText("영역") as HTMLSelectElement).value).toBe("area-2");
     });
     // area-2 scoped indexes into the full candidate list: 2 (baseline) and 3 (current).
     expect((screen.getByLabelText("기준 관측") as HTMLSelectElement).value).toBe("2");

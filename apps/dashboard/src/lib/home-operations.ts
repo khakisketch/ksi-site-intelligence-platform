@@ -158,7 +158,7 @@ export function selectHomeRecentSiteSources(sites: readonly SiteView[], limit = 
 }
 
 /**
- * 대기열·초기 설정에 오르지 않은 실제 현장 바로가기 — 이미 드러난 현장은
+ * 대기열·초기 설정에 오르지 않은 실제 프로젝트 바로가기 — 이미 드러난 현장은
  * 빼고, 하나도 남지 않으면 빈 배열을 둔다. 장식·추측 항목을 만들지 않는다.
  */
 export function selectHomeQuickAccessSites(

@@ -143,11 +143,11 @@ describe("pickVisualTileArea", () => {
     const picked = pickVisualTileArea([
       area({ workAreaId: "archived", status: "ARCHIVED" }),
       area({ workAreaId: "undrawable", polygon: { type: "Point", coordinates: [0, 0] } }),
-      area({ workAreaId: "area-2", name: "두 번째 구역" }),
+      area({ workAreaId: "area-2", name: "두 번째 영역" }),
       area({ workAreaId: "area-3" }),
     ]);
     expect(picked?.workAreaId).toBe("area-2");
-    expect(picked?.workAreaName).toBe("두 번째 구역");
+    expect(picked?.workAreaName).toBe("두 번째 영역");
     expect(picked?.ring).toEqual([
       [0, 0],
       [4, 0],
@@ -230,7 +230,7 @@ describe("visual tile fact wording", () => {
     expect(name).toContain("사진 아님");
     expect(name).toContain("Floreat common-extent");
     expect(name).toContain("정사영상");
-    expect(name).not.toMatch(/미리보기|전체 현장|최신/);
+    expect(name).not.toMatch(/미리보기|전체 프로젝트|최신/);
   });
 });
 
@@ -329,7 +329,7 @@ describe("SiteVisualTile rendering", () => {
   });
 
   it("keeps the caption inside the tile so identity and action stay on screen", () => {
-    // 회귀: 캡션이 절대 위치로 카드 밖에 새면, 모바일에서 현장 이름·상태·
+    // 회귀: 캡션이 절대 위치로 카드 밖에 새면, 모바일에서 프로젝트 이름·상태·
     // 다음 행동이 화면 아래로 밀려난다. 캡션은 흐름 안에 있어야 한다.
     render(createElement(SiteVisualTile, { tile: validTile(), size: "card" }));
 

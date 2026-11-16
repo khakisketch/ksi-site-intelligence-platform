@@ -27,7 +27,7 @@ export function HomeRecentUpdates({ items }: { items: HomeRecentUpdateView[] }) 
   // 설명은 사용자가 해야 할 판단을 늘리지 않고 홈의 정보 밀도만 떨어뜨린다.
   if (items.length === 0) return null;
 
-  // 확인 목록과 같은 한 행 구조다 — 큰 카드·띠 대신 현장 표식, 현장명·종류·시점,
+  // 확인 목록과 같은 한 행 구조다 — 큰 카드·띠 대신 현장 표식, 프로젝트명·종류·시점,
   // 제목, 세부를 한 줄 묶음으로 읽고 행 전체가 링크다. 실제 근거 이미지가 있을
   // 때만 작은 썸네일이 표식을 대신한다(D3: 합성·고정 placeholder 금지).
   return (
@@ -38,7 +38,7 @@ export function HomeRecentUpdates({ items }: { items: HomeRecentUpdateView[] }) 
           <p className="mt-1 text-caption break-keep text-ink-2">결과와 사람이 정리한 안건만 표시합니다.</p>
         </div>
         <Link href="/sites" className="tap-target inline-flex items-center text-caption font-semibold text-accent-text hover:underline">
-          현장 전체
+          프로젝트 전체
         </Link>
       </div>
 

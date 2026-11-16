@@ -36,7 +36,7 @@ export default async function SpatialTaskPage({ params }: { params: Promise<{ si
   } catch (error) { failure = error; }
   if (!loaded) {
     const message = failure instanceof CoreApiError ? spatialTaskError(failure.code, failure.status) : "작업을 불러오지 못했습니다. 연결을 확인하고 새로고침하세요.";
-    return <div className="mx-auto max-w-5xl p-5"><h1 className="mb-4 text-xl font-bold">작업 범위 선택</h1><ErrorState message={message} retryable={!(failure instanceof CoreApiError) || failure.status >= 500} action={{ label: "현장으로 돌아가기", href: `/sites/${encodeURIComponent(siteId)}` }} /></div>;
+    return <div className="mx-auto max-w-5xl p-5"><h1 className="mb-4 text-xl font-bold">작업 범위 선택</h1><ErrorState message={message} retryable={!(failure instanceof CoreApiError) || failure.status >= 500} action={{ label: "프로젝트로 돌아가기", href: `/sites/${encodeURIComponent(siteId)}` }} /></div>;
   }
   const { view, options, site, areas } = loaded;
   const allowedIds = new Set(options.areas.map((area) => area.workAreaId));

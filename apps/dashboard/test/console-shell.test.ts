@@ -52,7 +52,7 @@ describe("커맨드 팔레트 검색", () => {
   });
 
   it("현장은 이름뿐 아니라 ID·상태로도 찾힌다", () => {
-    // 현장명을 기억 못 해도 ID 로 도달할 수 있어야 한다.
+    // 프로젝트명을 기억 못 해도 ID 로 도달할 수 있어야 한다.
     expect(filterPaletteItems(ITEMS, "S-2411").map((i) => i.key)).toEqual(["site:S-1"]);
     expect(filterPaletteItems(ITEMS, "순찰").map((i) => i.key)).toEqual(["site:S-1"]);
   });
@@ -182,7 +182,7 @@ describe("뒤로가기 노출 규칙", () => {
   });
 
   it("하위 화면은 브라우저 이력이 아닌 결정적인 부모 화면으로 이동한다", () => {
-    // 현장 상세는 SiteHeader의 breadcrumb이 /sites 부모 이동을 소유한다 —
+    // 프로젝트 상세는 SiteHeader의 breadcrumb이 /sites 부모 이동을 소유한다 —
     // 전역 상단바에서 같은 링크를 반복하지 않는다.
     expect(isBackVisible("/sites/S-1")).toBe(false);
     expect(isBackVisible("/field/work-orders/WO-1")).toBe(true);

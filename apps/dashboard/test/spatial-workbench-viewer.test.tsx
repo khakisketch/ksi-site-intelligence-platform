@@ -28,7 +28,7 @@ function viewerFrame() {
     <SiteListProvider sites={[{ siteId: "site-1", name: "Floreat public sample", status: "BASELINE_MAPPING" }]}>
       <SpatialWorkbenchFrame
         viewerMode
-        contextBar={<span>구역·보기 방식</span>}
+        contextBar={<span>영역·보기 방식</span>}
         catalog={<a href="#asset">정사영상 · v1</a>}
         catalogLabel="자료 목록"
         stage={<div>실제 범위 캔버스</div>}

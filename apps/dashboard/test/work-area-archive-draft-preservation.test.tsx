@@ -14,7 +14,7 @@ vi.mock("@/components/ui/ConfirmDialog", () => ({
   }) => open ? (
     <div role="dialog" aria-label={title}>
       {description}
-      <button onClick={onConfirm}>구역 보관</button>
+      <button onClick={onConfirm}>영역 보관</button>
       <button onClick={onCancel}>취소</button>
     </div>
   ) : null,
@@ -51,7 +51,7 @@ const area: WorkArea = {
   schemaVersion: "1.0",
   workAreaId: "area-1",
   siteId: "site-1",
-  name: "합성 구역",
+  name: "합성 영역",
   polygon: { type: "Polygon", coordinates: [[[127, 37.5], [127.1, 37.5], [127, 37.6], [127, 37.5]]] },
   crs: "EPSG:4326",
   status: "ACTIVE",
@@ -85,7 +85,7 @@ async function awaitReady(): Promise<void> {
   await screen.findByText(/이름과 경계 편집 원문/);
 }
 
-describe("다른 구역 보관 중 미반영 경계", () => {
+describe("다른 영역 보관 중 미반영 경계", () => {
   it("보관이 실패해도 미반영 입력을 조용히 버리지 않는다", async () => {
     window.sessionStorage.clear();
     let reply: (response: unknown) => void = () => {};
@@ -99,20 +99,20 @@ describe("다른 구역 보관 중 미반영 경계", () => {
     await awaitReady();
     fireEvent.change(screen.getByLabelText("미반영 좌표"), { target: { value: "입력 B" } });
 
-    const archive = screen.getByRole("button", { name: "구역 보관" }) as HTMLButtonElement;
+    const archive = screen.getByRole("button", { name: "영역 보관" }) as HTMLButtonElement;
     if (archive.disabled) {
-      expect(screen.getByText(/입력 중인 경계를 반영하거나 되돌린 뒤 구역을 보관/)).toBeTruthy();
+      expect(screen.getByText(/입력 중인 경계를 반영하거나 되돌린 뒤 영역을 보관/)).toBeTruthy();
       fireEvent.click(archive);
       expect((screen.getByLabelText("미반영 좌표") as HTMLInputElement).value).toBe("입력 B");
       expect(postCalls(fetchMock)).toHaveLength(0);
       return;
     }
     fireEvent.click(archive);
-    const dialog = screen.getByRole("dialog", { name: "구역을 보관할까요?" });
-    fireEvent.click(within(dialog).getByRole("button", { name: "구역 보관" }));
+    const dialog = screen.getByRole("dialog", { name: "영역을 보관할까요?" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "영역 보관" }));
     await waitFor(() => expect(postCalls(fetchMock)).toHaveLength(1));
     reply({ ok: false, status: 403, json: async () => ({}) });
-    await waitFor(() => expect(screen.getByText(/작업구역 보관에 실패했습니다/)).toBeTruthy());
+    await waitFor(() => expect(screen.getByText(/영역 보관에 실패했습니다/)).toBeTruthy());
     expect((screen.getByLabelText("미반영 좌표") as HTMLInputElement).value).toBe("입력 B");
   });
 });

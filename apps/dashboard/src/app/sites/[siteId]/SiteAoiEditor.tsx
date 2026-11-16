@@ -8,7 +8,7 @@ import { useMutation } from "@/hooks/useMutation";
 import type { AoiVertex, SiteFrame } from "@/lib/core-api/types";
 
 /**
- * 현장 상세에서 AOI 를 직접 설정하는 편집기 — `UNMAPPED` 상태에서만 렌더된다
+ * 프로젝트 상세에서 AOI 를 직접 설정하는 편집기 — `UNMAPPED` 상태에서만 렌더된다
  * (호출부가 서버 게이트와 같은 조건으로 가드, `SiteStore.set_aoi` 대칭).
  *
  * `SiteRegistrationOnlyWizard`(SITES_WRITE 만 있고 MISSIONS_ISSUE 가 없는 역할의
@@ -43,8 +43,8 @@ export function SiteAoiEditor({ siteId, siteFrame }: { siteId: string; siteFrame
   return (
     <div className="flex flex-col gap-3">
       <p className="text-body break-keep text-ink-muted">
-        현장 전체의 경계를 설정합니다. 자료 등록·비교에 사용하는 작업구역과는 별개이며,
-        전체 경계가 없어도 작업구역에 연결된 자료를 등록할 수 있습니다.
+        프로젝트 전체의 경계를 설정합니다. 자료 등록·비교에 사용하는 영역과는 별개이며,
+        전체 경계가 없어도 영역에 연결된 자료를 등록할 수 있습니다.
       </p>
       <AoiPolygonMap value={vertices} onChange={setVertices} />
       <button
@@ -53,7 +53,7 @@ export function SiteAoiEditor({ siteId, siteFrame }: { siteId: string; siteFrame
         disabled={!canSubmit}
         onClick={submit}
       >
-        {pending ? "저장 중…" : "현장 범위 저장"}
+        {pending ? "저장 중…" : "프로젝트 범위 저장"}
       </button>
       {errorMessage && (
         <p role="alert" className="break-keep text-body text-crit-ink">

@@ -27,7 +27,7 @@ function area(overrides: Partial<WorkArea> & { workAreaId: string }): WorkArea {
   return {
     schemaVersion: "1.0",
     siteId: "site-1",
-    name: "구역",
+    name: "영역",
     polygon: { type: "Polygon", coordinates: [[[0, 0], [1, 0], [1, 1], [0, 0]]] },
     crs: "EPSG:4326",
     status: "ACTIVE",
@@ -48,7 +48,7 @@ describe("site spatial scope parsing", () => {
   });
 
   it("keeps an exact known selection, including long names, without truncation", () => {
-    const longName = "남측 절토 구역 ".repeat(10).trim();
+    const longName = "남측 절토 영역 ".repeat(10).trim();
     const areas = [area({ workAreaId: "old", name: longName, createdAt: "2026-09-01T00:00:00Z" })];
     expect(resolveSelectedWorkAreaId(areas, "old")).toBe("old");
   });
@@ -240,14 +240,14 @@ describe("site spatial scope summaries", () => {
 
   it("appends full ids only where names actually collide", () => {
     const areas = [
-      area({ workAreaId: "dup-1", name: "같은 구역" }),
-      area({ workAreaId: "dup-2", name: "같은 구역" }),
-      area({ workAreaId: "solo-1", name: "홑 구역" }),
+      area({ workAreaId: "dup-1", name: "같은 영역" }),
+      area({ workAreaId: "dup-2", name: "같은 영역" }),
+      area({ workAreaId: "solo-1", name: "홑 영역" }),
     ];
     const names = disambiguatedAreaNames(areas);
-    expect(names.get("dup-1")).toEqual({ label: "같은 구역 · dup-1", disambiguated: true });
-    expect(names.get("dup-2")).toEqual({ label: "같은 구역 · dup-2", disambiguated: true });
-    expect(names.get("solo-1")).toEqual({ label: "홑 구역", disambiguated: false });
+    expect(names.get("dup-1")).toEqual({ label: "같은 영역 · dup-1", disambiguated: true });
+    expect(names.get("dup-2")).toEqual({ label: "같은 영역 · dup-2", disambiguated: true });
+    expect(names.get("solo-1")).toEqual({ label: "홑 영역", disambiguated: false });
   });
 
   it("appends full asset refs only where file labels actually collide", () => {
@@ -269,6 +269,6 @@ describe("site spatial scope summaries", () => {
     const long = "가".repeat(100);
     expect(displayName(long, 40)).toBe(`${"가".repeat(39)}…`);
     expect(displayName("짧은 이름", 40)).toBe("짧은 이름");
-    expect(displayName("   ", 40)).toBe("이름을 확인할 수 없는 구역");
+    expect(displayName("   ", 40)).toBe("이름을 확인할 수 없는 영역");
   });
 });

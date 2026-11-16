@@ -28,9 +28,9 @@ afterEach(() => {
 describe("ActionUnavailable", () => {
   it("막힌 이유를 상시 노출하지 않고 클릭 가능한 버튼만 둔다", () => {
     render(
-      <ActionUnavailable label="현장 등록" description="현재 계정으로는 현장을 등록할 수 없습니다." />,
+      <ActionUnavailable label="프로젝트 등록" description="현재 계정으로는 프로젝트를 등록할 수 없습니다." />,
     );
-    const trigger = screen.getByRole("button", { name: "현장 등록" });
+    const trigger = screen.getByRole("button", { name: "프로젝트 등록" });
     expect((trigger as HTMLButtonElement).disabled).toBe(false);
     expect(trigger.getAttribute("aria-expanded")).toBe("false");
     expect(screen.queryByText(/현재 계정으로는/)).toBeNull();
@@ -38,9 +38,9 @@ describe("ActionUnavailable", () => {
 
   it("클릭해야 사유와 안내 닫기가 열리고 설명 클릭은 쓰기를 일으키지 않는다", () => {
     render(
-      <ActionUnavailable label="현장 등록" description="현재 계정으로는 현장을 등록할 수 없습니다." />,
+      <ActionUnavailable label="프로젝트 등록" description="현재 계정으로는 프로젝트를 등록할 수 없습니다." />,
     );
-    fireEvent.click(screen.getByRole("button", { name: "현장 등록" }));
+    fireEvent.click(screen.getByRole("button", { name: "프로젝트 등록" }));
     expect(screen.getByText(/현재 계정으로는/)).toBeTruthy();
     expect(screen.getByRole("button", { name: "안내 닫기" })).toBeTruthy();
     // 링크도 폼도 없다 — 사유 확인 자체는 읽기다.
@@ -49,8 +49,8 @@ describe("ActionUnavailable", () => {
   });
 
   it("안내 닫기로 닫으면 트리거로 포커스가 돌아온다", () => {
-    render(<ActionUnavailable label="현장 등록" description="사유" />);
-    const trigger = screen.getByRole("button", { name: "현장 등록" });
+    render(<ActionUnavailable label="프로젝트 등록" description="사유" />);
+    const trigger = screen.getByRole("button", { name: "프로젝트 등록" });
     fireEvent.click(trigger);
     fireEvent.click(screen.getByRole("button", { name: "안내 닫기" }));
     expect(screen.queryByText("사유")).toBeNull();
@@ -58,8 +58,8 @@ describe("ActionUnavailable", () => {
   });
 
   it("Escape 으로 닫히고 트리거로 포커스가 돌아온다", () => {
-    render(<ActionUnavailable label="현장 등록" description="사유" />);
-    const trigger = screen.getByRole("button", { name: "현장 등록" });
+    render(<ActionUnavailable label="프로젝트 등록" description="사유" />);
+    const trigger = screen.getByRole("button", { name: "프로젝트 등록" });
     fireEvent.click(trigger);
     expect(screen.getByText("사유")).toBeTruthy();
     fireEvent.keyDown(document, { key: "Escape" });
@@ -68,40 +68,40 @@ describe("ActionUnavailable", () => {
   });
 
   it("바깥 클릭으로 닫힌다", () => {
-    render(<ActionUnavailable label="현장 등록" description="사유" />);
-    fireEvent.click(screen.getByRole("button", { name: "현장 등록" }));
+    render(<ActionUnavailable label="프로젝트 등록" description="사유" />);
+    fireEvent.click(screen.getByRole("button", { name: "프로젝트 등록" }));
     expect(screen.getByText("사유")).toBeTruthy();
     fireEvent.pointerDown(document.body);
     expect(screen.queryByText("사유")).toBeNull();
   });
 
   it("retry 면 권한 다시 확인이 router.refresh 로 읽는다", () => {
-    render(<ActionUnavailable label="현장 등록" description="미확인" retry />);
-    fireEvent.click(screen.getByRole("button", { name: "현장 등록" }));
+    render(<ActionUnavailable label="프로젝트 등록" description="미확인" retry />);
+    fireEvent.click(screen.getByRole("button", { name: "프로젝트 등록" }));
     fireEvent.click(screen.getByRole("button", { name: "권한 다시 확인" }));
     expect(mocked.refresh).toHaveBeenCalledTimes(1);
   });
 
   it("retry 가 아니면 재확인 버튼을 두지 않는다", () => {
-    render(<ActionUnavailable label="현장 등록" description="거부" />);
-    fireEvent.click(screen.getByRole("button", { name: "현장 등록" }));
+    render(<ActionUnavailable label="프로젝트 등록" description="거부" />);
+    fireEvent.click(screen.getByRole("button", { name: "프로젝트 등록" }));
     expect(screen.queryByRole("button", { name: "권한 다시 확인" })).toBeNull();
   });
 
   it("네이티브 팝오버 최상위 레이어로 열어 overflow-hidden 조상에 잘리지 않는다", () => {
     render(
       <div style={{ overflow: "hidden" }}>
-        <ActionUnavailable label="현장 등록" description="사유" />
+        <ActionUnavailable label="프로젝트 등록" description="사유" />
       </div>,
     );
-    fireEvent.click(screen.getByRole("button", { name: "현장 등록" }));
+    fireEvent.click(screen.getByRole("button", { name: "프로젝트 등록" }));
     const panel = screen.getByText("사유").closest("div[id]") as HTMLElement;
     expect(panel?.getAttribute("popover")).toBe("manual");
   });
 
   it("열 때 측정 좌표로 배치한다(뒤집기·고정은 단위 테스트)", () => {
-    render(<ActionUnavailable label="현장 등록" description="사유" />);
-    fireEvent.click(screen.getByRole("button", { name: "현장 등록" }));
+    render(<ActionUnavailable label="프로젝트 등록" description="사유" />);
+    fireEvent.click(screen.getByRole("button", { name: "프로젝트 등록" }));
     const panel = screen.getByText("사유").closest("div[id]") as HTMLElement;
     // jsdom rect·크기는 0이라 여백 8px 원점으로 고정된다 — 배치 코드가 돈 증거다.
     expect(panel?.style.top).toBe("8px");
@@ -109,8 +109,8 @@ describe("ActionUnavailable", () => {
   });
 
   it("트리거를 다시 누르면 포커스를 둔 채로 닫는다", () => {
-    render(<ActionUnavailable label="현장 등록" description="사유" />);
-    const trigger = screen.getByRole("button", { name: "현장 등록" });
+    render(<ActionUnavailable label="프로젝트 등록" description="사유" />);
+    const trigger = screen.getByRole("button", { name: "프로젝트 등록" });
     trigger.focus();
     fireEvent.click(trigger);
     expect(screen.getByText("사유")).toBeTruthy();
