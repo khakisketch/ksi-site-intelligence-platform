@@ -87,6 +87,22 @@ test("자료 섹션은 등록된 자료를 표로 보이고 선택·검색·등�
   await expectNoHorizontalOverflow(page);
 });
 
+test("공간의 영역 보기는 목록·지도·고른 영역의 자료 보기를 한 화면에 둔다", async ({ page }) => {
+  await login(page);
+  // 공간 뷰어의 맥락 막대에서 영역 보기로 들어간다 — 고른 영역이 그대로 이어진다.
+  await page.goto(`/sites/${info!.siteId}?workAreaId=${info!.workAreaId}`);
+  await page.getByRole("link", { name: "영역 지도" }).locator("visible=true").click();
+  await expect(page).toHaveURL(new RegExp(`panel=areas.*workAreaId=${info!.workAreaId}|workAreaId=${info!.workAreaId}.*panel=areas`));
+  const list = page.getByRole("region", { name: "영역 목록" });
+  await expect(list.getByRole("link").filter({ hasText: "등록" }).first()).toHaveAttribute("aria-current", "true");
+  await expect(page.locator('[data-space-areas-stage="true"] .leaflet-container')).toBeVisible();
+  await expectNoHorizontalOverflow(page);
+
+  // 고른 영역의 자료 보기는 공간의 자료 보기로 돌아간다.
+  await page.getByRole("link", { name: "이 영역 자료 보기" }).click();
+  await expect(page).toHaveURL(new RegExp(`/sites/${info!.siteId}\\?workAreaId=${info!.workAreaId}$`));
+});
+
 test("자료 검색은 파일명으로 목록을 좁힌다", async ({ page }) => {
   await login(page);
   await page.goto(`/sites/${info!.siteId}?panel=materials&workAreaId=${info!.workAreaId}`);

@@ -46,6 +46,7 @@ import {
   sameDisplayPlane,
 } from "./site-spatial";
 
+import { siteAreasHref } from "@/components/nav/site-context";
 import { Disclosure } from "@/components/ui/Disclosure";
 import { ActionMenu } from "@/components/ui/ActionMenu";
 import { InlineNotice } from "@/components/ui/InlineNotice";
@@ -905,6 +906,7 @@ export function SiteWorkspaceShell({
       </SiteSelectionForm>}
       <Link href={`${sitePath}/work-areas${selected ? `?workAreaId=${encodeURIComponent(selected.workAreaId)}` : ""}`} className="tap-target rounded-md px-2 py-1.5 text-caption hover:bg-sunk">작업구역 관리</Link>
     </ActionMenu>
+    <Link href={siteAreasHref(facts.siteId, selected?.workAreaId)} className="btn shrink-0">영역 지도</Link>
     <div className="flex min-w-0 shrink-0 flex-wrap items-center gap-x-2 gap-y-1">
       <span id="workspace-view-mode-label" data-viewer-compact-hide="true" className="sr-only sm:not-sr-only sm:shrink-0 sm:text-caption sm:text-ink-muted">보기 방식</span>
       <nav aria-labelledby="workspace-view-mode-label" className="flex shrink-0 items-center gap-0.5 rounded-full border border-line bg-sunk p-0.5">

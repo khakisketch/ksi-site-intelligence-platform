@@ -145,3 +145,10 @@ export function siteDataHref(siteId: string, scope: SiteDataScope = {}): string 
 export function projectSwitchHref(siteId: string, section: ProjectSection | null): string {
   return projectSectionHref(siteId, section);
 }
+
+/** 공간 섹션의 영역 보기 — 지도 위에서 영역을 고르는 화면. 고른 영역은 `workAreaId`로 남긴다. */
+export function siteAreasHref(siteId: string, workAreaId?: string | null): string {
+  const query = new URLSearchParams({ panel: "areas" });
+  if (workAreaId) query.set("workAreaId", workAreaId);
+  return `/sites/${encodeURIComponent(siteId)}?${query}`;
+}

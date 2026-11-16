@@ -8,6 +8,7 @@ import { SiteHeader } from "./SiteHeader";
 import { ConsoleWork } from "@/components/nav/ConsolePage";
 import type { SiteSpatialAssetsState } from "./SiteSpatialOverview";
 import { SiteWorkspaceShell } from "./SiteWorkspaceShell";
+import { SpaceAreasView } from "./areas/SpaceAreasView";
 import { buildWorkspaceServerFacts } from "./site-workspace-server-facts";
 import { SiteTransitionActions } from "./SiteTransitionActions";
 import { ResponsiveActionBoundary } from "@/components/responsive/ResponsiveActionBoundary";
@@ -90,6 +91,8 @@ export default async function SiteDetailPage({
     }));
   }
   const panel = query.panel === "materials" || query.panel === "intake" ? query.panel : null;
+  // 영역 보기 — 공간 안에서 지도 위 영역을 고르는 화면. 뷰어용 자료·분석 조회는 하지 않는다.
+  const areasView = tab === "space" && query.panel === "areas";
   const cursor = typeof query.cursor === "string" && query.cursor.length <= 1024 ? query.cursor || undefined : undefined;
   const filters = normalizeCatalogFilters({
     q: typeof query.q === "string" ? query.q : undefined,
@@ -140,7 +143,7 @@ export default async function SiteDetailPage({
   const status = SITE_STATUS_LABEL[site.status];
 
   // 공간 읽기는 50건 단위로 한정한다. 구역 선택은 이미 읽은 작업·분석 목록의 연결을 사용한다.
-  const wantSpatial = tab === "space";
+  const wantSpatial = tab === "space" && !areasView;
   const analysesResult = wantSpatial
     ? await listAnalyses(site.siteId, { limit: 50 }).then(
       (page) => ({ ok: true as const, page }),
@@ -272,6 +275,9 @@ export default async function SiteDetailPage({
     : query.assetRef && hintedAssetRef === null && assetsState.status === "ready"
       ? "자료를 찾을 수 없거나 현재 조회할 수 없습니다."
       : null;
+  const areasViewSelectedId = areasView && areasResult.status === "fulfilled"
+    ? resolveSelectedWorkAreaId(areasResult.value.workAreas, firstValue(query.workAreaId), { workOrderAreaIds: boundWorkOrderAreaIds })
+    : null;
   const requestedWorkAreaId = wantSpatial ? parseScopeId(query.workAreaId) : null;
   const scopeNotice = wantSpatial && !issue && requestedWorkAreaId !== null
     && !allAreas.some((area) => area.workAreaId === requestedWorkAreaId);
@@ -466,8 +472,16 @@ export default async function SiteDetailPage({
           }
         : null}
     />
-    <ConsoleWork className={tab === "space" ? `min-h-0 flex-1 overflow-x-clip${workspaceViewer ? " lg:gap-0 lg:p-0" : ""}` : "flex-1"}>
-      {tab === "space" && <div className="flex min-w-0 min-h-0 flex-1 flex-col gap-2">
+    <ConsoleWork className={tab === "space" ? `min-h-0 flex-1 overflow-x-clip${workspaceViewer || areasView ? " lg:gap-0 lg:p-0" : ""}` : "flex-1"}>
+      {areasView && <SpaceAreasView
+        siteId={site.siteId}
+        sitePath={sitePath}
+        areas={allAreas}
+        areasState={areasResult.status === "fulfilled" ? "ready" : areasResult.reason instanceof CoreApiError && areasResult.reason.status === 403 ? "denied" : "unavailable"}
+        selectedId={areasViewSelectedId}
+        canWrite={canTransition}
+      />}
+      {tab === "space" && !areasView && <div className="flex min-w-0 min-h-0 flex-1 flex-col gap-2">
         {mode !== "results" && <h2 className="sr-only">공간</h2>}
         <SiteWorkspaceShell
           sitePath={sitePath}
