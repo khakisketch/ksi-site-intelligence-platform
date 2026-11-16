@@ -816,7 +816,8 @@ describe("SINGLE_VOLUME decision", () => {
     fireEvent.change(screen.getByLabelText("한 시점 측정 영역"), { target: { value: "pile-1" } });
     fireEvent.click(screen.getByRole("button", { name: "한 시점 측정 다시 확인" }));
     expect(await screen.findByText("단일 시점 체적 매핑이 없습니다")).toBeTruthy();
-    expect(screen.getByText("관리자에게 이 산출물과 영역에 대한 단일 시점 체적 매핑 등록을 요청하세요.")).toBeTruthy();
+    // 이 문구는 계약 카탈로그 사본에서 온다. 계약 문구는 원본과 같아야 하므로 "구역" 그대로 둔다.
+    expect(screen.getByText("관리자에게 이 산출물과 구역에 대한 단일 시점 체적 매핑 등록을 요청하세요.")).toBeTruthy();
     expect(onSingleVolumeDecisionChange).toHaveBeenLastCalledWith(expect.objectContaining({ verdict: "BLOCKED" }));
   });
 });
