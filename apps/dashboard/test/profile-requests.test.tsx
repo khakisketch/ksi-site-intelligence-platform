@@ -96,6 +96,13 @@ describe("날짜별 단면 요청", () => {
     expect(screen.getByText("읽은 결과가 있지만 지금은 표시할 수 없습니다.")).toBeTruthy();
   });
 
+  it("상태 문구는 낭독기에 알려지는 영역이다(자동 갱신으로 바뀐 결과를 듣게 한다)", () => {
+    show([row({ state: "active", jobId: "j" })]);
+    const status = screen.getByText(/단면을 읽는 중입니다/);
+    expect(status.getAttribute("aria-live")).toBe("polite");
+    expect(status.getAttribute("data-request-state")).toBe("active");
+  });
+
   it("권한이 없으면 상태만 보이고 요청 버튼은 없다", () => {
     show([row(), row({ assetRef: `ksa-v1-${"2".repeat(64)}`, state: "active", jobId: "j" })], false);
     expect(screen.queryByRole("button")).toBeNull();

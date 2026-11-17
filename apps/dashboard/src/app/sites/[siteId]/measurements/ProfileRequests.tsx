@@ -158,7 +158,7 @@ export function ProfileRequests({
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div className="min-w-0">
                   <p className="tabular text-body font-semibold text-ink-1">{row.label}</p>
-                  <p className="text-caption text-ink-2" data-request-state={row.state}>
+                  <p className="text-caption text-ink-2" data-request-state={row.state} aria-live="polite">
                     {row.state === "none" && "아직 요청하지 않았습니다."}
                     {row.state === "active" && "단면을 읽는 중입니다. 끝나면 이 화면에 나타납니다."}
                     {row.state === "done" && "단면을 읽었습니다."}
