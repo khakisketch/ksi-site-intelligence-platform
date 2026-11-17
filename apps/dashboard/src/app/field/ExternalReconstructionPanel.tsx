@@ -20,6 +20,7 @@ import { formatBytesKo, formatNumberKo } from "@/lib/number-format";
 import { formatRegistrationVersion, describeArtifactKinds, submissionStateLabel, describeProducerLine, describeCaptureLine, describeRetentionLine, formatPublisherCalendarDate } from "@/app/field/registration-language";
 import { ExternalHeaderRecognition, type HeaderRecognitionState } from "@/app/field/ExternalHeaderRecognition";
 import { readGeoTiffHeader, recognizeGeoTiffHeader } from "@/lib/geo/geotiff-header";
+import { preflightGeoTiff } from "@/lib/geo/geotiff-preflight";
 import {
   seoulDateTimeLocalToUtc,
   describeV3MetadataIssue,
@@ -497,9 +498,10 @@ function artifact(kind: ExternalArtifactKind, value: HashResult, crs: string): A
   return { artifactId: kind, kind, fileName: value.file.name, format: "GeoTIFF", contentType: "application/octet-stream", declaredSha256: value.sha256, declaredSizeBytes: value.size, declaredCrs, declaredVerticalReference: null, declaredGsdM: null };
 }
 
-async function recognizeHeader(file: File, signal: AbortSignal): Promise<HeaderRecognitionState> {
+async function recognizeHeader(file: File, kind: ExternalArtifactKind, signal: AbortSignal): Promise<HeaderRecognitionState> {
   try {
-    return { status: "recognized", value: recognizeGeoTiffHeader(await readGeoTiffHeader(file, signal)) };
+    const header = await readGeoTiffHeader(file, signal);
+    return { status: "recognized", value: recognizeGeoTiffHeader(header), findings: preflightGeoTiff(kind, header, file.size) };
   } catch (error) {
     if (isAbortError(error)) throw error;
     return { status: "not-geotiff" };
@@ -801,7 +803,7 @@ function ExternalReconstructionPanelState({ workOrderId, siteId = "", expectedEp
     try {
       const [result, header] = await Promise.all([
         hashFile(file, workers.current, setHashProgress, controller.signal),
-        recognizeHeader(file, controller.signal),
+        recognizeHeader(file, kind, controller.signal),
       ]);
       if (!currentScope(requestScope) || hashAbort.current !== controller) return;
       if (kind === "ortho") {

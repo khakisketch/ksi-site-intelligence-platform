@@ -874,6 +874,46 @@ describe("ExternalReconstructionPanel header auto-recognition (AX-3)", () => {
     expect(screen.getByText(/정사영상 1 KB 확인 완료/)).toBeTruthy();
   });
 
+  const jpegAlphaLayout = {
+    compression: 7, predictor: 1, photometric: 6, planarConfiguration: 1, extraSamples: [2], hasNoDataTag: false,
+    scale: null, offset: null, georeferenced: true, modelType: 1, projLinearUnits: null, verticalCsType: null, verticalUnits: null,
+  };
+
+  it("tells the operator before upload that a JPEG RGBA ortho will be rejected, with how to export it again, and still allows registering", async () => {
+    const registrations = registerFlow();
+    headerMock.read.mockResolvedValue({ ...orthoHeader, layout: jpegAlphaLayout });
+    await chooseOrtho();
+    const alert = await screen.findByRole("alert", { name: "정사영상 올리기 전 점검" });
+    expect(alert.textContent).toContain("올려도 검사에서 거부될 가능성이 높습니다");
+    expect(alert.textContent).toContain("투명도(알파)가 있는 정사영상은 JPEG 압축을 받지 않습니다");
+    expect(alert.textContent).toContain("LZW나 Deflate 압축으로 내보내세요");
+    expect(alert.textContent).toContain("등록 뒤 KSI 검사가 최종 확인합니다");
+    // 안내일 뿐이다: 등록 버튼은 막히지 않는다.
+    fireEvent.click(screen.getByRole("radio", { name: "촬영 시점 미상" }));
+    fireEvent.click(screen.getByRole("button", { name: "자료 등록 마치기" }));
+    await waitFor(() => expect(registrations).toHaveLength(1));
+  });
+
+  it("shows only notices (not an alert) for a DSM without a vertical reference", async () => {
+    registerFlow();
+    const layout = { ...jpegAlphaLayout, compression: 8, photometric: 1, extraSamples: [] };
+    headerMock.read.mockResolvedValue({ ...dsmHeader, layout });
+    render(<ExternalReconstructionPanel workOrderId="work-1" expectedEpochId="epoch-1" canWrite accountIdentity={continuity} />);
+    await screen.findByText("아직 등록된 관측 자료가 없습니다.");
+    fireEvent.change(screen.getByLabelText("DSM GeoTIFF"), { target: { files: [new File(["x"], "dsm.tif")] } });
+    const status = await screen.findByRole("status", { name: "DSM 올리기 전 점검" });
+    expect(status.textContent).toContain("수직 기준(높이 기준)이 없습니다");
+    expect(status.textContent).not.toContain("거부될 가능성");
+    expect(screen.queryByRole("alert", { name: "DSM 올리기 전 점검" })).toBeNull();
+  });
+
+  it("shows no pre-upload check when the header gives nothing to judge, and none while resuming", async () => {
+    registerFlow();
+    headerMock.read.mockResolvedValue(orthoHeader);
+    await chooseOrtho();
+    expect(screen.queryByLabelText("정사영상 올리기 전 점검")).toBeNull();
+  });
+
   it("warns on an unreadable header and declares no CRS", async () => {
     const registrations = registerFlow();
     await chooseOrtho();
@@ -883,6 +923,20 @@ describe("ExternalReconstructionPanel header auto-recognition (AX-3)", () => {
     fireEvent.click(screen.getByRole("button", { name: "자료 등록 마치기" }));
     await waitFor(() => expect(registrations).toHaveLength(1));
     expect((registrations[0].artifacts as { declaredCrs: unknown }[])[0].declaredCrs).toBeNull();
+  });
+
+  it("does not show the pre-upload check when resuming an already registered declaration", async () => {
+    const registered = { submissionRef: "opaque", state: "REGISTERED", submission: { revision: 1, observationEpochId: "epoch-1", producerDeclaration: { softwareName: "ODM", softwareVersion: "1" }, artifacts: [{ artifactId: "ortho", kind: "ortho", fileName: "ortho.tif", declaredSha256: "a".repeat(64), declaredSizeBytes: 1 }] } };
+    fetchMock.mockImplementation(async () => ({ ok: true, json: async () => ({ submissions: [registered] }) }));
+    vi.spyOn(FakeWorker.prototype, "postMessage").mockImplementation(function (this: FakeWorker, request: { id: string }) {
+      this.onmessage?.({ data: { id: request.id, sha256: "a".repeat(64), size: 1 } } as MessageEvent);
+    });
+    headerMock.read.mockResolvedValue({ ...orthoHeader, layout: jpegAlphaLayout });
+    render(<ExternalReconstructionPanel workOrderId="work-1" expectedEpochId="epoch-1" canWrite accountIdentity={continuity} />);
+    fireEvent.click(await screen.findByRole("button", { name: "등록 이어하기" }));
+    fireEvent.change(screen.getByLabelText("정사영상 GeoTIFF"), { target: { files: [new File(["x"], "ortho.tif")] } });
+    await screen.findByText(/파일 헤더에서 읽은 정사영상 정보입니다/);
+    expect(screen.queryByLabelText("정사영상 올리기 전 점검")).toBeNull();
   });
 
   it("shows header facts but no CRS field when resuming an already registered declaration", async () => {

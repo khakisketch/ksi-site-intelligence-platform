@@ -13,6 +13,34 @@ import { fromBlob } from "geotiff";
 
 export type ArtifactSlot = "ortho" | "dsm";
 
+/**
+ * 올리기 전 점검용 파일 구조 사실. 첫 IFD 에서만 읽는다. 값이 없으면 `null`/기본값이며,
+ * 이 필드 자체가 없는 헤더(옛 호출·시험)는 "모름"으로 취급해 어떤 점검도 만들지 않는다.
+ */
+export type GeoTiffLayout = {
+  /** TIFF Compression (태그 259, 없으면 1). */
+  compression: number;
+  /** TIFF Predictor (태그 317, 없으면 1). */
+  predictor: number;
+  /** TIFF PhotometricInterpretation (태그 262). */
+  photometric: number | null;
+  /** TIFF PlanarConfiguration (태그 284, 없으면 1 = 픽셀 교차). */
+  planarConfiguration: number;
+  /** TIFF ExtraSamples (태그 338). */
+  extraSamples: number[];
+  /** GDAL_NODATA 태그(42113)가 있는가. */
+  hasNoDataTag: boolean;
+  /** GDAL_METADATA 에 적힌 첫 밴드의 scale/offset. 없으면 null. */
+  scale: number | null;
+  offset: number | null;
+  /** 타이포인트+픽셀 크기 또는 변환 행렬이 있는가. */
+  georeferenced: boolean;
+  modelType: number | null;
+  projLinearUnits: number | null;
+  verticalCsType: number | null;
+  verticalUnits: number | null;
+};
+
 export type GeoTiffRawHeader = {
   width: number;
   height: number;
@@ -24,6 +52,7 @@ export type GeoTiffRawHeader = {
   software: string | null;
   dateTime: string | null;
   pixelSize: [number, number] | null;
+  layout?: GeoTiffLayout;
 };
 
 export type GeoTiffRecognition = {
@@ -97,6 +126,24 @@ export function slotMismatch(slot: ArtifactSlot, hint: ArtifactSlot | null): boo
   return hint !== null && hint !== slot;
 }
 
+function numberOrNull(value: unknown): number | null {
+  const number = Array.isArray(value) ? value[0] : value;
+  return typeof number === "number" && Number.isFinite(number) ? number : null;
+}
+
+function nonEmpty(value: unknown): boolean {
+  return value !== null && value !== undefined && (typeof value !== "object" || (value as { length?: number }).length !== 0);
+}
+
+/** GDAL_METADATA XML 에서 role="scale"/"offset" 항목의 첫 값을 읽는다. 없으면 null. */
+function gdalScaleOffset(xml: string | null, role: "scale" | "offset"): number | null {
+  if (xml === null) return null;
+  const match = new RegExp(`<Item\\b[^>]*\\brole="${role}"[^>]*>([^<]*)</Item>`, "i").exec(xml);
+  if (!match) return null;
+  const value = Number(match[1].trim());
+  return Number.isFinite(value) ? value : null;
+}
+
 function textTag(value: unknown): string | null {
   return typeof value === "string" ? value.replace(/\0+$/, "") : null;
 }
@@ -123,15 +170,38 @@ export async function readGeoTiffHeader(blob: Blob, signal?: AbortSignal): Promi
   } catch {
     pixelSize = null;
   }
+  const load = (name: Parameters<typeof directory.loadValue>[0]) => directory.loadValue(name).catch(() => undefined) as Promise<unknown>;
+  const [compression, predictor, photometric, planar, extra, noData, gdalMetadata, tiePoint, pixelScale, transformation] = await Promise.all([
+    load("Compression"), load("Predictor"), load("PhotometricInterpretation"), load("PlanarConfiguration"),
+    load("ExtraSamples"), load("GDAL_NODATA"), load("GDAL_METADATA"), load("ModelTiepoint"), load("ModelPixelScale"), load("ModelTransformation"),
+  ]);
+  const geoKeys = image.getGeoKeys();
+  const metadataText = textTag(gdalMetadata);
+  const layout: GeoTiffLayout = {
+    compression: numberOrNull(compression) ?? 1,
+    predictor: numberOrNull(predictor) ?? 1,
+    photometric: numberOrNull(photometric),
+    planarConfiguration: numberOrNull(planar) ?? 1,
+    extraSamples: Array.from((extra as ArrayLike<number> | undefined) ?? []),
+    hasNoDataTag: nonEmpty(noData),
+    scale: gdalScaleOffset(metadataText, "scale"),
+    offset: gdalScaleOffset(metadataText, "offset"),
+    georeferenced: nonEmpty(transformation) || (nonEmpty(tiePoint) && nonEmpty(pixelScale)),
+    modelType: numberOrNull(geoKeys?.GTModelTypeGeoKey),
+    projLinearUnits: numberOrNull(geoKeys?.ProjLinearUnitsGeoKey),
+    verticalCsType: numberOrNull(geoKeys?.VerticalCSTypeGeoKey),
+    verticalUnits: numberOrNull(geoKeys?.VerticalUnitsGeoKey),
+  };
   return {
     width: image.getWidth(),
     height: image.getHeight(),
     samplesPerPixel: image.getSamplesPerPixel(),
     bitsPerSample: image.getBitsPerSample(0),
     sampleFormat: image.getSampleFormat(0),
-    geoKeys: image.getGeoKeys(),
+    geoKeys,
     software: textTag(software),
     dateTime: textTag(dateTime),
     pixelSize,
+    layout,
   };
 }
