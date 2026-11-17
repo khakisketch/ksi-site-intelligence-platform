@@ -400,7 +400,6 @@ describe("ExternalObservationCreateForm", () => {
     expect((freshDoc.querySelector("button.btn-primary") as HTMLButtonElement).disabled).toBe(true);
     // 준비 중에는 필수 입력 안내 3건이 아니라 준비 안내만 보인다.
     expect(fresh).not.toContain("비교할 작업구역을 하나 이상 선택하세요");
-    expect(fresh).not.toContain("비교할 작업구역을 하나 이상 선택하세요");
     // Repeat: server values present, still locked before hydration. JS 없이
     // SSR만으로는 어떤 경우에도 제출할 수 없다.
     const repeat = renderToString(<ExternalObservationCreateForm

@@ -21,6 +21,7 @@ import { formatRegistrationVersion, describeArtifactKinds, submissionStateLabel,
 import { ExternalHeaderRecognition, type HeaderRecognitionState } from "@/app/field/ExternalHeaderRecognition";
 import { ExternalFileDropZone } from "@/app/field/ExternalFileDropZone";
 import { assignSlots } from "@/lib/external-file-routing";
+import { loadExternalUploadDefaults, saveExternalUploadDefaults } from "@/lib/external-upload-defaults";
 import { readGeoTiffHeader, recognizeGeoTiffHeader } from "@/lib/geo/geotiff-header";
 import { preflightGeoTiff } from "@/lib/geo/geotiff-preflight";
 import {
@@ -832,6 +833,15 @@ function ExternalReconstructionPanelState({ workOrderId, siteId = "", expectedEp
           setSoftwareName((current) => (current.trim() ? current : producer.name));
           if (producer.version) setSoftwareVersion((current) => (current.trim() ? current : producer.version ?? ""));
         }
+        // 파일 헤더가 알려 주지 못한 빈 칸만, 지난번 등록에서 기억한 값으로 채운다. 입력한 값은 덮지 않는다.
+        const remembered = loadExternalUploadDefaults();
+        if (remembered) {
+          // 이름과 버전은 한 쌍이다. 둘 다 비어 있을 때만 쌍으로 채워, 다른 소프트웨어의 버전이 섞이지 않게 한다.
+          if (!producer && remembered.softwareName && !softwareName.trim() && !softwareVersion.trim()) {
+            setSoftwareName(remembered.softwareName);
+            setSoftwareVersion(remembered.softwareVersion);
+          }
+        }
       }
       say(null);
     } catch (error) {
@@ -844,6 +854,12 @@ function ExternalReconstructionPanelState({ workOrderId, siteId = "", expectedEp
         }
       }
     }
+  };
+
+  // 확인된 새 등록의 제작 소프트웨어를 다음 등록의 빈 칸에 쓰도록 이 브라우저에 기억한다(이어하기·미상 신고는 제외).
+  const rememberDeclarations = () => {
+    if (resume || producerKnowledge !== "DECLARED") return;
+    saveExternalUploadDefaults({ softwareName, softwareVersion });
   };
 
   const [routingNotes, setRoutingNotes] = useState<string[]>([]);
@@ -1121,6 +1137,7 @@ function ExternalReconstructionPanelState({ workOrderId, siteId = "", expectedEp
           if (isRevisionViewForAttempt(declared, declarationEcho, "SEALED")) {
             revision = declared;
             setSealedComplete(true);
+            rememberDeclarations();
             say("파일 등록을 확인했습니다. 파일 형식과 측정 적합성 확인은 아직 진행되지 않았습니다.");
             // 목록만 다시 읽는다. 상단 배너의 서버 상태는 별도 화면 이동·
             // 새로고침 때 갱신되며, 그때 미제출 입력·동결 시도는 사라질 수
@@ -1205,6 +1222,7 @@ function ExternalReconstructionPanelState({ workOrderId, siteId = "", expectedEp
       // 때 갱신되며, 그때 미제출 입력·동결 시도는 사라질 수 있다. 자동 route
       // refresh로 형제 초안을 잃게 하지 않는다.
       setSealedComplete(true);
+      rememberDeclarations();
       say("파일 등록을 확인했습니다. 파일 형식과 측정 적합성 확인은 아직 진행되지 않았습니다.");
       await load(requestScope);
     } catch (error) {
