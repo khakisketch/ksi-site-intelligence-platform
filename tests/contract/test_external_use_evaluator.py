@@ -1469,6 +1469,12 @@ def _declared_world(tmp_path: Path, ledger: _Declarations, **kwargs: Any) -> _He
     return world
 
 
+def _dsm_asset_ref_for(sealed_subject: Any, artifact_id: str) -> str:
+    from ksi_core.domains.external.ingress.spatial_asset_catalog import asset_ref_for_subject
+
+    return asset_ref_for_subject(sealed_subject, artifact_id)
+
+
 def _dsm_asset_ref(world: _HeightWorld, artifact_id: str = "dsm") -> str:
     from ksi_core.domains.external.ingress.spatial_asset_catalog import asset_ref_for_subject
 
@@ -1587,6 +1593,46 @@ def test_display_decisions_never_ask_the_declaration_ledger(tmp_path: Path) -> N
         world.subject, use="DISPLAY", idempotency_key="display", principal=_principal(), now=NOW
     )
     assert decision.reasons == ("DISPLAY_ELIGIBLE",)
+    assert ledger.calls == 0
+
+
+def test_quantity_decisions_never_ask_the_declaration_ledger(tmp_path: Path) -> None:
+    """선언은 높이 읽기에만 근거가 된다 — 체적·두 시점 비교 판정은 원장을 묻지 않는다(행동 시험).
+
+    원장이 꽂혀 있고 모든 자료에 선언이 있어도, 상대 체적·단일 체적 판정 경로가 포트를 한 번도
+    부르지 않는다. import 검사(아래 시험)만으로는 이미 꽂힌 포트를 새 경로가 부르기 시작하는
+    변경을 잡지 못한다.
+    """
+    ledger = _Declarations()
+    pair_evaluator, baseline, current, _ = _volume_pair_evaluator(tmp_path / "pair", attested=True)
+    pair_evaluator._declared_vertical = ledger  # noqa: SLF001 - 판정이 읽는 포트를 꽂는다
+    for artifact_id in ("dsm", "some-other-artifact"):
+        for sealed in (baseline, current):
+            ledger.declare(_dsm_asset_ref_for(sealed, artifact_id), NOW - timedelta(minutes=1))
+    pair = pair_evaluator.request_pair(
+        baseline,
+        current,
+        use="RELATIVE_VOLUME",
+        zone_id="zone-1",
+        idempotency_key="no-ledger-pair",
+        principal=_principal(),
+        now=NOW,
+    )
+    assert pair.verdict is DecisionVerdict.ELIGIBLE
+
+    single_evaluator, sealed_subject, _ = _single_volume_evaluator(
+        tmp_path / "single", attested=True
+    )
+    single_evaluator._declared_vertical = ledger  # noqa: SLF001
+    ledger.declare(_dsm_asset_ref_for(sealed_subject, "dsm"), NOW - timedelta(minutes=1))
+    single = single_evaluator.request_single_volume(
+        sealed_subject,
+        zone_id="zone-1",
+        idempotency_key="no-ledger-single",
+        principal=_principal(),
+        now=NOW,
+    )
+    assert single.verdict is DecisionVerdict.ELIGIBLE
     assert ledger.calls == 0
 
 
