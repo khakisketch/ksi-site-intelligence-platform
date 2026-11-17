@@ -7,6 +7,8 @@
 - 요청자는 사람(OPERATOR)이어야 하고 SITES_WRITE 가 필요하다(기존 경로와 같다).
 - DSM 이 아닌 자료는 409 로 거부한다. 정사영상의 높이는 판정할 수 없다.
 - 판정이 BLOCKED 여도 201 로 사유를 돌려준다. 사유 코드는 판정 기록의 값 그대로다.
+- 판정은 제출 단위다. 같은 제출의 다른 DSM 때문에 ELIGIBLE 이 되었어도 이 자료 자신의 수직 기준(관측
+  또는 현재 선언)이 없으면 409 ASSET_VERTICAL_REFERENCE_UNKNOWN 으로 돌려준다.
 - 같은 (주체·자료·키)는 같은 판정을 돌려준다(응답 유실 복구).
 """
 
@@ -16,6 +18,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import APIRouter, Depends, Header, HTTPException
+from ksi_event_contracts.external_artifact_validation import DecisionVerdict
 from ksi_event_contracts.processing_artifact import ProcessingArtifactKind
 
 from ksi_core.domains.external.ingress.spatial_asset_catalog import SpatialAssetCatalog
@@ -89,6 +92,17 @@ def build_asset_height_decision_router(
             if str(exc) == "EXTERNAL_WORKFLOW_CLOSED":
                 raise HTTPException(409, str(exc)) from exc
             raise
+        # 판정은 제출 단위라서 같은 제출의 다른 DSM이 수직 기준을 가지면 이 자료에 기준이 없어도
+        # ELIGIBLE이 된다. 이 경로는 한 자료에 대한 답이므로 이 자료 자신의 기준(파일에서 관측했거나
+        # 현재 선언이 있음)이 없으면 그 판정을 이 자료의 근거로 돌려주지 않는다.
+        raster = catalog.with_inspection(item, principal).inspection.raster
+        observed = raster is not None and raster.observed_vertical_reference is not None
+        if (
+            decision.verdict is DecisionVerdict.ELIGIBLE
+            and not observed
+            and not evaluator.has_declared_vertical(subject, item.artifact_id)
+        ):
+            raise HTTPException(409, "ASSET_VERTICAL_REFERENCE_UNKNOWN")
         return ExternalUseDecisionResponse(decision=decision.model_dump(by_alias=True, mode="json"))
 
     return router

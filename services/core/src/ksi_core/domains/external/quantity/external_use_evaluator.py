@@ -493,6 +493,11 @@ class ExternalUseEvaluator:
                 self._record(candidate, intent, principal, idempotency_key),
             )
 
+    def has_declared_vertical(self, subject: SealedExternalSubjectV1, artifact_id: str) -> bool:
+        """Does this DSM artifact have a current user declaration?  False without a ledger."""
+        checker = declared_vertical_checker(self._declared_vertical, subject)
+        return checker is not None and checker(artifact_id)
+
     def existing_single_retry(
         self,
         subject: SealedExternalSubjectV1,

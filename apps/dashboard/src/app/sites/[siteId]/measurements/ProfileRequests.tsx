@@ -105,6 +105,9 @@ export function ProfileRequests({
       const decision = body.decision as { reasons?: unknown; remediations?: unknown } | undefined;
       if (code === "HEIGHT_NOT_ELIGIBLE" && decision && Array.isArray(decision.reasons) && Array.isArray(decision.remediations)) {
         setBlocked((current) => ({ ...current, [assetRef]: { reasons: decision.reasons as string[], remediations: decision.remediations as string[] } }));
+      } else if (code === "ASSET_VERTICAL_REFERENCE_UNKNOWN") {
+        // 같은 제출의 다른 DSM 때문에 판정은 열렸지만 이 자료에는 수직 기준이 없다 — 선언으로 푸는 일이다.
+        setBlocked((current) => ({ ...current, [assetRef]: { reasons: ["VERTICAL_REFERENCE_UNKNOWN"], remediations: ["OBSERVE_VERTICAL_REFERENCE"] } }));
       } else {
         setError(assetRef, requestErrorText(response.status, code));
       }

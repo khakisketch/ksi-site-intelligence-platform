@@ -65,6 +65,15 @@ describe("날짜별 단면 요청", () => {
     expect(nav.refresh).not.toHaveBeenCalled();
   });
 
+  it("같은 제출의 다른 자료 때문에 열린 판정이 이 자료에는 기준이 없을 때도 선언 안내를 보인다", async () => {
+    fetchMock.mockResolvedValue(reply(409, { code: "ASSET_VERTICAL_REFERENCE_UNKNOWN" }));
+    show([row()]);
+    fireEvent.click(screen.getByRole("button", { name: "단면 요청" }));
+    expect(await screen.findByText("수직기준을 파일에서 확인하지 못했습니다")).toBeTruthy();
+    expect(screen.getByRole("link", { name: "자료 상세 열기" }).getAttribute("href")).toBe("/sites/site-1?panel=materials");
+    expect(nav.refresh).not.toHaveBeenCalled();
+  });
+
   it("Core가 거부한 이유를 업무 말로 보인다", async () => {
     fetchMock.mockResolvedValue(reply(422, { code: "LINE_OUTSIDE_SURFACE" }));
     show([row()]);

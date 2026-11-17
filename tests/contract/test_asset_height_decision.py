@@ -51,7 +51,11 @@ class FakeEvaluator:
         self.asked: list[dict[str, Any]] = []
         self.retained: dict[str, ExternalUseDecisionV1] = {}
         self.conflict = False
+        self.declared = False
         self.verdict = DecisionVerdict.ELIGIBLE
+
+    def has_declared_vertical(self, subject: Any, artifact_id: str) -> bool:
+        return self.declared
 
     def existing_single_retry(
         self, subject: Any, *, use: str, principal: Any, idempotency_key: str
@@ -96,7 +100,9 @@ class FakeEvaluator:
 
 
 class Env:
-    def __init__(self, tmp_path: Path, kind: str = "dsm", *, sealed: bool = True) -> None:
+    def __init__(
+        self, tmp_path: Path, kind: str = "dsm", *, sealed: bool = True, observed: bool = True
+    ) -> None:
         (_c, order, storage, reconstruction, area_a, _b, work_orders, sites, areas) = _setup(
             tmp_path
         )
@@ -113,6 +119,7 @@ class Env:
         self.evaluator = FakeEvaluator()
         inspections = _Inspections()
         inspections.artifact_id = kind
+        inspections.mode = "measured_with_vertical" if observed else "measured_without_vertical"
         self.catalog = SpatialAssetCatalog(
             reconstruction=reconstruction,
             work_orders=work_orders,
@@ -197,6 +204,30 @@ def test_a_dsm_gets_a_height_decision_and_only_height_is_asked(env: Env) -> None
         "submission-dsm",
         1,
     )
+
+
+def test_a_submission_level_eligible_is_not_this_assets_basis_without_its_own_reference(
+    tmp_path: Path,
+) -> None:
+    # 같은 제출의 다른 DSM이 기준을 가져 판정은 ELIGIBLE이지만, 이 자료에는 관측도 선언도 없다.
+    bare = Env(tmp_path, observed=False)
+    response = bare.post()
+    assert response.status_code == 409
+    assert "ASSET_VERTICAL_REFERENCE_UNKNOWN" in response.text
+    assert "decisionId" not in response.text  # 이 자료의 근거가 아닌 판정을 내보내지 않는다.
+    # 이 자료에 현재 선언이 있으면 열린다.
+    bare.evaluator.declared = True
+    assert bare.post(key="declared").status_code == 201
+
+
+def test_a_blocked_decision_still_explains_itself_when_the_asset_has_no_reference(
+    tmp_path: Path,
+) -> None:
+    bare = Env(tmp_path, observed=False)
+    bare.evaluator.verdict = DecisionVerdict.BLOCKED
+    response = bare.post()
+    assert response.status_code == 201
+    assert response.json()["decision"]["reasons"] == ["VERTICAL_REFERENCE_UNKNOWN"]
 
 
 def test_a_blocked_decision_is_returned_with_its_reasons(env: Env) -> None:
