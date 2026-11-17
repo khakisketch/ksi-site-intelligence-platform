@@ -802,6 +802,45 @@ class ExternalUseEvaluator:
         """Return a scoped historic decision without creating any new authority."""
         return self._decisions.get_scoped(decision_id, principal=principal, site_id=site_id)
 
+    def height_blocker_now(self, decision: ExternalUseDecisionV1, *, now: datetime) -> str | None:
+        """Why a recorded HEIGHT decision no longer licenses a read, or ``None`` if it still does.
+
+        A decision is history: it proves what was true when it was made.  Anything that *acts* on
+        it (a profile job) must ask this again — policy still permits HEIGHT for exactly this
+        subject, the inspection report is still the one the decision bound, and the DSM is still a
+        measured single-band float grid with an observed vertical reference.  Local retained state
+        only, so it is safe under the commit guard.
+        """
+        if (
+            decision.use != "HEIGHT"
+            or decision.verdict is not DecisionVerdict.ELIGIBLE
+            or decision.policy_digest is None
+            or decision.inspection_report_digest is None
+        ):
+            return "HEIGHT_NOT_ELIGIBLE"
+        subject = decision.subject
+        with self._coordinator.guarded_read():
+            resolved = self._policy_registry.resolve(decision.policy_digest)
+            if (
+                resolved.status is not PolicySelectionStatus.ACTIVE
+                or resolved.policy is None
+                or not self._policy_registry.locally_current_use_permitted(
+                    decision.policy_digest, use="HEIGHT", subjects=(subject,), at=now
+                )
+            ):
+                return "POLICY_UNAVAILABLE"
+            revision = self._reconstruction.resolve_sealed_subject(subject)
+            if revision is None:
+                return "SUBJECT_NOT_SEALED"
+            report = self._inspections.public_snapshot(subject).report
+            if (
+                report is None
+                or report.report_digest != decision.inspection_report_digest
+                or not self._report_binds(subject, report, resolved.policy)
+            ):
+                return "INSPECTION_REPORT_BINDING_INVALID"
+            return self._height_blocker(revision, report)
+
     def _single_snapshot(self, subject: SealedExternalSubjectV1, use: str) -> _SingleSnapshot:
         selected = self._policy_registry.select_for_use(use, (subject,))
         policy = selected.policy if selected.status is PolicySelectionStatus.ACTIVE else None

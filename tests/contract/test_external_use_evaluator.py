@@ -1404,3 +1404,33 @@ def test_height_never_binds_a_display_receipt_even_when_one_exists(tmp_path: Pat
     decision = _HeightWorld(tmp_path, with_receipt=True).height()
     assert decision.verdict is DecisionVerdict.ELIGIBLE
     assert decision.sanitized_display_receipt_digest is None
+
+
+def test_a_recorded_height_decision_is_re_proved_before_anything_acts_on_it(tmp_path: Path) -> None:
+    world = _HeightWorld(tmp_path)
+    decision = world.height()
+    assert world.evaluator.height_blocker_now(decision, now=NOW) is None
+
+    # 정책의 유효 기간이 끝나면 과거 ELIGIBLE 은 더 이상 읽기 근거가 아니다.
+    assert world.evaluator.height_blocker_now(decision, now=NOW + timedelta(days=30)) == (
+        "POLICY_UNAVAILABLE"
+    )
+    # 검사 보고가 더 이상 그 결정이 묶은 것이 아니면 막는다.
+    world.inspections._subject = subject()  # noqa: SLF001 - the report is no longer reported
+    assert world.evaluator.height_blocker_now(decision, now=NOW) == (
+        "INSPECTION_REPORT_BINDING_INVALID"
+    )
+
+
+def test_a_blocked_or_other_use_decision_never_licenses_a_read(tmp_path: Path) -> None:
+    blocked = _HeightWorld(tmp_path / "a", measured=False)
+    assert blocked.evaluator.height_blocker_now(blocked.height(), now=NOW) == "HEIGHT_NOT_ELIGIBLE"
+
+    sealed_subject = subject()
+    registry, policy = _registry(tmp_path / "b", sealed_subject)
+    accepted = report(request_id="request-1", policy=policy)
+    evaluator = _evaluator(tmp_path / "evaluator", receipt=_receipt(accepted, policy))
+    display = evaluator.request_single(
+        sealed_subject, use="DISPLAY", idempotency_key="d", principal=_principal(), now=NOW
+    )
+    assert evaluator.height_blocker_now(display, now=NOW) == "HEIGHT_NOT_ELIGIBLE"

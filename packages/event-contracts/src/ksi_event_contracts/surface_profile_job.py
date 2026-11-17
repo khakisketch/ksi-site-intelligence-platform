@@ -23,12 +23,14 @@ from ksi_event_contracts._spatial_data import (
     Attribution,
     Bounds,
     Digest,
+    Origin,
     PositiveInt,
     PositiveSeconds,
     SpatialDataDigestModel,
     SpatialDataModel,
     Text,
     UtcTimestamp,
+    require_utc,
 )
 from ksi_event_contracts.external_artifact_validation import (
     ObservedVerticalReferenceV1,
@@ -78,6 +80,10 @@ SurfaceProfileJobReasonV1 = Literal[
     "POLICY_UNAVAILABLE",
     "CURRENTNESS_UNAVAILABLE",
     "RESOURCE_LIMIT_EXCEEDED",
+    "LINE_OUTSIDE_SURFACE",
+    "GRANT_REQUIRED",
+    "AMBIGUOUS_GRANT",
+    "SOURCE_UNAVAILABLE",
     # lifecycle
     "NOT_READY",
     "RETENTION_EXPIRED",
@@ -179,6 +185,38 @@ class SurfaceProfileRuntimeV1(SpatialDataDigestModel):
     runtime_image_digest: Digest
     dependency_lock_digest: Digest
     runtime_digest: Digest | None = None
+
+
+class SurfaceProfileActivationV1(SpatialDataDigestModel):
+    """Operator-provisioned authority for one worker instance to run profile jobs."""
+
+    _digest_field = "activation_digest"
+    activation_id: Text
+    organization_id: Text
+    worker_principal_id: Text
+    worker_instance_id: Text
+    profile: Literal["ksi-surface-profile.v1"] = SURFACE_PROFILE_PROFILE
+    policy_digest: Digest
+    runtime_digest: Digest
+    trusted_endpoint_origins: Annotated[
+        tuple[Origin, ...],
+        Field(min_length=1, max_length=16, json_schema_extra={"uniqueItems": True}),
+    ]
+    valid_from: UtcTimestamp
+    valid_until: UtcTimestamp
+    activation_digest: Digest | None = None
+
+    @model_validator(mode="after")
+    def _positive_unique_scope(self) -> Self:
+        if self.valid_until <= self.valid_from:
+            raise ValueError("activation validity must have positive duration")
+        if len(set(self.trusted_endpoint_origins)) != len(self.trusted_endpoint_origins):
+            raise ValueError("activation origins must be unique")
+        return self
+
+    def is_current_at(self, now: UtcTimestamp) -> bool:
+        record = type(self).model_validate(self.__dict__)
+        return record.valid_from <= require_utc(now) < record.valid_until
 
 
 class SurfaceProfileReadWindowV1(SpatialDataModel):
@@ -441,6 +479,7 @@ __all__ = [
     "SURFACE_PROFILE_PROFILE",
     "TRANSIENT_JOB_REASONS",
     "CreateSurfaceProfileJobV1",
+    "SurfaceProfileActivationV1",
     "SurfaceProfileAttemptV1",
     "SurfaceProfileCompleteRequestV1",
     "SurfaceProfileFailureRequestV1",

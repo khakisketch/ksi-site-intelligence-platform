@@ -1086,6 +1086,108 @@
       "title": "SpatialDataSourceV1",
       "type": "object"
     },
+    "SurfaceProfileActivationV1": {
+      "additionalProperties": false,
+      "description": "Operator-provisioned authority for one worker instance to run profile jobs.",
+      "properties": {
+        "activationId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Activationid",
+          "type": "string"
+        },
+        "organizationId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Organizationid",
+          "type": "string"
+        },
+        "workerPrincipalId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Workerprincipalid",
+          "type": "string"
+        },
+        "workerInstanceId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Workerinstanceid",
+          "type": "string"
+        },
+        "profile": {
+          "const": "ksi-surface-profile.v1",
+          "default": "ksi-surface-profile.v1",
+          "title": "Profile",
+          "type": "string"
+        },
+        "policyDigest": {
+          "maxLength": 71,
+          "minLength": 71,
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Policydigest",
+          "type": "string"
+        },
+        "runtimeDigest": {
+          "maxLength": 71,
+          "minLength": 71,
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Runtimedigest",
+          "type": "string"
+        },
+        "trustedEndpointOrigins": {
+          "items": {
+            "maxLength": 512,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 16,
+          "minItems": 1,
+          "title": "Trustedendpointorigins",
+          "type": "array",
+          "uniqueItems": true
+        },
+        "validFrom": {
+          "format": "date-time",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?(?:Z|\\+00:00)$",
+          "title": "Validfrom",
+          "type": "string"
+        },
+        "validUntil": {
+          "format": "date-time",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?(?:Z|\\+00:00)$",
+          "title": "Validuntil",
+          "type": "string"
+        },
+        "activationDigest": {
+          "anyOf": [
+            {
+              "maxLength": 71,
+              "minLength": 71,
+              "pattern": "^sha256:[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Activationdigest"
+        }
+      },
+      "required": [
+        "activationId",
+        "organizationId",
+        "workerPrincipalId",
+        "workerInstanceId",
+        "policyDigest",
+        "runtimeDigest",
+        "trustedEndpointOrigins",
+        "validFrom",
+        "validUntil"
+      ],
+      "title": "SurfaceProfileActivationV1",
+      "type": "object"
+    },
     "SurfaceProfileAttemptV1": {
       "additionalProperties": false,
       "properties": {
@@ -1220,6 +1322,10 @@
             "POLICY_UNAVAILABLE",
             "CURRENTNESS_UNAVAILABLE",
             "RESOURCE_LIMIT_EXCEEDED",
+            "LINE_OUTSIDE_SURFACE",
+            "GRANT_REQUIRED",
+            "AMBIGUOUS_GRANT",
+            "SOURCE_UNAVAILABLE",
             "NOT_READY",
             "RETENTION_EXPIRED",
             "FENCE_CONFLICT",
@@ -1468,6 +1574,10 @@
                 "POLICY_UNAVAILABLE",
                 "CURRENTNESS_UNAVAILABLE",
                 "RESOURCE_LIMIT_EXCEEDED",
+                "LINE_OUTSIDE_SURFACE",
+                "GRANT_REQUIRED",
+                "AMBIGUOUS_GRANT",
+                "SOURCE_UNAVAILABLE",
                 "NOT_READY",
                 "RETENTION_EXPIRED",
                 "FENCE_CONFLICT",
