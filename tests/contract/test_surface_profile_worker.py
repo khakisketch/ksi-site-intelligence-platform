@@ -186,3 +186,59 @@ def test_unreadable_file_is_a_typed_refusal_not_an_exception(tmp_path: Path) -> 
     assert isinstance(refusal, SurfaceProfileRefusalV1)
     assert refusal.reason == "UNREADABLE_RASTER"
     assert str(broken) not in refusal.model_dump_json()
+
+
+def test_policy_above_the_contract_ceiling_is_clamped_before_reading(tmp_path: Path) -> None:
+    from ksi_event_contracts.surface_profile import MAX_PROFILE_SAMPLES
+
+    path = _write(tmp_path / "dsm.tif", _plane(rows=20, cols=80))
+    generous = SurfaceProfilePolicy(
+        maximum_vertices=500,
+        maximum_samples=MAX_PROFILE_SAMPLES + 1_000,
+        maximum_line_length_m=5_000.0,
+        maximum_window_cells=1_000_000,
+        maximum_source_block_cells=4_000_000,
+    )
+    # 70 m / 0.0138 m ≈ 5 070 samples — over the contract ceiling but inside the policy.
+    request = _request(_line((2.0, 3.0), (72.0, 3.0)), sample_spacing_m=0.0138)
+    refusal = read_surface_profile(request, path, policy=generous)
+    assert isinstance(refusal, SurfaceProfileRefusalV1)
+    assert refusal.reason == "TOO_MANY_SAMPLES"
+
+
+@pytest.mark.parametrize("spacing", [5e-324, 1e-300])
+def test_denormal_spacing_is_a_typed_refusal(tmp_path: Path, spacing: float) -> None:
+    path = _write(tmp_path / "dsm.tif", _plane())
+    refusal = read_surface_profile(
+        _request(_line((2.0, 3.0), (9.0, 3.0)), sample_spacing_m=spacing), path, policy=POLICY
+    )
+    assert isinstance(refusal, SurfaceProfileRefusalV1)
+    assert refusal.reason == "TOO_MANY_SAMPLES"
+
+
+def test_a_line_shorter_than_the_tolerance_is_a_typed_refusal(tmp_path: Path) -> None:
+    path = _write(tmp_path / "dsm.tif", _plane())
+    x, y = _centre(2.0, 3.0)
+    line = MeasurementLineV1(crs="EPSG:5186", vertices=((x, y), (x + 1e-10, y)))
+    refusal = read_surface_profile(_request(line), path, policy=POLICY)
+    assert isinstance(refusal, SurfaceProfileRefusalV1)
+    assert refusal.reason == "INVALID_LINE"
+
+
+def test_complex_raster_is_a_typed_refusal(tmp_path: Path) -> None:
+    path = tmp_path / "complex.tif"
+    with rasterio.open(
+        path,
+        "w",
+        driver="GTiff",
+        height=5,
+        width=5,
+        count=1,
+        dtype="complex64",
+        crs="EPSG:5186",
+        transform=from_origin(ORIGIN_X, ORIGIN_Y, 1.0, 1.0),
+    ) as dataset:
+        dataset.write(np.full((5, 5), 7 + 9j, dtype="complex64"), 1)
+    refusal = read_surface_profile(_request(_line((1.0, 1.0), (3.0, 1.0))), path, policy=POLICY)
+    assert isinstance(refusal, SurfaceProfileRefusalV1)
+    assert refusal.reason == "UNSUPPORTED_RASTER"

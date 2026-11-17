@@ -8,9 +8,9 @@ reason — never ``0``, a neighbour value or a straight line across the gap.
 from __future__ import annotations
 
 import math
-from typing import Annotated, Literal, Self
+from typing import Annotated, Any, Literal, Self, get_args
 
-from pydantic import Field, StrictFloat, model_validator
+from pydantic import ConfigDict, Field, StrictFloat, model_validator
 
 from ksi_event_contracts._spatial_data import (
     MAX_COUNTER,
@@ -67,7 +67,26 @@ class CreateSurfaceProfileV1(SpatialDataModel):
         return self
 
 
+def _sample_one_of(schema: dict[str, Any]) -> None:
+    """Wire form of the rule the model enforces: a height, or a reason — never both or neither."""
+    schema["oneOf"] = [
+        {
+            "properties": {"elevationM": {"type": "number"}, "invalidReason": {"type": "null"}},
+            "required": ["elevationM", "invalidReason"],
+        },
+        {
+            "properties": {
+                "elevationM": {"type": "null"},
+                "invalidReason": {"enum": list(get_args(SampleInvalidReasonV1))},
+            },
+            "required": ["elevationM", "invalidReason"],
+        },
+    ]
+
+
 class SurfaceProfileSampleV1(SpatialDataModel):
+    model_config = ConfigDict(json_schema_extra=_sample_one_of)
+
     index: int = Field(strict=True, ge=0, lt=MAX_PROFILE_SAMPLES)
     distance_m: NonNegativeMetres
     x: Coordinate

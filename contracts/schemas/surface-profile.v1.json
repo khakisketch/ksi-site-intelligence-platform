@@ -307,6 +307,40 @@
     },
     "SurfaceProfileSampleV1": {
       "additionalProperties": false,
+      "oneOf": [
+        {
+          "properties": {
+            "elevationM": {
+              "type": "number"
+            },
+            "invalidReason": {
+              "type": "null"
+            }
+          },
+          "required": [
+            "elevationM",
+            "invalidReason"
+          ]
+        },
+        {
+          "properties": {
+            "elevationM": {
+              "type": "null"
+            },
+            "invalidReason": {
+              "enum": [
+                "OUTSIDE_SURFACE",
+                "INSUFFICIENT_NEIGHBORS",
+                "NODATA"
+              ]
+            }
+          },
+          "required": [
+            "elevationM",
+            "invalidReason"
+          ]
+        }
+      ],
       "properties": {
         "index": {
           "exclusiveMaximum": 5000,

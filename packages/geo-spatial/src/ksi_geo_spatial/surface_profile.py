@@ -33,6 +33,8 @@ from pathlib import Path
 
 import numpy as np
 import rasterio
+from pyproj import CRS
+from pyproj.exceptions import CRSError
 from rasterio.errors import RasterioIOError
 from rasterio.windows import Window
 
@@ -143,6 +145,8 @@ class ProfileSourceFacts:
     cell_size_y: float
     block_rows: int
     block_cols: int
+    #: 복합 CRS 가 선언한 수직 성분(m 축만 받는다). 선언이 없으면 None — 짐작하지 않는다.
+    vertical_crs: str | None = None
 
     @property
     def ground_sample_distance_m(self) -> float:
@@ -293,15 +297,19 @@ def plan_surface_profile(
     for (x0, y0), (x1, y1) in zip(collapsed, collapsed[1:], strict=False):
         cumulative.append(cumulative[-1] + math.hypot(x1 - x0, y1 - y0))
     length = cumulative[-1]
-    if not (math.isfinite(length) and length > 0):
-        raise _fail(SurfaceProfileErrorReason.INVALID_LINE, "선 길이를 계산할 수 없다")
+    if not (math.isfinite(length) and length > _DISTANCE_TOLERANCE_M):
+        raise _fail(
+            SurfaceProfileErrorReason.INVALID_LINE,
+            "선 길이가 거리 허용치 이하다 — 표본 두 개로 나눌 수 없다",
+        )
     if length > policy.maximum_line_length_m:
         raise _fail(
             SurfaceProfileErrorReason.LINE_TOO_LONG,
             f"선 길이 {length:.1f}m 가 한도 {policy.maximum_line_length_m:.1f}m 를 넘는다",
         )
     # 표본 수를 목록을 만들기 전에 막는다 — 간격이 아주 작아도 메모리를 먼저 쓰지 않는다.
-    if int(length // sample_spacing_m) + 1 > policy.maximum_samples:
+    estimated = length // sample_spacing_m  # 극소 간격이면 inf — 정수로 바꾸기 전에 막는다
+    if not math.isfinite(estimated) or estimated + 1 > policy.maximum_samples:
         raise _fail(
             SurfaceProfileErrorReason.TOO_MANY_SAMPLES,
             f"간격 {sample_spacing_m}m 로는 표본이 한도 {policy.maximum_samples}개를 넘는다 — "
@@ -342,6 +350,38 @@ def plan_surface_profile(
     )
 
 
+def _numeric_dtype(name: str) -> bool:
+    try:
+        np.dtype(name)
+    except TypeError:  # rasterio 전용 이름(complex_int16 등)은 numpy 가 모른다
+        return False
+    return True
+
+
+def _split_crs(wkt: str) -> tuple[str, str | None]:
+    """복합 CRS 는 수평·수직 성분으로 가른다. 수직은 m 축 하나만 받고 값은 바꾸지 않는다."""
+    try:
+        parsed = CRS.from_user_input(wkt)
+    except CRSError as exc:
+        raise UnsupportedCrsError(f"해석할 수 없는 좌표계: {exc}") from exc
+    if not parsed.is_compound:
+        return wkt, None
+    horizontal = [part for part in parsed.sub_crs_list if part.is_projected or part.is_geographic]
+    vertical = [part for part in parsed.sub_crs_list if part.is_vertical]
+    if len(horizontal) != 1 or len(vertical) != 1:
+        raise UnsupportedCrsError("복합 CRS 의 수평·수직 성분이 하나씩이 아니다")
+    axes = vertical[0].axis_info
+    code = vertical[0].to_epsg()
+    if code is None or len(axes) != 1 or axes[0].unit_name.lower() not in {"metre", "meter"}:
+        raise UnsupportedCrsError(
+            "수직 성분이 EPSG 코드를 갖는 metre 축이 아니다 — 표고를 m 로 말할 수 없다"
+        )
+    authority = horizontal[0].to_authority()
+    if authority is None:
+        raise UnsupportedCrsError("수평 성분이 EPSG 권위 코드로 환원되지 않는다")
+    return f"{authority[0]}:{authority[1]}", f"EPSG:{code}"
+
+
 def _facts(dataset: rasterio.DatasetReader) -> ProfileSourceFacts:
     if dataset.count != 1:
         raise _fail(
@@ -354,12 +394,19 @@ def _facts(dataset: rasterio.DatasetReader) -> ProfileSourceFacts:
             "좌표계 정보가 없는 래스터다 — 파일이 어느 좌표계인지 말하지 않는다",
         )
     try:
-        crs = assert_supported_project_crs(dataset.crs.to_wkt())
+        horizontal, vertical_crs = _split_crs(dataset.crs.to_wkt())
+        crs = assert_supported_project_crs(horizontal)
     except UnsupportedCrsError as exc:
         raise _fail(
             SurfaceProfileErrorReason.UNSUPPORTED_CRS,
             f"래스터 좌표계가 투영좌표계 화이트리스트 밖이다(거리를 m 로 말할 수 없다): {exc}",
         ) from exc
+    dtype_name = dataset.dtypes[0]
+    if not (_numeric_dtype(dtype_name) and np.dtype(dtype_name).kind in "iuf"):
+        raise _fail(
+            SurfaceProfileErrorReason.UNSUPPORTED_RASTER,
+            f"{dtype_name} 값은 표고로 읽지 않는다(정수·실수만) — 복소수를 실수로 바꾸지 않는다",
+        )
     transform = dataset.transform
     if transform.b != 0.0 or transform.d != 0.0 or not (transform.a > 0.0 and transform.e < 0.0):
         raise _fail(
@@ -380,6 +427,7 @@ def _facts(dataset: rasterio.DatasetReader) -> ProfileSourceFacts:
         cell_size_y=float(-transform.e),
         block_rows=int(block_rows),
         block_cols=int(block_cols),
+        vertical_crs=vertical_crs,
     )
 
 

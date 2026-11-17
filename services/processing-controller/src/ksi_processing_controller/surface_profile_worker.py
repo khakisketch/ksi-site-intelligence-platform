@@ -8,9 +8,12 @@ function never opens a path it was not handed and never widens a limit it was gi
 
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
 
+from ksi_event_contracts.measurement_feature import MAX_LINE_VERTICES
 from ksi_event_contracts.surface_profile import (
+    MAX_PROFILE_SAMPLES,
     CreateSurfaceProfileV1,
     SurfaceProfileRefusalV1,
     SurfaceProfileResultV1,
@@ -32,6 +35,13 @@ def read_surface_profile(
     policy: SurfaceProfilePolicy,
 ) -> SurfaceProfileResultV1 | SurfaceProfileRefusalV1:
     """Sealed result for the exact request line, or a typed refusal with no partial values."""
+    # The result contract has its own ceilings.  Apply them as limits *before* reading, so a
+    # generous policy refuses over-ceiling input up front instead of failing after the read.
+    policy = replace(
+        policy,
+        maximum_samples=min(policy.maximum_samples, MAX_PROFILE_SAMPLES),
+        maximum_vertices=min(policy.maximum_vertices, MAX_LINE_VERTICES),
+    )
     try:
         source = inspect_profile_source(raster_path)
         spacing = request.sample_spacing_m or source.ground_sample_distance_m

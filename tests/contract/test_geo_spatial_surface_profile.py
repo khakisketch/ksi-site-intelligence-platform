@@ -7,7 +7,9 @@
 from __future__ import annotations
 
 import math
+from collections.abc import Sequence
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 import pytest
@@ -18,6 +20,7 @@ from ksi_geo_spatial.surface_profile import (
     SampleInvalidReason,
     SurfaceProfileError,
     SurfaceProfileErrorReason,
+    SurfaceProfilePlan,
     SurfaceProfilePolicy,
     compare_surface_profiles,
     inspect_profile_source,
@@ -84,12 +87,12 @@ def _line(*cells: tuple[float, float]) -> list[tuple[float, float]]:
 
 
 def _plan(
-    vertices,
+    vertices: Sequence[Any],
     *,
-    spacing: float = 1.0,
+    spacing: Any = 1.0,
     crs: str = "EPSG:5186",
     policy: SurfaceProfilePolicy = _POLICY,
-):
+) -> SurfaceProfilePlan:
     return plan_surface_profile(
         vertices,
         vertices_crs=crs,
@@ -268,14 +271,14 @@ def test_nan_cells_without_declared_nodata_are_also_unknown(tmp_path: Path) -> N
         ([(float(i), 0.0) for i in range(60)], SurfaceProfileErrorReason.TOO_MANY_VERTICES),
     ],
 )
-def test_bad_lines_are_refused(vertices, reason: SurfaceProfileErrorReason) -> None:
+def test_bad_lines_are_refused(vertices: list[Any], reason: SurfaceProfileErrorReason) -> None:
     with pytest.raises(SurfaceProfileError) as excinfo:
         _plan(vertices)
     assert _reason(excinfo) is reason
 
 
 @pytest.mark.parametrize("spacing", [0.0, -1.0, float("nan"), float("inf"), True, "1"])
-def test_bad_spacing_is_refused(spacing) -> None:
+def test_bad_spacing_is_refused(spacing: Any) -> None:
     with pytest.raises(SurfaceProfileError) as excinfo:
         _plan(_line((2, 2), (9, 2)), spacing=spacing)
     assert _reason(excinfo) is SurfaceProfileErrorReason.INVALID_SAMPLING
@@ -552,3 +555,93 @@ def test_profiles_in_different_crs_are_not_compared(tmp_path: Path) -> None:
     with pytest.raises(SurfaceProfileError) as excinfo:
         compare_surface_profiles(a, b)
     assert _reason(excinfo) is SurfaceProfileErrorReason.CRS_MISMATCH
+
+
+# ── 경계값: 예외가 아니라 typed 거부 ────────────────────────────────────────────
+
+
+def test_denormal_spacing_is_refused_not_an_overflow() -> None:
+    with pytest.raises(SurfaceProfileError) as excinfo:
+        _plan(_line((2, 2), (9, 2)), spacing=5e-324)
+    assert _reason(excinfo) is SurfaceProfileErrorReason.TOO_MANY_SAMPLES
+
+
+def test_a_line_shorter_than_the_distance_tolerance_is_not_a_profile() -> None:
+    x, y = _centre(2, 2)
+    with pytest.raises(SurfaceProfileError) as excinfo:
+        _plan([(x, y), (x + 1e-10, y)])
+    assert _reason(excinfo) is SurfaceProfileErrorReason.INVALID_LINE
+
+
+def test_the_shortest_accepted_line_keeps_both_ends() -> None:
+    x, y = _centre(2, 2)
+    plan = _plan([(x, y), (x + 3e-9, y)])
+    assert len(plan.distances_m) >= 2 and plan.distances_m[0] == 0.0
+
+
+# ── 지원하지 않는 값 유형·수직 성분 ──────────────────────────────────────────────
+
+
+def test_complex_raster_is_refused_not_cast_to_real_heights(tmp_path: Path) -> None:
+    path = tmp_path / "complex.tif"
+    with rasterio.open(
+        path,
+        "w",
+        driver="GTiff",
+        height=5,
+        width=5,
+        count=1,
+        dtype="complex64",
+        crs="EPSG:5186",
+        transform=from_origin(_ORIGIN_X, _ORIGIN_Y, 1.0, 1.0),
+    ) as dataset:
+        dataset.write(np.full((5, 5), 7 + 9j, dtype="complex64"), 1)
+    with pytest.raises(SurfaceProfileError) as excinfo:
+        inspect_profile_source(path)
+    assert _reason(excinfo) is SurfaceProfileErrorReason.UNSUPPORTED_RASTER
+
+
+def _compound(path: Path, vertical: str) -> Path:
+    from pyproj.crs import CompoundCRS
+
+    crs = CompoundCRS("합성 수평+수직", components=["EPSG:5186", vertical])
+    with rasterio.open(
+        path,
+        "w",
+        driver="GTiff",
+        height=20,
+        width=30,
+        count=1,
+        dtype="float32",
+        crs=crs.to_wkt(),
+        nodata=_NODATA,
+        transform=from_origin(_ORIGIN_X, _ORIGIN_Y, 1.0, 1.0),
+    ) as dataset:
+        dataset.write(_plane().astype("float32"), 1)
+    return path
+
+
+def test_compound_crs_with_a_metre_vertical_is_read_on_its_horizontal_part(
+    tmp_path: Path,
+) -> None:
+    raster = _compound(tmp_path / "compound.tif", "EPSG:5773")
+    facts = inspect_profile_source(raster)
+    assert facts.horizontal_crs == "EPSG:5186"
+    assert facts.vertical_crs == "EPSG:5773"
+    profile = sample_surface_profile(raster, _plan(_line((2, 3), (12, 3))), policy=_POLICY)
+    assert profile.valid_count == len(profile.samples)
+
+
+def test_plain_horizontal_crs_has_no_vertical_claim(tmp_path: Path) -> None:
+    facts = inspect_profile_source(_write(tmp_path / "plain.tif", _plane()))
+    assert facts.vertical_crs is None
+
+
+def test_compound_crs_with_a_foot_vertical_is_refused_not_labelled_metres(
+    tmp_path: Path,
+) -> None:
+    # EPSG:6360 은 US survey foot 수직축 — 값을 m 로 읽어 주면 3.28배 틀린다.
+    raster = _compound(tmp_path / "foot.tif", "EPSG:6360")
+    with pytest.raises(SurfaceProfileError) as excinfo:
+        inspect_profile_source(raster)
+    assert _reason(excinfo) is SurfaceProfileErrorReason.UNSUPPORTED_CRS

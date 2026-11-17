@@ -289,3 +289,36 @@ def test_refusal_is_typed_and_never_retryable() -> None:
     assert set(SurfaceProfileRefusalV1.model_fields) == {"reason", "retryable"}
     with pytest.raises(ValidationError):
         SurfaceProfileRefusalV1(reason="/data/secret.tif")  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize(
+    ("elevation", "reason"),
+    [(None, None), (1.0, "NODATA"), (None, "NOT_A_REASON")],
+)
+def test_wire_schema_refuses_a_malformed_sample(
+    elevation: float | None, reason: str | None
+) -> None:
+    schema = json.loads((ROOT / "contracts/schemas/surface-profile.v1.json").read_text())
+    validator = Draft202012Validator(
+        {"$ref": "#/$defs/SurfaceProfileSampleV1", "$defs": schema["$defs"]}
+    )
+    wire = dict(index=0, distanceM=0.0, x=0.0, y=0.0, elevationM=elevation, invalidReason=reason)
+    assert list(validator.iter_errors(wire))
+    with pytest.raises(ValidationError):
+        SurfaceProfileSampleV1.model_validate(wire)
+
+
+@pytest.mark.parametrize(
+    ("elevation", "reason"),
+    [(0.0, None), (-3.5, None), (None, "NODATA"), (None, "OUTSIDE_SURFACE")],
+)
+def test_wire_schema_accepts_a_well_formed_sample(
+    elevation: float | None, reason: str | None
+) -> None:
+    schema = json.loads((ROOT / "contracts/schemas/surface-profile.v1.json").read_text())
+    validator = Draft202012Validator(
+        {"$ref": "#/$defs/SurfaceProfileSampleV1", "$defs": schema["$defs"]}
+    )
+    wire = dict(index=0, distanceM=0.0, x=0.0, y=0.0, elevationM=elevation, invalidReason=reason)
+    assert not list(validator.iter_errors(wire))
+    SurfaceProfileSampleV1.model_validate(wire)
