@@ -16,8 +16,11 @@ describe("current Site task vocabulary", () => {
       "분석",
       "등록 진행",
       "현장 설정",
+      "측정 선",
       "구역 자료 준비",
     ]);
+    // 측정 선 화면은 같은 현장 범위의 주소로 이어진다.
+    expect(contextPaletteItems(items, "/sites/site-1").find((i) => i.label === "측정 선")!.href).toBe("/sites/site-1/measurements");
     const hrefs = contextPaletteItems(items, "/sites/site-1/analysis").map((i) => i.href);
     expect(hrefs).toContain("/sites/site-1/analysis");
     expect(hrefs).toContain("/sites/site-1?section=manage");

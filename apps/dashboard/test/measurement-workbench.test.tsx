@@ -1,0 +1,230 @@
+/** @vitest-environment jsdom */
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+import type { SurfaceProfileResult } from "@/lib/core-api/measurement-types";
+import { MeasurementWorkbench, type WorkbenchProps } from "@/app/sites/[siteId]/measurements/MeasurementWorkbench";
+
+const DIGEST = `sha256:${"a".repeat(64)}`;
+const FEATURE_ID = `mf-${"1".repeat(32)}`;
+
+// 0 / 7.5 / 15 / 22.5 / 30 m. 15 m 지점은 자료가 없다. 높이는 100 + 0.5 * 번호 + offset.
+function result(offset: number, nodataAt: number | null = 2): SurfaceProfileResult {
+  const samples = Array.from({ length: 5 }, (_, i) => (i === nodataAt
+    ? { index: i, distanceM: i * 7.5, x: 200000 + i * 7.5, y: 500000 + i, elevationM: null, invalidReason: "NODATA" as const }
+    : { index: i, distanceM: i * 7.5, x: 200000 + i * 7.5, y: 500000 + i, elevationM: 100 + offset + i * 0.5, invalidReason: null }));
+  const known = samples.filter((row) => row.elevationM !== null).length;
+  return {
+    assetRef: `ksa-v1-${"3".repeat(64)}`, lineDigest: DIGEST, feature: { featureId: FEATURE_ID, revision: 2, lineDigest: DIGEST },
+    horizontalCrs: "EPSG:5186", lineLengthM: 30, sampleSpacingM: 7.5, samples, validCount: known, unknownCount: 5 - known,
+    minimumM: 100 + offset, maximumM: 102 + offset,
+  };
+}
+
+function props(overrides: Partial<WorkbenchProps> = {}): WorkbenchProps {
+  return {
+    workAreaId: "area-1",
+    features: [{ featureId: FEATURE_ID, label: "북쪽 경사면 · 개정 2" }],
+    selectedFeatureId: FEATURE_ID,
+    featureName: "북쪽 경사면",
+    featureRevision: 2,
+    dateOptions: [{ jobId: `spj-${"1".repeat(32)}`, label: "2026-03-14" }, { jobId: `spj-${"3".repeat(32)}`, label: "2026-11-02" }],
+    refJobId: `spj-${"1".repeat(32)}`,
+    curJobId: `spj-${"3".repeat(32)}`,
+    baseline: { jobId: `spj-${"1".repeat(32)}`, label: "2026-03-14", result: result(0) },
+    current: { jobId: `spj-${"3".repeat(32)}`, label: "2026-11-02", result: result(0.8) },
+    unavailable: [],
+    notes: [],
+    ...overrides,
+  };
+}
+
+beforeEach(() => {
+  // jsdom은 레이아웃이 없다. 그래프가 가로 360 단위로 그려진 화면을 흉내 낸다.
+  vi.spyOn(Element.prototype, "getBoundingClientRect").mockReturnValue({ x: 0, y: 0, left: 0, top: 0, right: 360, bottom: 230, width: 360, height: 230, toJSON: () => ({}) });
+});
+afterEach(() => { cleanup(); vi.restoreAllMocks(); });
+
+const hit = () => screen.getByTestId("profile-chart-hit");
+const pressed = (key: string, init: KeyboardEventInit = {}) => fireEvent.keyDown(hit(), { key, ...init });
+// jsdom의 PointerEvent는 좌표를 싣지 않는다. 좌표가 있는 MouseEvent에 포인터 이벤트 이름을 붙여 보낸다.
+const pointer = (type: "pointerdown" | "pointermove" | "pointerup", clientX: number) => fireEvent(hit(), new MouseEvent(type, { clientX, clientY: 100, bubbles: true }));
+const live = () => document.querySelector('[aria-live="polite"]')!.textContent ?? "";
+
+describe("측정 선 작업대", () => {
+  it("모르는 지점에서 선을 끊는다(이웃 값이나 0으로 잇지 않는다)", () => {
+    const { container } = render(<MeasurementWorkbench {...props()} />);
+    for (const key of ["cur", "ref"]) {
+      expect(container.querySelectorAll(`[data-series="${key}"] path[fill="none"]`)).toHaveLength(2);
+    }
+  });
+
+  it("두 날짜와 값 없는 이유를 보여 준다", () => {
+    render(<MeasurementWorkbench {...props()} />);
+    const chips = screen.getByRole("list", { name: "표시 중인 날짜" });
+    expect(chips.textContent).toContain("기준 2026-03-14");
+    expect(chips.textContent).toContain("현재 2026-11-02");
+    const facts = screen.getByRole("complementary").querySelector("dl")!;
+    expect(facts.textContent).toContain("한국 중부원점 TM · EPSG:5186");
+    expect(facts.textContent).toContain("기준 4");
+    expect(facts.textContent).toContain("자료 없음 1");
+    expect(facts.textContent).toContain("평면 거리");
+  });
+
+  it("키보드로 지점을 읽고 같은 지점이 보드에 표시된다", () => {
+    render(<MeasurementWorkbench {...props()} />);
+    hit().focus();
+    pressed("ArrowRight");
+    expect(screen.getByText(/0\.0 m · 기준 100\.00 m · 현재 100\.80 m/)).toBeTruthy();
+    expect(screen.getByTestId("profile-board-probe")).toBeTruthy();
+    pressed("ArrowRight");
+    pressed("ArrowRight");
+    // 15 m 지점은 자료가 없다. 값 대신 이유를 말한다.
+    expect(screen.getByText(/15\.0 m · 기준 값 없음 · 자료 없음 · 현재 값 없음 · 자료 없음/)).toBeTruthy();
+  });
+
+  it("Shift와 화살표로 구간을 고르면 높이 차와 기울기를 읽는다", () => {
+    render(<MeasurementWorkbench {...props()} />);
+    hit().focus();
+    pressed("ArrowRight");
+    for (let step = 0; step < 3; step += 1) pressed("ArrowRight", { shiftKey: true });
+    // 0~22.5 m: 유효 처음 100.0, 유효 끝 101.5 → +1.50 m, 22.5 m 동안 6.67 %
+    expect(live()).toContain("0.0–22.5 m 구간 · 길이 22.5 m");
+    expect(live()).toContain("기준 +1.50 m (+6.7 %)");
+    expect(live()).toContain("현재 +1.50 m (+6.7 %)");
+    expect(screen.getByTestId("profile-board-range")).toBeTruthy();
+  });
+
+  it("Esc와 해제 버튼으로 구간을 지운다", () => {
+    render(<MeasurementWorkbench {...props()} />);
+    hit().focus();
+    pressed("ArrowRight");
+    pressed("ArrowRight", { shiftKey: true });
+    expect(screen.queryByTestId("profile-board-range")).toBeTruthy();
+    pressed("Escape");
+    expect(screen.queryByTestId("profile-board-range")).toBeNull();
+    pressed("ArrowRight");
+    pressed("ArrowRight", { shiftKey: true });
+    fireEvent.click(screen.getByRole("button", { name: "해제" }));
+    expect(screen.queryByTestId("profile-board-range")).toBeNull();
+  });
+
+  it("끌어서 구간을 고른다", () => {
+    render(<MeasurementWorkbench {...props()} />);
+    // 가로 360 중 그래프 영역은 40..348. 0 m는 40, 30 m는 348 부근이다.
+    pointer("pointerdown", 40);
+    pointer("pointermove", 348);
+    pointer("pointerup", 348);
+    expect(live()).toContain("0.0–30.0 m 구간 · 길이 30.0 m");
+  });
+
+  it("누르기만 하고 끌지 않으면 구간을 만들지 않는다", () => {
+    render(<MeasurementWorkbench {...props()} />);
+    pointer("pointerdown", 200);
+    pointer("pointerup", 200);
+    expect(screen.queryByTestId("profile-board-range")).toBeNull();
+    expect(screen.queryByTestId("profile-chart-range")).toBeNull();
+    expect(live()).not.toContain("구간");
+  });
+
+  it("Shift 없이 지점을 옮기면 고른 구간을 지운다", () => {
+    render(<MeasurementWorkbench {...props()} />);
+    hit().focus();
+    pressed("ArrowRight");
+    pressed("ArrowRight", { shiftKey: true });
+    expect(screen.queryByTestId("profile-chart-range")).toBeTruthy();
+    pressed("ArrowRight");
+    expect(screen.queryByTestId("profile-chart-range")).toBeNull();
+    expect(screen.queryByTestId("profile-board-range")).toBeNull();
+  });
+
+  it("세로 비율을 바꾸면 고른 구간을 지운다(축이 달라지므로)", () => {
+    render(<MeasurementWorkbench {...props()} />);
+    hit().focus();
+    pressed("ArrowRight");
+    pressed("ArrowRight", { shiftKey: true });
+    expect(screen.queryByTestId("profile-chart-range")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "1:1" }));
+    expect(screen.queryByTestId("profile-chart-range")).toBeNull();
+    expect(screen.queryByTestId("profile-board-range")).toBeNull();
+  });
+
+  it("유효 지점이 모자란 구간은 값을 만들지 않는다", () => {
+    render(<MeasurementWorkbench {...props()} />);
+    hit().focus();
+    pressed("ArrowRight");
+    pressed("ArrowRight");
+    // 7.5~15 m 구간: 15 m 지점은 값이 없어 유효 지점이 7.5 m 하나뿐이다.
+    pressed("ArrowRight", { shiftKey: true });
+    expect(live()).toContain("7.5–15.0 m 구간");
+    expect(live()).toContain("기준 값 부족");
+    expect(live()).toContain("현재 값 부족");
+  });
+
+  it("1:1로 바꾸면 그래프가 실제 비율로 다시 그려진다", () => {
+    const { container } = render(<MeasurementWorkbench {...props()} />);
+    expect(container.textContent).not.toContain("높이 (m) · 1:1");
+    fireEvent.click(screen.getByRole("button", { name: "1:1" }));
+    expect(container.textContent).toContain("높이 (m) · 1:1");
+    expect(screen.getByRole("button", { name: "1:1" }).getAttribute("aria-pressed")).toBe("true");
+  });
+
+  it("권한이 없어 숨긴 날짜는 이유를 알리고 남은 날짜만 그린다", () => {
+    const { container } = render(<MeasurementWorkbench {...props({
+      current: null,
+      unavailable: [{ role: "cur", label: "2026-11-02", message: "접근 권한이 없어 표시하지 않습니다." }],
+    })} />);
+    expect(screen.getByRole("alert").textContent).toContain("접근 권한이 없어 표시하지 않습니다.");
+    expect(container.querySelector('[data-series="cur"]')).toBeNull();
+    expect(container.querySelector('[data-series="ref"]')).not.toBeNull();
+  });
+
+  it("날짜는 서버로 다시 요청한다(고르기만으로 새 계산을 만들지 않는다)", () => {
+    const { container } = render(<MeasurementWorkbench {...props()} />);
+    const form = container.querySelector("form")!;
+    expect(form.method).toBe("get");
+    expect(Array.from(form.querySelectorAll("select")).map((select) => select.name).sort()).toEqual(["cur", "ref"]);
+    expect(form.querySelector('input[name="workAreaId"]')!.getAttribute("value")).toBe("area-1");
+  });
+
+  it("측정 선이 둘 이상이면 고르는 목록이 생긴다", () => {
+    const other = `mf-${"2".repeat(32)}`;
+    const { container } = render(<MeasurementWorkbench {...props({ features: [
+      { featureId: FEATURE_ID, label: "북쪽 경사면 · 개정 2" }, { featureId: other, label: "동쪽 경계선 · 개정 1" },
+    ] })} />);
+    expect(container.querySelector('select[name="feature"]')).not.toBeNull();
+  });
+
+  it("거리별 값 표는 값 없는 지점의 이유를 적는다", () => {
+    render(<MeasurementWorkbench {...props()} />);
+    const table = screen.getByRole("table");
+    expect(within(table).getAllByText(/값 없음 · 자료 없음/).length).toBeGreaterThanOrEqual(2);
+  });
+
+  describe("CSV 내보내기", () => {
+    it("보이는 두 날짜를 모르는 지점의 이유와 함께 내려받는다", async () => {
+      let blob: Blob | null = null;
+      const originalCreate = URL.createObjectURL;
+      URL.createObjectURL = vi.fn((value: Blob) => { blob = value; return "blob:test"; });
+      URL.revokeObjectURL = vi.fn();
+      const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => undefined);
+      try {
+        render(<MeasurementWorkbench {...props()} />);
+        fireEvent.click(screen.getByRole("button", { name: "CSV 내보내기" }));
+        expect(click).toHaveBeenCalledTimes(1);
+        const text = await new Promise<string>((resolve) => { const reader = new FileReader(); reader.onload = () => resolve(String(reader.result)); reader.readAsText(blob!); });
+        const lines = text.replace(/^﻿/, "").trim().split("\r\n");
+        expect(lines[0]).toBe("series,distance_m,x,y,elevation_m,unknown_reason");
+        expect(lines).toHaveLength(1 + 10);
+        expect(lines.filter((line) => line.startsWith('"기준 2026-03-14"'))).toHaveLength(5);
+        expect(lines.filter((line) => line.startsWith('"현재 2026-11-02"'))).toHaveLength(5);
+        const unknown = lines.filter((line) => line.endsWith(",NODATA"));
+        expect(unknown).toHaveLength(2);
+        // 모르는 지점의 높이 칸은 비어 있다.
+        expect(unknown.every((line) => /,,NODATA$/.test(line))).toBe(true);
+      } finally {
+        URL.createObjectURL = originalCreate;
+      }
+    });
+  });
+});

@@ -1,0 +1,659 @@
+<meta name="claude:viewport-fit-sides" content="cover">
+<title>측정 선 단면</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&display=swap">
+<style>
+/* 토큰: 기본 명도는 밝은 면, 어두운 측정 보드는 양쪽 테마에서 동일하게 쓴다. */
+:root{
+  --page:#f5f6f7; --surface:#ffffff; --sunk:#eef0f2; --line:#e3e6e9; --line-strong:#c4c9ce;
+  --ink:#14181b; --ink-2:#4a5256; --ink-3:#6c7479;
+  --board:#0a0d0e; --board-ink:#dce4e6; --board-mute:#8a9699; --board-line:#263033; --board-grid:#141b1d;
+  --accent:#1d7379; --on-accent:#ffffff; --accent-soft:rgba(29,115,121,.14);
+  --ref:#8a949a; --cur:#1d7379; --cur-soft:rgba(29,115,121,.12);
+  --up:#1d7379; --down:#9aa3a8;
+  --warn:#6f4d00; --warn-bg:#fff5de; --block:#8a1f1f; --block-bg:#fbeaea;
+  color-scheme:light;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --page:#0e1113; --surface:#161b1d; --sunk:#1e2427; --line:#2a3335; --line-strong:#3e484c;
+    --ink:#e7ecee; --ink-2:#aeb8bc; --ink-3:#8d989d;
+    --board:#070a0b; --board-ink:#dce4e6; --board-mute:#7f8c90; --board-line:#2a3538; --board-grid:#121819;
+    --accent:#6cc2c8; --on-accent:#05191b; --accent-soft:rgba(108,194,200,.16);
+    --ref:#6f797e; --cur:#6cc2c8; --cur-soft:rgba(108,194,200,.14);
+    --up:#6cc2c8; --down:#7a8489;
+    --warn:#f0c46a; --warn-bg:#32290f; --block:#f29b9b; --block-bg:#3a1d1d;
+    color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --page:#0e1113; --surface:#161b1d; --sunk:#1e2427; --line:#2a3335; --line-strong:#3e484c;
+  --ink:#e7ecee; --ink-2:#aeb8bc; --ink-3:#8d989d;
+  --board:#070a0b; --board-ink:#dce4e6; --board-mute:#7f8c90; --board-line:#2a3538; --board-grid:#121819;
+  --accent:#6cc2c8; --on-accent:#05191b; --accent-soft:rgba(108,194,200,.16);
+  --ref:#6f797e; --cur:#6cc2c8; --cur-soft:rgba(108,194,200,.14);
+  --up:#6cc2c8; --down:#7a8489;
+  --warn:#f0c46a; --warn-bg:#32290f; --block:#f29b9b; --block-bg:#3a1d1d;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+html,body{background:var(--page)}
+body{margin:0;color:var(--ink);font-family:"Pretendard Variable",Pretendard,"Apple SD Gothic Neo","Noto Sans KR","Malgun Gothic",system-ui,sans-serif;font-size:14px;line-height:1.55;-webkit-font-smoothing:antialiased}
+.app{max-width:1440px;margin:0 auto;padding-block:20px 40px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+.head{display:flex;flex-wrap:wrap;gap:12px 20px;align-items:center;justify-content:space-between;margin-bottom:16px}
+.crumb{color:var(--ink-3);font-size:13px}
+.crumb b{color:var(--ink);font-weight:500}
+.review{display:flex;flex-wrap:wrap;align-items:center;gap:8px 10px;font-size:12px;color:var(--ink-3)}
+.seg{display:inline-flex;flex-wrap:wrap;gap:2px;padding:3px;background:var(--sunk);border-radius:10px}
+.seg button{font:inherit;font-size:12.5px;border:0;background:transparent;color:var(--ink-2);padding:0 12px;border-radius:7px;cursor:pointer;min-height:34px;transition:background .15s,color .15s}
+.seg button:hover{color:var(--ink)}
+.seg button[aria-pressed="true"]{background:var(--surface);color:var(--ink);font-weight:500;box-shadow:0 1px 2px rgba(0,0,0,.10),0 0 0 1px var(--line)}
+button:focus-visible,select:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.work{display:grid;gap:20px;grid-template-columns:minmax(0,1fr) 404px;align-items:start}
+@media (max-width:1023px){.work{grid-template-columns:minmax(0,1fr)}}
+
+/* 보드 */
+.board{background:var(--board);color:var(--board-ink);border-radius:12px;overflow:hidden;min-width:0;position:relative;box-shadow:0 1px 0 rgba(255,255,255,.04) inset}
+.board-top{display:flex;justify-content:space-between;align-items:center;gap:8px 12px;padding:12px 16px;border-bottom:1px solid var(--board-line);font-size:12px;color:var(--board-mute);letter-spacing:.01em}
+.board-top .tag{display:inline-flex;align-items:center;gap:6px}
+.board-top .tag::before{content:"";width:6px;height:6px;border-radius:50%;background:var(--board-mute)}
+.board svg{display:block;width:100%;height:auto}
+.board.dim .stage-art{opacity:.28;transition:opacity .2s}
+.board-veil{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);display:none;width:min(86%,360px);text-align:center;padding:14px 18px;border-radius:10px;background:var(--board);border:1px solid var(--board-line);color:var(--board-ink);font-size:13.5px;line-height:1.5;text-wrap:balance;box-shadow:0 12px 32px rgba(0,0,0,.35)}
+.board.dim .board-veil{display:block}
+.legend-strip{display:flex;flex-wrap:wrap;align-items:center;gap:8px 18px;padding:12px 16px;border-top:1px solid var(--board-line);font-size:12px;color:var(--board-mute)}
+.legend-strip .sep{margin-left:auto;font-variant-numeric:tabular-nums}
+.k{display:inline-flex;align-items:center;gap:7px;white-space:nowrap}
+.k i{display:inline-block;width:22px;border-top:2.5px solid var(--board-ink);border-radius:2px}
+.k i.dash{border-top:1.5px dashed var(--board-mute)}
+.k i.red{border-top:2.5px solid var(--block)}
+.off{display:none}
+
+/* 인스펙터 */
+.insp{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:18px;min-width:0}
+.line-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.line-row label{font-size:12px;color:var(--ink-3)}
+.line-row.off{display:none}
+select{font:inherit;font-size:13px;height:38px;padding:0 34px 0 12px;border-radius:9px;border:1px solid var(--line-strong);background-color:var(--surface);color:var(--ink);max-width:100%;appearance:none;-webkit-appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='M2.5 4.5 6 8l3.5-3.5' fill='none' stroke='%23888' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 12px center;cursor:pointer}
+select:hover{border-color:var(--ink-3)}
+.line-row select{min-width:0;flex:1 1 220px}
+.title-row{margin-top:16px}
+.insp h2{margin:0;font-size:18px;font-weight:700;letter-spacing:-.01em;text-wrap:balance;overflow-wrap:anywhere}
+.meta{margin-top:4px;font-size:12.5px;color:var(--ink-3)}
+.picks{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-top:16px}
+.pick{display:flex;flex-direction:column;gap:6px;min-width:0}
+.pick span{font-size:12px;color:var(--ink-3)}
+.pick select{width:100%;font-variant-numeric:tabular-nums}
+.pick em{font-style:normal;font-size:12px;color:var(--block)}
+.chart-bar{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 12px;margin-top:14px}
+.chips{display:flex;flex-wrap:wrap;gap:6px;min-width:0}
+.seg.small{padding:2px}
+.seg.small button{min-height:26px;font-size:12px;padding:0 10px}
+.chip{display:inline-flex;align-items:center;gap:8px;font-size:12px;height:26px;padding:0 10px;border-radius:999px;background:var(--sunk);color:var(--ink-2);white-space:nowrap;font-variant-numeric:tabular-nums}
+.chip.ref::before{content:"";width:16px;border-top:2px dashed var(--ref)}
+.chip.cur::before{content:"";width:16px;border-top:2px solid var(--cur)}
+.chip.hidden{background:transparent;border:1px dashed var(--line-strong);color:var(--ink-3)}
+
+.chart{margin-top:12px}
+.chart svg{display:block;width:100%;height:auto;overflow:visible}
+.chart .grid{stroke:var(--line);stroke-width:1;stroke-dasharray:2 3}
+.chart .axis{fill:var(--ink-3);font-size:11.5px;font-variant-numeric:tabular-nums}
+.chart .axis-title{fill:var(--ink-2);font-size:11.5px}
+.chart .base{stroke:var(--line-strong);stroke-width:1}
+.chart .ref{stroke:var(--ref);stroke-dasharray:5 4;fill:none;stroke-width:1.8;stroke-linejoin:round}
+.chart .cur{stroke:var(--cur);fill:none;stroke-width:2.4;stroke-linejoin:round;stroke-linecap:round}
+.chart .area{fill:var(--cur-soft)}
+.chart .dot-ref{fill:var(--ref)}
+.chart .dot-cur{fill:var(--cur)}
+.chart .hl{stroke:var(--surface);stroke-width:2}
+.chart .cursor{stroke:var(--ink-3);stroke-width:1;stroke-dasharray:2 3}
+.readout{font-size:12.5px;color:var(--ink-2);min-height:20px;margin-top:8px;font-variant-numeric:tabular-nums;line-height:1.6}
+.readout b{font-weight:600;color:var(--ink)}
+.readout .link{font:inherit;font-size:12px;color:var(--ink-3);background:none;border:0;padding:2px 6px;margin-left:4px;cursor:pointer;text-decoration:underline;border-radius:6px}
+.chart .sel{fill:var(--accent-soft);stroke:var(--accent);stroke-width:1}
+.chart .hit:focus{outline:none}
+.chart .focusring{fill:none;stroke:var(--accent);stroke-width:2;rx:4;display:none}
+.chart:has(.hit:focus-visible) .focusring{display:block}
+
+.diff{margin-top:16px;padding:14px 14px 12px;border:1px solid var(--line);border-radius:10px;background:var(--surface)}
+.diff[hidden]{display:none}
+.diff-head{display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap}
+.diff-head span{font-size:12.5px;color:var(--ink-2)}
+.diff-head strong{font-weight:600;font-size:13.5px;font-variant-numeric:tabular-nums;color:var(--ink)}
+.diff-legend{display:flex;gap:12px;margin-top:6px;font-size:11.5px;color:var(--ink-3)}
+.diff-legend span{display:inline-flex;align-items:center;gap:6px}
+.diff-legend i{width:9px;height:9px;border-radius:2px;display:inline-block}
+#diff-svg{display:block;width:100%;height:auto;margin-top:8px}
+#diff-svg .zero{stroke:var(--line-strong);stroke-width:1}
+#diff-svg .zlab{fill:var(--ink-3);font-size:11px;font-variant-numeric:tabular-nums}
+.checks{list-style:none;margin:12px 0 0;padding:10px 0 0;border-top:1px solid var(--line);display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.checks li{display:flex;flex-direction:column;gap:3px;font-size:11.5px;color:var(--ink-3);min-width:0}
+.checks b{font-weight:600;font-size:13px;color:var(--ink)}
+.checks .ok{color:var(--ink)}
+.checks .no{color:var(--block)}
+.diff-note{margin:10px 0 0;font-size:12.5px;line-height:1.5;color:var(--ink-2);background:var(--sunk);border-radius:8px;padding:8px 10px}
+.diff-note[hidden]{display:none}
+
+dl.facts{display:grid;grid-template-columns:auto minmax(0,1fr);margin:16px 0 0;font-size:13px}
+dl.facts dt,dl.facts dd{padding:9px 0;border-top:1px solid var(--line);margin:0}
+dl.facts dt{color:var(--ink-3)}
+dl.facts dd{text-align:right;font-variant-numeric:tabular-nums;min-width:0;overflow-wrap:anywhere;color:var(--ink)}
+dl.facts small{display:block;font-size:11.5px;color:var(--ink-3)}
+
+.notice{border-radius:10px;padding:12px 14px;font-size:13px;margin-top:14px;line-height:1.5}
+.notice p{margin:0}
+.notice p+p{margin-top:4px}
+.notice.block{background:var(--block-bg);color:var(--block)}
+.notice.warn{background:var(--warn-bg);color:var(--warn)}
+.notice.info{background:var(--sunk);color:var(--ink-2)}
+.btn{font:inherit;font-size:13px;height:38px;padding:0 16px;border-radius:9px;border:1px solid var(--line-strong);background:var(--surface);color:var(--ink);cursor:pointer;transition:background .15s,border-color .15s}
+.btn:hover{border-color:var(--ink-3)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--on-accent);font-weight:600}
+.btn.primary:hover{filter:brightness(1.06)}
+.actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:18px}
+.skel{height:200px;border-radius:10px;margin-top:14px;background:linear-gradient(90deg,var(--sunk),var(--line),var(--sunk));background-size:200% 100%;animation:sh 1.4s linear infinite}
+@keyframes sh{to{background-position:-200% 0}}
+@media (prefers-reduced-motion:reduce){.skel{animation:none}.board.dim .stage-art{transition:none}}
+details{margin-top:16px;border-top:1px solid var(--line);padding-top:12px}
+summary{cursor:pointer;font-size:13px;color:var(--ink-2);min-height:34px;display:flex;align-items:center;list-style:none}
+summary::-webkit-details-marker{display:none}
+summary::after{content:"";margin-left:auto;width:7px;height:7px;border-right:1.5px solid var(--ink-3);border-bottom:1.5px solid var(--ink-3);transform:rotate(45deg);transition:transform .15s}
+details[open] summary::after{transform:rotate(-135deg)}
+.tablewrap{max-height:260px;overflow:auto;border:1px solid var(--line);border-radius:10px;margin-top:10px}
+table{width:100%;border-collapse:collapse;font-size:12.5px;font-variant-numeric:tabular-nums}
+th,td{padding:7px 12px;text-align:right;border-bottom:1px solid var(--line);white-space:nowrap}
+th{position:sticky;top:0;background:var(--surface);color:var(--ink-3);font-weight:500;font-size:12px}
+th:first-child,td:first-child{text-align:left}
+td.unk{color:var(--ink-3)}
+.src{margin:14px 0 0;font-size:12px;color:var(--ink-3)}
+</style>
+
+<div class="app">
+  <div class="head">
+    <div class="crumb">현장 A · 작업구역 1 · <b>공간 › 측정 선</b></div>
+    <div class="review">
+      <span>검토용 상태 보기 (제품 화면에는 없음)</span>
+      <div class="seg" role="group" aria-label="검토용 상태 보기">
+        <button type="button" data-state="normal" aria-pressed="true">정상</button>
+        <button type="button" data-state="loading" aria-pressed="false">확인 중</button>
+        <button type="button" data-state="blocked" aria-pressed="false">권한 없음</button>
+        <button type="button" data-state="mismatch" aria-pressed="false">처리 조건 다름</button>
+        <button type="button" data-state="outside" aria-pressed="false">범위 밖</button>
+        <button type="button" data-state="empty" aria-pressed="false">선 없음</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="work">
+    <section class="board" id="board" aria-label="공간 보드">
+      <div class="board-top"><span>등록된 범위</span><span>합성 예시 데이터</span></div>
+      <svg viewBox="0 0 600 400" role="img" aria-label="등록된 범위와 측정 선의 위치">
+        <defs>
+          <pattern id="g" width="40" height="40" patternUnits="userSpaceOnUse">
+            <path d="M40 0H0V40" fill="none" stroke="var(--board-grid)" stroke-width="1"/>
+          </pattern>
+        </defs>
+        <rect width="600" height="400" fill="url(#g)"/>
+        <g class="stage-art">
+          <rect x="60" y="50" width="480" height="290" rx="2" fill="none" stroke="var(--board-mute)" stroke-width="1.5" stroke-dasharray="6 5"/>
+          <rect x="72" y="60" width="92" height="22" rx="11" fill="var(--board)" stroke="var(--board-line)"/>
+          <text x="118" y="75" fill="var(--board-mute)" font-size="11.5" text-anchor="middle">등록된 범위</text>
+          <polyline id="sel-line" points="" fill="none" stroke="#6cc2c8" stroke-width="10" stroke-linecap="round" stroke-linejoin="round" opacity=".55" class="off"/>
+          <g id="line-in">
+            <polyline points="150,262 210,226 262,210 318,180 370,160 430,122" fill="none" stroke="var(--board-ink)" stroke-width="2.5" stroke-linejoin="round"/>
+            <circle cx="150" cy="262" r="4.5" fill="var(--board-ink)"/>
+            <circle cx="430" cy="122" r="4.5" fill="var(--board-ink)"/>
+            <rect x="128" y="290" width="44" height="22" rx="11" fill="var(--board)" stroke="var(--board-line)"/>
+            <text x="150" y="305" fill="var(--board-ink)" font-size="12" text-anchor="middle">A · 0 m</text>
+            <rect x="408" y="88" width="46" height="22" rx="11" fill="var(--board)" stroke="var(--board-line)"/>
+            <text x="431" y="103" fill="var(--board-ink)" font-size="12" text-anchor="middle">B · 28 m</text>
+          </g>
+          <g id="line-out" class="off">
+            <polyline points="90,372 210,362 330,372 470,356" fill="none" stroke="var(--block)" stroke-width="2.5" stroke-linejoin="round"/>
+            <text x="90" y="392" fill="var(--board-mute)" font-size="13">A</text>
+          </g>
+          <circle id="marker" cx="0" cy="0" r="7" fill="var(--board-ink)" stroke="var(--board)" stroke-width="2" visibility="hidden"/>
+          <g transform="translate(572 70)" fill="var(--board-mute)" font-size="12" text-anchor="middle">
+            <path d="M0 14 L0 -4 M-4 2 L0 -4 L4 2" fill="none" stroke="var(--board-mute)" stroke-width="1.5"/>
+            <text y="28">북</text>
+          </g>
+        </g>
+      </svg>
+      <div class="board-veil" id="veil"></div>
+      <div class="legend-strip" id="legend-strip">
+        <span class="k"><i></i>측정 선</span>
+        <span class="k"><i class="dash"></i>등록된 범위</span>
+        <span class="k" id="legend-red" hidden><i class="red"></i>범위에 닿지 않음</span>
+        <span class="sep">북쪽 방향 위</span>
+      </div>
+    </section>
+
+    <aside class="insp">
+      <div class="line-row" id="line-row">
+        <label for="line">측정 선</label>
+        <select id="line">
+          <option value="north">북쪽 경사면 · 개정 2</option>
+          <option value="east">동쪽 경계선 · 개정 1</option>
+        </select>
+      </div>
+
+      <div id="sec-data">
+        <div class="title-row"><h2>북쪽 경사면</h2><div class="meta">개정 2</div></div>
+        <div class="picks">
+          <label class="pick"><span>기준</span>
+            <select id="dRef">
+              <option value="2026-03-14">2026-03-14</option>
+              <option value="2026-06-02">2026-06-02</option>
+              <option value="2026-11-02">2026-11-02</option>
+            </select>
+          </label>
+          <label class="pick"><span>현재</span>
+            <select id="dCur">
+              <option value="2026-03-14">2026-03-14</option>
+              <option value="2026-06-02">2026-06-02</option>
+              <option value="2026-11-02" selected>2026-11-02</option>
+            </select>
+            <em id="cur-hint" hidden>권한 없음</em>
+          </label>
+        </div>
+
+        <div class="notice block" id="notice-blocked" hidden>
+          <p><b>현재 날짜(2026-11-02)는 접근 권한이 없어 표시하지 않습니다.</b></p>
+          <div class="actions" style="margin-top:8px"><button class="btn" type="button">권한 요청</button></div>
+        </div>
+
+        <div class="chart-bar">
+          <div class="chips" id="chips"></div>
+          <div class="seg small" role="group" aria-label="세로 비율">
+            <button type="button" data-ratio="fit" aria-pressed="true">맞춤</button>
+            <button type="button" data-ratio="true" aria-pressed="false">1:1</button>
+          </div>
+        </div>
+        <div class="chart" id="chart" role="group" aria-label="선을 따른 날짜별 높이 단면. 좌우 화살표로 지점을 옮기고 끌어서 구간을 고릅니다."></div>
+        <div class="readout" id="readout">&nbsp;</div>
+
+        <div class="diff" id="diff">
+          <div class="diff-head"><span>날짜 차이 (현재 − 기준)</span><strong id="diff-sum"></strong></div>
+          <div class="diff-legend"><span><i style="background:var(--up)"></i>현재가 높음</span><span><i style="background:var(--down)"></i>현재가 낮음</span></div>
+          <svg id="diff-svg" viewBox="0 0 360 64" role="img" aria-label="거리별 날짜 차이 막대"></svg>
+          <ul class="checks" id="checks">
+            <li><span>좌표계</span><b class="ok">같음</b></li>
+            <li><span>높이 기준</span><b class="ok">같음</b></li>
+            <li><span>처리 조건</span><b class="ok" id="chk-proc">같음</b></li>
+          </ul>
+          <p class="diff-note" id="diff-note" hidden></p>
+        </div>
+
+        <dl class="facts" id="facts"></dl>
+
+        <details>
+          <summary>거리별 높이 값</summary>
+          <div class="tablewrap">
+            <table>
+              <thead><tr><th>A에서 거리 (m)</th><th id="th-ref">기준</th><th id="th-cur">현재</th></tr></thead>
+              <tbody id="rows"></tbody>
+            </table>
+          </div>
+        </details>
+
+        <p class="src">등록된 격자를 선을 따라 읽은 값입니다. 측량 성과가 아닙니다.</p>
+
+        <div class="actions">
+          <button class="btn primary" type="button">CSV 내보내기</button>
+          <button class="btn" type="button">측정 선 수정</button>
+        </div>
+      </div>
+
+      <div id="sec-loading" hidden>
+        <h2>북쪽 경사면</h2>
+        <div class="skel" aria-hidden="true"></div>
+        <div class="notice info"><p>확인이 끝나기 전에는 값을 표시하지 않습니다.</p></div>
+      </div>
+
+      <div id="sec-outside" hidden>
+        <h2>동쪽 경계선</h2>
+        <div class="notice warn">
+          <p><b>이 선은 등록된 범위에 닿지 않습니다.</b></p>
+          <p>선을 범위 안으로 옮겨 다시 저장하세요.</p>
+        </div>
+        <div class="actions"><button class="btn" type="button">측정 선 수정</button></div>
+      </div>
+
+      <div id="sec-empty" hidden>
+        <h2>저장한 측정 선이 없습니다</h2>
+        <p class="src" style="margin-top:6px">지도에서 선을 그리고 저장하세요.</p>
+        <div class="actions"><button class="btn primary" type="button">선 그리기</button></div>
+      </div>
+    </aside>
+  </div>
+</div>
+
+<script>
+(function(){
+  var N = 29;
+  var DATES = {
+    "2026-03-14": { k: 0,    bump: 0,   nodata: [14],    edge: [0, 28] },
+    "2026-06-02": { k: 0.35, bump: 0.5, nodata: [9],     edge: [0, 28] },
+    "2026-11-02": { k: -0.2, bump: 0.9, nodata: [1, 27], edge: [0, 28] }
+  };
+  var NS = "http://www.w3.org/2000/svg";
+  var STAGE = [[150,262],[210,226],[262,210],[318,180],[370,160],[430,122]];
+  function r2(v){ return Math.round(v * 100) / 100; }
+  function base(i){ return 112 + 0.32 * i - 0.009 * i * i + 0.25 * Math.sin(i / 3.1); }
+  function profile(date){
+    var p = DATES[date], out = [];
+    for (var i = 0; i < N; i++) {
+      out.push(p.edge.indexOf(i) >= 0 || p.nodata.indexOf(i) >= 0 ? null
+        : r2(base(i) + p.k + p.bump * Math.exp(-Math.pow(i - 14, 2) / 18)));
+    }
+    return out;
+  }
+  function count(v){ return v.filter(function(x){ return x !== null; }).length; }
+  function el(name, attrs, text){
+    var e = document.createElementNS(NS, name);
+    Object.keys(attrs || {}).forEach(function(k){ e.setAttribute(k, attrs[k]); });
+    if (text !== undefined) e.textContent = text;
+    return e;
+  }
+  var $ = function(id){ return document.getElementById(id); };
+  var board = $("board"), veil = $("veil"), marker = $("marker"), selLine = $("sel-line");
+  var lineIn = $("line-in"), lineOut = $("line-out"), lineSel = $("line"), lineRow = $("line-row");
+  var dRef = $("dRef"), dCur = $("dCur"), chartBox = $("chart"), readout = $("readout");
+  var state = "normal", ratio = "fit", refVals = [], curVals = [];
+  var W = 360, H = 230, L = 40, R = 12, T = 14, B = 36;
+  var BLANK = " ";
+  var sel = null, drag = null, curIdx = null, ch = null;
+
+  // 보드 위 선을 거리 비율(0~1)로 따라가는 도우미
+  var segs = [], total = 0;
+  for (var s = 1; s < STAGE.length; s++) {
+    var dx = STAGE[s][0] - STAGE[s-1][0], dy = STAGE[s][1] - STAGE[s-1][1], len = Math.sqrt(dx*dx + dy*dy);
+    segs.push({ from: STAGE[s-1], dx: dx, dy: dy, len: len, start: total });
+    total += len;
+  }
+  function stagePoint(f){
+    var want = f * total;
+    for (var k = 0; k < segs.length; k++) {
+      var g = segs[k];
+      if (want <= g.start + g.len || k === segs.length - 1) {
+        var t = Math.min(1, (want - g.start) / g.len);
+        return [g.from[0] + g.dx * t, g.from[1] + g.dy * t];
+      }
+    }
+  }
+  function stageSub(f0, f1){
+    var pts = [stagePoint(f0)], a = f0 * total, b = f1 * total;
+    segs.forEach(function(g, k){
+      var edge = g.start + g.len;
+      if (k < segs.length - 1 && edge > a && edge < b) pts.push(STAGE[k + 1]);
+    });
+    pts.push(stagePoint(f1));
+    return pts.map(function(p){ return p[0].toFixed(1) + "," + p[1].toFixed(1); }).join(" ");
+  }
+
+  var sign = function(v, d){ return (v >= 0 ? "+" : "−") + Math.abs(v).toFixed(d); };
+  var fmt = function(v){ return v === null ? "값 없음" : v.toFixed(2) + " m"; };
+
+  // 구간의 처음과 끝 유효 값으로 높이 차와 기울기를 읽는다. 값 없는 지점은 건너뛴다.
+  function slope(vals, a, b){
+    var i0 = null, i1 = null, i;
+    for (i = a; i <= b; i++) if (vals[i] !== null) { i0 = i; break; }
+    for (i = b; i >= a; i--) if (vals[i] !== null) { i1 = i; break; }
+    if (i0 === null || i1 === null || i1 <= i0) return "값 부족";
+    var dz = vals[i1] - vals[i0];
+    return sign(dz, 2) + " m (" + sign(dz / (i1 - i0) * 100, 1) + " %)";
+  }
+
+  function hideProbe(){
+    if (!ch) return;
+    ch.cursor.setAttribute("visibility", "hidden");
+    ch.hr.setAttribute("visibility", "hidden");
+    ch.hc.setAttribute("visibility", "hidden");
+    marker.setAttribute("visibility", "hidden");
+  }
+  function showIdx(idx){
+    if (!ch) return;
+    curIdx = idx;
+    ch.cursor.setAttribute("x1", ch.xOf(idx)); ch.cursor.setAttribute("x2", ch.xOf(idx));
+    ch.cursor.setAttribute("visibility", "visible");
+    var text = idx.toFixed(1) + " m · 기준 " + fmt(refVals[idx]);
+    if (!ch.blocked) text += " · 현재 " + fmt(curVals[idx]);
+    if (!sel) readout.textContent = text;
+    var put = function(c, v, sv){
+      if (v !== null && sv) { c.setAttribute("cx", ch.xOf(idx)); c.setAttribute("cy", ch.yOf(v)); c.setAttribute("visibility", "visible"); }
+      else c.setAttribute("visibility", "hidden");
+    };
+    put(ch.hr, refVals[idx], true);
+    put(ch.hc, curVals[idx], !ch.blocked);
+    var p = stagePoint(idx / (N - 1));
+    marker.setAttribute("cx", p[0]); marker.setAttribute("cy", p[1]);
+    marker.setAttribute("visibility", "visible");
+  }
+
+  function clearSel(){
+    sel = null; drag = null;
+    if (ch) ch.selRect.setAttribute("visibility", "hidden");
+    selLine.classList.add("off");
+    readout.textContent = BLANK;
+  }
+  function updateSel(){
+    if (!sel || !ch) return;
+    var a = Math.min(sel.a, sel.b), b = Math.max(sel.a, sel.b);
+    ch.selRect.setAttribute("x", ch.xOf(a)); ch.selRect.setAttribute("width", Math.max(ch.xOf(b) - ch.xOf(a), 1));
+    ch.selRect.setAttribute("visibility", "visible");
+    if (b > a) {
+      selLine.setAttribute("points", stageSub(a / (N - 1), b / (N - 1)));
+      selLine.classList.remove("off");
+      var line2 = "기준 " + slope(refVals, a, b) + (ch.blocked ? "" : " · 현재 " + slope(curVals, a, b));
+      readout.innerHTML = "<b>" + a.toFixed(1) + "–" + b.toFixed(1) + " m</b> 구간 · 길이 " + (b - a).toFixed(1) +
+        " m<br>높이 차(기울기) " + line2 + (drag ? "" : ' <button type="button" class="link" id="sel-clear">해제</button>');
+      var c = $("sel-clear"); if (c) c.addEventListener("click", clearSel);
+    }
+  }
+
+  function drawChart(){
+    chartBox.innerHTML = "";
+    sel = null; drag = null; selLine.classList.add("off");
+    var blocked = state === "blocked", mismatch = state === "mismatch";
+    var refDate = dRef.value, curDate = dCur.value;
+    refVals = profile(refDate);
+    curVals = blocked ? refVals.map(function(){ return null; }) : profile(curDate);
+    var visible = refVals.concat(curVals).filter(function(v){ return v !== null; });
+    var vmin = Math.min.apply(null, visible), vmax = Math.max.apply(null, visible);
+    var lo, hi, step;
+    if (ratio === "true") {
+      // 가로 1 m와 세로 1 m가 같은 길이가 되도록 범위를 잡는다
+      var pxPerM = (W - L - R) / (N - 1), span = (H - T - B) / pxPerM, mid = (vmin + vmax) / 2;
+      lo = mid - span / 2; hi = mid + span / 2; step = span > 8 ? 2 : 1;
+    } else {
+      lo = Math.floor(vmin * 2) / 2 - 0.5; hi = Math.ceil(vmax * 2) / 2 + 0.5; step = (hi - lo) > 4 ? 1 : 0.5;
+    }
+    var xOf = function(i){ return L + (i / (N - 1)) * (W - L - R); };
+    var yOf = function(v){ return T + (1 - (v - lo) / (hi - lo)) * (H - T - B); };
+    var svg = el("svg", { viewBox: "0 0 " + W + " " + H, role: "presentation" });
+    for (var g = Math.ceil(lo / step) * step; g <= hi; g += step) {
+      svg.appendChild(el("line", { x1: L, x2: W - R, y1: yOf(g), y2: yOf(g), class: "grid" }));
+      svg.appendChild(el("text", { x: L - 6, y: yOf(g) + 4, "text-anchor": "end", class: "axis" }, g.toFixed(step < 1 ? 1 : 0) + (step < 1 ? "" : "")));
+    }
+    [0, 4, 8, 12, 16, 20, 24, 28].forEach(function(m){
+      svg.appendChild(el("text", { x: xOf(m), y: H - B + 18, "text-anchor": "middle", class: "axis" }, String(m)));
+    });
+    svg.appendChild(el("text", { x: W - R, y: H - 4, "text-anchor": "end", class: "axis-title" }, "A에서 거리 (m)"));
+    svg.appendChild(el("text", { x: L - 30, y: T - 6, class: "axis-title" }, "높이 (m)" + (ratio === "true" ? " · 1:1" : "")));
+    var selRect = el("rect", { x: 0, y: T, width: 0, height: H - T - B, class: "sel", visibility: "hidden" });
+    svg.appendChild(selRect);
+    function path(vs, cls){
+      var d = "", pen = false;
+      vs.forEach(function(v, i){
+        if (v === null) { pen = false; return; }
+        d += (pen ? "L" : "M") + xOf(i).toFixed(1) + " " + yOf(v).toFixed(1) + " ";
+        pen = true;
+      });
+      return el("path", { d: d.trim(), class: cls });
+    }
+    var baseY = yOf(lo);
+    if (!blocked) {
+      var area = "", run = [];
+      var closeArea = function(r){
+        var a = r[0], b = r[r.length - 1], d = "M" + xOf(a).toFixed(1) + " " + baseY.toFixed(1);
+        r.forEach(function(i){ d += " L" + xOf(i).toFixed(1) + " " + yOf(curVals[i]).toFixed(1); });
+        return d + " L" + xOf(b).toFixed(1) + " " + baseY.toFixed(1) + " Z ";
+      };
+      curVals.forEach(function(v, i){
+        if (v === null) { if (run.length) area += closeArea(run); run = []; return; }
+        run.push(i);
+      });
+      if (run.length) area += closeArea(run);
+      svg.appendChild(el("path", { d: area.trim(), class: "area" }));
+    }
+    svg.appendChild(el("line", { x1: L, x2: W - R, y1: baseY, y2: baseY, class: "base" }));
+    svg.appendChild(path(refVals, "ref"));
+    if (!blocked) svg.appendChild(path(curVals, "cur"));
+    refVals.forEach(function(v, i){ if (v !== null) svg.appendChild(el("circle", { cx: xOf(i), cy: yOf(v), r: 2.2, class: "dot-ref" })); });
+    if (!blocked) curVals.forEach(function(v, i){ if (v !== null) svg.appendChild(el("circle", { cx: xOf(i), cy: yOf(v), r: 2.2, class: "dot-cur" })); });
+    var cursor = el("line", { x1: 0, x2: 0, y1: T, y2: H - B, class: "cursor", visibility: "hidden" });
+    var hr = el("circle", { r: 4, class: "dot-ref hl", visibility: "hidden" });
+    var hc = el("circle", { r: 4.5, class: "dot-cur hl", visibility: "hidden" });
+    svg.appendChild(cursor); svg.appendChild(hr); svg.appendChild(hc);
+    svg.appendChild(el("rect", { x: L - 4, y: T - 4, width: W - L - R + 8, height: H - T - B + 8, class: "focusring" }));
+    var hit = el("rect", { x: L, y: T, width: W - L - R, height: H - T - B, fill: "transparent", class: "hit",
+      tabindex: "0", style: "touch-action:pan-y;cursor:crosshair", "aria-label": "그래프. 좌우 화살표로 지점 이동, Esc로 구간 해제" });
+    svg.appendChild(hit);
+    ch = { xOf: xOf, yOf: yOf, cursor: cursor, hr: hr, hc: hc, selRect: selRect, blocked: blocked };
+    var idxOf = function(ev){
+      var rect = svg.getBoundingClientRect();
+      var px = ((ev.clientX - rect.left) / rect.width) * W;
+      return Math.max(0, Math.min(N - 1, Math.round(((px - L) / (W - L - R)) * (N - 1))));
+    };
+    hit.addEventListener("pointerdown", function(ev){
+      try { hit.setPointerCapture(ev.pointerId); } catch (e) {}
+      var i = idxOf(ev); drag = { a: i }; sel = { a: i, b: i };
+      updateSel(); showIdx(i);
+    });
+    hit.addEventListener("pointermove", function(ev){
+      var i = idxOf(ev);
+      if (drag) { sel.b = i; updateSel(); }
+      showIdx(i);
+    });
+    hit.addEventListener("pointerup", function(){
+      if (!drag) return;
+      var single = sel.a === sel.b;
+      drag = null;
+      if (single) clearSel(); else updateSel();
+    });
+    hit.addEventListener("pointerleave", function(){ if (!drag && !sel) hideProbe(); });
+    hit.addEventListener("keydown", function(ev){
+      if (ev.key === "ArrowLeft" || ev.key === "ArrowRight") {
+        ev.preventDefault();
+        var next = Math.max(0, Math.min(N - 1, (curIdx === null ? (ev.key === "ArrowRight" ? 0 : N - 1) : curIdx + (ev.key === "ArrowRight" ? 1 : -1))));
+        if (ev.shiftKey && sel === null) sel = { a: curIdx === null ? next : curIdx, b: next };
+        else if (ev.shiftKey) sel.b = next;
+        else if (sel) clearSel();
+        showIdx(next);
+        if (sel) updateSel();
+      } else if (ev.key === "Escape") { clearSel(); hideProbe(); }
+    });
+    chartBox.appendChild(svg);
+    curIdx = null;
+
+    drawDiff(refVals, curVals, mismatch);
+
+    var chips = $("chips");
+    chips.innerHTML = "";
+    var c1 = document.createElement("span");
+    c1.className = "chip ref"; c1.textContent = refDate;
+    chips.appendChild(c1);
+    var c2 = document.createElement("span");
+    if (blocked) { c2.className = "chip hidden"; c2.textContent = curDate + " 숨김"; }
+    else { c2.className = "chip cur"; c2.textContent = curDate; }
+    chips.appendChild(c2);
+
+    var nRef = count(refVals), nCur = count(curVals);
+    var reason = function(date){ var p = DATES[date]; return "가장자리 " + p.edge.length + ", 자료 없음 " + p.nodata.length; };
+    var facts = "";
+    facts += "<dt>선 길이</dt><dd>28.0 m<small>평면 거리</small></dd>";
+    facts += "<dt>좌표계</dt><dd>한국 중부 TM<small>EPSG:5186</small></dd>";
+    facts += "<dt>값 있는 지점</dt><dd>기준 " + nRef + (blocked ? "" : " · 현재 " + nCur) + "</dd>";
+    facts += "<dt>값 없는 지점</dt><dd>기준 " + (N - nRef) + "<small>" + reason(refDate) + "</small>" +
+      (blocked ? "" : "현재 " + (N - nCur) + "<small>" + reason(curDate) + "</small>") + "</dd>";
+    $("facts").innerHTML = facts;
+
+    $("th-cur").textContent = blocked ? "현재 (숨김)" : "현재 " + curDate;
+    $("th-ref").textContent = "기준 " + refDate;
+    var cell = function(v){ return v === null ? '<span class="unk">값 없음</span>' : v.toFixed(2); };
+    var rows = "";
+    for (var i = 0; i < N; i++) {
+      rows += "<tr><td>" + i.toFixed(1) + "</td><td>" + cell(refVals[i]) + "</td><td>" +
+        (blocked ? '<span class="unk">숨김</span>' : cell(curVals[i])) + "</td></tr>";
+    }
+    $("rows").innerHTML = rows;
+    readout.textContent = refDate === curDate && !blocked ? "같은 날짜입니다. 다른 날짜를 고르세요." : BLANK;
+    marker.setAttribute("visibility", "hidden");
+  }
+
+  function drawDiff(ref, cur, mismatch){
+    var svgEl = $("diff-svg");
+    svgEl.innerHTML = "";
+    var ds = [];
+    for (var j = 0; j < N; j++) ds.push(ref[j] !== null && cur[j] !== null ? r2(cur[j] - ref[j]) : null);
+    var vals = ds.filter(function(v){ return v !== null; });
+    var max = Math.max.apply(null, vals.map(function(v){ return Math.abs(v); })) || 1;
+    var mean = vals.reduce(function(a, b){ return a + b; }, 0) / vals.length;
+    var top = Math.max.apply(null, vals);
+    $("diff-sum").textContent = mismatch ? "계산 안 함" : "최대 " + sign(top, 2) + " m · 평균 " + sign(mean, 2) + " m";
+    var zero = 32, scale = 26 / max, bw = 360 / N;
+    svgEl.appendChild(el("line", { x1: 0, x2: 360, y1: zero, y2: zero, class: "zero" }));
+    svgEl.appendChild(el("text", { x: 356, y: zero - 4, "text-anchor": "end", class: "zlab" }, "0 m"));
+    if (!mismatch) ds.forEach(function(v, i){
+      if (v === null) return;
+      var h = Math.abs(v) * scale;
+      svgEl.appendChild(el("rect", { x: i * bw + 2, width: bw - 4, y: v >= 0 ? zero - h : zero, height: Math.max(h, 1),
+        fill: v >= 0 ? "var(--up)" : "var(--down)" }));
+    });
+    $("diff-note").hidden = !mismatch;
+    $("diff-note").textContent = mismatch ? "처리 버전이 달라 차이를 계산하지 않습니다. 같은 처리 조건의 측량끼리 비교합니다." : "";
+    $("chk-proc").textContent = mismatch ? "다름" : "같음";
+    $("chk-proc").className = mismatch ? "no" : "ok";
+  }
+
+  var captions = {
+    loading: "권한과 등록 자료를 확인하는 중입니다.",
+    blocked: "현재 날짜(2026-11-02)는 접근 권한이 없습니다."
+  };
+  var views = { normal: "sec-data", blocked: "sec-data", mismatch: "sec-data", loading: "sec-loading", outside: "sec-outside", empty: "sec-empty" };
+  function setState(name){
+    state = name;
+    if (name === "outside") lineSel.value = "east";
+    else if (name !== "empty") lineSel.value = "north";
+    document.querySelectorAll(".seg button[data-state]").forEach(function(b){
+      b.setAttribute("aria-pressed", String(b.dataset.state === name));
+    });
+    Object.keys(views).forEach(function(k){ $(views[k]).hidden = views[k] !== views[name]; });
+    $("notice-blocked").hidden = name !== "blocked";
+    $("cur-hint").hidden = name !== "blocked";
+    lineRow.classList.toggle("off", name === "empty");
+    lineIn.classList.toggle("off", name === "empty" || name === "outside");
+    lineOut.classList.toggle("off", name !== "outside");
+    $("legend-red").hidden = name !== "outside";
+    $("diff").hidden = !(name === "normal" || name === "mismatch");
+    board.classList.toggle("dim", name === "loading" || name === "blocked");
+    veil.textContent = captions[name] || "";
+    marker.setAttribute("visibility", "hidden");
+    selLine.classList.add("off");
+    if (name === "normal" || name === "blocked" || name === "mismatch") drawChart();
+  }
+  dRef.addEventListener("change", drawChart);
+  dCur.addEventListener("change", drawChart);
+  lineSel.addEventListener("change", function(){ setState(lineSel.value === "east" ? "outside" : "normal"); });
+  document.querySelectorAll(".seg button[data-state]").forEach(function(b){
+    b.addEventListener("click", function(){ setState(b.dataset.state); });
+  });
+  document.querySelectorAll(".seg button[data-ratio]").forEach(function(b){
+    b.addEventListener("click", function(){
+      ratio = b.dataset.ratio;
+      document.querySelectorAll(".seg button[data-ratio]").forEach(function(x){ x.setAttribute("aria-pressed", String(x === b)); });
+      drawChart();
+    });
+  });
+  setState("normal");
+})();
+</script>

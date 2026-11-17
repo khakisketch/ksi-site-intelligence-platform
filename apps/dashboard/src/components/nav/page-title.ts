@@ -37,6 +37,7 @@ export function resolvePageTitle(pathname: string | null, search?: { get(key: st
   if (/^\/sites\/[^/]+\/data\/?$/.test(pathname)) return "자료";
   if (/^\/sites\/[^/]+\/spatial-assets\/?$/.test(pathname)) return "공간";
   if (/^\/sites\/[^/]+\/spatial-data-requests\/?$/.test(pathname)) return "구역 자료 준비";
+  if (/^\/sites\/[^/]+\/measurements\/?$/.test(pathname)) return "측정 선";
   if (/^\/sites\/[^/]+\/work-areas\/?$/.test(pathname)) return "작업구역";
   if (/^\/sites\/[^/]+\/?$/.test(pathname)) {
     const section = normalizeSiteTab(search?.get("section") ?? search?.get("tab"));

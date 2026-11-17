@@ -32,6 +32,7 @@ describe("프로젝트 섹션 해석 (ADR-KSI-043)", () => {
   it("작업구역·자료 준비 요청 같은 공간 하위 경로는 공간이다", () => {
     expect(resolveProjectSection("/sites/s1/work-areas", q(""))).toBe("space");
     expect(resolveProjectSection("/sites/s1/spatial-data-requests", q(""))).toBe("space");
+    expect(resolveProjectSection("/sites/s1/measurements", q(""))).toBe("space");
     // 하위 경로의 panel 쿼리는 자료 패널이 아니다.
     expect(resolveProjectSection("/sites/s1/work-areas", q("panel=materials"))).toBe("space");
   });

@@ -35,6 +35,7 @@ export function contextPaletteItems(
     { key: `${site.key}:analysis`, label: tabLabel("analysis"), group: "현재 현장", hint: site.label, href: scopedSiteHref(`${site.href}/analysis`, {}, scope), keywords: "비교 기준 결과 근거 검토" },
     { key: `${site.key}:intake`, label: "등록 진행", group: "현재 현장", hint: site.label, href: scopedSiteHref(site.href, { panel: "intake" }, scope), keywords: "작업 담당 기한 이어서" },
     { key: `${site.key}:manage`, label: "현장 설정", group: "현재 현장", hint: site.label, href: scopedSiteHref(site.href, { section: "manage" }, scope), keywords: "작업구역 경계 현장 상태 설정" },
+    { key: `${site.key}:measure`, label: "측정 선", group: "현재 현장", hint: site.label, href: scopedSiteHref(`${site.href}/measurements`, {}, scope), keywords: "단면 높이 선 거리 기울기 경사 표고" },
     { key: `${site.key}:prepare`, label: "구역 자료 준비", group: "현재 현장", hint: site.label, href: scopedSiteHref(`${site.href}/spatial-data-requests`, {}, scope), keywords: "내보내기 받기 다운로드 요청" },
   ];
 }
