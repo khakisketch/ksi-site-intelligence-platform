@@ -83,7 +83,7 @@ export function preflightGeoTiff(slot: ArtifactSlot, header: GeoTiffRawHeader, f
     }
     if (slot === "dsm") {
       if (layout.verticalCsType === null) {
-        add("NO_VERTICAL_REFERENCE", "notice", "파일에 수직 기준(높이 기준)이 없습니다. 이대로는 높이·단면·체적 분석에 쓸 수 없습니다.", "수직 기준이 포함된 좌표계(예: 지오이드 높이)로 내보내세요.");
+        add("NO_VERTICAL_REFERENCE", "notice", "파일에 수직 기준(높이 기준)이 없습니다. 등록한 뒤 자료 상세에서 수직 기준을 선언하면 높이·단면을 읽을 수 있습니다. 체적·두 시점 비교에는 쓸 수 없습니다.", "체적·비교가 필요하면 수직 기준이 포함된 좌표계(예: 지오이드 높이)로 내보내세요.");
       } else if (layout.verticalCsType === USER_DEFINED) {
         add("VERTICAL_USER_DEFINED", "may", "수직 기준이 EPSG 번호 없는 사용자 정의입니다.", "EPSG 번호가 있는 수직 기준으로 내보내세요.");
       } else if (layout.verticalUnits !== null && layout.verticalUnits !== METRE) {

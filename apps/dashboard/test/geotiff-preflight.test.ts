@@ -107,6 +107,10 @@ describe("preflightGeoTiff — DSM", () => {
     const findings = preflightGeoTiff("dsm", dsm({}, { verticalCsType: null }), null);
     expect(findings).toHaveLength(1);
     expect(findings[0]).toMatchObject({ code: "NO_VERTICAL_REFERENCE", level: "notice" });
+    // 선언으로 높이·단면을 읽을 수 있고, 체적·비교는 안 된다는 점을 함께 말한다.
+    expect(findings[0].title).toContain("수직 기준을 선언하면 높이·단면을 읽을 수 있습니다");
+    expect(findings[0].title).toContain("체적·두 시점 비교에는 쓸 수 없습니다");
+    expect(findings[0].title).not.toContain("높이·단면·체적 분석에 쓸 수 없습니다");
   });
 
   it("정사영상에는 수직 기준 안내를 하지 않는다", () => {

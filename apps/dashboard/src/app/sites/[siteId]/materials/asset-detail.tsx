@@ -9,6 +9,8 @@ import { StateBadge } from "@/components/ui/StatusBadge";
 import { formatKoreanDateTime } from "@/lib/datetime";
 import { describeInspectionReason } from "@/lib/external-inspection-reasons";
 import { assetNextSteps } from "@/lib/asset-next-steps";
+import type { VerticalDeclarationState } from "@/lib/core-api/vertical-reference-types";
+import { VerticalReferenceDeclaration } from "./VerticalReferenceDeclaration";
 import { formatBytesKo, formatCountKo } from "@/lib/number-format";
 import { capturePeriodTitle, dataKindLabel, isSupportedDataKind, isSupportedLifecycleState } from "@/lib/operator-language";
 import type { validateRegistrationHistory } from "@/lib/registration-history";
@@ -193,7 +195,7 @@ function CompactFact({ label, value }: { label: string; value: string }) {
  * 등록 이력·제출자 입력·검사 원문은 `상세 정보` 안으로 접고, 준비 요청 폼은
  * 필요할 때만 모달로 연다. 정보 밀도가 선택 자체를 가리지 않게 하는 것이 목적이다.
  */
-export function DetailBlock({ detail, workName, areaName, headline, compareHref, retryHref, requestsHref, historyResult, requestProps }: {
+export function DetailBlock({ detail, workName, areaName, headline, compareHref, retryHref, requestsHref, historyResult, requestProps, vertical = null }: {
   detail: SpatialAssetCatalogItem;
   workName: string | null;
   areaName: string;
@@ -203,6 +205,8 @@ export function DetailBlock({ detail, workName, areaName, headline, compareHref,
   requestsHref: string;
   historyResult: ReturnType<typeof validateRegistrationHistory> | null;
   requestProps: { siteId: string; workAreaId: string; inspectedRaster: SpatialAssetCatalogItem["inspection"]["raster"]; canRequest: boolean };
+  /** 파일에 수직 기준이 없는 검사된 DSM에만 준다. `state`가 null이면 읽지 못한 것이다. */
+  vertical?: { state: VerticalDeclarationState | null; canWrite: boolean } | null;
 }) {
   const availability = availabilityStatus(detail);
   const nextSteps = assetNextSteps(detail);
@@ -231,6 +235,7 @@ export function DetailBlock({ detail, workName, areaName, headline, compareHref,
       <CompactFact label="수직 기준" value={detail.inspection.raster?.observedVerticalReference?.identifier ?? "확인 불가"} />
       {detail.inspection.raster && <CompactFact label="파일 범위" value={`${formatCountKo(detail.inspection.raster.width)} × ${formatCountKo(detail.inspection.raster.height)} 픽셀`} />}
     </dl>
+    {vertical && <VerticalReferenceDeclaration siteId={detail.siteId} workAreaId={detail.workAreaId} assetRef={detail.assetRef} state={vertical.state} canWrite={vertical.canWrite} />}
     {nextSteps.length > 0 && <div className="flex flex-wrap gap-2" aria-label="이어서 할 일">
       {nextSteps.map((step) => <Link key={step.key} href={step.href} className="btn">{step.label}</Link>)}
     </div>}
