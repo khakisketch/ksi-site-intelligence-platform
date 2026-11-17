@@ -9010,9 +9010,13 @@ paths:
       - {name: work_area_id, in: path, required: true, schema: {type: string}}
     get:
       summary: List scoped profile jobs with current availability, never raw numbers
+      description: >-
+        Newest first, only the caller's own jobs. The optional feature_id narrows to one saved line
+        before the limit applies, so a busy work area cannot push one line's older jobs out of a page.
       security: [{bearerAuth: []}]
       parameters:
         - {name: limit, in: query, schema: {type: integer, minimum: 1}}
+        - {name: feature_id, in: query, required: false, schema: {type: string, pattern: '^mf-[0-9a-f]{32}$'}}
       responses:
         '200':
           description: Retained immutable history with current availability

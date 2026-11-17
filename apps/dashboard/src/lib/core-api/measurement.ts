@@ -43,10 +43,11 @@ export async function listMeasurementFeatures(siteId: string, workAreaId: string
 export async function listSurfaceProfileJobs(
   siteId: string,
   workAreaId: string,
-  options: { limit: number },
+  options: { limit: number; featureId?: string },
 ): Promise<SurfaceProfileJobPage> {
+  // 선을 지정하면 Core가 한도를 적용하기 전에 그 선의 작업만 남긴다. 다른 선의 작업이 이 선의 오래된 요청을 밀어내지 않는다.
   const value = await coreFetch<unknown>(`${areaPath(siteId, workAreaId)}/surface-profile-jobs`, {
-    query: { limit: options.limit },
+    query: { limit: options.limit, feature_id: options.featureId },
   });
   if (!isJobPage(value)) throw malformed();
   return value;

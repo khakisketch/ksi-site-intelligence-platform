@@ -1,13 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const mocked = vi.hoisted(() => ({ fetchWithToken: vi.fn() }));
+const mocked = vi.hoisted(() => ({ fetchWithToken: vi.fn(), fetch: vi.fn() }));
 vi.mock("server-only", () => ({}));
 vi.mock("@/lib/core-api/client", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/core-api/client")>();
-  return { ...actual, coreFetchWithToken: mocked.fetchWithToken, coreFetch: vi.fn() };
+  return { ...actual, coreFetchWithToken: mocked.fetchWithToken, coreFetch: mocked.fetch };
 });
 
-import { createMeasurementFeatureWithToken, reviseMeasurementFeatureWithToken } from "@/lib/core-api/measurement";
+import { createMeasurementFeatureWithToken, listSurfaceProfileJobs, reviseMeasurementFeatureWithToken } from "@/lib/core-api/measurement";
 
 const DIGEST = `sha256:${"a".repeat(64)}`;
 const FEATURE_ID = `mf-${"1".repeat(32)}`;
@@ -87,5 +87,15 @@ describe("단면 요청(Core 호출)", () => {
       await expect(issueSurfaceProfileJobWithToken("s", "a", { assetRef: JOB.assetRef, feature: JOB.feature, heightDecisionId: "d" }, "k", "t")).rejects.toMatchObject({ status: 502 });
       await expect(cancelSurfaceProfileJobWithToken("s", "a", JOB.jobId, "t")).rejects.toMatchObject({ status: 502 });
     }
+  });
+});
+
+describe("단면 작업 목록", () => {
+  it("선을 지정하면 Core에 선 식별자를 함께 보내고, 지정하지 않으면 보내지 않는다", async () => {
+    mocked.fetch.mockResolvedValue({ items: [] });
+    await listSurfaceProfileJobs("site-1", "area-1", { limit: 8, featureId: FEATURE_ID });
+    expect(mocked.fetch).toHaveBeenLastCalledWith("/v1/sites/site-1/work-areas/area-1/surface-profile-jobs", { query: { limit: 8, feature_id: FEATURE_ID } });
+    await listSurfaceProfileJobs("site-1", "area-1", { limit: 8 });
+    expect(mocked.fetch).toHaveBeenLastCalledWith("/v1/sites/site-1/work-areas/area-1/surface-profile-jobs", { query: { limit: 8, feature_id: undefined } });
   });
 });

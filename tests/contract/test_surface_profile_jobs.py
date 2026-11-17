@@ -26,6 +26,7 @@ from surface_profile_job_fixture import (
     AREA,
     SITE,
     FakeAuthority,
+    feature_revision,
     genuine_answer,
     issue_request,
     later,
@@ -200,6 +201,61 @@ def test_a_job_is_visible_only_to_its_requester(lane: Lane) -> None:
         site_id=SITE, work_area_id=AREA, principal=requester("someone-else"), limit=5, now=NOW
     )
     assert [v.job_id for v in mine] == [job_id] and theirs == ()
+
+
+def test_the_list_can_narrow_to_one_line_before_the_limit_applies(tmp_path: Path) -> None:
+    lane = Lane(tmp_path, max_active_jobs_per_organization=3)
+    other = (
+        feature_revision()
+        .model_copy(update={"feature_id": "mf-" + "2" * 32, "revision_digest": None})
+        .sealed()
+    )
+    first = lane.issue(key="k-line-1").job_id
+    lane.authority.feature = other
+    second = lane.issue(key="k-line-2", feature=other.ref()).job_id
+    third = lane.issue(key="k-line-3", feature=other.ref()).job_id
+
+    def ids(**kw: Any) -> list[str]:
+        return [
+            v.job_id
+            for v in lane.store.list(
+                site_id=SITE, work_area_id=AREA, principal=requester(), now=NOW, **kw
+            )
+        ]
+
+    assert ids(limit=1) == [third]  # 필터가 없으면 최근 것이 먼저 한도를 채운다
+    assert ids(limit=1, feature_id="mf-" + "1" * 32) == [
+        first
+    ]  # 오래된 선의 작업이 밀려나지 않는다
+    assert ids(limit=5, feature_id="mf-" + "2" * 32) == [third, second]
+    assert ids(limit=5, feature_id="mf-" + "3" * 32) == []
+    assert ids(limit=5) == [third, second, first]
+    for bad in ("x", "mf-" + "G" * 32, "MF-" + "1" * 32, ""):
+        assert (
+            _refusal(
+                lambda who=bad: lane.store.list(
+                    site_id=SITE,
+                    work_area_id=AREA,
+                    principal=requester(),
+                    limit=5,
+                    now=NOW,
+                    feature_id=who,
+                )
+            ).reason
+            == "INVALID_REQUEST"
+        )
+    # 다른 사람의 작업은 필터로도 보이지 않는다.
+    assert (
+        lane.store.list(
+            site_id=SITE,
+            work_area_id=AREA,
+            principal=requester("someone-else"),
+            limit=5,
+            now=NOW,
+            feature_id="mf-" + "2" * 32,
+        )
+        == ()
+    )
 
 
 # ── lease / fence ───────────────────────────────────────────────────────────

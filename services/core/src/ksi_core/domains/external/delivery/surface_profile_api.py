@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Query, Request
 from ksi_event_contracts._spatial_data import MAX_COUNTER
 from ksi_event_contracts.surface_profile_job import (
     CreateSurfaceProfileJobV1,
@@ -175,6 +175,7 @@ def build_surface_profile_router(
         work_area_id: str,
         request: Request,
         limit: int = 1,
+        feature_id: str | None = Query(default=None, max_length=64),  # noqa: B008
         principal: Principal = Depends(require_permission(Permission.SPATIAL_DATA_READ)),  # noqa: B008
     ) -> Response:
         try:
@@ -189,6 +190,7 @@ def build_surface_profile_router(
                         principal=current,
                         limit=limit,
                         now=clock(),
+                        feature_id=feature_id,
                     )
                 ),
             )

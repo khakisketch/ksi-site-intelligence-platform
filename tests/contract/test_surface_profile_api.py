@@ -115,6 +115,22 @@ def test_issue_retry_list_and_cancel_keep_the_same_job_and_hide_numbers(tmp_path
     assert canceled.headers["cache-control"] == "private, no-store"
 
 
+def test_the_list_filters_by_line_and_rejects_a_malformed_filter(tmp_path: Path) -> None:
+    client, _ = mounted_profile(tmp_path)
+    job = client.post(BASE, headers=AUTH, json=request_body()).json()
+    mine = job["feature"]["featureId"]
+    assert client.get(BASE, params={"limit": 1, "feature_id": mine}, headers=AUTH).json()[
+        "items"
+    ] == [job]
+    assert (
+        client.get(BASE, params={"feature_id": "mf-" + "9" * 32}, headers=AUTH).json()["items"]
+        == []
+    )
+    for bad in ("x", "mf-" + "G" * 32, "mf-" + "1" * 80):
+        response = client.get(BASE, params={"feature_id": bad}, headers=AUTH)
+        assert response.status_code == 422, bad
+
+
 @pytest.mark.parametrize("kind", [PrincipalKind.OPERATOR, PrincipalKind.SPATIAL_DATA_CLIENT])
 def test_scoped_requester_lane_is_explicitly_allowed(tmp_path: Path, kind: PrincipalKind) -> None:
     client, _ = mounted_profile(tmp_path, requester_kind=kind, scoped=True)

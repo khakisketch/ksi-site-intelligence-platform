@@ -24,6 +24,7 @@ Nothing here reads a GeoTIFF, issues a storage URL or computes a height.
 from __future__ import annotations
 
 import hashlib
+import re
 import threading
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -76,6 +77,7 @@ from ksi_core.foundation.currentness import ExternalAuthorityCurrentnessCoordina
 from ksi_core.foundation.durable_journal import DurableJournal, JournalSealedError
 from ksi_core.identity.auth import Permission, Principal, PrincipalKind, principal_permissions
 
+_FEATURE_ID_RE = re.compile(r"^mf-[0-9a-f]{32}$")
 ACTIVE_STATES = frozenset({"QUEUED", "RUNNING"})
 _REASON: TypeAdapter[SurfaceProfileJobReasonV1] = TypeAdapter(SurfaceProfileJobReasonV1)
 
@@ -633,10 +635,17 @@ class SurfaceProfileJobStore:
         principal: Principal,
         limit: int,
         now: datetime,
+        feature_id: str | None = None,
     ) -> tuple[SurfaceProfileJobViewV1, ...]:
+        """Newest first.  ``feature_id`` narrows to one saved line *before* the limit applies, so a
+        busy work area cannot push one line's older jobs out of a bounded page."""
         self._require_requester(principal, Permission.SPATIAL_DATA_READ)
         self._authority.require_scope(site_id, work_area_id, principal)
         if type(limit) is not int or not 1 <= limit <= self._policy.max_list_records:
+            raise SurfaceProfileDomainError("INVALID_REQUEST", 422)
+        if feature_id is not None and (
+            type(feature_id) is not str or _FEATURE_ID_RE.fullmatch(feature_id) is None
+        ):
             raise SurfaceProfileDomainError("INVALID_REQUEST", 422)
         with self._guard(now):
             ids = self._by_scope.get((principal.organization_id, site_id, work_area_id), [])
@@ -644,6 +653,9 @@ class SurfaceProfileJobStore:
                 self._records[job_id]
                 for job_id in ids
                 if self._records[job_id].job.requester_principal_id == principal.principal_id
+                and (
+                    feature_id is None or self._records[job_id].job.feature.feature_id == feature_id
+                )
             ]
             return tuple(
                 self._view(self._fresh(record, now), now) for record in mine[-limit:][::-1]

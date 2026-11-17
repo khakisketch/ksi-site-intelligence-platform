@@ -109,6 +109,7 @@ describe("측정 선 화면", () => {
 
   it("날짜별 단면을 기준·현재로 보여 주고 필요한 결과만 읽는다", async () => {
     const html = await render();
+    expect(mocked.jobs).toHaveBeenCalledWith("site-1", "area-1", { limit: 8, featureId: FEATURE_ID });
     expect(html).toContain("북쪽 경사면");
     expect(html).toContain("기준 2026-03-14");
     expect(html).toContain("현재 2026-11-02");

@@ -150,7 +150,7 @@ export default async function MeasurementsPage({
   let jobs: SurfaceProfileJobView[] = [];
   let jobsDisconnected = false;
   try {
-    jobs = (await listSurfaceProfileJobs(siteId, workAreaId, { limit: JOB_LIST_LIMIT })).items
+    jobs = (await listSurfaceProfileJobs(siteId, workAreaId, { limit: JOB_LIST_LIMIT, featureId: selected.featureId })).items
       .filter((job) => job.siteId === siteId && job.workAreaId === workAreaId);
   } catch (error) {
     // 단면 작업이 연결되지 않은 환경은 경로 자체가 없다. 빈 결과로 위장하지 않고 그대로 알린다.
