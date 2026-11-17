@@ -788,10 +788,11 @@ describe("SINGLE_VOLUME decision", () => {
     expect(keys[1]).toBe(keys[0]);
     expect(fetchMock.mock.calls.some(([url]) => String(url).endsWith("/pair"))).toBe(false);
     expect((screen.getByLabelText("비교할 이전 등록 버전") as HTMLSelectElement).value).toBe("");
-    expect(onSingleVolumeDecisionChange).toHaveBeenLastCalledWith(expect.objectContaining({
+    // 부모 알림은 판정이 화면에 나온 다음 효과에서 전달되므로 기다린다(CI 부하에서 바로 단언하면 경쟁한다).
+    await waitFor(() => expect(onSingleVolumeDecisionChange).toHaveBeenLastCalledWith(expect.objectContaining({
       decisionId: `external-use-decision-${"5".repeat(32)}`,
       verdict: "ELIGIBLE",
-    }));
+    })));
     expect(onRelativeVolumeDecisionChange).not.toHaveBeenCalledWith(expect.objectContaining({ use: "SINGLE_VOLUME" }));
   });
 
