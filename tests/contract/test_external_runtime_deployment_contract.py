@@ -198,10 +198,8 @@ def _run_validator_as_configured_user(
         "--symlink",
         "usr/lib",
         "/lib",
-        # 실행 파일의 ELF 로더 경로(/lib64/ld-linux-*.so)가 호스트와 같게 풀려야 한다. 호스트에
-        # /usr/lib64가 있으면(Debian/Ubuntu 계열 x86_64) 그쪽을, 없으면 usr/lib를 가리킨다.
         "--symlink",
-        "usr/lib64" if Path("/usr/lib64").is_dir() else "usr/lib",
+        "usr/lib",
         "/lib64",
         "--ro-bind",
         "/etc",
@@ -213,18 +211,6 @@ def _run_validator_as_configured_user(
         "/proc",
         "--unshare-net",
         "--",
-        shell,
-        "-c",
-        # DIAG(임시): 샌드박스 안의 uid 매핑·capability를 stderr로 남긴다.
-        "{ echo DIAG-uid_map; cat /proc/self/uid_map; "
-        "grep -E '^(Uid|Cap|NoNewPrivs|Seccomp)' /proc/self/status; "
-        "echo DIAG-bwrap; /usr/bin/bwrap --version; "
-        "echo DIAG-lsm; cat /sys/kernel/security/lsm; echo; "
-        "echo DIAG-label; cat /proc/self/attr/current; "
-        "echo DIAG-setpriv-plain; /usr/bin/setpriv --reuid=10001 /usr/bin/id; "
-        "echo DIAG-setpriv-clear; /usr/bin/setpriv --reuid=10001 --regid=10001 --clear-groups "
-        "/usr/bin/id; echo DIAG-end; } >&2; exec \"$@\"",
-        "sh",
         setpriv,
         f"--reuid={uid}",
         f"--regid={gid}",
