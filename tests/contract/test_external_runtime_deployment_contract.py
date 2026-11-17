@@ -198,8 +198,10 @@ def _run_validator_as_configured_user(
         "--symlink",
         "usr/lib",
         "/lib",
+        # 실행 파일의 ELF 로더 경로(/lib64/ld-linux-*.so)가 호스트와 같게 풀려야 한다. 호스트에
+        # /usr/lib64가 있으면(Debian/Ubuntu 계열 x86_64) 그쪽을, 없으면 usr/lib를 가리킨다.
         "--symlink",
-        "usr/lib",
+        "usr/lib64" if Path("/usr/lib64").is_dir() else "usr/lib",
         "/lib64",
         "--ro-bind",
         "/etc",
