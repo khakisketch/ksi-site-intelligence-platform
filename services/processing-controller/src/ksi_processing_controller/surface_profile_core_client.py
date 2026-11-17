@@ -78,6 +78,8 @@ class SurfaceProfileCoreClient:
         maximum_request_bytes: int,
         request_timeout_seconds: float,
         transport: httpx.BaseTransport | None = None,
+        refresh_credentials: Callable[[], str] | None = None,
+        authority_is_current: Callable[[], bool] | None = None,
     ) -> None:
         parsed = urlsplit(base_url)
         if (
@@ -119,6 +121,8 @@ class SurfaceProfileCoreClient:
         self._max_request = maximum_request_bytes
         self._timeout = float(request_timeout_seconds)
         self._token = token
+        self._refresh_credentials = refresh_credentials
+        self._authority_is_current = authority_is_current
         self._client = httpx.Client(
             base_url=base_url.rstrip("/"),
             transport=transport,
@@ -170,8 +174,24 @@ class SurfaceProfileCoreClient:
     ) -> Any:
         if not self._activation.is_current_at(self._clock()) or not self._token:
             raise SurfaceProfileCoreClientError("ACTIVATION_UNAVAILABLE")
+        try:
+            if self._authority_is_current is not None and self._authority_is_current() is not True:
+                raise ValueError("현재 권한을 확인할 수 없다")
+            token = (
+                self._refresh_credentials()
+                if self._refresh_credentials is not None
+                else self._token
+            )
+            if (
+                type(token) is not str
+                or not 1 <= len(token) <= 4096
+                or any(ord(c) <= 32 or ord(c) > 126 for c in token)
+            ):
+                raise ValueError("현재 자격을 확인할 수 없다")
+        except Exception as exc:
+            raise SurfaceProfileCoreClientError("ACTIVATION_UNAVAILABLE") from exc
         headers = {
-            "Authorization": "Bearer " + self._token,
+            "Authorization": "Bearer " + token,
             SURFACE_PROFILE_WORKER_INSTANCE_ID_HEADER: self._activation.worker_instance_id,
             "Content-Type": "application/json",
             "Accept-Encoding": "identity",

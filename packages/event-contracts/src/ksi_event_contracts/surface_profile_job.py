@@ -220,6 +220,16 @@ class SurfaceProfileActivationV1(SpatialDataDigestModel):
         record = type(self).model_validate(self.__dict__)
         return record.valid_from <= require_utc(now) < record.valid_until
 
+    def signing_bytes(self) -> bytes:
+        """분리된 서명 대상. 도메인 문자열로 native 공간 자료 활성화 서명과 섞이지 않는다."""
+        record = type(self).model_validate(self.__dict__)
+        return canonical_json_bytes(
+            {
+                "domain": "ksi-surface-profile-activation.v1",
+                "payload": record.model_dump(by_alias=True, mode="json"),
+            }
+        )
+
 
 class SurfaceProfileReadWindowV1(SpatialDataModel):
     """The one native pixel window a worker may read: sample neighbours only, never the raster."""
