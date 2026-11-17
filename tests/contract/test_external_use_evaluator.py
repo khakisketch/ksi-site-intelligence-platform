@@ -1488,6 +1488,30 @@ def test_a_declaration_lets_a_dsm_without_a_vertical_reference_be_read(tmp_path:
     assert decision.evidence_record_digests == ()
 
 
+def test_a_declaration_recorded_after_the_decision_time_is_not_its_basis(tmp_path: Path) -> None:
+    # 요청 시각을 잡은 뒤 락을 얻기 전에 선언이 기록된 경쟁: 판정은 판정 시각에 있던 선언만 본다.
+    # 그렇지 않으면 ELIGIBLE 이 저널에 남지만 이력 검증(판정 시각 기준)은 근거를 찾지 못한다.
+    ledger = _Declarations()
+    world = _declared_world(tmp_path, ledger)
+    ledger.declare(_dsm_asset_ref(world), NOW + timedelta(seconds=1))
+    decision = world.height("race")
+    assert decision.reasons == ("VERTICAL_REFERENCE_UNKNOWN",)
+    # 판정 시각 이전에 있던 선언은 근거가 되고, 그 판정은 이력 검증도 통과한다.
+    earlier = _Declarations()
+    earlier_world = _declared_world(tmp_path / "earlier", earlier)
+    earlier.declare(_dsm_asset_ref(earlier_world), NOW)
+    eligible = earlier_world.height("same-instant")
+    assert eligible.verdict is DecisionVerdict.ELIGIBLE
+    verifier = CoreExternalUseDecisionHistoryVerifier(
+        reconstruction=earlier_world.reconstruction,  # type: ignore[arg-type]
+        inspections=earlier_world.inspections,
+        policy_registry=earlier_world.registry,
+        evidence_validations=earlier_world.validations,
+        declared_vertical=earlier,
+    )
+    assert verifier.verify(eligible) is True
+
+
 def test_a_declaration_for_another_asset_or_a_withdrawn_one_opens_nothing(tmp_path: Path) -> None:
     ledger = _Declarations()
     world = _declared_world(tmp_path, ledger)

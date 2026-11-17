@@ -1010,7 +1010,7 @@ class ExternalUseEvaluator:
         now: datetime,
     ) -> ExternalUseDecisionV1:
         policy, report = snapshot.policy, snapshot.inspection.report
-        reason = self._single_reason(subject, use, snapshot)
+        reason = self._single_reason(subject, use, snapshot, at=now)
         receipt = snapshot.display
         eligible = reason is None
         display = use == "DISPLAY"
@@ -1122,6 +1122,8 @@ class ExternalUseEvaluator:
         subject: SealedExternalSubjectV1,
         use: str,
         snapshot: _SingleSnapshot,
+        *,
+        at: datetime,
     ) -> str | None:
         if snapshot.revision is None:
             return "SUBJECT_NOT_SEALED"
@@ -1131,10 +1133,13 @@ class ExternalUseEvaluator:
         if not self._report_binds(subject, report, snapshot.policy):
             return "INSPECTION_REPORT_BINDING_INVALID"
         if use == "HEIGHT":
+            # 선언은 판정 시각(``at``) 기준으로 본다. 이력 검증이 같은 시각 기준으로 다시 묻기
+            # 때문에, 요청 시각을 잡은 뒤 락을 얻기 전에 기록된 선언이 판정에 들어가 재생할 수
+            # 없는 ELIGIBLE이 저널에 남는 일이 없다. 그 선언은 다음 요청(새 시각)부터 근거가 된다.
             return self._height_blocker(
                 snapshot.revision,
                 report,
-                declared=declared_vertical_checker(self._declared_vertical, subject),
+                declared=declared_vertical_checker(self._declared_vertical, subject, at=at),
             )
         if not self._measured_kind(snapshot.revision, report, ProcessingArtifactKind.ORTHO):
             return "ORTHO_MEASUREMENT_UNAVAILABLE"
