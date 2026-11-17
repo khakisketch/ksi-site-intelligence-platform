@@ -14,6 +14,11 @@ from typing import Any
 import numpy as np
 import pytest
 import rasterio
+from ksi_event_contracts.external_artifact_validation import (
+    NodataRepresentation,
+    ObservedVerticalReferenceV1,
+    RasterMeasurementsV1,
+)
 from ksi_geo_spatial.crs import reproject_point
 from ksi_geo_spatial.surface_profile import (
     ComparisonInvalidReason,
@@ -25,6 +30,7 @@ from ksi_geo_spatial.surface_profile import (
     compare_surface_profiles,
     inspect_profile_source,
     plan_surface_profile,
+    profile_support_blocker,
     sample_surface_profile,
 )
 from rasterio.transform import Affine, from_origin
@@ -645,3 +651,90 @@ def test_compound_crs_with_a_foot_vertical_is_refused_not_labelled_metres(
     with pytest.raises(SurfaceProfileError) as excinfo:
         inspect_profile_source(raster)
     assert _reason(excinfo) is SurfaceProfileErrorReason.UNSUPPORTED_CRS
+
+
+# ── Core 사전 확인: 보고서 사실만으로 이 엔진이 읽을 수 있는가 ──────────────────────
+
+
+def _measured(
+    *,
+    crs: str = "EPSG:5186",
+    transform: tuple[float, float, float, float, float, float] = (1.0, 0.0, 0.0, 0.0, -1.0, 10.0),
+    dtype: str = "float32",
+    bands: int = 1,
+    vertical: bool = True,
+) -> RasterMeasurementsV1:
+    return RasterMeasurementsV1(
+        observed_crs_identifier=crs,
+        observed_crs_digest="sha256:" + "c" * 64,
+        observed_vertical_reference=(
+            ObservedVerticalReferenceV1(identifier="EPSG:5773", basis="EGM96 height")
+            if vertical
+            else None
+        ),
+        transform=transform,
+        footprint_wkt="POLYGON((0 0,10 0,10 10,0 10,0 0))",
+        footprint_digest="sha256:" + "d" * 64,
+        width=10,
+        height=10,
+        band_count=bands,
+        dtype=dtype,
+        layout="GEOTIFF_TILED_V1",
+        nodata_representation=NodataRepresentation.NONE,
+        valid_pixel_count=100,
+    )
+
+
+def test_a_supported_measurement_passes_the_preflight() -> None:
+    assert profile_support_blocker(_measured()) is None
+    assert profile_support_blocker(_measured(crs="EPSG:5179", dtype="float64")) is None
+
+
+@pytest.mark.parametrize(
+    ("variant", "reason"),
+    [
+        (dict(crs="EPSG:3857"), SurfaceProfileErrorReason.UNSUPPORTED_CRS),
+        (dict(crs="EPSG:5174"), SurfaceProfileErrorReason.UNSUPPORTED_CRS),  # 구 측지계
+        (dict(crs="EPSG:4326"), SurfaceProfileErrorReason.UNSUPPORTED_CRS),
+        (dict(vertical=False), SurfaceProfileErrorReason.UNSUPPORTED_CRS),
+        (
+            dict(transform=(1.0, 0.2, 0.0, 0.0, -1.0, 10.0)),
+            SurfaceProfileErrorReason.UNSUPPORTED_RASTER,
+        ),
+        (
+            dict(transform=(1.0, 0.0, 0.0, 0.0, 1.0, 0.0)),
+            SurfaceProfileErrorReason.UNSUPPORTED_RASTER,
+        ),
+        (dict(bands=3), SurfaceProfileErrorReason.UNSUPPORTED_RASTER),
+        (dict(dtype="uint8"), SurfaceProfileErrorReason.UNSUPPORTED_RASTER),
+    ],
+)
+def test_the_preflight_names_why_the_engine_cannot_read_a_measured_dsm(
+    variant: dict[str, Any], reason: SurfaceProfileErrorReason
+) -> None:
+    assert profile_support_blocker(_measured(**variant)) is reason
+
+
+def test_the_preflight_agrees_with_what_the_reader_actually_accepts(tmp_path: Path) -> None:
+    """사전 확인이 통과시키는 파일은 읽을 수 있고, 거르는 파일은 읽기도 거부한다."""
+    cases: list[tuple[str, dict[str, Any], dict[str, Any]]] = [
+        ("ok", {}, {}),
+        ("web-mercator", {"crs": "EPSG:3857"}, {"crs": "EPSG:3857"}),
+        (
+            "rotated",
+            {"transform": Affine(1.0, 0.2, _ORIGIN_X, 0.0, -1.0, _ORIGIN_Y)},
+            {"transform": (1.0, 0.2, _ORIGIN_X, 0.0, -1.0, _ORIGIN_Y)},
+        ),
+    ]
+    for name, file_options, measured_options in cases:
+        path = _write(tmp_path / f"{name}.tif", _plane(), **file_options)
+        with rasterio.open(path) as dataset:
+            transform = tuple(float(v) for v in tuple(dataset.transform)[:6])
+            crs = f"EPSG:{dataset.crs.to_epsg()}"
+        blocker = profile_support_blocker(_measured(crs=crs, transform=transform))  # type: ignore[arg-type]
+        try:
+            inspect_profile_source(path)
+            readable = True
+        except SurfaceProfileError:
+            readable = False
+        assert (blocker is None) == readable, (name, blocker, readable, measured_options)

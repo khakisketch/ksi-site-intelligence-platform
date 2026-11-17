@@ -33,6 +33,7 @@ from pathlib import Path
 
 import numpy as np
 import rasterio
+from ksi_event_contracts.external_artifact_validation import RasterMeasurementsV1
 from pyproj import CRS
 from pyproj.exceptions import CRSError
 from rasterio.errors import RasterioIOError
@@ -431,6 +432,29 @@ def _facts(dataset: rasterio.DatasetReader) -> ProfileSourceFacts:
     )
 
 
+def profile_support_blocker(measurements: RasterMeasurementsV1) -> SurfaceProfileErrorReason | None:
+    """Core 가 읽기 전에 쓰는 사전 확인 — 검사 보고서의 사실만으로 이 엔진이 읽을 수 있는가.
+
+    HEIGHT 허용(``external_use_evaluator._height_blocker``)은 "높이를 읽어도 되는 자료"를
+    뜻하지만 이 엔진은 더 좁다(수평 CRS 화이트리스트, 북쪽이 위인 격자). 둘을 같다고 두면
+    허용된 자료가 실행 단계에서야 거부된다. 이 함수가 ``None`` 이어도 파일 사실이 보고서와
+    같은지는 읽는 쪽이 다시 확인한다 — 보고서를 파일의 증거로 삼지 않는다.
+    """
+    if measurements.band_count != 1 or measurements.dtype not in {"float32", "float64"}:
+        return SurfaceProfileErrorReason.UNSUPPORTED_RASTER
+    a, b, _, d, e, _ = measurements.transform
+    if b != 0.0 or d != 0.0 or not (a > 0.0 and e < 0.0):
+        return SurfaceProfileErrorReason.UNSUPPORTED_RASTER
+    try:
+        assert_supported_project_crs(measurements.observed_crs_identifier)
+    except UnsupportedCrsError:
+        return SurfaceProfileErrorReason.UNSUPPORTED_CRS
+    if measurements.observed_vertical_reference is None:
+        # 표고를 m 로 말할 근거가 없다 — 수평축 단위로 짐작하지 않는다.
+        return SurfaceProfileErrorReason.UNSUPPORTED_CRS
+    return None
+
+
 def inspect_profile_source(raster_path: Path) -> ProfileSourceFacts:
     """표본 간격·좌표계 결정에 필요한 래스터 사실만 읽는다(픽셀은 읽지 않는다)."""
     try:
@@ -625,5 +649,6 @@ __all__ = [
     "compare_surface_profiles",
     "inspect_profile_source",
     "plan_surface_profile",
+    "profile_support_blocker",
     "sample_surface_profile",
 ]
