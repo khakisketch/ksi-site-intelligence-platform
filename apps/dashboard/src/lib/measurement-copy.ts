@@ -67,3 +67,24 @@ export function saveLineErrorText(status: number, code: string | undefined): str
   if (status === 503) return "지금은 저장할 수 없습니다. 잠시 후 다시 시도하세요.";
   return "선을 저장하지 못했습니다. 잠시 후 다시 시도하세요.";
 }
+
+const REQUEST_REFUSALS: Record<string, string> = {
+  NOT_A_DSM: "높이 단면은 지표면 높이 자료(DSM)에서만 읽을 수 있습니다.",
+  EXTERNAL_RECONSTRUCTION_NOT_SEALED: "이 자료는 아직 등록이 끝나지 않았습니다.",
+  EXTERNAL_WORKFLOW_CLOSED: "이 작업이 닫혀 있어 새 단면을 요청할 수 없습니다.",
+  IDEMPOTENCY_CONFLICT: "같은 요청이 다른 내용으로 이미 처리되었습니다. 화면을 새로 열어 확인한 뒤 다시 요청하세요.",
+  TOO_MANY_JOBS: "이 작업구역의 단면 요청이 한도에 닿았습니다. 끝난 요청이 정리된 뒤 다시 요청하세요.",
+  INVALID: "요청 내용을 확인해 주세요. 화면을 새로 열어 다시 시도하세요.",
+};
+
+/** 단면 요청이 거부됐을 때의 사람용 문구. Core 거부 사유는 단면 실패 문구와 같은 말로 옮긴다. */
+export function requestErrorText(status: number, code: string | undefined): string {
+  if (code && Object.prototype.hasOwnProperty.call(REQUEST_REFUSALS, code)) return REQUEST_REFUSALS[code]!;
+  if (code && Object.prototype.hasOwnProperty.call(FAILURE_TEXT, code)) return FAILURE_TEXT[code]!;
+  if (status === 401) return "세션이 만료되었습니다. 다시 로그인하세요.";
+  if (status === 403) return "단면을 요청할 권한이 없습니다.";
+  if (status === 404) return "자료나 측정 선을 찾을 수 없거나 접근 권한이 없습니다.";
+  if (status === 422 || status === 400) return "요청 내용을 확인해 주세요.";
+  if (status === 503) return "지금은 요청할 수 없습니다. 잠시 후 다시 시도하세요.";
+  return "단면을 요청하지 못했습니다. 잠시 후 다시 시도하세요.";
+}

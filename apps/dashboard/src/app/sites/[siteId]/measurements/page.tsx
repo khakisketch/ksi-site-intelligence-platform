@@ -21,9 +21,12 @@ import { listSpatialAssets } from "@/lib/core-api/spatial-assets";
 import { getSite } from "@/lib/core-api/sites";
 import { listWorkAreas } from "@/lib/core-api/workAreas";
 import { availabilityText, failureText, resultErrorText } from "@/lib/measurement-copy";
+import { requestRows } from "@/lib/measurement-requests";
 import { captureDateLabel, chooseProfileJobs } from "@/lib/measurement-selection";
+import { materialsHref } from "@/app/sites/[siteId]/materials/materials-visual";
 
 import { AreaSelect } from "./AreaSelect";
+import { ProfileRequests } from "./ProfileRequests";
 import { MeasurementWorkbench, type LoadedSeries, type UnavailableDate } from "./MeasurementWorkbench";
 
 export const metadata = { title: "측정 선 · KSI" };
@@ -157,10 +160,12 @@ export default async function MeasurementsPage({
 
   // 날짜 이름표용 자료 목록. 실패해도 단면은 그대로 두고 날짜만 "촬영 시기 미상"으로 둔다.
   const dateByAsset = new Map<string, string | null>();
+  const dsmAssets: string[] = [];
   try {
     const catalog = await listSpatialAssets(siteId, workAreaId, { limit: 50 });
     if (catalog.siteId === siteId && catalog.workAreaId === workAreaId) {
       for (const asset of catalog.assets) {
+        if (asset.kind === "dsm" && asset.lifecycleState === "SEALED") dsmAssets.push(asset.assetRef);
         dateByAsset.set(asset.assetRef, captureDateLabel({ captureDate: asset.declared.captureDate, captureStartedAt: asset.declared.captureStartedAt }));
       }
     }
@@ -169,6 +174,23 @@ export default async function MeasurementsPage({
     const date = dateByAsset.get(assetRef) ?? null;
     return { label: date ?? "촬영 시기 미상", date };
   };
+
+  // 날짜(자료)별 요청 상태. 단면 기능이 연결되지 않은 환경에서는 요청 패널을 열지 않는다.
+  const requestable = jobsDisconnected ? [] : requestRows({
+    assets: dsmAssets.map((assetRef) => ({ assetRef, label: labelOf(assetRef).label })),
+    jobs,
+    feature: { featureId: selected.featureId, revision: selected.revision, lineDigest: selected.lineDigest },
+  }).map((row) => ({ ...row, assetHref: materialsHref(siteId, workAreaId, { assetRef: row.assetRef }) }));
+  const requests = requestable.length > 0 && (
+    <ProfileRequests
+      key={`${selected.featureId}:${selected.revision}`}
+      siteId={siteId}
+      workAreaId={workAreaId}
+      feature={{ featureId: selected.featureId, revision: selected.revision, lineDigest: selected.lineDigest }}
+      rows={requestable}
+      canRequest={permissions.includes("SITES_WRITE") && permissions.includes("SPATIAL_DATA_REQUEST") && selectedArea.status === "ACTIVE"}
+    />
+  );
 
   const refParam = single(query.ref);
   const curParam = single(query.cur);
@@ -224,6 +246,7 @@ export default async function MeasurementsPage({
     )}
     {jobsDisconnected && <InlineNotice tone="high" role="alert">이 환경에서는 단면 기능이 연결되어 있지 않아 결과를 읽을 수 없습니다.</InlineNotice>}
     {failureNotices}
+    {!hasAny && requests}
     {hasAny
       ? <MeasurementWorkbench
         key={`${selected.featureId}:${choice.refJobId ?? ""}:${choice.curJobId ?? ""}`}
@@ -245,5 +268,6 @@ export default async function MeasurementsPage({
         {!jobsDisconnected && unavailable.length === 0 && <EmptyState title="이 선의 단면 결과가 없습니다" description={`${selected.name}의 날짜별 단면 결과가 생기면 이곳에 표시됩니다.`} />}
         {notes.map((note) => <p key={note} className="text-micro text-ink-muted">{note}</p>)}
       </>}
+    {hasAny && requests}
   </>);
 }

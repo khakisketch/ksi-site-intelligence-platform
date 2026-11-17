@@ -152,6 +152,98 @@ describe("측정 선 화면", () => {
     expect(html).toContain("이 선 고치기");
   });
 
+  describe("날짜별 단면 요청", () => {
+    const sealed = (n: number, date: string, kind = "dsm", lifecycleState = "SEALED") => ({ assetRef: asset(n), kind, lifecycleState, declared: { captureDate: date, captureStartedAt: null } });
+    const writer = (extra: string[] = []) => mocked.session.mockResolvedValue({ kind: "ready", principal: {
+      principalId: "operator-1", organizationId: "org-1", kind: "OPERATOR", role: "ADMIN",
+      permissions: ["SITES_READ", "SPATIAL_DATA_READ", "SITES_WRITE", "SPATIAL_DATA_REQUEST", ...extra],
+    } });
+    const catalog = (assets: unknown[]) => mocked.catalog.mockResolvedValue({ siteId: "site-1", workAreaId: "area-1", assets, nextCursor: null, hasMore: false });
+
+    it("봉인된 DSM마다 요청 상태를 보이고, 요청하지 않은 날짜에 요청 버튼을 연다", async () => {
+      writer();
+      catalog([sealed(1, "2026-03-14"), sealed(3, "2026-11-02"), sealed(5, "2026-11-09")]);
+      const html = await render();
+      expect(html).toContain("날짜별 단면");
+      expect(html).toContain("2026-11-09");
+      expect(html).toContain('data-request-state="none"');
+      expect(html).toContain('data-request-state="done"');
+      expect(html).toContain("단면 요청");
+    });
+
+    it("DSM이 아니거나 봉인 전인 자료는 요청 대상이 아니다", async () => {
+      writer();
+      catalog([sealed(1, "2026-03-14"), sealed(3, "2026-11-02", "ortho"), sealed(5, "2026-11-09", "dsm", "UNSEALED")]);
+      const html = await render();
+      expect(html).not.toContain("2026-11-09");
+      expect(html).toContain("2026-03-14");
+      expect(html.match(/data-request-state=/g)).toHaveLength(1);
+    });
+
+    it("DSM이 없으면 요청 패널을 열지 않는다", async () => {
+      writer();
+      catalog([sealed(3, "2026-11-02", "ortho")]);
+      expect(await render()).not.toContain("날짜별 단면");
+    });
+
+    it("쓰기·요청 권한이 모두 있어야 요청 버튼이 열리고, 없으면 상태만 보인다", async () => {
+      catalog([sealed(1, "2026-03-14"), sealed(5, "2026-11-09")]);
+      const partial = async (permissions: string[]) => {
+        mocked.session.mockResolvedValue({ kind: "ready", principal: { principalId: "o", organizationId: "org-1", kind: "OPERATOR", role: "ADMIN", permissions } });
+        return render();
+      };
+      for (const permissions of [["SITES_READ", "SPATIAL_DATA_READ", "SITES_WRITE"], ["SITES_READ", "SPATIAL_DATA_READ", "SPATIAL_DATA_REQUEST"], ["SITES_READ", "SPATIAL_DATA_READ"]]) {
+        const html = await partial(permissions);
+        expect(html).toContain("날짜별 단면");
+        expect(html).not.toContain(">단면 요청</button>");
+        expect(html).toContain("작업 등록 권한이 있는 계정");
+      }
+      writer();
+      expect(await render()).toContain(">단면 요청</button>");
+    });
+
+    it("보관된 구역에서는 요청하지 않는다", async () => {
+      writer();
+      mocked.areas.mockResolvedValue({ workAreas: [{ ...area, status: "ARCHIVED" }] });
+      catalog([sealed(1, "2026-03-14"), sealed(5, "2026-11-09")]);
+      expect(await render()).not.toContain(">단면 요청</button>");
+    });
+
+    it("진행 중이거나 실패한 요청을 이 선의 정확한 개정에 한해 보인다", async () => {
+      writer();
+      catalog([sealed(1, "2026-03-14"), sealed(5, "2026-11-09"), sealed(6, "2026-11-12")]);
+      mocked.jobs.mockResolvedValue({ items: [
+        job(1),
+        job(5, { executionState: "RUNNING", availability: "NOT_READY" }),
+        job(6, { executionState: "FAILED", availability: "UNAVAILABLE", reason: "LINE_OUTSIDE_SURFACE" }),
+        job(6, { feature: { featureId: FEATURE_ID, revision: 1, lineDigest: DIGEST }, executionState: "COMPLETED" }),
+      ] });
+      const html = await render();
+      expect(html).toContain("단면을 읽는 중입니다");
+      expect(html).toContain("이 선이 등록된 범위에 닿지 않았습니다");
+      expect(html).toContain("요청 취소");
+      expect(html).toContain("다시 요청");
+    });
+
+    it("단면 기능이 연결되지 않은 환경에서는 요청 패널을 열지 않는다", async () => {
+      writer();
+      catalog([sealed(1, "2026-03-14")]);
+      mocked.jobs.mockRejectedValue(new CoreApiError(404, {}));
+      const html = await render();
+      expect(html).not.toContain("날짜별 단면");
+      expect(html).toContain("단면 기능이 연결되어 있지 않아");
+    });
+
+    it("결과가 하나도 없어도 요청 패널은 보인다(첫 요청을 할 수 있어야 한다)", async () => {
+      writer();
+      catalog([sealed(1, "2026-03-14")]);
+      mocked.jobs.mockResolvedValue({ items: [] });
+      const html = await render();
+      expect(html).toContain("날짜별 단면");
+      expect(html).toContain("이 선의 단면 결과가 없습니다");
+    });
+  });
+
   it("쓰기 권한이 없으면 진입을 보이지 않는다", async () => {
     const html = await render();
     expect(html).not.toContain("/measurements/new");
