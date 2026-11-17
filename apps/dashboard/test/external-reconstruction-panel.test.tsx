@@ -866,6 +866,37 @@ describe("ExternalReconstructionPanel header auto-recognition (AX-3)", () => {
     expect((screen.getByLabelText("재구성 소프트웨어 버전") as HTMLInputElement).value).toBe("4.8.4");
   });
 
+  it("splits two files dropped together into the ortho and DSM slots by their headers", async () => {
+    registerFlow();
+    headerMock.read.mockImplementation(async (file: File) => (file.name === "ground.tif" ? dsmHeader : orthoHeader));
+    render(<ExternalReconstructionPanel workOrderId="work-1" expectedEpochId="epoch-1" canWrite accountIdentity={continuity} />);
+    await screen.findByText("아직 등록된 관측 자료가 없습니다.");
+    // 이름으로는 구분할 수 없게 둔다. 헤더만이 칸을 정한다.
+    fireEvent.drop(screen.getByTestId("external-file-drop-zone"), { dataTransfer: { files: [new File(["x"], "ground.tif"), new File(["y"], "picture.tif")] } });
+    await screen.findByText(/정사영상 1 KB 확인 완료 · DSM 1 KB 확인 완료/);
+    expect(screen.queryByLabelText("파일 나누기 안내")).toBeNull();
+  });
+
+  it("tells which dropped files were not placed and why", async () => {
+    registerFlow();
+    headerMock.read.mockImplementation(async (file: File) => (file.name === "mystery.tif" ? { ...orthoHeader, samplesPerPixel: 2 } : orthoHeader));
+    render(<ExternalReconstructionPanel workOrderId="work-1" expectedEpochId="epoch-1" canWrite accountIdentity={continuity} />);
+    await screen.findByText("아직 등록된 관측 자료가 없습니다.");
+    fireEvent.drop(screen.getByTestId("external-file-drop-zone"), { dataTransfer: { files: [new File(["x"], "photo.jpg"), new File(["y"], "mystery.tif"), new File(["z"], "ortho.tif")] } });
+    await screen.findByText(/정사영상 1 KB 확인 완료/);
+    const notes = screen.getByLabelText("파일 나누기 안내");
+    expect(notes.textContent).toContain("‘photo.jpg’: GeoTIFF(.tif, .tiff) 파일만");
+    expect(notes.textContent).toContain("‘mystery.tif’: 정사영상인지 DSM인지 파일에서 알 수 없습니다");
+  });
+
+  it("does not offer the drop zone without write permission", async () => {
+    registerFlow();
+    headerMock.read.mockResolvedValue(orthoHeader);
+    render(<ExternalReconstructionPanel workOrderId="work-1" expectedEpochId="epoch-1" canWrite={false} accountIdentity={continuity} />);
+    await screen.findByText("아직 등록된 관측 자료가 없습니다.");
+    expect(screen.queryByTestId("external-file-drop-zone")).toBeNull();
+  });
+
   it("warns when a DSM-looking file is placed in the ortho slot without moving it", async () => {
     registerFlow();
     headerMock.read.mockResolvedValue(dsmHeader);
@@ -1495,7 +1526,10 @@ describe("ExternalReconstructionPanel V3 missing-info intake", () => {
   it("never asks for raw photos: only ortho/DSM slots exist and retention stays a declaration", async () => {
     render(<ExternalReconstructionPanel workOrderId="work-1" expectedEpochId="epoch-1" canWrite accountIdentity={continuity} />);
     await screen.findByText("아직 등록된 관측 자료가 없습니다.");
-    expect(document.querySelectorAll('input[type="file"]')).toHaveLength(2);
+    // 칸별 입력 둘과 "한 번에 선택" 입력 하나. 모두 GeoTIFF 만 받고, 원본 사진 입력은 없다.
+    const inputs = Array.from(document.querySelectorAll('input[type="file"]'));
+    expect(inputs).toHaveLength(3);
+    expect(inputs.map((input) => input.getAttribute("accept"))).toEqual([".tif,.tiff", ".tif,.tiff", ".tif,.tiff"]);
     expect(screen.getByText(/제출할 GeoTIFF가 아니라 재구성에 사용한 원본 사진·관측 자료의 보관 위치/)).toBeTruthy();
     expect(screen.getByText(/원본 업로드는 요청하지 않습니다/)).toBeTruthy();
     expect(screen.queryByLabelText(/원본 사진/)).toBeNull();

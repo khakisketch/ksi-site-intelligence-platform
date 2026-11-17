@@ -19,6 +19,8 @@ import { formatKoreanDateTime } from "@/lib/datetime";
 import { formatBytesKo, formatNumberKo } from "@/lib/number-format";
 import { formatRegistrationVersion, describeArtifactKinds, submissionStateLabel, describeProducerLine, describeCaptureLine, describeRetentionLine, formatPublisherCalendarDate } from "@/app/field/registration-language";
 import { ExternalHeaderRecognition, type HeaderRecognitionState } from "@/app/field/ExternalHeaderRecognition";
+import { ExternalFileDropZone } from "@/app/field/ExternalFileDropZone";
+import { assignSlots } from "@/lib/external-file-routing";
 import { readGeoTiffHeader, recognizeGeoTiffHeader } from "@/lib/geo/geotiff-header";
 import { preflightGeoTiff } from "@/lib/geo/geotiff-preflight";
 import {
@@ -844,6 +846,26 @@ function ExternalReconstructionPanelState({ workOrderId, siteId = "", expectedEp
     }
   };
 
+  const [routingNotes, setRoutingNotes] = useState<string[]>([]);
+  // 여러 파일을 한 번에 받으면 헤더로 칸을 나누고, 나눈 파일은 칸별 선택과 같은 경로(select)로 넣는다.
+  const routeFiles = async (files: File[]) => {
+    if (hashing || frozenAttempt || (!newIntentAllowed && !resume)) return;
+    const probes = await Promise.all(files.map(async (file) => {
+      try {
+        const header = await readGeoTiffHeader(file);
+        return { name: file.name, hint: recognizeGeoTiffHeader(header).kindHint, readable: true };
+      } catch {
+        return { name: file.name, hint: null, readable: false };
+      }
+    }));
+    const { assigned, skipped } = assignSlots(probes);
+    setRoutingNotes(skipped.map((item) => `‘${item.name}’: ${item.reason}`));
+    for (const kind of ["ortho", "dsm"] as const) {
+      const index = assigned[kind];
+      if (index !== undefined) await select(kind, files[index]);
+    }
+  };
+
   const selectResume = (revision: Revision) => {
     if (busy || hashing) return;
     // 명시적 재개에 현재 확인된 계정 비교값을 고정한다. 미확인이면 grant·
@@ -1323,6 +1345,8 @@ function ExternalReconstructionPanelState({ workOrderId, siteId = "", expectedEp
           <label className="mt-2 flex flex-col gap-1 font-semibold">내보내기 기록 (선택)<input className="input" aria-label="내보내기 기록" value={exportNote} disabled={busy || hashing || formIsFrozen || !newIntentAllowed} maxLength={1000} onChange={(event) => setExportNote(event.target.value)} /></label>
         </details>
         </>}
+        <ExternalFileDropZone disabled={busy || hashing || Boolean(frozenAttempt) || (!newIntentAllowed && !resume)} onFiles={(files) => void routeFiles(files)} />
+        {routingNotes.length > 0 && <ul role="status" aria-label="파일 나누기 안내" className="list-disc rounded-lg border border-line bg-sunk py-2 pl-7 pr-3 text-[12.5px] leading-5 text-ink-2">{routingNotes.map((note) => <li key={note} className="break-all">{note}</li>)}</ul>}
         <FilePickerField
           label="정사영상 (선택)"
           ariaLabel="정사영상 GeoTIFF"
