@@ -829,7 +829,7 @@ class SurfaceProfileJobStore:
         instance_id: str,
         attempt_digest: str,
         now: datetime,
-    ) -> SurfaceProfileFrozenJobV1:
+    ) -> tuple[SurfaceProfileFrozenJobV1, SurfaceProfileAttemptV1]:
         with self._guard(now):
             self._worker(worker, instance_id, now)
             record = self._worker_record(job_id, worker)
@@ -843,7 +843,7 @@ class SurfaceProfileJobStore:
                 raise SurfaceProfileDomainError("FENCE_CONFLICT", 409)
             self._live(record, attempt, now)
             self._authority.reprove(record.job, operation="PREPARE", now=now)
-            return record.job.model_copy(deep=True)
+            return record.job.model_copy(deep=True), attempt.model_copy(deep=True)
 
     def worker_input(
         self, *, job_id: str, worker: Principal, attempt: SurfaceProfileAttemptV1, now: datetime

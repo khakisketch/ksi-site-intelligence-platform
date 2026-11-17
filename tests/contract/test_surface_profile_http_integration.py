@@ -62,7 +62,10 @@ def _worker_headers(*, digest: str | None = None) -> dict[str, str]:
 
 
 def _surface_config(
-    now_box: list[datetime], *, activation_seconds: float = 3600.0
+    now_box: list[datetime],
+    *,
+    activation_seconds: float = 3600.0,
+    origin: str = "https://store.invalid",
 ) -> SurfaceProfileGraphConfig:
     from spatial_data_fixture import make_envelope
     from surface_profile_job_fixture import profile_policy, profile_runtime
@@ -87,7 +90,7 @@ def _surface_config(
         worker_instance_id=_WORKER_INSTANCE,
         policy_digest=policy.policy_digest or "",
         runtime_digest=runtime.runtime_digest or "",
-        trusted_endpoint_origins=("https://store.invalid",),
+        trusted_endpoint_origins=(origin,),
         valid_from=now_box[0] - timedelta(minutes=1),
         valid_until=now_box[0] + timedelta(seconds=activation_seconds),
     ).sealed()
@@ -358,12 +361,47 @@ def _retain_real_parser_report(flow: Any) -> None:
 
 class _ReadyFlow:
     def __init__(self, tmp_path: Path, *, activation_seconds: float = 3600.0) -> None:
+        import threading
+        from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
         self.now_box: list[datetime] = [datetime.now(UTC).replace(microsecond=0)]
-        self.ctx = _PlatformFlowContext(
-            tmp_path,
-            with_spatial_data=True,
-            surface_profile=_surface_config(self.now_box, activation_seconds=activation_seconds),
-        )
+        # 봉인된 DSM 바이트를 /source로 내려주는 실제 loopback 객체 서버. 바이트는 봉인 뒤 채운다.
+        self.source_bytes: dict[str, bytes] = {"payload": b""}
+        source_bytes = self.source_bytes
+
+        class Handler(BaseHTTPRequestHandler):
+            def do_GET(self) -> None:  # noqa: N802
+                if self.path != "/source" or not source_bytes["payload"]:
+                    self.send_error(404)
+                    return
+                self.send_response(200)
+                self.send_header("Content-Type", "image/tiff")
+                self.send_header("Content-Length", str(len(source_bytes["payload"])))
+                self.end_headers()
+                self.wfile.write(source_bytes["payload"])
+
+            def log_message(self, *_: object) -> None:
+                return
+
+        self.object_server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        self.object_thread = threading.Thread(target=self.object_server.serve_forever, daemon=True)
+        self.object_thread.start()
+        self.object_origin = f"http://127.0.0.1:{self.object_server.server_port}"
+        try:
+            self.ctx = _PlatformFlowContext(
+                tmp_path,
+                with_spatial_data=True,
+                surface_profile=_surface_config(
+                    self.now_box,
+                    activation_seconds=activation_seconds,
+                    origin=self.object_origin,
+                ),
+                spatial_object_origin=self.object_origin,
+            )
+        except BaseException:
+            self.object_server.shutdown()
+            self.object_server.server_close()
+            raise
         assert self.ctx.app.state.surface_profile is not None
         self.tmp_path = tmp_path
         self.area_id = ""
@@ -412,6 +450,9 @@ class _ReadyFlow:
         self.servers = _CoreAndObjectServers(self.view)
         self.servers.__enter__()
         _retain_real_parser_report(self)
+        self.source_bytes["payload"] = self.ctx.storage.object_bytes(
+            _sealed_object_key(self.ctx, self.current_revision)
+        )
         self.http = httpx.Client(base_url=self.servers.core_origin, trust_env=False)
         self.asset_ref = _provision_surface_grant(self.ctx, self.area_id, self.current_revision)
 
@@ -431,6 +472,9 @@ class _ReadyFlow:
                 self.servers.__exit__(None, None, None)
         finally:
             self.ctx.close()
+            self.object_server.shutdown()
+            self.object_server.server_close()
+            self.object_thread.join(timeout=2)
 
 
 def test_issue_list_lease_renew_complete_result_over_loopback_http(tmp_path: Path) -> None:
@@ -492,7 +536,7 @@ def test_issue_list_lease_renew_complete_result_over_loopback_http(tmp_path: Pat
             f"{flow.worker_base}/{job_id}/input", headers=_worker_headers(digest=digest)
         )
         assert first_input.status_code == 200, first_input.text
-        frozen = SurfaceProfileFrozenJobV1.model_validate(first_input.json()["input"])
+        frozen = SurfaceProfileFrozenJobV1.model_validate(first_input.json()["input"]["job"])
         assert frozen.job_id == job_id
 
         flow.now_box[0] = flow.now_box[0] + timedelta(seconds=1)
@@ -516,7 +560,7 @@ def test_issue_list_lease_renew_complete_result_over_loopback_http(tmp_path: Pat
             headers=_worker_headers(digest=attempt2["attemptDigest"]),
         )
         assert fresh.status_code == 200, fresh.text
-        live = SurfaceProfileFrozenJobV1.model_validate(fresh.json()["input"])
+        live = SurfaceProfileFrozenJobV1.model_validate(fresh.json()["input"]["job"])
         assert live.job_digest == frozen.job_digest
 
         raw_dsm = flow.ctx.storage.object_bytes(_sealed_object_key(flow.ctx, flow.current_revision))
@@ -593,7 +637,7 @@ def test_cancel_failure_retry_and_cross_job_tamper_over_loopback_http(tmp_path: 
             http.get(
                 f"{flow.worker_base}/{job_a_id}/input",
                 headers=_worker_headers(digest=attempt_a["attemptDigest"]),
-            ).json()["input"]
+            ).json()["input"]["job"]
         )
         raw_dsm = flow.ctx.storage.object_bytes(_sealed_object_key(flow.ctx, flow.current_revision))
         result_a, receipt_a = _genuine_completion(frozen_a, raw_dsm, tmp_path, flow.now_box[0])
@@ -637,7 +681,7 @@ def test_cancel_failure_retry_and_cross_job_tamper_over_loopback_http(tmp_path: 
             http.get(
                 f"{flow.worker_base}/{job_b_id}/input",
                 headers=_worker_headers(digest=attempt_b2["attemptDigest"]),
-            ).json()["input"]
+            ).json()["input"]["job"]
         )
         result_b, receipt_b = _genuine_completion(frozen_b, raw_dsm, tmp_path, flow.now_box[0])
         completed = http.post(
@@ -749,7 +793,7 @@ def test_scope_org_and_line_revision_guards_over_loopback_http(tmp_path: Path) -
             f"{flow.worker_base}/{job_id}/input", headers=_worker_headers(digest=digest)
         )
         assert original.status_code == 200, original.text
-        frozen = SurfaceProfileFrozenJobV1.model_validate(original.json()["input"])
+        frozen = SurfaceProfileFrozenJobV1.model_validate(original.json()["input"]["job"])
         assert frozen.feature.revision == 1
         raw = flow.ctx.storage.object_bytes(_sealed_object_key(flow.ctx, flow.current_revision))
         result_json, receipt_json = _genuine_completion(frozen, raw, tmp_path, flow.now_box[0])
@@ -859,7 +903,7 @@ def test_real_owners_withdraw_input_and_numeric_result(
         headers = _worker_headers(digest=attempt["attemptDigest"])
         source = http.get(url + "/input", headers=headers)
         assert source.status_code == 200, source.text
-        frozen = SurfaceProfileFrozenJobV1.model_validate(source.json()["input"])
+        frozen = SurfaceProfileFrozenJobV1.model_validate(source.json()["input"]["job"])
         if release == "result":
             raw = flow.ctx.storage.object_bytes(_sealed_object_key(flow.ctx, flow.current_revision))
             result, receipt = _genuine_completion(frozen, raw, tmp_path, flow.now_box[0])
@@ -936,5 +980,116 @@ def test_real_activation_expiry_blocks_pending_and_still_live_input(tmp_path: Pa
         assert http.get(flow.worker_base, headers=_worker_headers()).status_code == 403
         denied = http.get(url + "/input", headers=_worker_headers(digest=attempt["attemptDigest"]))
         assert denied.status_code == 403 and denied.json()["reason"] == "PERMISSION_DENIED"
+    finally:
+        flow.close()
+
+
+def _run_surface_worker(flow: _ReadyFlow, core_origin: str) -> bool:
+    """https 전용 일꾼 클라이언트가 실제 loopback Core로 전달한다. 성공 본문은 만들지 않는다."""
+    from ksi_processing_controller.external_object_streams import (
+        ExternalObjectTransportPolicyV1,
+        TrustedObjectEndpointV1,
+    )
+    from ksi_processing_controller.surface_profile_core_client import SurfaceProfileCoreClient
+    from ksi_processing_controller.surface_profile_runner import run_once
+
+    wiring = flow.ctx.app.state.surface_profile
+    workspace = flow.tmp_path / "surface-worker"
+    workspace.mkdir(mode=0o700, exist_ok=True)
+    with httpx.Client(base_url=core_origin, trust_env=False) as direct:
+
+        def forward(request: httpx.Request) -> httpx.Response:
+            assert request.url.host == "core.invalid"
+            response = direct.request(
+                request.method,
+                request.url.raw_path.decode(),
+                headers=dict(request.headers),
+                content=request.read(),
+            )
+            return httpx.Response(
+                response.status_code, headers=response.headers, content=response.content
+            )
+
+        with SurfaceProfileCoreClient(
+            base_url="https://core.invalid",
+            token=_WORKER_TOKEN,
+            activation=wiring.config.activation,
+            policy=wiring.config.policy,
+            runtime=wiring.config.runtime,
+            clock=lambda: flow.now_box[0],
+            maximum_response_bytes=1_000_000,
+            maximum_request_bytes=500_000,
+            request_timeout_seconds=5.0,
+            transport=httpx.MockTransport(forward),
+        ) as core:
+            return run_once(
+                core=core,
+                transport_policy=ExternalObjectTransportPolicyV1(
+                    endpoints=(
+                        TrustedObjectEndpointV1(
+                            origin=flow.object_origin, addresses=("127.0.0.1",)
+                        ),
+                    ),
+                    max_header_bytes=4096,
+                    max_object_bytes=1_000_000,
+                    max_chunk_bytes=65_536,
+                ),
+                clock=lambda: flow.now_box[0],
+                workspace_root=workspace,
+                heartbeat_millis=50,
+            )
+
+
+def test_actual_worker_reads_sealed_dsm_bytes_through_real_core_and_owners(tmp_path: Path) -> None:
+    """실제 소유자·실제 Core HTTP·실제 봉인 DSM 바이트로 일꾼이 결과를 만들고 Core가 검산한다."""
+    import rasterio
+
+    flow = _ReadyFlow(tmp_path)
+    try:
+        flow.seal()
+        flow.serve_and_measure()
+        assert flow.http is not None and flow.servers is not None
+        http = flow.http
+        decision_id = _height_decision_id(
+            http, flow.current_order, flow.current_subject, key="worker-height"
+        )
+        issued = http.post(
+            flow.requester_base,
+            headers=_reader_headers("worker-job"),
+            json=flow.issue_body(flow.asset_ref, decision_id),
+        )
+        assert issued.status_code == 200, issued.text
+        job_id = issued.json()["jobId"]
+        assert _run_surface_worker(flow, flow.servers.core_origin) is True
+        status = http.get(f"{flow.requester_base}/{job_id}", headers=_reader_headers())
+        assert status.json()["executionState"] == "COMPLETED", status.text
+        assert status.json()["receipt"]["accuracyAssessed"] is False
+        released = http.get(f"{flow.requester_base}/{job_id}/result", headers=_reader_headers())
+        assert released.status_code == 200, released.text
+        samples = released.json()["result"]["samples"]
+
+        # 독립 기준: 봉인된 바이트를 rasterio로 직접 읽어 화소 중심 사이를 이중선형으로 보간한다.
+        raw = flow.source_bytes["payload"]
+        with rasterio.MemoryFile(raw) as memory, memory.open() as dataset:
+            grid = dataset.read(1)
+            left, top = dataset.transform.c, dataset.transform.f
+            cell = dataset.transform.a
+        valid = 0
+        for sample in samples:
+            col = (sample["x"] - left) / cell - 0.5
+            row = (top - sample["y"]) / cell - 0.5
+            if sample["elevationM"] is None:
+                continue
+            c0, r0 = int(col // 1), int(row // 1)
+            fc, fr = col - c0, row - r0
+            expected = (
+                grid[r0, c0] * (1 - fc) * (1 - fr)
+                + grid[r0, c0 + 1] * fc * (1 - fr)
+                + grid[r0 + 1, c0] * (1 - fc) * fr
+                + grid[r0 + 1, c0 + 1] * fc * fr
+            )
+            assert sample["elevationM"] == pytest.approx(float(expected), abs=1e-4)
+            valid += 1
+        assert valid >= 2
     finally:
         flow.close()

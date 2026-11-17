@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import hashlib
 from typing import Annotated, Any, Literal, Self
+from urllib.parse import urlsplit
 
 from ksi_domain.canonical_json import canonical_json_bytes
 from pydantic import Field, StrictBool, StringConstraints, model_validator
@@ -47,6 +48,7 @@ from ksi_event_contracts.spatial_data import (
     SpatialDataSourceV1,
 )
 from ksi_event_contracts.spatial_data_authority import SpatialDataGrantV1
+from ksi_event_contracts.spatial_data_worker import SpatialDataSourceCapabilityV1
 from ksi_event_contracts.surface_profile import (
     MAX_PROFILE_SAMPLES,
     CreateSurfaceProfileV1,
@@ -498,8 +500,59 @@ class SurfaceProfileWorkerPendingPageV1(SpatialDataModel):
     items: tuple[SurfaceProfileWorkerPendingItemV1, ...] = Field(max_length=MAX_COUNTER)
 
 
+class SurfaceProfileWorkerInputV1(SpatialDataModel):
+    """일꾼이 받는 입력: 봉인된 작업, 현재 attempt, 활성화와 짧은 수명의 원본 읽기 capability."""
+
+    job: SurfaceProfileFrozenJobV1
+    attempt: SurfaceProfileAttemptV1
+    activation: SurfaceProfileActivationV1
+    source_capability: SpatialDataSourceCapabilityV1
+
+    @model_validator(mode="after")
+    def _exact_attempt_activation_and_capability(self) -> Self:
+        job, attempt, activation, cap = (
+            self.job,
+            self.attempt,
+            self.activation,
+            self.source_capability,
+        )
+        for snapshot in (job, attempt, activation):
+            if getattr(snapshot, snapshot._digest_field) != snapshot.canonical_digest():
+                raise ValueError("worker input requires sealed snapshots")
+        if attempt.job_id != job.job_id or attempt.frozen_job_digest != job.job_digest:
+            raise ValueError("worker input must bind exact frozen job and attempt")
+        if (
+            activation.organization_id != job.organization_id
+            or activation.worker_principal_id != attempt.worker_principal_id
+            or activation.worker_instance_id != attempt.worker_instance_id
+            or activation.runtime_digest != job.runtime.runtime_digest
+            or activation.policy_digest != job.policy.policy_digest
+        ):
+            raise ValueError("activation must bind organization, worker, runtime and policy")
+        if not activation.is_current_at(attempt.acquired_at):
+            raise ValueError("activation is not current at lease acquisition")
+        if (
+            cap.expires_at
+            > min(attempt.lease_until, job.deadline, job.grant.valid_until, activation.valid_until)
+            or cap.expires_at <= attempt.acquired_at
+        ):
+            raise ValueError("source capability must be current and no longer than every gate")
+        source = job.source
+        if (cap.artifact_id, cap.source_digest, cap.observed_sha256, cap.observed_size_bytes) != (
+            source.artifact_id,
+            source.source_digest,
+            source.observed_sha256,
+            source.observed_size_bytes,
+        ):
+            raise ValueError("source capability must bind exact sealed bytes")
+        parsed = urlsplit(cap.download_url)
+        if f"{parsed.scheme}://{parsed.netloc}" not in activation.trusted_endpoint_origins:
+            raise ValueError("source capability origin is not activated")
+        return self
+
+
 class SurfaceProfileWorkerInputResponseV1(SpatialDataModel):
-    input: SurfaceProfileFrozenJobV1
+    input: SurfaceProfileWorkerInputV1
 
 
 __all__ = [
@@ -510,6 +563,7 @@ __all__ = [
     "SurfaceProfileWorkerPendingItemV1",
     "SurfaceProfileWorkerPendingPageV1",
     "SurfaceProfileWorkerInputResponseV1",
+    "SurfaceProfileWorkerInputV1",
     "SURFACE_PROFILE_PROFILE",
     "TRANSIENT_JOB_REASONS",
     "CreateSurfaceProfileJobV1",

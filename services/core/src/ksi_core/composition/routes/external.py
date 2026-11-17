@@ -116,6 +116,8 @@ def mount_external_routes(
                 jobs=surface_profile.jobs,
                 limits=surface_profile.config.http_limits,
                 clock=surface_profile.config.clock,
+                storage=spatial_data.storage,
+                activation=surface_profile.config.activation,
             )
         )
         app.state.surface_profile = surface_profile

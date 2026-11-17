@@ -205,6 +205,7 @@ class _PlatformFlowContext:
         with_spatial_data: bool = False,
         sdk_clients: bool = False,
         surface_profile: Any = None,
+        spatial_object_origin: str | None = None,
     ) -> None:
         self.now = datetime.now(UTC).replace(microsecond=0)
         self.data_dir = tmp_path
@@ -222,7 +223,9 @@ class _PlatformFlowContext:
         spatial: Any = None
         if with_spatial_data:
             spatial = (
-                _sdk_spatial_data_config(self) if sdk_clients else _spatial_data_config(self.now)
+                _sdk_spatial_data_config(self)
+                if sdk_clients
+                else _spatial_data_config(self.now, object_origin=spatial_object_origin)
             )
         analysis_config = _local_graph_config(self.envelope)
         activation = None
@@ -479,7 +482,13 @@ def _run_platform_spatial_worker(ctx: _PlatformFlowContext, core_origin: str) ->
                 sandbox.close()
 
 
-def _spatial_data_config(now: datetime) -> Any:
+def _local_version_provider(graph: Any, origin: str) -> Any:
+    from spatial_data_http_fixture import LocalVersionProvider
+
+    return LocalVersionProvider(graph, origin, b"")
+
+
+def _spatial_data_config(now: datetime, *, object_origin: str | None = None) -> Any:
     from types import SimpleNamespace as _NS
 
     from ksi_core.composition.spatial_data_graph import (
@@ -510,7 +519,11 @@ def _spatial_data_config(now: datetime) -> Any:
             processing_location=ExecutionLocus.SITE_ONPREM,
             clock=lambda: now,
         ),
-        build_storage=lambda reconstruction: LocalProvider(_NS(reconstruction=reconstruction)),
+        build_storage=lambda reconstruction: (
+            LocalProvider(_NS(reconstruction=reconstruction))
+            if object_origin is None
+            else _local_version_provider(_NS(reconstruction=reconstruction), object_origin)
+        ),
         build_currentness=lambda coordinator: LocalJobAuthority(
             _NS(
                 coordinator=coordinator,

@@ -7,9 +7,11 @@ from datetime import datetime
 from typing import Any
 
 from fastapi import APIRouter, Depends, Request
+from ksi_event_contracts.spatial_data import SpatialDataAttemptV1
 from ksi_event_contracts.surface_profile_job import (
     SURFACE_PROFILE_ATTEMPT_DIGEST_HEADER,
     SURFACE_PROFILE_WORKER_INSTANCE_ID_HEADER,
+    SurfaceProfileActivationV1,
     SurfaceProfileAttemptV1,
     SurfaceProfileCompleteRequestV1,
     SurfaceProfileFailureRequestV1,
@@ -18,14 +20,19 @@ from ksi_event_contracts.surface_profile_job import (
     SurfaceProfileLeaseViewV1,
     SurfaceProfileRenewRequestV1,
     SurfaceProfileWorkerInputResponseV1,
+    SurfaceProfileWorkerInputV1,
     SurfaceProfileWorkerPendingItemV1,
     SurfaceProfileWorkerPendingPageV1,
 )
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 from starlette.concurrency import run_in_threadpool
 from starlette.responses import Response
 
-from ksi_core.domains.external.delivery.api import model_response, request_schema
+from ksi_core.domains.external.delivery.api import (
+    model_response,
+    request_credentials,
+    request_schema,
+)
 from ksi_core.domains.external.delivery.surface_profile_api import (
     ERROR_RESPONSES,
     SurfaceProfileHttpLimits,
@@ -70,13 +77,35 @@ def worker_schema(model: type[BaseModel] | None = None, *, fence: bool = True) -
     return schema
 
 
+def storage_lease_bound(attempt: SurfaceProfileAttemptV1) -> SpatialDataAttemptV1:
+    """저장소 포트가 서명 만료 상한으로만 쓰는 lease 운반체.
+
+    포트는 native 작업의 attempt 형식을 요구한다. 단면 작업 ID의 32자리 16진수를 같은
+    자리 배치로 옮기고 봉인만 새로 하며, 저장하거나 응답에 싣지 않는다.
+    """
+    hex_id = attempt.job_id.removeprefix("spj-")
+    native_id = f"sdj-v1-{hex_id[:8]}-{hex_id[8:12]}-{hex_id[12:16]}-{hex_id[16:20]}-{hex_id[20:]}"
+    payload = attempt.model_dump(by_alias=True, exclude={"attempt_digest"})
+    payload["jobId"] = native_id
+    return SpatialDataAttemptV1.model_validate(payload).sealed()
+
+
 def build_surface_profile_worker_router(
     *,
     jobs: SurfaceProfileJobStore,
     limits: SurfaceProfileHttpLimits,
     clock: Callable[[], datetime],
+    storage: Any,
+    activation: SurfaceProfileActivationV1,
 ) -> APIRouter:
     limits.validate_for(jobs.policy)
+    activation = SurfaceProfileActivationV1.model_validate(activation.__dict__)
+    if (
+        activation.activation_digest != activation.canonical_digest()
+        or activation.policy_digest != jobs.policy.policy_digest
+        or not callable(getattr(storage, "issue_source_get", None))
+    ):
+        raise ValueError("worker routes require the exact sealed activation and a storage port")
     router = APIRouter(tags=["surface-profile-worker"], responses=ERROR_RESPONSES)
 
     def instance(request: Request) -> str:
@@ -201,19 +230,49 @@ def build_surface_profile_worker_router(
     ) -> Response:
         try:
             worker_instance = instance(request)
-            job = current_profile_operation(
-                request,
-                principal,
-                clock,
-                lambda current: jobs.worker_input_for_attempt_digest(
+            digest = request.headers.get(SURFACE_PROFILE_ATTEMPT_DIGEST_HEADER, "")
+
+            def prove(current: Principal) -> tuple[Any, SurfaceProfileAttemptV1]:
+                return jobs.worker_input_for_attempt_digest(
                     job_id=job_id,
                     worker=current,
                     instance_id=worker_instance,
-                    attempt_digest=request.headers.get(SURFACE_PROFILE_ATTEMPT_DIGEST_HEADER, ""),
+                    attempt_digest=digest,
                     now=clock(),
-                ),
+                )
+
+            def issue(current: Principal) -> SurfaceProfileWorkerInputV1:
+                job, attempt = prove(current)
+                expires = min(
+                    attempt.lease_until, job.deadline, job.grant.valid_until, activation.valid_until
+                )
+                # 저장소 호출은 원격일 수 있으므로 잠금 밖에서 수행하고, 끝난 뒤 다시 증명한다.
+                capability = storage.issue_source_get(
+                    job.source,
+                    storage_lease_bound(attempt),
+                    expires_at=expires,
+                )
+                refreshed = request_credentials(request, principal).resolve(now=clock())
+                job_again, attempt_again = prove(refreshed)
+                if (job_again, attempt_again) != (job, attempt) or capability.expires_at > expires:
+                    raise SurfaceProfileDomainError("INTEGRITY_MISMATCH", 503)
+                try:
+                    if capability.expires_at <= clock():
+                        raise ValueError("expired capability")
+                    return SurfaceProfileWorkerInputV1(
+                        job=job,
+                        attempt=attempt,
+                        activation=activation,
+                        source_capability=capability,
+                    )
+                except (ValueError, ValidationError) as exc:
+                    raise SurfaceProfileDomainError("INTEGRITY_MISMATCH", 503) from exc
+
+            return model_response(
+                SurfaceProfileWorkerInputResponseV1(
+                    input=current_profile_operation(request, principal, clock, issue)
+                )
             )
-            return model_response(SurfaceProfileWorkerInputResponseV1(input=job))
         except SurfaceProfileDomainError as exc:
             return profile_error_response(exc)
 

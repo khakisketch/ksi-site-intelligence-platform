@@ -892,6 +892,100 @@
       "title": "SpatialDataGrantV1",
       "type": "object"
     },
+    "SpatialDataRequiredHeaderV1": {
+      "additionalProperties": false,
+      "description": "Allowlisted storage headers, never forwarding parent bearer/cookies/Host.",
+      "properties": {
+        "name": {
+          "enum": [
+            "Content-Type",
+            "content-type",
+            "Content-Length",
+            "content-length",
+            "x-amz-checksum-sha256",
+            "X-Amz-Checksum-Sha256",
+            "x-amz-checksum-mode",
+            "X-Amz-Checksum-Mode"
+          ],
+          "title": "Name",
+          "type": "string"
+        },
+        "value": {
+          "maxLength": 8192,
+          "minLength": 1,
+          "title": "Value",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "value"
+      ],
+      "title": "SpatialDataRequiredHeaderV1",
+      "type": "object"
+    },
+    "SpatialDataSourceCapabilityV1": {
+      "additionalProperties": false,
+      "properties": {
+        "requiredHeaders": {
+          "items": {
+            "$ref": "#/$defs/SpatialDataRequiredHeaderV1"
+          },
+          "maxItems": 16,
+          "title": "Requiredheaders",
+          "type": "array"
+        },
+        "expiresAt": {
+          "format": "date-time",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?(?:Z|\\+00:00)$",
+          "title": "Expiresat",
+          "type": "string"
+        },
+        "artifactId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Artifactid",
+          "type": "string"
+        },
+        "sourceDigest": {
+          "maxLength": 71,
+          "minLength": 71,
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Sourcedigest",
+          "type": "string"
+        },
+        "observedSha256": {
+          "maxLength": 71,
+          "minLength": 71,
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Observedsha256",
+          "type": "string"
+        },
+        "observedSizeBytes": {
+          "exclusiveMinimum": 0,
+          "maximum": 9223372036854775807,
+          "title": "Observedsizebytes",
+          "type": "integer"
+        },
+        "downloadUrl": {
+          "maxLength": 16384,
+          "minLength": 1,
+          "title": "Downloadurl",
+          "type": "string"
+        }
+      },
+      "required": [
+        "requiredHeaders",
+        "expiresAt",
+        "artifactId",
+        "sourceDigest",
+        "observedSha256",
+        "observedSizeBytes",
+        "downloadUrl"
+      ],
+      "title": "SpatialDataSourceCapabilityV1",
+      "type": "object"
+    },
     "SpatialDataSourceV1": {
       "additionalProperties": false,
       "description": "Binding shape only: Core must authenticate the actual sealed inspection.",
@@ -2563,13 +2657,39 @@
       "additionalProperties": false,
       "properties": {
         "input": {
-          "$ref": "#/$defs/SurfaceProfileFrozenJobV1"
+          "$ref": "#/$defs/SurfaceProfileWorkerInputV1"
         }
       },
       "required": [
         "input"
       ],
       "title": "SurfaceProfileWorkerInputResponseV1",
+      "type": "object"
+    },
+    "SurfaceProfileWorkerInputV1": {
+      "additionalProperties": false,
+      "description": "일꾼이 받는 입력: 봉인된 작업, 현재 attempt, 활성화와 짧은 수명의 원본 읽기 capability.",
+      "properties": {
+        "job": {
+          "$ref": "#/$defs/SurfaceProfileFrozenJobV1"
+        },
+        "attempt": {
+          "$ref": "#/$defs/SurfaceProfileAttemptV1"
+        },
+        "activation": {
+          "$ref": "#/$defs/SurfaceProfileActivationV1"
+        },
+        "sourceCapability": {
+          "$ref": "#/$defs/SpatialDataSourceCapabilityV1"
+        }
+      },
+      "required": [
+        "job",
+        "attempt",
+        "activation",
+        "sourceCapability"
+      ],
+      "title": "SurfaceProfileWorkerInputV1",
       "type": "object"
     },
     "SurfaceProfileWorkerPendingItemV1": {

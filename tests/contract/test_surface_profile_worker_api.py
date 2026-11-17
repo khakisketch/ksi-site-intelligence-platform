@@ -2,13 +2,17 @@
 
 from __future__ import annotations
 
-from datetime import timedelta
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
 import pytest
-from ksi_event_contracts.surface_profile_job import SurfaceProfileFrozenJobV1
-from surface_profile_job_fixture import genuine_answer
+from ksi_event_contracts.spatial_data_worker import SpatialDataSourceCapabilityV1
+from ksi_event_contracts.surface_profile_job import (
+    SurfaceProfileActivationV1,
+    SurfaceProfileFrozenJobV1,
+)
+from surface_profile_job_fixture import ORG, genuine_answer
 from test_surface_profile_api import AUTH, BASE, mounted_profile, request_body
 
 WORKER_BASE = "/v1/internal/surface-profile-jobs"
@@ -19,17 +23,58 @@ WORKER = {
 DIGEST_HEADER = "X-Surface-Profile-Attempt-Digest"
 
 
+class ProfileStorage:
+    """시스템 경계(객체 저장소)만 대체한다. 서명 URL 발급 호출과 만료를 기록한다."""
+
+    def __init__(self) -> None:
+        self.issued: list[tuple[Any, Any, datetime]] = []
+        self.origin = "https://store.invalid"
+
+    def issue_source_get(
+        self, source: Any, attempt: Any, *, expires_at: datetime
+    ) -> SpatialDataSourceCapabilityV1:
+        self.issued.append((source, attempt, expires_at))
+        return SpatialDataSourceCapabilityV1(
+            artifact_id=source.artifact_id,
+            source_digest=source.source_digest,
+            observed_sha256=source.observed_sha256,
+            observed_size_bytes=source.observed_size_bytes,
+            download_url=self.origin + "/source",
+            required_headers=(),
+            expires_at=expires_at,
+        )
+
+
+def activation_for(graph: Any) -> SurfaceProfileActivationV1:
+    policy, runtime = graph.lane.policy, graph.lane.runtime
+    return SurfaceProfileActivationV1(
+        activation_id="profile-activation-test",
+        organization_id=ORG,
+        worker_principal_id="worker-local",
+        worker_instance_id="instance-1",
+        policy_digest=policy.policy_digest or "",
+        runtime_digest=runtime.runtime_digest or "",
+        trusted_endpoint_origins=("https://store.invalid",),
+        valid_from=graph.now - timedelta(minutes=1),
+        valid_until=graph.now + timedelta(hours=1),
+    ).sealed()
+
+
 def worker_mounted(path: Path, **kwargs: Any) -> tuple[Any, Any]:
     from ksi_core.domains.external.delivery.surface_profile_worker_api import (
         build_surface_profile_worker_router,
     )
 
     client, graph = mounted_profile(path, **kwargs)
+    graph.storage = ProfileStorage()
+    graph.activation = activation_for(graph)
     graph.app.include_router(
         build_surface_profile_worker_router(
             jobs=graph.lane.store,
             limits=graph.limits,
             clock=lambda: graph.now,
+            storage=graph.storage,
+            activation=graph.activation,
         )
     )
     return client, graph
@@ -64,7 +109,7 @@ def test_worker_round_trip_uses_current_digest_and_releases_only_verified_result
     headers = {**WORKER, DIGEST_HEADER: attempt["attemptDigest"]}
     current = client.get(job_url + "/input", headers=headers)
     assert current.status_code == 200
-    job = SurfaceProfileFrozenJobV1.model_validate(current.json()["input"])
+    job = SurfaceProfileFrozenJobV1.model_validate(current.json()["input"]["job"])
     result, receipt = genuine_answer(job, graph.lane.raster, graph.now)
     completed = client.post(
         job_url + "/complete",
@@ -105,7 +150,7 @@ def test_another_worker_cannot_use_a_copied_live_attempt(tmp_path: Path, operati
         job = SurfaceProfileFrozenJobV1.model_validate(
             client.get(
                 url + "/input", headers={**WORKER, DIGEST_HEADER: attempt["attemptDigest"]}
-            ).json()["input"]
+            ).json()["input"]["job"]
         )
         result, receipt = genuine_answer(job, graph.lane.raster, graph.now)
         body.update(
@@ -136,7 +181,7 @@ def leased_job(path: Path, **kwargs: Any) -> tuple[Any, Any, str, dict[str, Any]
 
 def completed_body(client: Any, graph: Any, url: str, attempt: Any, headers: Any) -> dict[str, Any]:
     job = SurfaceProfileFrozenJobV1.model_validate(
-        client.get(url + "/input", headers=headers).json()["input"]
+        client.get(url + "/input", headers=headers).json()["input"]["job"]
     )
     result, receipt = genuine_answer(job, graph.lane.raster, graph.now)
     return {
@@ -331,3 +376,67 @@ def test_worker_activation_check_precedes_body_parsing(tmp_path: Path, operation
         headers={**headers, "Content-Type": "application/json"},
     )
     assert response.status_code == 403
+
+
+def test_input_carries_a_source_capability_bound_to_the_sealed_bytes_and_every_gate(
+    tmp_path: Path,
+) -> None:
+    client, graph, url, attempt, headers = leased_job(tmp_path)
+    response = client.get(url + "/input", headers=headers)
+    assert response.status_code == 200, response.text
+    body = response.json()["input"]
+    job = SurfaceProfileFrozenJobV1.model_validate(body["job"])
+    cap = body["sourceCapability"]
+    assert (cap["observedSha256"], cap["observedSizeBytes"]) == (
+        job.source.observed_sha256,
+        job.source.observed_size_bytes,
+    )
+    expires = datetime.fromisoformat(cap["expiresAt"].replace("Z", "+00:00"))
+    assert expires <= datetime.fromisoformat(attempt["leaseUntil"].replace("Z", "+00:00"))
+    assert expires <= graph.activation.valid_until
+    assert body["activation"]["activationDigest"] == graph.activation.activation_digest
+    assert len(graph.storage.issued) == 1
+
+
+@pytest.mark.parametrize("cause", ["stale_digest", "other_worker", "activation_off"])
+def test_no_source_capability_is_issued_unless_the_live_attempt_is_proven(
+    tmp_path: Path, cause: str
+) -> None:
+    client, graph, url, attempt, headers = leased_job(tmp_path)
+    if cause == "stale_digest":
+        headers = {**headers, DIGEST_HEADER: "sha256:" + "0" * 64}
+    elif cause == "other_worker":
+        headers = {**headers, "Authorization": "Bearer profile-other-worker"}
+    else:
+        graph.lane.authority.activated = False
+    response = client.get(url + "/input", headers=headers)
+    assert response.status_code in (403, 409)
+    assert "sourceCapability" not in response.text and graph.storage.issued == []
+
+
+def test_requester_withdrawal_during_capability_issuance_withholds_the_url(tmp_path: Path) -> None:
+    client, graph, url, attempt, headers = leased_job(tmp_path)
+
+    class Racing(ProfileStorage):
+        def issue_source_get(self, *args: Any, **kwargs: Any) -> Any:
+            capability = super().issue_source_get(*args, **kwargs)
+            graph.lane.authority.deny["PREPARE"] = "ACCESS_REVOKED"
+            return capability
+
+    racing = Racing()
+    graph.app.router.routes.clear()
+    from ksi_core.domains.external.delivery.surface_profile_worker_api import (
+        build_surface_profile_worker_router,
+    )
+
+    graph.app.include_router(
+        build_surface_profile_worker_router(
+            jobs=graph.lane.store,
+            limits=graph.limits,
+            clock=lambda: graph.now,
+            storage=racing,
+            activation=graph.activation,
+        )
+    )
+    response = client.get(url + "/input", headers=headers)
+    assert response.status_code == 403 and "sourceCapability" not in response.text
