@@ -59,10 +59,35 @@ describe("ExternalObservationCreateForm", () => {
   it("explains why the registration action is disabled and avoids exposing a synthetic work-area id", () => {
     render(<ExternalObservationCreateForm siteId="site-1" siteName="서쪽 현장" workAreas={[{ workAreaId: "wa-generated-1", name: "wa-generated-1" }]} />);
 
-    expect(screen.getByText("작업 이름을 입력하고 비교할 작업구역을 하나 이상 선택하세요.")).toBeTruthy();
+    expect(screen.getByText("비교할 작업구역을 하나 이상 선택하세요.")).toBeTruthy();
     expect(screen.getByRole("checkbox", { name: "이름을 확인할 수 없는 작업구역 1" })).toBeTruthy();
     expect(screen.queryByText("wa-generated-1")).toBeNull();
     expect((screen.getByRole("button", { name: "관측 자료 등록 계속" }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("lets the operator skip the name: an empty name posts the area and Korean date as the default name", async () => {
+    render(<ExternalObservationCreateForm siteId="site-1" siteName="서쪽 현장" workAreas={[{ workAreaId: "wa-1", name: "동측 절토면" }]} initialWorkAreaIds={["wa-1"]} />);
+    const button = screen.getByRole("button", { name: "관측 자료 등록 계속" }) as HTMLButtonElement;
+    expect(button.disabled).toBe(false);
+    expect((screen.getByLabelText("작업 이름", { exact: false }) as HTMLInputElement).placeholder).toMatch(/^동측 절토면 · \d{4}-\d{2}-\d{2} 자료$/);
+    fireEvent.click(button);
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    const body = JSON.parse((fetchMock.mock.calls[0][1] as RequestInit).body as string);
+    expect(body.name).toMatch(/^동측 절토면 · \d{4}-\d{2}-\d{2} 자료$/);
+    expect(body.workAreaIds).toEqual(["wa-1"]);
+  });
+
+  it("still needs at least one work area, and a typed name wins over the default", async () => {
+    render(<ExternalObservationCreateForm siteId="site-1" siteName="서쪽 현장" workAreas={[{ workAreaId: "wa-1", name: "동측 절토면" }, { workAreaId: "wa-2", name: "서측 제방" }]} />);
+    const button = screen.getByRole("button", { name: "관측 자료 등록 계속" }) as HTMLButtonElement;
+    expect(button.disabled).toBe(true);
+    fireEvent.change(screen.getByLabelText("작업 이름", { exact: false }), { target: { value: "내가 지은 이름" } });
+    expect(button.disabled).toBe(true);
+    fireEvent.click(screen.getByLabelText("동측 절토면"));
+    fireEvent.click(screen.getByLabelText("서측 제방"));
+    fireEvent.click(button);
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    expect(JSON.parse((fetchMock.mock.calls[0][1] as RequestInit).body as string).name).toBe("내가 지은 이름");
   });
 
   it("creates one external ingress with a stable idempotency key and opens its work detail", async () => {
@@ -459,7 +484,7 @@ describe("ExternalObservationCreateForm", () => {
     try {
       // hydration 뒤에도 입력 전에는 잠금과 동일하게 막히고, 필수 입력 안내가 보인다.
       expect((screen.getByRole("button", { name: "관측 자료 등록 계속" }) as HTMLButtonElement).disabled).toBe(true);
-      expect(screen.getByText("작업 이름을 입력하고 비교할 작업구역을 하나 이상 선택하세요.")).toBeTruthy();
+      expect(screen.getByText("비교할 작업구역을 하나 이상 선택하세요.")).toBeTruthy();
       // hydration 이후의 실제 사용자 입력만 state가 된다.
       fireEvent.change(container.querySelector('input[aria-label="작업 이름"]') as HTMLInputElement, { target: { value: "사후 입력" } });
       fireEvent.click(container.querySelector('input[aria-label="동측 절토면"]') as HTMLInputElement);
