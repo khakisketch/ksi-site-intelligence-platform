@@ -475,7 +475,41 @@ class SurfaceProfileResultViewV1(SpatialDataModel):
     result: SurfaceProfileResultV1
 
 
+SURFACE_PROFILE_WORKER_INSTANCE_ID_HEADER = "X-Surface-Profile-Worker-Instance-Id"
+SURFACE_PROFILE_ATTEMPT_DIGEST_HEADER = "X-Surface-Profile-Attempt-Digest"
+
+
+class SurfaceProfileErrorV1(SpatialDataModel):
+    reason: SurfaceProfileJobReasonV1
+    message: Text
+    retryable: StrictBool
+    remediation: tuple[Literal["CONTACT_OPERATOR"], ...]
+
+
+class SurfaceProfileJobPageV1(SpatialDataModel):
+    items: tuple[SurfaceProfileJobViewV1, ...] = Field(max_length=MAX_COUNTER)
+
+
+class SurfaceProfileWorkerPendingItemV1(SpatialDataModel):
+    job_id: SurfaceProfileJobId
+
+
+class SurfaceProfileWorkerPendingPageV1(SpatialDataModel):
+    items: tuple[SurfaceProfileWorkerPendingItemV1, ...] = Field(max_length=MAX_COUNTER)
+
+
+class SurfaceProfileWorkerInputResponseV1(SpatialDataModel):
+    input: SurfaceProfileFrozenJobV1
+
+
 __all__ = [
+    "SURFACE_PROFILE_WORKER_INSTANCE_ID_HEADER",
+    "SURFACE_PROFILE_ATTEMPT_DIGEST_HEADER",
+    "SurfaceProfileErrorV1",
+    "SurfaceProfileJobPageV1",
+    "SurfaceProfileWorkerPendingItemV1",
+    "SurfaceProfileWorkerPendingPageV1",
+    "SurfaceProfileWorkerInputResponseV1",
     "SURFACE_PROFILE_PROFILE",
     "TRANSIENT_JOB_REASONS",
     "CreateSurfaceProfileJobV1",

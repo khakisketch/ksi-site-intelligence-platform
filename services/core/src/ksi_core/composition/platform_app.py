@@ -127,6 +127,7 @@ def create_platform_app(
         external_single_volume=graph.external.single_volume,
         external_use_evaluator=graph.external.use_evaluator,
         spatial_data=graph.data,
+        surface_profile=graph.surface_profile,
         external_artifact_inspection_store=graph.external.artifact_inspection_store,
         external_display_artifact_store=graph.external.display_artifact_store,
         external_analysis_wiring=graph.analysis,

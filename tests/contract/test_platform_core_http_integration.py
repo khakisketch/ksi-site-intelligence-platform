@@ -103,7 +103,7 @@ def _record(
     )
 
 
-def _registry(*, sdk_clients: bool = False) -> AuthRegistry:
+def _registry(*, sdk_clients: bool = False, surface_profile: bool = False) -> AuthRegistry:
     records = [
         _record(_OP_TOKEN, "platform-flow-operator", "org-a"),
         _record(_V2_OP_TOKEN, "analysis-local-operator", "org-a"),
@@ -123,6 +123,28 @@ def _registry(*, sdk_clients: bool = False) -> AuthRegistry:
         ),
         _record(_FOREIGN_TOKEN, "platform-flow-foreign", "org-b"),
     ]
+    if surface_profile:
+        # Surface-profile HTTP requester/worker on the real lane participants:
+        # the reader id matches the lane currentness fixed principal so every
+        # PREPARE/READ re-proof resolves, and the worker carries the lane
+        # worker kind. Off by default; existing flows never see these tokens.
+        records.extend(
+            [
+                _record(
+                    "platform-flow-surface-reader",
+                    "platform-data-reader",
+                    "org-a",
+                    role=Role.FIELD_OPERATOR,
+                ),
+                _record(
+                    "platform-flow-surface-worker",
+                    "platform-flow-surface-worker",
+                    "org-a",
+                    kind=PrincipalKind.SPATIAL_DATA_WORKER,
+                    role=None,
+                ),
+            ]
+        )
     if sdk_clients:
         records.extend(
             [
@@ -182,6 +204,7 @@ class _PlatformFlowContext:
         *,
         with_spatial_data: bool = False,
         sdk_clients: bool = False,
+        surface_profile: Any = None,
     ) -> None:
         self.now = datetime.now(UTC).replace(microsecond=0)
         self.data_dir = tmp_path
@@ -227,16 +250,23 @@ class _PlatformFlowContext:
                 },
             )[2]
         try:
+            extra: dict[str, Any] = {}
+            if surface_profile is not None:
+                extra["surface_profile"] = surface_profile
             self.app = assemble_platform_app(
                 tmp_path,
                 journal=self._journal,
                 opened=self.opened,
-                auth_registry=_registry(sdk_clients=sdk_clients),
+                auth_registry=_registry(
+                    sdk_clients=sdk_clients,
+                    surface_profile=surface_profile is not None,
+                ),
                 evidence_storage=self.storage,
                 external_result_workflow=workflow,
                 external_analysis_local_graph=analysis_config,
                 analysis_activation=activation,
                 spatial_data=spatial,
+                **extra,
             )
             if sdk_clients and with_spatial_data:
                 # LocalVersionProvider checks the durable output reservation
@@ -595,6 +625,8 @@ def _seal_two_dsm_revisions(
 def _admit_real_inspection_policy(
     ctx: _PlatformFlowContext,
     subjects: tuple[SealedExternalSubjectV1, SealedExternalSubjectV1],
+    *,
+    allow_height: bool = False,
 ) -> tuple[Any, Any]:
     from ksi_core.external_quantitative_authority import CompatibilityRuleDescriptorV1
     from ksi_core.external_validation_policy import (
@@ -626,7 +658,9 @@ def _admit_real_inspection_policy(
         policy_version=template.version,
         authorized_policy_body_digest=authorized_policy_body_digest(template),
         permitted_subjects=tuple(subjects),
-        permitted_uses=("INSPECTION", "EVIDENCE", "RELATIVE_VOLUME"),
+        permitted_uses=("INSPECTION", "EVIDENCE", "RELATIVE_VOLUME", "HEIGHT")
+        if allow_height
+        else ("INSPECTION", "EVIDENCE", "RELATIVE_VOLUME"),
         authorized_actor_ids=("policy-admin",),
         active_from=ctx.now - timedelta(hours=1),
         active_until=ctx.now + timedelta(hours=1),

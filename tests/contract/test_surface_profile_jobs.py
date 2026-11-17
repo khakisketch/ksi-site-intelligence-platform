@@ -265,7 +265,10 @@ def test_attempts_are_bounded_and_the_last_lost_lease_fails_the_job(lane: Lane) 
     lane.lease(job_id, at=1)
     # 일꾼의 polling 이 첫 임대의 만료를 알아채 대기열로 돌려보내고, 백오프(1s) 뒤에 다시 임대한다.
     assert [
-        j.job_id for j in lane.store.pending(worker=worker(), limit=5, now=NOW + later(7))
+        j.job_id
+        for j in lane.store.pending(
+            instance_id="instance-1", worker=worker(), limit=5, now=NOW + later(7)
+        )
     ] == []
     lane.lease(job_id, at=14, acquisition="a2", instance="instance-2")  # attempt 2 of 2
     view = lane.store.get(job_id=job_id, principal=requester(), now=NOW + later(25))
@@ -661,3 +664,27 @@ def test_a_result_that_read_more_than_the_frozen_window_is_refused(lane: Lane) -
         ).execution_state.value
         == "RUNNING"
     )
+
+
+@pytest.mark.parametrize(
+    "corruption", ["receipt_binding", "completion_after_lease", "unsealed_receipt"]
+)
+def test_replay_rechecks_completed_report_before_serving_numbers(
+    lane: Lane, corruption: str
+) -> None:
+    """완료 이벤트도 재생 때 입력 결속과 유효 lease를 다시 입증해야 한다."""
+    job_id, attempt, job = lane.running()
+    result, receipt = lane.answer(job)
+    lane.complete(job_id, attempt, result, receipt)
+    records = _records(lane)
+    if corruption == "receipt_binding":
+        records[-1]["receipt"] = receipt_for(
+            job, result, NOW + later(2), source_digest="sha256:" + "9" * 64
+        ).model_dump(by_alias=True, mode="json")
+    elif corruption == "completion_after_lease":
+        records[-1]["at"] = (NOW + later(10)).isoformat()
+    else:
+        records[-1]["receipt"]["receiptDigest"] = None
+    _rewrite(lane, records)
+    with pytest.raises(SurfaceProfileJobRecoveryError):
+        lane._open()  # noqa: SLF001 - 재시작 경계

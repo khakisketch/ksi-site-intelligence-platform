@@ -1299,6 +1299,86 @@
       "title": "SurfaceProfileCompleteRequestV1",
       "type": "object"
     },
+    "SurfaceProfileErrorV1": {
+      "additionalProperties": false,
+      "properties": {
+        "reason": {
+          "enum": [
+            "PERMISSION_DENIED",
+            "NOT_FOUND",
+            "IDEMPOTENCY_CONFLICT",
+            "INVALID_REQUEST",
+            "FEATURE_UNAVAILABLE",
+            "HEIGHT_NOT_ELIGIBLE",
+            "SOURCE_NOT_MEASURED",
+            "SOURCE_MEASUREMENTS_MISMATCH",
+            "ACCESS_REVOKED",
+            "ACCESS_EXPIRED",
+            "OUTPUT_OUTSIDE_GRANT",
+            "PROCESSING_LOCATION_DENIED",
+            "POLICY_UNAVAILABLE",
+            "CURRENTNESS_UNAVAILABLE",
+            "RESOURCE_LIMIT_EXCEEDED",
+            "LINE_OUTSIDE_SURFACE",
+            "GRANT_REQUIRED",
+            "AMBIGUOUS_GRANT",
+            "SOURCE_UNAVAILABLE",
+            "NOT_READY",
+            "RETENTION_EXPIRED",
+            "FENCE_CONFLICT",
+            "LEASE_EXPIRED",
+            "DEADLINE_EXCEEDED",
+            "CANCELED_BY_REQUESTER",
+            "REPORT_CONFLICT",
+            "INTEGRITY_MISMATCH",
+            "SOURCE_BYTES_MISMATCH",
+            "STORAGE_UNAVAILABLE",
+            "WORKER_FAILED",
+            "INVALID_LINE",
+            "INVALID_SAMPLING",
+            "TOO_MANY_VERTICES",
+            "TOO_MANY_SAMPLES",
+            "LINE_TOO_LONG",
+            "UNSUPPORTED_CRS",
+            "REPROJECTION_FAILED",
+            "CRS_MISMATCH",
+            "UNREADABLE_RASTER",
+            "UNSUPPORTED_RASTER",
+            "SOURCE_BLOCK_TOO_LARGE",
+            "WINDOW_TOO_LARGE",
+            "PLAN_MISMATCH"
+          ],
+          "title": "Reason",
+          "type": "string"
+        },
+        "message": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Message",
+          "type": "string"
+        },
+        "retryable": {
+          "title": "Retryable",
+          "type": "boolean"
+        },
+        "remediation": {
+          "items": {
+            "const": "CONTACT_OPERATOR",
+            "type": "string"
+          },
+          "title": "Remediation",
+          "type": "array"
+        }
+      },
+      "required": [
+        "reason",
+        "message",
+        "retryable",
+        "remediation"
+      ],
+      "title": "SurfaceProfileErrorV1",
+      "type": "object"
+    },
     "SurfaceProfileFailureRequestV1": {
       "additionalProperties": false,
       "properties": {
@@ -1510,6 +1590,24 @@
         "deadline"
       ],
       "title": "SurfaceProfileFrozenJobV1",
+      "type": "object"
+    },
+    "SurfaceProfileJobPageV1": {
+      "additionalProperties": false,
+      "properties": {
+        "items": {
+          "items": {
+            "$ref": "#/$defs/SurfaceProfileJobViewV1"
+          },
+          "maxItems": 9223372036854775807,
+          "title": "Items",
+          "type": "array"
+        }
+      },
+      "required": [
+        "items"
+      ],
+      "title": "SurfaceProfileJobPageV1",
       "type": "object"
     },
     "SurfaceProfileJobViewV1": {
@@ -2459,6 +2557,54 @@
         "invalidReason"
       ],
       "title": "SurfaceProfileSampleV1",
+      "type": "object"
+    },
+    "SurfaceProfileWorkerInputResponseV1": {
+      "additionalProperties": false,
+      "properties": {
+        "input": {
+          "$ref": "#/$defs/SurfaceProfileFrozenJobV1"
+        }
+      },
+      "required": [
+        "input"
+      ],
+      "title": "SurfaceProfileWorkerInputResponseV1",
+      "type": "object"
+    },
+    "SurfaceProfileWorkerPendingItemV1": {
+      "additionalProperties": false,
+      "properties": {
+        "jobId": {
+          "maxLength": 36,
+          "minLength": 36,
+          "pattern": "^spj-[0-9a-f]{32}$",
+          "title": "Jobid",
+          "type": "string"
+        }
+      },
+      "required": [
+        "jobId"
+      ],
+      "title": "SurfaceProfileWorkerPendingItemV1",
+      "type": "object"
+    },
+    "SurfaceProfileWorkerPendingPageV1": {
+      "additionalProperties": false,
+      "properties": {
+        "items": {
+          "items": {
+            "$ref": "#/$defs/SurfaceProfileWorkerPendingItemV1"
+          },
+          "maxItems": 9223372036854775807,
+          "title": "Items",
+          "type": "array"
+        }
+      },
+      "required": [
+        "items"
+      ],
+      "title": "SurfaceProfileWorkerPendingPageV1",
       "type": "object"
     }
   },

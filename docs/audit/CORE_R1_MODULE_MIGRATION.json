@@ -263,6 +263,24 @@
       "migrationStatus": "T3_NEW_MODULE"
     },
     {
+      "sourceModule": "ksi_core.domains.external.delivery.surface_profile_api",
+      "activeCanonicalModule": "ksi_core.domains.external.delivery.surface_profile_api",
+      "activePath": "ksi_core/domains/external/delivery/surface_profile_api.py",
+      "plannedCanonicalModule": "ksi_core.domains.external.delivery.surface_profile_api",
+      "plannedPath": "ksi_core/domains/external/delivery/surface_profile_api.py",
+      "ownerBoundary": "domains/external/delivery",
+      "migrationStatus": "T3_NEW_MODULE"
+    },
+    {
+      "sourceModule": "ksi_core.domains.external.delivery.surface_profile_worker_api",
+      "activeCanonicalModule": "ksi_core.domains.external.delivery.surface_profile_worker_api",
+      "activePath": "ksi_core/domains/external/delivery/surface_profile_worker_api.py",
+      "plannedCanonicalModule": "ksi_core.domains.external.delivery.surface_profile_worker_api",
+      "plannedPath": "ksi_core/domains/external/delivery/surface_profile_worker_api.py",
+      "ownerBoundary": "domains/external/delivery",
+      "migrationStatus": "T3_NEW_MODULE"
+    },
+    {
       "sourceModule": "ksi_core.domains.sites.measurement_features",
       "activeCanonicalModule": "ksi_core.domains.sites.measurement_features",
       "activePath": "ksi_core/domains/sites/measurement_features.py",
@@ -1063,6 +1081,15 @@
       "activePath": "ksi_core/composition/platform_graph.py",
       "plannedCanonicalModule": "ksi_core.composition.platform_graph",
       "plannedPath": "ksi_core/composition/platform_graph.py",
+      "ownerBoundary": "composition",
+      "migrationStatus": "T5_NEW_MODULE"
+    },
+    {
+      "sourceModule": "ksi_core.composition.surface_profile_graph",
+      "activeCanonicalModule": "ksi_core.composition.surface_profile_graph",
+      "activePath": "ksi_core/composition/surface_profile_graph.py",
+      "plannedCanonicalModule": "ksi_core.composition.surface_profile_graph",
+      "plannedPath": "ksi_core/composition/surface_profile_graph.py",
       "ownerBoundary": "composition",
       "migrationStatus": "T5_NEW_MODULE"
     },

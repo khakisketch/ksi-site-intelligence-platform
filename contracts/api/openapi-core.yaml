@@ -8868,7 +8868,202 @@ paths:
       requestBody:
         required: true
         content: {application/json: {schema: {$ref: '#/components/schemas/SpatialDataFailureRequestV1'}}}
-      responses: *spatialDataMutationResponses
+  /v1/sites/{site_id}/work-areas/{work_area_id}/surface-profile-jobs:
+    x-assembly: explicit-local-surface-profile-wiring
+    description: >-
+      SDP-PROFILE-01 single-DSM saved-line profile only. Sealed profile
+      policy/runtime/activation, current grant/HEIGHT verdict and the exact
+      sampler read window are re-proved on every transition. No pixel heights
+      are recomputed by Core; no file bytes, pixel arrays or signed URLs leave
+      this lane.
+    parameters: &surfaceProfileScope
+      - {name: site_id, in: path, required: true, schema: {type: string}}
+      - {name: work_area_id, in: path, required: true, schema: {type: string}}
+    get:
+      summary: List scoped profile jobs with current availability, never raw numbers
+      security: [{bearerAuth: []}]
+      parameters:
+        - {name: limit, in: query, schema: {type: integer, minimum: 1}}
+      responses:
+        '200':
+          description: Retained immutable history with current availability
+          content: {application/json: {schema: {$ref: '#/components/schemas/SurfaceProfileJobPageV1'}}}
+        '401': {description: Authentication required}
+        '403': {description: Read permission denied}
+        '404': {description: Scope unavailable or foreign}
+        '422': {description: Invalid bounded query}
+        '503': {description: Authority unavailable}
+    post:
+      summary: Admit one saved-line profile job under current exact rights
+      security: [{bearerAuth: []}]
+      parameters:
+        - {name: Idempotency-Key, in: header, required: true, schema: {type: string, minLength: 1}}
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/CreateSurfaceProfileJobV1'}}}
+      responses:
+        '200':
+          description: Same durable job on an authorized identical retry
+          content: {application/json: {schema: {$ref: '#/components/schemas/SurfaceProfileJobViewV1'}}}
+        '401': {description: Authentication required}
+        '403': {description: Rights purpose or location denied}
+        '404': {description: Scope or source unavailable or foreign}
+        '409': {description: Idempotency conflict}
+        '422': {description: Bounded strict UTF-8 JSON or request invalid}
+        '429': {description: Organization profile job budget exhausted}
+        '503': {description: Authority or journal unavailable}
+  /v1/sites/{site_id}/work-areas/{work_area_id}/surface-profile-jobs/{job_id}:
+    x-assembly: explicit-local-surface-profile-wiring
+    parameters: &surfaceProfileJobScope
+      - {name: site_id, in: path, required: true, schema: {type: string}}
+      - {name: work_area_id, in: path, required: true, schema: {type: string}}
+      - {name: job_id, in: path, required: true, schema: {type: string}}
+    get:
+      summary: Read owned profile state and receipt with separate current availability
+      security: [{bearerAuth: []}]
+      responses:
+        '200':
+          description: Exact immutable profile identity and optional receipt
+          content: {application/json: {schema: {$ref: '#/components/schemas/SurfaceProfileJobViewV1'}}}
+        '401': {description: Authentication required}
+        '403': {description: Read permission denied}
+        '404': {description: Scope or job unavailable or foreign}
+        '503': {description: Journal unavailable}
+  /v1/sites/{site_id}/work-areas/{work_area_id}/surface-profile-jobs/{job_id}/result:
+    x-assembly: explicit-local-surface-profile-wiring
+    parameters: *surfaceProfileJobScope
+    get:
+      summary: Read owned profile numbers after a separate current READ proof
+      security: [{bearerAuth: []}]
+      responses:
+        '200':
+          description: Core-verified profile numbers bound to the frozen job
+          content: {application/json: {schema: {$ref: '#/components/schemas/SurfaceProfileResultViewV1'}}}
+        '401': {description: Authentication required}
+        '403': {description: Current read rights denied}
+        '404': {description: Scope or job unavailable or foreign}
+        '409': {description: Result not ready}
+        '503': {description: Authority or journal unavailable}
+  /v1/sites/{site_id}/work-areas/{work_area_id}/surface-profile-jobs/{job_id}/cancel:
+    x-assembly: explicit-local-surface-profile-wiring
+    parameters: *surfaceProfileJobScope
+    post:
+      summary: Idempotently cancel an owned active profile job without deleting retained history
+      security: [{bearerAuth: []}]
+      requestBody:
+        required: false
+        content: {application/json: {schema: {type: object, additionalProperties: false}}}
+      responses:
+        '200':
+          description: Current durable state after cancellation
+          content: {application/json: {schema: {$ref: '#/components/schemas/SurfaceProfileJobViewV1'}}}
+        '401': {description: Authentication required}
+        '403': {description: Request permission denied}
+        '404': {description: Scope or job unavailable or foreign}
+        '409': {description: Cannot cancel completed profile}
+        '422': {description: Only an absent or empty strict JSON body is accepted}
+        '503': {description: Journal unavailable}
+  /v1/internal/surface-profile-jobs:
+    x-assembly: explicit-local-surface-profile-wiring
+    parameters: &surfaceProfileWorkerIdentity
+      - name: X-Surface-Profile-Worker-Instance-Id
+        in: header
+        required: true
+        schema: {type: string, minLength: 1, maxLength: 255}
+    get:
+      summary: Bounded pending profile jobs for the dedicated activated worker only
+      security: [{bearerAuth: []}]
+      parameters:
+        - {name: limit, in: query, schema: {type: integer, minimum: 1}}
+      responses:
+        '200':
+          description: Bounded frozen job ids; never a public client response
+          content: {application/json: {schema: {$ref: '#/components/schemas/SurfaceProfileWorkerPendingPageV1'}}}
+        '401': {description: Authentication required}
+        '403': {description: Dedicated worker permission required}
+        '409': {description: Worker instance mismatch}
+        '503': {description: Current profile activation unavailable}
+  /v1/internal/surface-profile-jobs/{job_id}/lease:
+    x-assembly: explicit-local-surface-profile-wiring
+    parameters:
+      - {name: job_id, in: path, required: true, schema: {type: string}}
+      - {name: X-Surface-Profile-Worker-Instance-Id, in: header, required: true, schema: {type: string}}
+    post:
+      summary: Acquire a finite exact-worker attempt with durable monotonic fence
+      security: [{bearerAuth: []}]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/SurfaceProfileLeaseRequestV1'}}}
+      responses: &surfaceProfileLeaseResponses
+        '200':
+          description: Exact leased attempt and full payload digest
+          content: {application/json: {schema: {$ref: '#/components/schemas/SurfaceProfileLeaseViewV1'}}}
+        '401': {description: Authentication required}
+        '403': {description: Worker or current profile rights denied}
+        '404': {description: Unknown or foreign job}
+        '409': {description: Lease fence state or acquisition conflict}
+        '422': {description: Strict body invalid}
+        '503': {description: Authority or journal unavailable}
+  /v1/internal/surface-profile-jobs/{job_id}/renew:
+    x-assembly: explicit-local-surface-profile-wiring
+    parameters: &surfaceProfileWorkerFence
+      - {name: job_id, in: path, required: true, schema: {type: string}}
+      - {name: X-Surface-Profile-Worker-Instance-Id, in: header, required: true, schema: {type: string}}
+      - name: X-Surface-Profile-Attempt-Digest
+        in: header
+        required: true
+        schema: {type: string, pattern: '^sha256:[0-9a-f]{64}$'}
+    post:
+      summary: Renew the current exact attempt and supersede its payload digest
+      security: [{bearerAuth: []}]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/SurfaceProfileRenewRequestV1'}}}
+      responses: *surfaceProfileLeaseResponses
+  /v1/internal/surface-profile-jobs/{job_id}/input:
+    x-assembly: explicit-local-surface-profile-wiring
+    parameters: *surfaceProfileWorkerFence
+    get:
+      summary: Resolve exactly bound input after current authority checks before and after I/O
+      security: [{bearerAuth: []}]
+      responses:
+        '200':
+          description: Worker-private sealed admission bound by lease grant activation and deadline
+          content: {application/json: {schema: {$ref: '#/components/schemas/SurfaceProfileWorkerInputResponseV1'}}}
+        '401': {description: Current credentials required}
+        '403': {description: Worker or profile rights denied}
+        '404': {description: Unknown or foreign job}
+        '409': {description: Stale instance fence or lease}
+        '503': {description: Current authority storage or integrity unavailable}
+  /v1/internal/surface-profile-jobs/{job_id}/complete:
+    x-assembly: explicit-local-surface-profile-wiring
+    parameters: *surfaceProfileWorkerFence
+    post:
+      summary: Accept Core-verified profile numbers under current exact fence and rights
+      security: [{bearerAuth: []}]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/SurfaceProfileCompleteRequestV1'}}}
+      responses: &surfaceProfileMutationResponses
+        '200':
+          description: Durable state; identical completion retries preserve the accepted numbers
+          content: {application/json: {schema: {$ref: '#/components/schemas/SurfaceProfileJobViewV1'}}}
+        '401': {description: Current credentials required}
+        '403': {description: Worker or profile rights denied}
+        '404': {description: Unknown or foreign job}
+        '409': {description: Fence lease state or report conflict}
+        '422': {description: Strict body invalid}
+        '503': {description: Current authority storage integrity or journal unavailable}
+  /v1/internal/surface-profile-jobs/{job_id}/failure:
+    x-assembly: explicit-local-surface-profile-wiring
+    parameters: *surfaceProfileWorkerFence
+    post:
+      summary: Preserve typed failure with storage-only bounded retry classification
+      security: [{bearerAuth: []}]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/SurfaceProfileFailureRequestV1'}}}
+      responses: *surfaceProfileMutationResponses
 
 components:
   parameters:
@@ -20144,6 +20339,31 @@ components:
       $ref: '../schemas/spatial-data-worker.v1.json#/$defs/SpatialDataFailureRequestV1'
     SpatialDataWorkerMutationViewV1:
       $ref: '../schemas/spatial-data-worker.v1.json#/$defs/SpatialDataWorkerMutationViewV1'
+
+    CreateSurfaceProfileJobV1:
+      $ref: '../schemas/surface-profile-job.v1.json#/$defs/CreateSurfaceProfileJobV1'
+    SurfaceProfileJobPageV1:
+      $ref: '../schemas/surface-profile-job.v1.json#/$defs/SurfaceProfileJobPageV1'
+    SurfaceProfileJobViewV1:
+      $ref: '../schemas/surface-profile-job.v1.json#/$defs/SurfaceProfileJobViewV1'
+    SurfaceProfileResultViewV1:
+      $ref: '../schemas/surface-profile-job.v1.json#/$defs/SurfaceProfileResultViewV1'
+    SurfaceProfileErrorV1:
+      $ref: '../schemas/surface-profile-job.v1.json#/$defs/SurfaceProfileErrorV1'
+    SurfaceProfileWorkerPendingPageV1:
+      $ref: '../schemas/surface-profile-job.v1.json#/$defs/SurfaceProfileWorkerPendingPageV1'
+    SurfaceProfileLeaseRequestV1:
+      $ref: '../schemas/surface-profile-job.v1.json#/$defs/SurfaceProfileLeaseRequestV1'
+    SurfaceProfileLeaseViewV1:
+      $ref: '../schemas/surface-profile-job.v1.json#/$defs/SurfaceProfileLeaseViewV1'
+    SurfaceProfileRenewRequestV1:
+      $ref: '../schemas/surface-profile-job.v1.json#/$defs/SurfaceProfileRenewRequestV1'
+    SurfaceProfileWorkerInputResponseV1:
+      $ref: '../schemas/surface-profile-job.v1.json#/$defs/SurfaceProfileWorkerInputResponseV1'
+    SurfaceProfileCompleteRequestV1:
+      $ref: '../schemas/surface-profile-job.v1.json#/$defs/SurfaceProfileCompleteRequestV1'
+    SurfaceProfileFailureRequestV1:
+      $ref: '../schemas/surface-profile-job.v1.json#/$defs/SurfaceProfileFailureRequestV1'
   securitySchemes:
     bearerAuth:
       type: http

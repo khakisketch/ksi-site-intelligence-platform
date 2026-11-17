@@ -29,6 +29,7 @@ def mount_external_routes(
     spatial_data: Any = None,
     external_artifact_inspection_store: Any,
     external_display_artifact_store: Any,
+    surface_profile: Any = None,
     external_analysis_wiring: Any = None,
     external_delta_wiring: Any = None,
     external_masked_wiring: Any = None,
@@ -84,6 +85,41 @@ def mount_external_routes(
             )
         app.state.spatial_data = spatial_data
         bind_spatial_data_openapi(app)
+    if surface_profile is not None:
+        from ksi_core.composition.surface_profile_graph import (
+            SurfaceProfileWiring,
+            bind_surface_profile_openapi,
+        )
+        from ksi_core.domains.external.delivery.surface_profile_api import (
+            build_surface_profile_router,
+        )
+        from ksi_core.domains.external.delivery.surface_profile_worker_api import (
+            build_surface_profile_worker_router,
+        )
+
+        if spatial_data is None:
+            raise ValueError("surface profile requires the mounted spatial data lane")
+        if not isinstance(surface_profile, SurfaceProfileWiring):
+            raise ValueError("surface profile requires complete explicit wiring")
+        if not surface_profile.uses_data_lane(spatial_data):
+            raise ValueError("surface profile must bind the mounted spatial data lane")
+        surface_profile.verify_participants()
+        app.include_router(
+            build_surface_profile_router(
+                jobs=surface_profile.jobs,
+                limits=surface_profile.config.http_limits,
+                clock=surface_profile.config.clock,
+            )
+        )
+        app.include_router(
+            build_surface_profile_worker_router(
+                jobs=surface_profile.jobs,
+                limits=surface_profile.config.http_limits,
+                clock=surface_profile.config.clock,
+            )
+        )
+        app.state.surface_profile = surface_profile
+        bind_surface_profile_openapi(app)
     external_result_projection = external_result_read_projector
     single_volume_store = (
         external_single_volume.store if external_single_volume is not None else None

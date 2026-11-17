@@ -208,6 +208,26 @@ class SurfaceProfileCoreAuthority:
         self._data_policy = data_policy.model_copy(deep=True)
         self._activation = activation.model_copy(deep=True)
 
+    def uses_exact_participants(
+        self,
+        *,
+        sources: _Sources,
+        grants: _Grants,
+        features: _Features,
+        decisions: _Decisions,
+        currentness: SpatialDataJobCurrentnessPort,
+        coordinator: ExternalAuthorityCurrentnessCoordinator,
+    ) -> bool:
+        return (
+            self._sources is sources
+            and self._grants is grants
+            and self._features is features
+            and self._decisions is decisions
+            and self._currentness is currentness
+            and self.coordinator is coordinator
+            and currentness.coordinator is coordinator
+        )
+
     # ── scope ────────────────────────────────────────────────────────────
     def require_scope(self, site_id: str, work_area_id: str, principal: Principal) -> None:
         try:

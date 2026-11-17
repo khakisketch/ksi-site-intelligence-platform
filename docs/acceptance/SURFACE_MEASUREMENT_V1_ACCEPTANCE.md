@@ -1,10 +1,10 @@
 # Surface measurement v1 — Acceptance target
 
-- Status: TARGET / SOFTWARE_ONLY / CUSTOMER_NOT_EVALUATED — the pure line-profile computation,
-  `measurement-feature.v1` / `surface-profile.v1` schemas, a local worker adapter, the single-subject
-  HEIGHT verdict and the saved-line (measurement feature) store and API exist (see Evidence). No Core
-  route that *executes* a profile read, no Console tool, CLI or MCP operation exists yet. Nothing here
-  changes EXT-VAL-01..08 or P-AC-01..06.
+- Status: TARGET / SOFTWARE_ONLY / CUSTOMER_NOT_EVALUATED.
+  순수 단면 계산·계약·로컬 계산 어댑터·단일 subject HEIGHT 판정·저장 선과
+  단면 작업의 Core 요청자/일꾼 HTTP·명시적 opt-in 조립이 구현되어 있다.
+  C3 실제 워커 프로세스·운영 활성화·Console·CLI·MCP 단면 도구는 아직 없다.
+  이 상태는 EXT-VAL-01..08이나 P-AC-01..06을 변경하지 않는다.
 - Authority: PRODUCT_CONSTITUTION; MASTER_PRD v3.0 (external technology adoption boundary);
   DOMAIN_INVARIANTS; `docs/superpowers/product-state.md`.
 - Invariants: INV-017/018/020/023/024/040/050/051/053/060.
@@ -53,10 +53,10 @@ CLI and MCP return the same result with the same limits.
 |---|---|---|---|
 | SM-AC-01 | Heights and distances match analytical ground truth on synthetic surfaces; reprojection from WGS84 agrees with the projected line | local synthetic contract tests; later an independent reference (GDAL/QGIS) on the same samples | primitive: local synthetic pass |
 | SM-AC-02 | Unknown stays unknown: outside, edge band, NoData sentinel, NaN, and one-sided unknown in a comparison never become a number or `0` | contract tests | primitive: local synthetic pass |
-| SM-AC-03 | Reads are bounded by policy: single read window, source storage-block size, vertices, samples, line length; over-limit input is refused, never coarsened silently | contract tests; worker-level time, memory, cancellation and concurrency limits | primitive: window/block/vertex/sample/length limits pass; worker limits not implemented |
-| SM-AC-04 | A request is bound to exact asset ID, submission, revision and digest; comparison runs only after the existing Core preflight (INV-053: processing profile, CRS, vertical reference, lineage) and returns typed blockers otherwise | Core route and replay tests | not implemented |
-| SM-AC-05 | Saved line geometry is revisioned; editing creates a new revision, old results stay bound to the old one; the same line is reusable for the next observation with a new request and result | contract and persistence tests including restart and duplicate request | saved-line store/API: revisioned, idempotent, scope-isolated, replay fail-closed (local synthetic pass); result binding to a revision and reuse for the next observation not implemented |
-| SM-AC-06 | Rights and egress: no read, CSV or agent response widens the caller's current site/work-area permission or AI-egress consent; exports carry no credentials or signed URLs | permission, revocation and egress tests | not implemented |
+| SM-AC-03 | Reads are bounded by policy: single read window, source storage-block size, vertices, samples, line length; over-limit input is refused, never coarsened silently | contract tests; worker-level time, memory, cancellation and concurrency limits | 순수 계산의 창·블록·정점·표본·길이 및 HTTP 본문 한도 통과; C3 워커 시간·메모리·취소·동시성 한도는 미구현 |
+| SM-AC-04 | A request is bound to exact asset ID, submission, revision and digest; comparison runs only after the existing Core preflight (INV-053: processing profile, CRS, vertical reference, lineage) and returns typed blockers otherwise | Core route and replay tests | 단일 DSM의 job/input/receipt 정확한 결속·Core HTTP·완료 재생 통과; 두 시점 차이 경로는 미구현 |
+| SM-AC-05 | Saved line geometry is revisioned; editing creates a new revision, old results stay bound to the old one; the same line is reusable for the next observation with a new request and result | contract and persistence tests including restart and duplicate request | 저장 선·결과의 exact revision 결속, 편집 뒤 과거 결과 유지, 멱등·작업 재생 통과; 두 시점 비교 흐름은 별도 |
+| SM-AC-06 | Rights and egress: no read, CSV or agent response widens the caller's current site/work-area permission or AI-egress consent; exports carry no credentials or signed URLs | permission, revocation and egress tests | Core HTTP의 현재 grant·HEIGHT 정책 철회와 자격 재확인 통과; MCP 단면 접근은 거부, CSV·AI-egress 경로는 미구현 |
 | SM-AC-07 | Console, API, CLI and MCP return the same input revision, result ID, values and unknown reasons | cross-surface contract test | not implemented |
 | SM-AC-08 | A field user completes draw → read graph → change date → export in the real browser at 390/768/1280/1440px and 200% zoom, with keyboard and touch, stale values withdrawn on input change, and no write request from selection alone | real-browser test; later unaided task test with field staff | not implemented |
 | SM-AC-09 | Real customer data: the P-AC customer sample (same work area, t0/t1/t2 DSM, intended lines, CRS/vertical/quality evidence, usage rights) read with an independent reference comparison | customer-approved data and independent review | not evaluated |
@@ -77,7 +77,7 @@ profile, missing vertical reference, absent policy or withdrawn inspection is a 
 guessed from the horizontal axis. HEIGHT binds no display receipt, evidence, zone or compatibility mapping
 and is **not** a quantitative, comparability, accuracy or customer-acceptance claim. Decisions made before
 this change keep their retained `HEIGHT_PRODUCT_DEFINITION_UNRESOLVED` blocker and are never rewritten.
-It remains a decision about one subject: no Core route yet executes a profile read from it.
+단일 subject 판정으로 유지된다. C2c는 이 판정을 재확인하는 작업 HTTP와 완료 검증을 제공하지만, 실제 파일을 읽는 C3 워커와 운영 활성화는 아직 제공하지 않는다.
 
 ## Boundaries
 
@@ -97,3 +97,4 @@ suitability for a use, quantitative analysis, accuracy evaluation and human revi
 | 2026-11-17 | 실행 전 확인(C0): `surface_profile.profile_support_blocker` — 검사 보고서 사실만으로 이 엔진이 읽을 수 있는지(수평 CRS 화이트리스트·북향 격자·단일 밴드 실수형·관측된 수직기준). HEIGHT 허용이 EPSG:3857·회전 격자도 통과시키던 차이를 읽기 전에 거른다(`test_geo_spatial_surface_profile.py` +10개, 실제 읽기와의 일치 시험, 주입 결함 4개 검출) | 보고서는 파일의 증거가 아니다 — 읽는 쪽이 파일 사실을 다시 확인해야 한다. Core 경로에는 아직 연결되지 않음 |
 | 2026-11-17 | 단면 작업(C2a): `surface_profile_job.py`(동결 입력·정책·런타임·attempt·receipt·보기 계약, `surface-profile-job.v1.json`)와 `surface_profile_jobs.py`(발급·멱등·할당량·lease/fence·검증된 완료·재시도·취소·만료·재생·결과 릴리스); 완료 검증은 Core가 계획을 다시 계산하고(`plan_surface_profile`) 기하만으로 알 수 없는 표본을 `locate_profile_samples`로 대조한다; `test_surface_profile_jobs.py` 53개 + `test_surface_profile_job_contracts.py` 41개(주입 결함 33개 중 31개 검출, 2개는 다른 검증과 중복되는 방어 분기) | 인메모리 권한 포트와 실제 계산을 쓴 합성 시험. 실제 권한 포트(자료·grant·HEIGHT 판정 연결)·워커 HTTP API·워커 프로세스는 아직 없다 |
 | 2026-11-17 | 단면 권한 포트(C2b): `surface_profile_authority.py`가 자료(`SpatialDataSourceResolver`)·grant(PREPARE/READ를 **실제 읽을 셀 창** 기준으로)·저장 선·HEIGHT 판정의 현재성(`ExternalUseEvaluator.height_blocker_now`)·엔진 지원 범위(`profile_support_blocker`)·일꾼 activation을 발급과 모든 전이에서 다시 묻는다; 선이 표면에 닿지 않으면 `LINE_OUTSIDE_SURFACE`로 거부; `test_surface_profile_authority.py` 30개(주입 결함 12개 모두 검출) + evaluator +2개 | 소유자는 좁은 가짜로 대체한 시험. 실제 소유자와의 통합·HTTP 라우트·워커 프로세스는 아직 없다 |
+| 2026-11-17 | 단면 Core HTTP(C2c): 전용 요청자·일꾼 라우트, 명시적 조립·전용 원장·OpenAPI, 일반 클라이언트와 scoped operator 허용목록을 MCP와 분리. pending은 jobId만, input은 활성 instance와 현재 attempt digest에 결속. 완료 재생 때 receipt·정확한 lease·표본 계획을 재검증하고 다른 일꾼의 복사 attempt 사용을 거부. `test_surface_profile_api.py`·`test_surface_profile_worker_api.py`·`test_surface_profile_assembly.py`·`test_surface_profile_http_integration.py`와 인접 단면 시험 314개 통과, 기존 native/auth 회귀 131개 통과. 실제 소유자 loopback HTTP 10개에 grant·HEIGHT 정책 철회, activation 만료, 편집 후 과거 revision 결과 유지 포함. 린트·스키마 동기화·모듈 경계 통과, mypy는 변경 전과 동일한 Linux 전용 오류 12건. 전체 pytest는 macOS에서 Linux 전용 `lgetxattr` import 수집 오류 3건으로 중단됐으며, 깨끗한 변경 전 HEAD에서도 동일하게 재현됨 | 실제 site·등록 DSM·검사 원장·저장 선·grant·HEIGHT evaluator·AuthRegistry를 연결. TIFF parser entrypoint는 프로세스 안에서 실행하며 Linux UDS/격리는 검증하지 않음. storage/currentness는 로컬 시험 backend, 결과·receipt 제출도 시험 일꾼이 수행. Core는 픽셀 높이 자체를 독립 재계산하지 않으며 C3·운영·두 시점 차이·고객/현장 수락의 증거가 아님 |

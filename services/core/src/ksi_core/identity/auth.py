@@ -900,6 +900,16 @@ _SPATIAL_DATA_ROUTE_ALLOWLIST: frozenset[tuple[str, str]] = frozenset(
         ("HEAD", _SPATIAL_DATA_BASE + "/{request_id}/file"),
     }
 )
+_SURFACE_PROFILE_BASE = "/v1/sites/{site_id}/work-areas/{work_area_id}/surface-profile-jobs"
+_SURFACE_PROFILE_ROUTE_ALLOWLIST: frozenset[tuple[str, str]] = frozenset(
+    {
+        ("GET", _SURFACE_PROFILE_BASE),
+        ("POST", _SURFACE_PROFILE_BASE),
+        ("GET", _SURFACE_PROFILE_BASE + "/{job_id}"),
+        ("GET", _SURFACE_PROFILE_BASE + "/{job_id}/result"),
+        ("POST", _SURFACE_PROFILE_BASE + "/{job_id}/cancel"),
+    }
+)
 _SPATIAL_DATA_ASSET_BASE = "/v1/sites/{site_id}/work-areas/{work_area_id}/spatial-data-assets"
 # Additive AI discovery identity: the six existing data route-method pairs plus the
 # two new scoped data-discovery GETs. Old principal allowlists stay byte-identical.
@@ -1055,7 +1065,9 @@ async def _principal_request_scope(
 
     if principal.kind is PrincipalKind.SPATIAL_DATA_CLIENT:
         route_path = getattr(request.scope.get("route"), "path", None)
-        if (request.method.upper(), route_path) not in _SPATIAL_DATA_ROUTE_ALLOWLIST:
+        if (request.method.upper(), route_path) not in (
+            _SPATIAL_DATA_ROUTE_ALLOWLIST | _SURFACE_PROFILE_ROUTE_ALLOWLIST
+        ):
             raise HTTPException(status_code=403, detail="권한이 부족하다")
     elif principal.kind is PrincipalKind.SPATIAL_DATA_MCP_CLIENT:
         route_path = getattr(request.scope.get("route"), "path", None)
@@ -1076,7 +1088,11 @@ async def _principal_request_scope(
         if (
             request.method.upper(),
             route_path,
-        ) not in (_OIDC_SCOPED_OPERATOR_ROUTE_ALLOWLIST | _SPATIAL_DATA_ROUTE_ALLOWLIST) and not (
+        ) not in (
+            _OIDC_SCOPED_OPERATOR_ROUTE_ALLOWLIST
+            | _SPATIAL_DATA_ROUTE_ALLOWLIST
+            | _SURFACE_PROFILE_ROUTE_ALLOWLIST
+        ) and not (
             # F-01 D1 2안: capability 조건부 항목 — 정적 allowlist 에 넣을 수
             # 없다. SITE_BOOTSTRAP 이 없는 mapped 신원(v1 포함)은 그대로 403
             # 이고, 통과한 요청도 핸들러의 기존 SITES_WRITE 게이트를 별도로

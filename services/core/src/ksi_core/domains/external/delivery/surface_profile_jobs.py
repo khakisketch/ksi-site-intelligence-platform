@@ -265,8 +265,14 @@ def transition(record: JobRecord | None, event: JobEvent) -> JobRecord:
             next_available_at=event.next_available_at if event.state == "QUEUED" else None,
         )
     held = record.attempt
-    if record.state != "RUNNING" or held is None or not _same_acquisition(event.attempt, held):
-        raise ValueError("completion needs the live attempt")
+    if (
+        record.state != "RUNNING"
+        or held is None
+        or event.attempt != held
+        or not held.acquired_at <= event.at < held.lease_until
+        or event.at >= job.deadline
+    ):
+        raise ValueError("completion needs the exact live attempt")
     return replace(
         record,
         sequence=event.sequence,
@@ -312,6 +318,10 @@ class SurfaceProfileJobStore:
                 record = transition(self._records.get(event.job_id), event)
                 if isinstance(event, JobIssued):
                     self._check_new(record)
+                elif isinstance(event, JobCompleted):
+                    self._verify_completion(
+                        record.job, event.attempt, event.result, event.receipt, event.at
+                    )
                 self._project(record)
         except Exception as exc:
             journal.close()
@@ -321,6 +331,15 @@ class SurfaceProfileJobStore:
     @property
     def coordinator(self) -> ExternalAuthorityCurrentnessCoordinator:
         return self._coordinator
+
+    def uses_exact_authority(self, *, authority: SurfaceProfileAuthorityPort) -> bool:
+        return self._authority is authority and authority.coordinator is self._coordinator
+
+    def require_requester_scope(
+        self, *, site_id: str, work_area_id: str, principal: Principal, permission: Permission
+    ) -> None:
+        self._require_requester(principal, permission)
+        self._authority.require_scope(site_id, work_area_id, principal)
 
     @property
     def sealed_reason(self) -> str | None:
@@ -389,12 +408,19 @@ class SurfaceProfileJobStore:
     def _queued_count(self) -> int:
         return sum(1 for record in self._records.values() if record.state == "QUEUED")
 
-    def _requester_record(self, job_id: str, principal: Principal) -> JobRecord:
+    def _requester_record(
+        self, job_id: str, principal: Principal, expected_scope: tuple[str, str] | None = None
+    ) -> JobRecord:
         record = self._records.get(job_id)
         if (
             record is None
             or record.job.organization_id != principal.organization_id
             or record.job.requester_principal_id != principal.principal_id
+        ):
+            raise SurfaceProfileDomainError("NOT_FOUND", 404)
+        if (
+            expected_scope is not None
+            and (record.job.site_id, record.job.work_area_id) != expected_scope
         ):
             raise SurfaceProfileDomainError("NOT_FOUND", 404)
         return record
@@ -582,10 +608,17 @@ class SurfaceProfileJobStore:
             raise SurfaceProfileDomainError("IDEMPOTENCY_CONFLICT", 409)
         return self._view(self._fresh(record, now), now)
 
-    def get(self, *, job_id: str, principal: Principal, now: datetime) -> SurfaceProfileJobViewV1:
+    def get(
+        self,
+        *,
+        job_id: str,
+        principal: Principal,
+        now: datetime,
+        expected_scope: tuple[str, str] | None = None,
+    ) -> SurfaceProfileJobViewV1:
         self._require_requester(principal, Permission.SPATIAL_DATA_READ)
         with self._guard(now):
-            record = self._requester_record(job_id, principal)
+            record = self._requester_record(job_id, principal, expected_scope)
             self._authority.require_scope(record.job.site_id, record.job.work_area_id, principal)
             return self._view(self._fresh(record, now), now)
 
@@ -614,12 +647,17 @@ class SurfaceProfileJobStore:
             )
 
     def result(
-        self, *, job_id: str, principal: Principal, now: datetime
+        self,
+        *,
+        job_id: str,
+        principal: Principal,
+        now: datetime,
+        expected_scope: tuple[str, str] | None = None,
     ) -> SurfaceProfileResultViewV1:
         """The numbers.  A fresh READ proof is required every time; nothing is cached."""
         self._require_requester(principal, Permission.SPATIAL_DATA_READ)
         with self._guard(now):
-            record = self._requester_record(job_id, principal)
+            record = self._requester_record(job_id, principal, expected_scope)
             self._authority.require_scope(record.job.site_id, record.job.work_area_id, principal)
             record = self._fresh(record, now)
             if record.state != "COMPLETED" or record.result is None:
@@ -631,11 +669,18 @@ class SurfaceProfileJobStore:
             return SurfaceProfileResultViewV1(job=self._view(record, now), result=record.result)
 
     def cancel(
-        self, *, job_id: str, principal: Principal, now: datetime
+        self,
+        *,
+        job_id: str,
+        principal: Principal,
+        now: datetime,
+        expected_scope: tuple[str, str] | None = None,
     ) -> SurfaceProfileJobViewV1:
         self._require_requester(principal, Permission.SPATIAL_DATA_REQUEST)
         with self._guard(now):
-            record = self._fresh(self._requester_record(job_id, principal), now)
+            record = self._requester_record(job_id, principal, expected_scope)
+            self._authority.require_scope(record.job.site_id, record.job.work_area_id, principal)
+            record = self._fresh(record, now)
             if record.state in ACTIVE_STATES:
                 record = self._append(
                     JobStateChanged(
@@ -661,6 +706,17 @@ class SurfaceProfileJobStore:
         ):
             raise SurfaceProfileDomainError("PERMISSION_DENIED", 403)
 
+    def _worker_attempt(
+        self, worker: Principal, attempt: SurfaceProfileAttemptV1, now: datetime
+    ) -> None:
+        self._worker(worker, attempt.worker_instance_id, now)
+        if attempt.worker_principal_id != worker.principal_id:
+            raise SurfaceProfileDomainError("FENCE_CONFLICT", 409)
+
+    def require_worker(self, *, worker: Principal, instance_id: str, now: datetime) -> None:
+        with self._guard(now):
+            self._worker(worker, instance_id, now)
+
     def _worker_record(self, job_id: str, worker: Principal) -> JobRecord:
         record = self._records.get(job_id)
         if record is None or record.job.organization_id != worker.organization_id:
@@ -676,9 +732,9 @@ class SurfaceProfileJobStore:
             raise SurfaceProfileDomainError("LEASE_EXPIRED", 409)
 
     def pending(
-        self, *, worker: Principal, limit: int, now: datetime
+        self, *, worker: Principal, instance_id: str, limit: int, now: datetime
     ) -> tuple[SurfaceProfileFrozenJobV1, ...]:
-        self._worker(worker, None, now)
+        self._worker(worker, instance_id, now)
         if type(limit) is not int or not 1 <= limit <= self._policy.max_list_records:
             raise SurfaceProfileDomainError("INVALID_REQUEST", 422)
         with self._guard(now):
@@ -713,6 +769,7 @@ class SurfaceProfileJobStore:
                 and held is not None
                 and held.acquisition_key_hash == acquisition
                 and held.worker_instance_id == request.worker_instance_id
+                and held.worker_principal_id == worker.principal_id
             ):
                 return held.model_copy(deep=True)  # the same acquisition, retried
             if record.state != "QUEUED" or (
@@ -744,7 +801,7 @@ class SurfaceProfileJobStore:
     def renew(
         self, *, job_id: str, worker: Principal, attempt: SurfaceProfileAttemptV1, now: datetime
     ) -> SurfaceProfileAttemptV1:
-        self._worker(worker, attempt.worker_instance_id, now)
+        self._worker_attempt(worker, attempt, now)
         with self._guard(now):
             record = self._worker_record(job_id, worker)
             self._live(record, attempt, now)
@@ -764,11 +821,35 @@ class SurfaceProfileJobStore:
             assert record.attempt is not None
             return record.attempt.model_copy(deep=True)
 
+    def worker_input_for_attempt_digest(
+        self,
+        *,
+        job_id: str,
+        worker: Principal,
+        instance_id: str,
+        attempt_digest: str,
+        now: datetime,
+    ) -> SurfaceProfileFrozenJobV1:
+        with self._guard(now):
+            self._worker(worker, instance_id, now)
+            record = self._worker_record(job_id, worker)
+            attempt = record.attempt
+            if (
+                attempt is None
+                or attempt.worker_principal_id != worker.principal_id
+                or attempt.worker_instance_id != instance_id
+                or attempt.attempt_digest != attempt_digest
+            ):
+                raise SurfaceProfileDomainError("FENCE_CONFLICT", 409)
+            self._live(record, attempt, now)
+            self._authority.reprove(record.job, operation="PREPARE", now=now)
+            return record.job.model_copy(deep=True)
+
     def worker_input(
         self, *, job_id: str, worker: Principal, attempt: SurfaceProfileAttemptV1, now: datetime
     ) -> SurfaceProfileFrozenJobV1:
         """The frozen job for the one live attempt — after re-proving the requester's authority."""
-        self._worker(worker, attempt.worker_instance_id, now)
+        self._worker_attempt(worker, attempt, now)
         with self._guard(now):
             record = self._worker_record(job_id, worker)
             self._live(record, attempt, now)
@@ -784,7 +865,7 @@ class SurfaceProfileJobStore:
         reason: str,
         now: datetime,
     ) -> SurfaceProfileJobViewV1:
-        self._worker(worker, attempt.worker_instance_id, now)
+        self._worker_attempt(worker, attempt, now)
         valid = SurfaceProfileDomainError(reason, 422).reason
         with self._guard(now):
             record = self._worker_record(job_id, worker)
@@ -819,7 +900,7 @@ class SurfaceProfileJobStore:
         receipt: SurfaceProfileReceiptV1,
         now: datetime,
     ) -> SurfaceProfileJobViewV1:
-        self._worker(worker, attempt.worker_instance_id, now)
+        self._worker_attempt(worker, attempt, now)
         with self._guard(now):
             record = self._worker_record(job_id, worker)
             if record.state == "COMPLETED":
@@ -864,7 +945,9 @@ class SurfaceProfileJobStore:
         if measured is None or measured.observed_vertical_reference is None:
             raise refuse()
         if (
-            receipt.job_id != job.job_id
+            receipt.receipt_digest != receipt.canonical_digest()
+            or result.result_digest != result.canonical_digest()
+            or receipt.job_id != job.job_id
             or attempt.job_id != job.job_id
             or receipt.job_digest != job.job_digest
             or receipt.source_digest != source.source_digest
