@@ -43,3 +43,49 @@ describe("측정 선 쓰기(Core 호출)", () => {
     }
   });
 });
+
+import { cancelSurfaceProfileJobWithToken, issueSurfaceProfileJobWithToken, requestAssetHeightDecisionWithToken } from "@/lib/core-api/measurement";
+
+const JOB = {
+  jobId: `spj-${"2".repeat(32)}`, assetRef: `ksa-v1-${"3".repeat(64)}`, siteId: "site-1", workAreaId: "area-1",
+  feature: { featureId: FEATURE_ID, revision: 1, lineDigest: DIGEST }, createdAt: "2026-11-17T00:00:00Z",
+  executionState: "QUEUED", availability: "NOT_READY", reason: null,
+};
+
+describe("단면 요청(Core 호출)", () => {
+  it("판정은 자료 참조 경로에 키와 토큰을 싣고 판정을 돌려준다", async () => {
+    const decision = { decisionId: "external-use-decision-1", verdict: "BLOCKED", reasons: ["VERTICAL_REFERENCE_UNKNOWN"], remediations: ["OBSERVE_VERTICAL_REFERENCE"], extra: 1 };
+    mocked.fetchWithToken.mockResolvedValue({ decision });
+    const out = await requestAssetHeightDecisionWithToken("site 1", "area/1", `ksa-v1-${"3".repeat(64)}`, "k:height", "token");
+    expect(out.verdict).toBe("BLOCKED");
+    expect(mocked.fetchWithToken).toHaveBeenCalledWith(
+      `/v1/sites/site%201/work-areas/area%2F1/spatial-assets/ksa-v1-${"3".repeat(64)}/height-decision`, "token",
+      { method: "POST", headers: { "Idempotency-Key": "k:height" } },
+    );
+  });
+
+  it("작업 발급은 구역 경로에 본문과 키를 싣고 작업을 돌려준다", async () => {
+    mocked.fetchWithToken.mockResolvedValue(JOB);
+    const request = { assetRef: JOB.assetRef, feature: JOB.feature, heightDecisionId: "d" };
+    await expect(issueSurfaceProfileJobWithToken("site-1", "area-1", request, "k:job", "token")).resolves.toEqual(JOB);
+    expect(mocked.fetchWithToken).toHaveBeenCalledWith("/v1/sites/site-1/work-areas/area-1/surface-profile-jobs", "token", { method: "POST", body: request, headers: { "Idempotency-Key": "k:job" } });
+  });
+
+  it("취소는 작업 경로에 본문 없이 보낸다", async () => {
+    mocked.fetchWithToken.mockResolvedValue({ ...JOB, executionState: "CANCELED" });
+    await cancelSurfaceProfileJobWithToken("site-1", "area-1", JOB.jobId, "token");
+    expect(mocked.fetchWithToken).toHaveBeenCalledWith(`/v1/sites/site-1/work-areas/area-1/surface-profile-jobs/${JOB.jobId}/cancel`, "token", { method: "POST" });
+  });
+
+  it("계약을 어긴 판정·작업 응답은 성공으로 보지 않는다(502)", async () => {
+    for (const bad of [{ decision: { decisionId: "", verdict: "ELIGIBLE", reasons: [], remediations: [] } }, { decision: { decisionId: "d", verdict: "MAYBE", reasons: [], remediations: [] } }, { decision: { decisionId: "d", verdict: "ELIGIBLE", reasons: [1], remediations: [] } }, {}, null]) {
+      mocked.fetchWithToken.mockResolvedValue(bad);
+      await expect(requestAssetHeightDecisionWithToken("s", "a", `ksa-v1-${"3".repeat(64)}`, "k", "t")).rejects.toMatchObject({ status: 502 });
+    }
+    for (const bad of [{ ...JOB, jobId: "x" }, {}, null, "x"]) {
+      mocked.fetchWithToken.mockResolvedValue(bad);
+      await expect(issueSurfaceProfileJobWithToken("s", "a", { assetRef: JOB.assetRef, feature: JOB.feature, heightDecisionId: "d" }, "k", "t")).rejects.toMatchObject({ status: 502 });
+      await expect(cancelSurfaceProfileJobWithToken("s", "a", JOB.jobId, "t")).rejects.toMatchObject({ status: 502 });
+    }
+  });
+});

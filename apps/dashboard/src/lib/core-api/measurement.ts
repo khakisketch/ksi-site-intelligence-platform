@@ -5,10 +5,12 @@ import type { CreateLineBody, ReviseLineBody } from "@/lib/measurement-line";
 import {
   isFeatureList,
   isFeatureRevision,
+  isJobView,
   isJobPage,
   isProfileResultView,
   type MeasurementFeatureList,
   type MeasurementFeatureRevision,
+  type SurfaceProfileJobView,
   type SurfaceProfileJobPage,
   type SurfaceProfileResultView,
 } from "./measurement-types";
@@ -100,4 +102,71 @@ export async function reviseMeasurementFeatureWithToken(
     { method: "POST", body, headers: { "Idempotency-Key": idempotencyKey } },
   );
   return unwrapRevision(value);
+}
+
+/** 한 DSM 자료의 높이 읽기 판정. BLOCKED도 사유와 함께 돌아오며, 화면은 이것으로 무엇이 모자란지 말한다. */
+export interface AssetHeightDecision {
+  decisionId: string;
+  verdict: "ELIGIBLE" | "RESTRICTED" | "BLOCKED";
+  reasons: string[];
+  remediations: string[];
+}
+
+function isHeightDecision(value: unknown): value is AssetHeightDecision {
+  if (typeof value !== "object" || value === null) return false;
+  const decision = value as Record<string, unknown>;
+  return typeof decision.decisionId === "string" && decision.decisionId.length > 0 && decision.decisionId.length <= 255
+    && (decision.verdict === "ELIGIBLE" || decision.verdict === "RESTRICTED" || decision.verdict === "BLOCKED")
+    && Array.isArray(decision.reasons) && decision.reasons.every((item) => typeof item === "string")
+    && Array.isArray(decision.remediations) && decision.remediations.every((item) => typeof item === "string");
+}
+
+/** 자료 참조로 높이 판정을 요청한다. 범위가 제한된 운영자도 닿는 경로이며, 판정 규칙은 Core가 그대로 적용한다. */
+export async function requestAssetHeightDecisionWithToken(
+  siteId: string,
+  workAreaId: string,
+  assetRef: string,
+  idempotencyKey: string,
+  token: string,
+): Promise<AssetHeightDecision> {
+  const value = await coreFetchWithToken<unknown>(
+    `${areaPath(siteId, workAreaId)}/spatial-assets/${encodeURIComponent(assetRef)}/height-decision`,
+    token,
+    { method: "POST", headers: { "Idempotency-Key": idempotencyKey } },
+  );
+  const decision = typeof value === "object" && value !== null ? (value as Record<string, unknown>).decision : null;
+  if (!isHeightDecision(decision)) throw malformed();
+  return decision;
+}
+
+/** 단면 작업을 발급한다. 선은 본문에 싣지 않고 저장된 개정을 가리킨다. */
+export async function issueSurfaceProfileJobWithToken(
+  siteId: string,
+  workAreaId: string,
+  body: { assetRef: string; feature: { featureId: string; revision: number; lineDigest: string }; heightDecisionId: string },
+  idempotencyKey: string,
+  token: string,
+): Promise<SurfaceProfileJobView> {
+  const value = await coreFetchWithToken<unknown>(`${areaPath(siteId, workAreaId)}/surface-profile-jobs`, token, {
+    method: "POST",
+    body,
+    headers: { "Idempotency-Key": idempotencyKey },
+  });
+  if (!isJobView(value)) throw malformed();
+  return value;
+}
+
+export async function cancelSurfaceProfileJobWithToken(
+  siteId: string,
+  workAreaId: string,
+  jobId: string,
+  token: string,
+): Promise<SurfaceProfileJobView> {
+  const value = await coreFetchWithToken<unknown>(
+    `${areaPath(siteId, workAreaId)}/surface-profile-jobs/${encodeURIComponent(jobId)}/cancel`,
+    token,
+    { method: "POST" },
+  );
+  if (!isJobView(value)) throw malformed();
+  return value;
 }
