@@ -15,6 +15,7 @@ MODULES = {
     "measurement_feature": "measurement-feature",
     "surface_profile": "surface-profile",
     "surface_profile_job": "surface-profile-job",
+    "vertical_reference_declaration": "vertical-reference-declaration",
 }
 
 

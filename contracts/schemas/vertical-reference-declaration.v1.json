@@ -1,0 +1,290 @@
+{
+  "$defs": {
+    "DeclareVerticalReferenceV1": {
+      "additionalProperties": false,
+      "description": "What the caller declares.  Scope, asset and declarant come from the authenticated request.",
+      "properties": {
+        "datum": {
+          "$ref": "#/$defs/VerticalDatum"
+        },
+        "unit": {
+          "const": "metre",
+          "default": "metre",
+          "title": "Unit",
+          "type": "string"
+        },
+        "basis": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Basis",
+          "type": "string"
+        },
+        "expectedSequence": {
+          "maximum": 64,
+          "minimum": 0,
+          "title": "Expectedsequence",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "datum",
+        "basis",
+        "expectedSequence"
+      ],
+      "title": "DeclareVerticalReferenceV1",
+      "type": "object"
+    },
+    "VerticalDatum": {
+      "description": "산출물이 어느 수직기준인지 — wire 계약에 실리는 값.\n\n``ELLIPSOIDAL_NATIVE`` 는 \"재구성 엔진이 낸 타원체고를 변환 없이 그대로\n쓴다\"는 뜻이다. ``ELLIPSOIDAL`` 과 굳이 나눈 이유는, 전자가 **의도적으로\n선택한 기준**이 아니라 **변환을 하지 못해 남은 상태**임을 소비자가 구분할\n수 있어야 하기 때문이다 — 나중에 격자가 확보되면 이 값이 남아 있는\n산출물이 곧 재처리 대상 목록이 된다.\n\n두 값의 이 차이는 **호환성 판정에는 영향이 없다** — 둘 다 타원체 기준의\n높이라 서로 빼도 되는 값이다(:func:`family_of`). 재처리 대상 표시와\n비교 가능성은 다른 축이다.\n\n**정표고 멤버가 지오이드 모델 이름을 달고 있는 이유.** 정표고가 서 있는\n기준면은 하나다(KVD1964 = 인천 평균해면, EPSG:5193). 그런데 그 높이를\n타원체고와 잇는 지오이드고 N 은 **격자 모델이 준다** — 즉 모델 이름은\n\"이 높이가 어느 격자로 되돌려지는가\"다. 모델이 다르면 국내 지점 대조에서\n수 cm 가 어긋나고(KNGeoid18↔24 실측 비교 0.001~0.071m), 그 크기는 체적\n집계 문턱(``DEFAULT_VOLUME_THRESHOLD_M`` = 0.05m)과 같은 자릿수다. 그래서\n모델을 이름에 박아 두고, **우리가 실제로 격자를 가진 모델만** 타원체고와\n잇는다(:data:`_GEOID_BRIDGEABLE_ORTHOMETRIC`).",
+      "enum": [
+        "ellipsoidal",
+        "ellipsoidal_native",
+        "orthometric_kngeoid2018",
+        "orthometric_kngeoid2024"
+      ],
+      "title": "VerticalDatum",
+      "type": "string"
+    },
+    "VerticalReferenceDeclarationRefusalV1": {
+      "additionalProperties": false,
+      "description": "Typed refusal body.  No path, stack or other tenant's identifier.",
+      "properties": {
+        "verdict": {
+          "enum": [
+            "UNKNOWN_ASSET",
+            "NOT_A_DSM",
+            "NOT_MEASURED",
+            "OBSERVED_REFERENCE_PRESENT",
+            "SEQUENCE_CONFLICT",
+            "NOTHING_TO_WITHDRAW",
+            "TOO_MANY_DECLARATIONS",
+            "IDEMPOTENCY_CONFLICT",
+            "INVALID",
+            "STORE_UNAVAILABLE"
+          ],
+          "title": "Verdict",
+          "type": "string"
+        },
+        "detail": {
+          "anyOf": [
+            {
+              "maxLength": 512,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Detail"
+        }
+      },
+      "required": [
+        "verdict"
+      ],
+      "title": "VerticalReferenceDeclarationRefusalV1",
+      "type": "object"
+    },
+    "VerticalReferenceDeclarationStateViewV1": {
+      "additionalProperties": false,
+      "description": "What is declared for one asset now, and why a read may or may not rely on it.\n\n``observed`` is true when the file itself carries a vertical reference.  Then a declaration\nis not needed and is refused, so the file's own value can never be shadowed.",
+      "properties": {
+        "assetRef": {
+          "maxLength": 71,
+          "minLength": 71,
+          "pattern": "^ksa-v1-[0-9a-f]{64}$",
+          "title": "Assetref",
+          "type": "string"
+        },
+        "observed": {
+          "title": "Observed",
+          "type": "boolean"
+        },
+        "current": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/VerticalReferenceDeclarationV1"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "history": {
+          "items": {
+            "$ref": "#/$defs/VerticalReferenceDeclarationV1"
+          },
+          "maxItems": 64,
+          "title": "History",
+          "type": "array"
+        }
+      },
+      "required": [
+        "assetRef",
+        "observed",
+        "current",
+        "history"
+      ],
+      "title": "VerticalReferenceDeclarationStateViewV1",
+      "type": "object"
+    },
+    "VerticalReferenceDeclarationV1": {
+      "additionalProperties": false,
+      "description": "One append-only ledger record.  The current declaration is the highest sequence.",
+      "properties": {
+        "declarationId": {
+          "maxLength": 36,
+          "minLength": 36,
+          "pattern": "^vrd-[0-9a-f]{32}$",
+          "title": "Declarationid",
+          "type": "string"
+        },
+        "siteId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Siteid",
+          "type": "string"
+        },
+        "workAreaId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Workareaid",
+          "type": "string"
+        },
+        "assetRef": {
+          "maxLength": 71,
+          "minLength": 71,
+          "pattern": "^ksa-v1-[0-9a-f]{64}$",
+          "title": "Assetref",
+          "type": "string"
+        },
+        "sequence": {
+          "maximum": 64,
+          "minimum": 1,
+          "title": "Sequence",
+          "type": "integer"
+        },
+        "status": {
+          "enum": [
+            "ACTIVE",
+            "WITHDRAWN"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "datum": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/VerticalDatum"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "unit": {
+          "const": "metre",
+          "default": "metre",
+          "title": "Unit",
+          "type": "string"
+        },
+        "basis": {
+          "anyOf": [
+            {
+              "maxLength": 255,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Basis"
+        },
+        "declaredBy": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Declaredby",
+          "type": "string"
+        },
+        "declaredAt": {
+          "format": "date-time",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?(?:Z|\\+00:00)$",
+          "title": "Declaredat",
+          "type": "string"
+        },
+        "declarationDigest": {
+          "anyOf": [
+            {
+              "maxLength": 71,
+              "minLength": 71,
+              "pattern": "^sha256:[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Declarationdigest"
+        }
+      },
+      "required": [
+        "declarationId",
+        "siteId",
+        "workAreaId",
+        "assetRef",
+        "sequence",
+        "status",
+        "datum",
+        "basis",
+        "declaredBy",
+        "declaredAt"
+      ],
+      "title": "VerticalReferenceDeclarationV1",
+      "type": "object"
+    },
+    "VerticalReferenceDeclarationWriteViewV1": {
+      "additionalProperties": false,
+      "description": "Result of a successful write.  ``REPLAYED`` = the same request already happened.",
+      "properties": {
+        "verdict": {
+          "enum": [
+            "DECLARED",
+            "WITHDRAWN",
+            "REPLAYED"
+          ],
+          "title": "Verdict",
+          "type": "string"
+        },
+        "declaration": {
+          "$ref": "#/$defs/VerticalReferenceDeclarationV1"
+        }
+      },
+      "required": [
+        "verdict",
+        "declaration"
+      ],
+      "title": "VerticalReferenceDeclarationWriteViewV1",
+      "type": "object"
+    },
+    "WithdrawVerticalReferenceV1": {
+      "additionalProperties": false,
+      "description": "Withdraw the current declaration.  Heights can no longer be read from it.",
+      "properties": {
+        "expectedSequence": {
+          "maximum": 64,
+          "minimum": 1,
+          "title": "Expectedsequence",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "expectedSequence"
+      ],
+      "title": "WithdrawVerticalReferenceV1",
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema"
+}

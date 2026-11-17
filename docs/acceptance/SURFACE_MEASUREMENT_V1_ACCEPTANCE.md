@@ -82,6 +82,18 @@ and is **not** a quantitative, comparability, accuracy or customer-acceptance cl
 this change keep their retained `HEIGHT_PRODUCT_DEFINITION_UNRESOLVED` blocker and are never rewritten.
 단일 subject 판정으로 유지된다. C2c는 이 판정을 재확인하는 작업 HTTP와 완료 검증을 제공하지만, 실제 파일을 읽는 C3 워커와 운영 활성화는 아직 제공하지 않는다.
 
+**Declared vertical reference (decided 2026-11-17, contract only so far).** Most DSM exports carry no
+vertical CRS, so their heights could never be read. A person who knows the basis may declare it for one
+registered DSM (asset), so a single-surface height or profile read can proceed. The declaration is a claim,
+never an observation: it has its own append-only record (`vertical-reference-declaration.v1`), keyed by asset
+and not part of the submission or any recorded decision, so no existing digest changes. Heights are metres
+only; the datum is the closed platform vocabulary, not free text; a correction or withdrawal is a new record.
+A file that carries its own vertical reference needs no declaration and one is refused. A declared basis never
+feeds quantitative comparison, relative volume or analysis readiness, which keep reading the observed value
+only (INV-017, INV-020, INV-053), and no result may call a declared basis observed or accurate (INV-024,
+INV-040). Until the ledger and the HEIGHT/profile consumers land, the text above still holds: a missing
+parser-observed vertical reference is a typed blocker.
+
 ## Boundaries
 
 A passing local synthetic test, a green software matrix or an exported CSV is not customer, field,
