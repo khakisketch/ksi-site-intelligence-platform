@@ -1,0 +1,219 @@
+{
+  "$defs": {
+    "CreateMeasurementFeatureV1": {
+      "additionalProperties": false,
+      "description": "New feature, revision 1.  Scope comes from the authenticated work area, not the body.",
+      "properties": {
+        "workAreaId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Workareaid",
+          "type": "string"
+        },
+        "name": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "line": {
+          "$ref": "#/$defs/MeasurementLineV1"
+        }
+      },
+      "required": [
+        "workAreaId",
+        "name",
+        "line"
+      ],
+      "title": "CreateMeasurementFeatureV1",
+      "type": "object"
+    },
+    "MeasurementFeatureRefV1": {
+      "additionalProperties": false,
+      "description": "Exact revision a request or result is bound to.",
+      "properties": {
+        "featureId": {
+          "maxLength": 35,
+          "minLength": 35,
+          "pattern": "^mf-[0-9a-f]{32}$",
+          "title": "Featureid",
+          "type": "string"
+        },
+        "revision": {
+          "maximum": 2147483647,
+          "minimum": 1,
+          "title": "Revision",
+          "type": "integer"
+        },
+        "lineDigest": {
+          "maxLength": 71,
+          "minLength": 71,
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Linedigest",
+          "type": "string"
+        }
+      },
+      "required": [
+        "featureId",
+        "revision",
+        "lineDigest"
+      ],
+      "title": "MeasurementFeatureRefV1",
+      "type": "object"
+    },
+    "MeasurementFeatureRevisionV1": {
+      "additionalProperties": false,
+      "properties": {
+        "featureId": {
+          "maxLength": 35,
+          "minLength": 35,
+          "pattern": "^mf-[0-9a-f]{32}$",
+          "title": "Featureid",
+          "type": "string"
+        },
+        "siteId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Siteid",
+          "type": "string"
+        },
+        "workAreaId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Workareaid",
+          "type": "string"
+        },
+        "revision": {
+          "maximum": 2147483647,
+          "minimum": 1,
+          "title": "Revision",
+          "type": "integer"
+        },
+        "name": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "kind": {
+          "const": "LINE",
+          "default": "LINE",
+          "title": "Kind",
+          "type": "string"
+        },
+        "line": {
+          "$ref": "#/$defs/MeasurementLineV1"
+        },
+        "lineDigest": {
+          "maxLength": 71,
+          "minLength": 71,
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Linedigest",
+          "type": "string"
+        },
+        "createdAt": {
+          "format": "date-time",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?(?:Z|\\+00:00)$",
+          "title": "Createdat",
+          "type": "string"
+        },
+        "revisionDigest": {
+          "anyOf": [
+            {
+              "maxLength": 71,
+              "minLength": 71,
+              "pattern": "^sha256:[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Revisiondigest"
+        }
+      },
+      "required": [
+        "featureId",
+        "siteId",
+        "workAreaId",
+        "revision",
+        "name",
+        "line",
+        "lineDigest",
+        "createdAt"
+      ],
+      "title": "MeasurementFeatureRevisionV1",
+      "type": "object"
+    },
+    "MeasurementLineV1": {
+      "additionalProperties": false,
+      "description": "Vertices in the stated CRS: x,y in metres for a projected CRS, lon,lat for EPSG:4326.",
+      "properties": {
+        "crs": {
+          "pattern": "^EPSG:[1-9][0-9]{0,5}$",
+          "title": "Crs",
+          "type": "string"
+        },
+        "vertices": {
+          "items": {
+            "maxItems": 2,
+            "minItems": 2,
+            "prefixItems": [
+              {
+                "maximum": 1.7976931348623157e+308,
+                "minimum": -1.7976931348623157e+308,
+                "type": "number"
+              },
+              {
+                "maximum": 1.7976931348623157e+308,
+                "minimum": -1.7976931348623157e+308,
+                "type": "number"
+              }
+            ],
+            "type": "array"
+          },
+          "maxItems": 256,
+          "minItems": 2,
+          "title": "Vertices",
+          "type": "array"
+        }
+      },
+      "required": [
+        "crs",
+        "vertices"
+      ],
+      "title": "MeasurementLineV1",
+      "type": "object"
+    },
+    "ReviseMeasurementFeatureV1": {
+      "additionalProperties": false,
+      "description": "Edit = new revision; the caller names the revision it edited so a stale edit conflicts.",
+      "properties": {
+        "expectedRevision": {
+          "maximum": 2147483647,
+          "minimum": 1,
+          "title": "Expectedrevision",
+          "type": "integer"
+        },
+        "name": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "line": {
+          "$ref": "#/$defs/MeasurementLineV1"
+        }
+      },
+      "required": [
+        "expectedRevision",
+        "name",
+        "line"
+      ],
+      "title": "ReviseMeasurementFeatureV1",
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema"
+}
