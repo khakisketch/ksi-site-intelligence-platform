@@ -131,10 +131,20 @@ describe("profileCsv", () => {
   it("모르는 지점은 빈 칸과 이유 코드로 보낸다(0으로 채우지 않는다)", () => {
     const csv = profileCsv([{ label: "기준 2026-03-14", samples: plane.slice(0, 4) }]);
     const lines = csv.replace(/^﻿/, "").trim().split("\r\n");
-    expect(lines[0]).toBe("series,distance_m,x,y,elevation_m,unknown_reason");
-    expect(lines[1]).toBe('"기준 2026-03-14",0,200000,500000,,INSUFFICIENT_NEIGHBORS');
-    expect(lines[2]).toBe('"기준 2026-03-14",1,200001,500000,100.5,');
-    expect(lines[4]).toBe('"기준 2026-03-14",3,200003,500000,,NODATA');
+    expect(lines[0]).toBe("series,distance_m,x,y,elevation_m,unknown_reason,vertical_reference");
+    expect(lines[1]).toBe('"기준 2026-03-14",0,200000,500000,,INSUFFICIENT_NEIGHBORS,""');
+    expect(lines[2]).toBe('"기준 2026-03-14",1,200001,500000,100.5,,""');
+    expect(lines[4]).toBe('"기준 2026-03-14",3,200003,500000,,NODATA,""');
+  });
+
+  it("수직 기준 출처를 모든 행에 싣는다(선언은 선언이라고 표시한다)", () => {
+    const csv = profileCsv([
+      { label: "기준", samples: plane.slice(0, 2), vertical: "observed:EPSG:5773" },
+      { label: "현재", samples: plane.slice(0, 2), vertical: "declared:orthometric_kngeoid2018" },
+    ]);
+    const lines = csv.replace(/^﻿/, "").trim().split("\r\n").slice(1);
+    expect(lines.filter((line) => line.endsWith(',"observed:EPSG:5773"'))).toHaveLength(2);
+    expect(lines.filter((line) => line.endsWith(',"declared:orthometric_kngeoid2018"'))).toHaveLength(2);
   });
 
   it("Excel이 한글을 읽도록 BOM으로 시작한다", () => {

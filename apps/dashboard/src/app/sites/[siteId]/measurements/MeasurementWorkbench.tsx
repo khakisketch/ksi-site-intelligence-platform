@@ -4,7 +4,8 @@ import { useState, type FormEvent } from "react";
 
 import { Disclosure } from "@/components/ui/Disclosure";
 import { InlineNotice } from "@/components/ui/InlineNotice";
-import type { SurfaceProfileResult } from "@/lib/core-api/measurement-types";
+import type { ProfileVerticalReference, SurfaceProfileResult } from "@/lib/core-api/measurement-types";
+import { verticalCsvCode, verticalsComparable, verticalText } from "@/lib/measurement-vertical";
 import {
   countUnknown,
   crsLabel,
@@ -27,6 +28,8 @@ export interface LoadedSeries {
   jobId: string;
   label: string;
   result: SurfaceProfileResult;
+  /** 이 숫자가 어떤 수직 기준 위에서 읽혔는지. 완료 영수증이 없으면 모른다. */
+  vertical?: ProfileVerticalReference | null;
 }
 
 export interface UnavailableDate {
@@ -107,6 +110,21 @@ export function MeasurementWorkbench(props: WorkbenchProps) {
     return `${item.key === "cur" ? "현재" : "기준"} ${heightText(hit)}`;
   }).join(" · ");
 
+  // 높이가 선언된 수직 기준 위에서 읽혔거나 두 날짜의 기준이 다르면 그래프 위에서 먼저 말한다.
+  const verticalNotices: { key: string; text: string }[] = [];
+  if (loaded.some((entry) => verticalText(entry.vertical).kind === "declared")) {
+    verticalNotices.push({
+      key: "declared",
+      text: "높이의 수직 기준은 사용자가 선언한 값이며 파일에서 확인되지 않았습니다. KSI는 선언이 맞는지 검증하지 않습니다. 높이 차와 기울기는 선언한 기준에 따라 의미가 달라질 수 있습니다.",
+    });
+  }
+  if (ref && cur && verticalsComparable(ref.vertical, cur.vertical) === false) {
+    verticalNotices.push({
+      key: "mismatch",
+      text: "두 날짜의 수직 기준이 달라 높이를 서로 빼어 변화로 읽을 수 없습니다. 같은 기준으로 내보낸 자료끼리 비교하세요.",
+    });
+  }
+
   const separateTables = !(ref && cur
     && ref.result.samples.length === cur.result.samples.length
     && ref.result.samples.every((row, index) => Math.abs(row.distanceM - cur.result.samples[index]!.distanceM) < 1e-6));
@@ -177,6 +195,10 @@ export function MeasurementWorkbench(props: WorkbenchProps) {
           </div>
         </div>
 
+        {verticalNotices.map((notice) => (
+          <p key={notice.key} role="note" className="mt-3 rounded-lg border border-line bg-sunk px-3 py-2 text-caption leading-5 text-ink-2">{notice.text}</p>
+        ))}
+
         <div className="mt-3">
           <ProfileChart series={chartSeries} lengthM={lengthM} ratio={ratio} probeM={probeM} onProbe={setProbeM} range={range} onRange={setRange} />
         </div>
@@ -204,6 +226,18 @@ export function MeasurementWorkbench(props: WorkbenchProps) {
           <dd className="tabular border-t border-line py-2.5 text-right">{primary.result.lineLengthM.toFixed(1)} m<span className="block text-micro text-ink-muted">평면 거리</span></dd>
           <dt className="border-t border-line py-2.5 text-ink-muted">좌표계</dt>
           <dd className="border-t border-line py-2.5 text-right break-words">{crsLabel(primary.result.horizontalCrs)}</dd>
+          <dt className="border-t border-line py-2.5 text-ink-muted">수직 기준</dt>
+          <dd className="border-t border-line py-2.5 text-right break-words">
+            {loaded.map((entry) => {
+              const text = verticalText(entry.vertical);
+              return (
+                <span key={entry.jobId} className="block">
+                  {entry === cur ? "현재" : "기준"} {text.text}
+                  {text.kind === "declared" && <span className="block text-micro text-ink-muted">파일에서 확인되지 않은 선언값</span>}
+                </span>
+              );
+            })}
+          </dd>
           <dt className="border-t border-line py-2.5 text-ink-muted">값 있는 지점</dt>
           <dd className="tabular border-t border-line py-2.5 text-right">{loaded.map((entry, position) => <span key={entry.jobId}>{position > 0 ? " · " : ""}{entry === cur ? "현재" : "기준"} {entry.result.validCount}</span>)}</dd>
           <dt className="border-t border-line py-2.5 text-ink-muted">값 없는 지점</dt>
@@ -245,7 +279,7 @@ export function MeasurementWorkbench(props: WorkbenchProps) {
           <button
             type="button"
             className="btn btn-primary"
-            onClick={() => downloadCsv(`profile-${props.selectedFeatureId.slice(3, 11)}.csv`, profileCsv(loaded.map((entry) => ({ label: `${entry === cur ? "현재" : "기준"} ${entry.label}`, samples: entry.result.samples }))))}
+            onClick={() => downloadCsv(`profile-${props.selectedFeatureId.slice(3, 11)}.csv`, profileCsv(loaded.map((entry) => ({ label: `${entry === cur ? "현재" : "기준"} ${entry.label}`, samples: entry.result.samples, vertical: verticalCsvCode(entry.vertical) }))))}
           >CSV 내보내기</button>
         </div>
       </aside>

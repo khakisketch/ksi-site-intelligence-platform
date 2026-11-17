@@ -120,6 +120,27 @@ describe("측정 선 화면", () => {
     expect(html).toContain("측량 성과가 아닙니다");
   });
 
+  it("완료 영수증의 수직 기준 출처를 숫자 옆에 보인다(선언은 선언이라고)", async () => {
+    const observed = { provenance: "OBSERVED", observed: { identifier: "EPSG:5773", basis: "EGM96 height" }, declared: null };
+    const declared = {
+      provenance: "DECLARED", observed: null,
+      declared: { declarationId: `vrd-${"1".repeat(32)}`, declarationDigest: DIGEST, datum: "orthometric_kngeoid2018", unit: "metre", basis: "Terra", declaredBy: "operator-1", declaredAt: "2026-11-17T00:00:00Z" },
+    };
+    mocked.result.mockImplementation(async (_s: string, _a: string, id: string) => {
+      const view = id === jobId(1) ? resultFor(1, 0) : resultFor(3, 0.8);
+      return { ...view, job: { ...view.job, receipt: { verticalReference: id === jobId(1) ? observed : declared } } };
+    });
+    const html = await render();
+    expect(html).toContain("파일에서 확인 · EPSG:5773");
+    expect(html).toContain("사용자 선언 · 정표고(KNGeoid2018)");
+    expect(html).toContain("수직 기준이 달라");
+  });
+
+  it("영수증이 없으면 수직 기준을 모른다고 쓴다", async () => {
+    const html = await render();
+    expect(html).toContain("수직 기준 확인 불가");
+  });
+
   it("저장한 선이 없으면 빈 상태다", async () => {
     mocked.features.mockResolvedValueOnce({ features: [] });
     const html = await render();

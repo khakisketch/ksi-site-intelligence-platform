@@ -61,6 +61,40 @@ export const PROFILE_AVAILABILITIES = [
 ] as const;
 export type ProfileAvailability = (typeof PROFILE_AVAILABILITIES)[number];
 
+export const VERTICAL_DATUMS = [
+  "ellipsoidal",
+  "ellipsoidal_native",
+  "orthometric_kngeoid2018",
+  "orthometric_kngeoid2024",
+] as const;
+export type VerticalDatum = (typeof VERTICAL_DATUMS)[number];
+
+/** 파일에서 확인한 수직 기준. 사용자의 말이 아니라 검사가 읽은 값이다. */
+export interface ObservedVerticalReference {
+  identifier: string;
+  basis: string;
+}
+
+/** 사용자가 선언한 수직 기준. 주장이며 파일에서 확인되지 않았다. 높이 단위는 미터로 고정이다. */
+export interface DeclaredVerticalReference {
+  declarationId: string;
+  declarationDigest: string;
+  datum: VerticalDatum;
+  unit: "metre";
+  basis: string;
+  declaredBy: string;
+  declaredAt: string;
+}
+
+/** 두 출처 중 정확히 하나만 있다. 선언을 관측처럼 읽을 수 없게 형태로 갈라 둔다. */
+export type ProfileVerticalReference =
+  | { provenance: "OBSERVED"; observed: ObservedVerticalReference; declared: null }
+  | { provenance: "DECLARED"; observed: null; declared: DeclaredVerticalReference };
+
+export interface SurfaceProfileReceiptView {
+  verticalReference: ProfileVerticalReference;
+}
+
 export interface SurfaceProfileJobView {
   jobId: string;
   assetRef: string;
@@ -71,6 +105,8 @@ export interface SurfaceProfileJobView {
   executionState: ProfileExecutionState;
   availability: ProfileAvailability;
   reason: string | null;
+  /** 완료된 작업에만 있다. 숫자가 어떤 수직 기준 위에서 읽혔는지 담는다. */
+  receipt?: SurfaceProfileReceiptView | null;
 }
 
 export interface SurfaceProfileJobPage {
@@ -140,6 +176,37 @@ export function isFeatureList(value: unknown): value is MeasurementFeatureList {
   return isRecord(value) && Array.isArray(value.features) && value.features.every(isFeatureRevision);
 }
 
+const DECLARATION_ID_PATTERN = /^vrd-[0-9a-f]{32}$/;
+
+function isObservedVertical(value: unknown): value is ObservedVerticalReference {
+  return isRecord(value)
+    && typeof value.identifier === "string" && value.identifier.length > 0
+    && typeof value.basis === "string" && value.basis.length > 0;
+}
+
+function isDeclaredVertical(value: unknown): value is DeclaredVerticalReference {
+  return isRecord(value)
+    && typeof value.declarationId === "string" && DECLARATION_ID_PATTERN.test(value.declarationId)
+    && typeof value.declarationDigest === "string" && DIGEST_PATTERN.test(value.declarationDigest)
+    && (VERTICAL_DATUMS as readonly unknown[]).includes(value.datum)
+    && value.unit === "metre"
+    && typeof value.basis === "string" && value.basis.length > 0
+    && typeof value.declaredBy === "string" && typeof value.declaredAt === "string";
+}
+
+export function isProfileVerticalReference(value: unknown): value is ProfileVerticalReference {
+  if (!isRecord(value)) return false;
+  const observed = value.observed ?? null;
+  const declared = value.declared ?? null;
+  if (value.provenance === "OBSERVED") return declared === null && isObservedVertical(observed);
+  if (value.provenance === "DECLARED") return observed === null && isDeclaredVertical(declared);
+  return false;
+}
+
+function isReceipt(value: unknown): value is SurfaceProfileReceiptView {
+  return isRecord(value) && isProfileVerticalReference(value.verticalReference);
+}
+
 export function isJobView(value: unknown): value is SurfaceProfileJobView {
   return isRecord(value)
     && typeof value.jobId === "string" && JOB_ID_PATTERN.test(value.jobId)
@@ -149,7 +216,9 @@ export function isJobView(value: unknown): value is SurfaceProfileJobView {
     && typeof value.createdAt === "string"
     && (PROFILE_EXECUTION_STATES as readonly unknown[]).includes(value.executionState)
     && (PROFILE_AVAILABILITIES as readonly unknown[]).includes(value.availability)
-    && (value.reason === undefined || value.reason === null || typeof value.reason === "string");
+    && (value.reason === undefined || value.reason === null || typeof value.reason === "string")
+    // 영수증이 있는데 수직 기준 출처가 틀리면 숫자를 보이지 않는다(선언을 관측으로 읽을 위험).
+    && (value.receipt === undefined || value.receipt === null || isReceipt(value.receipt));
 }
 
 export function isJobPage(value: unknown): value is SurfaceProfileJobPage {

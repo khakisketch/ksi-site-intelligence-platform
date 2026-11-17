@@ -170,11 +170,13 @@ function csvText(value: string): string {
 export interface CsvSeries {
   label: string;
   samples: readonly ProfileSample[];
+  /** 높이가 읽힌 수직 기준 코드(`observed:EPSG:n` 또는 `declared:<기준>`). 모르면 비운다. */
+  vertical?: string;
 }
 
 /** 길게 늘어선 CSV. 모르는 지점은 높이를 비우고 이유 코드를 적는다. 0으로 채우지 않는다. */
 export function profileCsv(series: readonly CsvSeries[]): string {
-  const lines = ["series,distance_m,x,y,elevation_m,unknown_reason"];
+  const lines = ["series,distance_m,x,y,elevation_m,unknown_reason,vertical_reference"];
   for (const item of series) {
     for (const row of item.samples) {
       lines.push(
@@ -185,6 +187,8 @@ export function profileCsv(series: readonly CsvSeries[]): string {
           String(row.y),
           row.elevationM === null ? "" : String(row.elevationM),
           row.invalidReason ?? "",
+          // 선언한 기준은 파일에서 확인한 값이 아니다. 내보낸 뒤에도 표에서 갈라 읽을 수 있게 한 열을 둔다.
+          csvText(item.vertical ?? ""),
         ].join(","),
       );
     }

@@ -190,7 +190,7 @@ export default async function MeasurementsPage({
         unavailable.push({ role, label: option.label, message: "결과가 요청한 선과 일치하지 않아 표시하지 않습니다." });
         return null;
       }
-      return { jobId, label: option.label, result: view.result };
+      return { jobId, label: option.label, result: view.result, vertical: view.job.receipt?.verticalReference ?? null };
     } catch (error) {
       unavailable.push({ role, label: option.label, message: resultErrorText(error instanceof CoreApiError ? error.status : 500) });
       return null;

@@ -214,17 +214,80 @@ describe("측정 선 작업대", () => {
         expect(click).toHaveBeenCalledTimes(1);
         const text = await new Promise<string>((resolve) => { const reader = new FileReader(); reader.onload = () => resolve(String(reader.result)); reader.readAsText(blob!); });
         const lines = text.replace(/^﻿/, "").trim().split("\r\n");
-        expect(lines[0]).toBe("series,distance_m,x,y,elevation_m,unknown_reason");
+        expect(lines[0]).toBe("series,distance_m,x,y,elevation_m,unknown_reason,vertical_reference");
         expect(lines).toHaveLength(1 + 10);
         expect(lines.filter((line) => line.startsWith('"기준 2026-03-14"'))).toHaveLength(5);
         expect(lines.filter((line) => line.startsWith('"현재 2026-11-02"'))).toHaveLength(5);
-        const unknown = lines.filter((line) => line.endsWith(",NODATA"));
+        const unknown = lines.filter((line) => line.includes(",NODATA,"));
         expect(unknown).toHaveLength(2);
         // 모르는 지점의 높이 칸은 비어 있다.
-        expect(unknown.every((line) => /,,NODATA$/.test(line))).toBe(true);
+        expect(unknown.every((line) => /,,NODATA,/.test(line))).toBe(true);
       } finally {
         URL.createObjectURL = originalCreate;
       }
     });
+  });
+});
+
+describe("수직 기준 출처", () => {
+  const observed = { provenance: "OBSERVED", observed: { identifier: "EPSG:5773", basis: "EGM96 height" }, declared: null } as const;
+  const declared = (datum: "orthometric_kngeoid2018" | "ellipsoidal" = "orthometric_kngeoid2018") => ({
+    provenance: "DECLARED", observed: null,
+    declared: { declarationId: `vrd-${"1".repeat(32)}`, declarationDigest: DIGEST, datum, unit: "metre", basis: "Terra에서 내보냄", declaredBy: "operator-1", declaredAt: "2026-11-17T00:00:00Z" },
+  }) as const;
+  const withVertical = (ref: WorkbenchProps["baseline"] extends infer T ? T : never, cur: WorkbenchProps["current"]) => props({ baseline: ref, current: cur });
+  const series = (jobId: string, label: string, offset: number, vertical: unknown) => ({ jobId, label, result: result(offset), vertical }) as NonNullable<WorkbenchProps["baseline"]>;
+
+  it("파일에서 확인한 기준은 그렇게 말하고 선언 안내를 띄우지 않는다", () => {
+    render(<MeasurementWorkbench {...withVertical(series(`spj-${"1".repeat(32)}`, "2026-03-14", 0, observed), series(`spj-${"3".repeat(32)}`, "2026-11-02", 0.8, observed))} />);
+    const facts = screen.getByRole("complementary").querySelector("dl")!;
+    expect(facts.textContent).toContain("기준 파일에서 확인 · EPSG:5773");
+    expect(facts.textContent).not.toContain("선언");
+    expect(screen.queryByRole("note")).toBeNull();
+  });
+
+  it("선언한 기준은 선언이라고 말하고, 확인되지 않았음을 그래프 위에서 먼저 알린다", () => {
+    render(<MeasurementWorkbench {...withVertical(series(`spj-${"1".repeat(32)}`, "2026-03-14", 0, declared()), series(`spj-${"3".repeat(32)}`, "2026-11-02", 0.8, declared()))} />);
+    const facts = screen.getByRole("complementary").querySelector("dl")!;
+    expect(facts.textContent).toContain("기준 사용자 선언 · 정표고(KNGeoid2018)");
+    expect(facts.textContent).toContain("파일에서 확인되지 않은 선언값");
+    const notes = screen.getAllByRole("note").map((node) => node.textContent ?? "");
+    expect(notes).toHaveLength(1);
+    expect(notes[0]).toContain("사용자가 선언한 값이며 파일에서 확인되지 않았습니다");
+    expect(notes[0]).toContain("검증하지 않습니다");
+    expect(notes[0]).not.toContain("정확");
+  });
+
+  it("두 날짜의 수직 기준이 다르면 높이를 빼어 읽지 말라고 알린다", () => {
+    render(<MeasurementWorkbench {...withVertical(series(`spj-${"1".repeat(32)}`, "2026-03-14", 0, observed), series(`spj-${"3".repeat(32)}`, "2026-11-02", 0.8, declared()))} />);
+    const notes = screen.getAllByRole("note").map((node) => node.textContent ?? "");
+    expect(notes.some((text) => text.includes("수직 기준이 달라"))).toBe(true);
+    // 같은 선언이면 경고하지 않는다.
+    cleanup();
+    render(<MeasurementWorkbench {...withVertical(series(`spj-${"1".repeat(32)}`, "2026-03-14", 0, declared()), series(`spj-${"3".repeat(32)}`, "2026-11-02", 0.8, declared()))} />);
+    expect(screen.getAllByRole("note").some((node) => (node.textContent ?? "").includes("수직 기준이 달라"))).toBe(false);
+    cleanup();
+    render(<MeasurementWorkbench {...withVertical(series(`spj-${"1".repeat(32)}`, "2026-03-14", 0, declared("ellipsoidal")), series(`spj-${"3".repeat(32)}`, "2026-11-02", 0.8, declared("orthometric_kngeoid2018")))} />);
+    expect(screen.getAllByRole("note").some((node) => (node.textContent ?? "").includes("수직 기준이 달라"))).toBe(true);
+  });
+
+  it("출처를 모르면 모른다고 쓰고 비교해도 된다고 말하지 않는다", () => {
+    render(<MeasurementWorkbench {...props()} />);
+    const facts = screen.getByRole("complementary").querySelector("dl")!;
+    expect(facts.textContent).toContain("수직 기준 확인 불가");
+    expect(screen.queryByRole("note")).toBeNull();
+  });
+
+  it("CSV 행마다 수직 기준 출처를 싣는다", async () => {
+    let blob: Blob | null = null;
+    URL.createObjectURL = vi.fn((value: Blob) => { blob = value; return "blob:test"; });
+    URL.revokeObjectURL = vi.fn();
+    vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => undefined);
+    render(<MeasurementWorkbench {...withVertical(series(`spj-${"1".repeat(32)}`, "2026-03-14", 0, observed), series(`spj-${"3".repeat(32)}`, "2026-11-02", 0.8, declared()))} />);
+    fireEvent.click(screen.getByRole("button", { name: "CSV 내보내기" }));
+    const text = await new Promise<string>((resolve) => { const reader = new FileReader(); reader.onload = () => resolve(String(reader.result)); reader.readAsText(blob!); });
+    const lines = text.replace(/^﻿/, "").trim().split("\r\n").slice(1);
+    expect(lines.filter((line) => line.startsWith('"기준 ') && line.endsWith(',"observed:EPSG:5773"'))).toHaveLength(5);
+    expect(lines.filter((line) => line.startsWith('"현재 ') && line.endsWith(',"declared:orthometric_kngeoid2018"'))).toHaveLength(5);
   });
 });

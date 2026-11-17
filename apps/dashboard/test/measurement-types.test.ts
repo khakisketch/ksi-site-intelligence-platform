@@ -4,6 +4,7 @@ import {
   isFeatureList,
   isJobPage,
   isProfileResult,
+  isProfileVerticalReference,
   isProfileResultView,
 } from "@/lib/core-api/measurement-types";
 
@@ -121,5 +122,54 @@ describe("isFeatureList", () => {
     expect(isFeatureList({ features: [{ ...feature, line: { crs: "EPSG:5186", vertices: [[1, "2"], [3, 4]] } }] })).toBe(false);
     expect(isFeatureList({ features: [{ ...feature, name: "" }] })).toBe(false);
     expect(isFeatureList({ features: [{ ...feature, kind: "POLYGON" }] })).toBe(false);
+  });
+});
+
+const OBSERVED = { provenance: "OBSERVED", observed: { identifier: "EPSG:5773", basis: "EGM96 height" }, declared: null };
+const DECLARED = {
+  provenance: "DECLARED",
+  observed: null,
+  declared: {
+    declarationId: `vrd-${"1".repeat(32)}`, declarationDigest: DIGEST, datum: "ellipsoidal", unit: "metre",
+    basis: "RTK 타원체고", declaredBy: "operator-1", declaredAt: "2026-11-17T00:00:00Z",
+  },
+};
+
+describe("isProfileVerticalReference", () => {
+  it("관측과 선언을 각각 계약대로 받는다", () => {
+    expect(isProfileVerticalReference(OBSERVED)).toBe(true);
+    expect(isProfileVerticalReference(DECLARED)).toBe(true);
+    // 값이 없는 쪽을 생략해도 된다(JSON null 생략).
+    expect(isProfileVerticalReference({ provenance: "OBSERVED", observed: OBSERVED.observed })).toBe(true);
+  });
+
+  it.each([
+    ["출처가 없다", {}],
+    ["모르는 출처", { ...OBSERVED, provenance: "ASSUMED" }],
+    ["관측인데 관측값이 없다", { provenance: "OBSERVED", observed: null, declared: null }],
+    ["관측인데 선언이 함께 있다", { ...OBSERVED, declared: DECLARED.declared }],
+    ["선언인데 선언이 없다", { provenance: "DECLARED", observed: null, declared: null }],
+    ["선언인데 관측값이 함께 있다", { ...DECLARED, observed: OBSERVED.observed }],
+    ["단위가 미터가 아니다", { ...DECLARED, declared: { ...DECLARED.declared, unit: "foot" } }],
+    ["모르는 기준", { ...DECLARED, declared: { ...DECLARED.declared, datum: "EGM96" } }],
+    ["선언 식별자 형식", { ...DECLARED, declared: { ...DECLARED.declared, declarationId: "x" } }],
+    ["선언 digest 형식", { ...DECLARED, declared: { ...DECLARED.declared, declarationDigest: "abc" } }],
+    ["관측 식별자가 비었다", { ...OBSERVED, observed: { identifier: "", basis: "x" } }],
+  ])("거부한다: %s", (_name, value) => {
+    expect(isProfileVerticalReference(value)).toBe(false);
+  });
+
+  it("영수증이 있는 작업은 출처가 맞을 때만 받는다", () => {
+    expect(isJobPage({ items: [{ ...JOB, receipt: { verticalReference: DECLARED } }] })).toBe(true);
+    expect(isJobPage({ items: [{ ...JOB, receipt: null }] })).toBe(true);
+    expect(isJobPage({ items: [JOB] })).toBe(true);
+    expect(isJobPage({ items: [{ ...JOB, receipt: { verticalReference: { provenance: "DECLARED" } } }] })).toBe(false);
+    expect(isJobPage({ items: [{ ...JOB, receipt: {} }] })).toBe(false);
+  });
+
+  it("출처가 어긋난 영수증이 붙은 결과 보기는 통째로 받지 않는다(선언을 관측으로 읽지 않는다)", () => {
+    const bad = { provenance: "DECLARED", observed: OBSERVED.observed, declared: null };
+    expect(isProfileResultView({ job: { ...JOB, receipt: { verticalReference: DECLARED } }, result: result() })).toBe(true);
+    expect(isProfileResultView({ job: { ...JOB, receipt: { verticalReference: bad } }, result: result() })).toBe(false);
   });
 });
