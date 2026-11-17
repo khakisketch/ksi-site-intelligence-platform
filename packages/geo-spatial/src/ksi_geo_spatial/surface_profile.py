@@ -432,6 +432,75 @@ def _facts(dataset: rasterio.DatasetReader) -> ProfileSourceFacts:
     )
 
 
+@dataclass(frozen=True, slots=True)
+class SampleLocation:
+    """Where one sample sits on the grid; ``reason`` is set when geometry alone makes it unknown."""
+
+    reason: SampleInvalidReason | None
+    col0: int = 0
+    row0: int = 0
+    frac_x: float = 0.0
+    frac_y: float = 0.0
+
+
+def locate_profile_samples(
+    plan: SurfaceProfilePlan,
+    *,
+    left: float,
+    top: float,
+    cell_size_x: float,
+    cell_size_y: float,
+    width: int,
+    height: int,
+) -> tuple[SampleLocation, ...]:
+    """Classify every sample against the grid without reading a pixel.
+
+    Core uses this to know — before any worker runs — exactly which cells a profile needs, and to
+    check a worker's answer for the samples that geometry alone makes unknown.  The sampler uses the
+    very same function, so the two can never disagree about outside / half-cell-edge samples.
+    """
+    right = left + cell_size_x * width
+    bottom = top - cell_size_y * height
+    located: list[SampleLocation] = []
+    for x, y in plan.points:
+        if not (left <= x <= right and bottom <= y <= top):
+            located.append(SampleLocation(SampleInvalidReason.OUTSIDE_SURFACE))
+            continue
+        col_f = (x - left) / cell_size_x - 0.5
+        row_f = (top - y) / cell_size_y - 0.5
+        if abs(col_f - round(col_f)) < _CENTRE_SNAP:
+            col_f = float(round(col_f))
+        if abs(row_f - round(row_f)) < _CENTRE_SNAP:
+            row_f = float(round(row_f))
+        col0, row0 = math.floor(col_f), math.floor(row_f)
+        fx, fy = col_f - col0, row_f - row0
+        col1 = col0 + 1 if fx > 0.0 else col0
+        row1 = row0 + 1 if fy > 0.0 else row0
+        if col0 < 0 or row0 < 0 or col1 > width - 1 or row1 > height - 1:
+            located.append(SampleLocation(SampleInvalidReason.INSUFFICIENT_NEIGHBORS))
+            continue
+        located.append(SampleLocation(None, col0, row0, fx, fy))
+    return tuple(located)
+
+
+def neighbour_window(
+    located: Sequence[SampleLocation],
+) -> tuple[int, int, int, int] | None:
+    """Half-open ``(col0, col1, row0, row1)`` of every cell the readable samples interpolate from.
+
+    ``None`` means nothing is readable, so nothing may be read.
+    """
+    readable = [item for item in located if item.reason is None]
+    if not readable:
+        return None
+    return (
+        min(item.col0 for item in readable),
+        max(item.col0 + (1 if item.frac_x > 0.0 else 0) for item in readable) + 1,
+        min(item.row0 for item in readable),
+        max(item.row0 + (1 if item.frac_y > 0.0 else 0) for item in readable) + 1,
+    )
+
+
 def profile_support_blocker(measurements: RasterMeasurementsV1) -> SurfaceProfileErrorReason | None:
     """Core 가 읽기 전에 쓰는 사전 확인 — 검사 보고서의 사실만으로 이 엔진이 읽을 수 있는가.
 
@@ -500,45 +569,24 @@ def sample_surface_profile(
             transform = dataset.transform
             left, top = float(transform.c), float(transform.f)
             width, height = facts.width, facts.height
-            right = left + facts.cell_size_x * width
-            bottom = top - facts.cell_size_y * height
-
             count = len(plan.points)
-            reasons: list[SampleInvalidReason | None] = [None] * count
-            cols0 = np.zeros(count, dtype=np.int64)
-            rows0 = np.zeros(count, dtype=np.int64)
-            frac_x = np.zeros(count, dtype=np.float64)
-            frac_y = np.zeros(count, dtype=np.float64)
-            readable: list[int] = []
-
-            for i, (x, y) in enumerate(plan.points):
-                if not (left <= x <= right and bottom <= y <= top):
-                    reasons[i] = SampleInvalidReason.OUTSIDE_SURFACE
-                    continue
-                col_f = (x - left) / facts.cell_size_x - 0.5
-                row_f = (top - y) / facts.cell_size_y - 0.5
-                if abs(col_f - round(col_f)) < _CENTRE_SNAP:
-                    col_f = float(round(col_f))
-                if abs(row_f - round(row_f)) < _CENTRE_SNAP:
-                    row_f = float(round(row_f))
-                col0, row0 = math.floor(col_f), math.floor(row_f)
-                fx, fy = col_f - col0, row_f - row0
-                col1 = col0 + 1 if fx > 0.0 else col0
-                row1 = row0 + 1 if fy > 0.0 else row0
-                if col0 < 0 or row0 < 0 or col1 > width - 1 or row1 > height - 1:
-                    reasons[i] = SampleInvalidReason.INSUFFICIENT_NEIGHBORS
-                    continue
-                cols0[i], rows0[i], frac_x[i], frac_y[i] = col0, row0, fx, fy
-                readable.append(i)
-
+            located = locate_profile_samples(
+                plan,
+                left=left,
+                top=top,
+                cell_size_x=facts.cell_size_x,
+                cell_size_y=facts.cell_size_y,
+                width=width,
+                height=height,
+            )
+            reasons: list[SampleInvalidReason | None] = [item.reason for item in located]
+            readable = [i for i, item in enumerate(located) if item.reason is None]
             values = np.full(count, np.nan, dtype=np.float64)
             window_cells = 0
-            if readable:
-                idx = np.asarray(readable)
-                col_min = int(cols0[idx].min())
-                row_min = int(rows0[idx].min())
-                col_max = int((cols0[idx] + (frac_x[idx] > 0.0)).max())
-                row_max = int((rows0[idx] + (frac_y[idx] > 0.0)).max())
+            span = neighbour_window(located)
+            if span is not None:
+                col_min, col_stop, row_min, row_stop = span
+                col_max, row_max = col_stop - 1, row_stop - 1
                 window_cells = (col_max - col_min + 1) * (row_max - row_min + 1)
                 if window_cells > policy.maximum_window_cells:
                     raise _fail(
@@ -551,8 +599,8 @@ def sample_surface_profile(
                 data = np.ma.filled(block.astype(np.float64), np.nan)
                 valid = np.isfinite(data) & ~np.ma.getmaskarray(block)
                 for i in readable:
-                    r, c = int(rows0[i]) - row_min, int(cols0[i]) - col_min
-                    fx, fy = float(frac_x[i]), float(frac_y[i])
+                    r, c = located[i].row0 - row_min, located[i].col0 - col_min
+                    fx, fy = located[i].frac_x, located[i].frac_y
                     c1 = c + 1 if fx > 0.0 else c
                     r1 = r + 1 if fy > 0.0 else r
                     if not (valid[r, c] and valid[r, c1] and valid[r1, c] and valid[r1, c1]):
@@ -647,7 +695,10 @@ __all__ = [
     "SurfaceProfilePlan",
     "SurfaceProfilePolicy",
     "compare_surface_profiles",
+    "SampleLocation",
     "inspect_profile_source",
+    "locate_profile_samples",
+    "neighbour_window",
     "plan_surface_profile",
     "profile_support_blocker",
     "sample_surface_profile",

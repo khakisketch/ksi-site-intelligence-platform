@@ -29,6 +29,8 @@ from ksi_geo_spatial.surface_profile import (
     SurfaceProfilePolicy,
     compare_surface_profiles,
     inspect_profile_source,
+    locate_profile_samples,
+    neighbour_window,
     plan_surface_profile,
     profile_support_blocker,
     sample_surface_profile,
@@ -738,3 +740,50 @@ def test_the_preflight_agrees_with_what_the_reader_actually_accepts(tmp_path: Pa
         except SurfaceProfileError:
             readable = False
         assert (blocker is None) == readable, (name, blocker, readable, measured_options)
+
+
+# ── Core 와 워커가 같은 위치 분류·같은 읽기 창을 쓴다 ───────────────────────────────
+
+
+def _geometry_of(path: Path, plan: SurfaceProfilePlan) -> tuple[Any, ...]:
+    with rasterio.open(path) as dataset:
+        t = dataset.transform
+        return locate_profile_samples(
+            plan,
+            left=float(t.c),
+            top=float(t.f),
+            cell_size_x=float(t.a),
+            cell_size_y=float(-t.e),
+            width=dataset.width,
+            height=dataset.height,
+        )
+
+
+@pytest.mark.parametrize(
+    "cells",
+    [
+        ((2.0, 3.0), (12.0, 3.0)),
+        ((2.0, 3.0), (12.4, 9.7)),
+        ((-4.0, 3.0), (6.0, 3.0)),  # 일부는 표면 밖
+        ((0.0, 0.0), (29.0, 19.0)),  # 가장자리 반 픽셀 띠를 지난다
+        ((40.0, 40.0), (50.0, 40.0)),  # 전부 밖
+    ],
+)
+def test_locate_and_window_agree_with_what_the_sampler_reads(
+    tmp_path: Path, cells: tuple[tuple[float, float], ...]
+) -> None:
+    path = _write(tmp_path / "dsm.tif", _plane())
+    plan = _plan(_line(*cells))
+    located = _geometry_of(path, plan)
+    profile = sample_surface_profile(path, plan, policy=_POLICY)
+
+    assert len(located) == len(profile.samples)
+    for item, sample in zip(located, profile.samples, strict=True):
+        if item.reason is not None:
+            assert (sample.elevation_m, sample.invalid_reason) == (None, item.reason)
+    window = neighbour_window(located)
+    if window is None:
+        assert profile.window_cells_read == 0
+    else:
+        col0, col1, row0, row1 = window
+        assert (col1 - col0) * (row1 - row0) == profile.window_cells_read

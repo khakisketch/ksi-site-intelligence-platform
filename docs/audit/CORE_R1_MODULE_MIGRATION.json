@@ -245,6 +245,15 @@
       "migrationStatus": "T3_NEW_MODULE"
     },
     {
+      "sourceModule": "ksi_core.domains.external.delivery.surface_profile_jobs",
+      "activeCanonicalModule": "ksi_core.domains.external.delivery.surface_profile_jobs",
+      "activePath": "ksi_core/domains/external/delivery/surface_profile_jobs.py",
+      "plannedCanonicalModule": "ksi_core.domains.external.delivery.surface_profile_jobs",
+      "plannedPath": "ksi_core/domains/external/delivery/surface_profile_jobs.py",
+      "ownerBoundary": "domains/external/delivery",
+      "migrationStatus": "T3_NEW_MODULE"
+    },
+    {
       "sourceModule": "ksi_core.domains.sites.measurement_features",
       "activeCanonicalModule": "ksi_core.domains.sites.measurement_features",
       "activePath": "ksi_core/domains/sites/measurement_features.py",

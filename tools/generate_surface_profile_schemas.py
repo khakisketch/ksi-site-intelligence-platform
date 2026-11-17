@@ -11,7 +11,11 @@ from typing import Literal
 from ksi_event_contracts._spatial_data import SpatialDataModel
 from pydantic.json_schema import models_json_schema
 
-MODULES = {"measurement_feature": "measurement-feature", "surface_profile": "surface-profile"}
+MODULES = {
+    "measurement_feature": "measurement-feature",
+    "surface_profile": "surface-profile",
+    "surface_profile_job": "surface-profile-job",
+}
 
 
 def schema_for(name: str) -> dict:
