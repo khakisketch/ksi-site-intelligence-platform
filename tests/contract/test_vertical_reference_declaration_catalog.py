@@ -326,7 +326,7 @@ def test_a_viewer_can_read_but_not_declare(env: Env) -> None:
 
 
 def test_the_asset_reference_a_decision_derives_is_the_one_the_catalog_serves(env: Env) -> None:
-    """판정은 봉인 대상(subject)에서 자료 참조를 만든다. 카탈로그가 내 주는 참조와 같아야 선언이 닿는다."""
+    """판정은 봉인 대상에서 자료 참조를 만든다. 카탈로그의 참조와 같아야 선언이 닿는다."""
     from ksi_core.domains.external.ingress.spatial_asset_catalog import asset_ref_for_subject
 
     subject = SimpleNamespace(
