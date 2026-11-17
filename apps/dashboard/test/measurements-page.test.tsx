@@ -141,6 +141,42 @@ describe("측정 선 화면", () => {
     expect(html).toContain("수직 기준 확인 불가");
   });
 
+  it("쓰기 권한이 있고 구역이 열려 있으면 선 그리기·고치기 진입을 보인다", async () => {
+    mocked.session.mockResolvedValue({ kind: "ready", principal: {
+      principalId: "operator-1", organizationId: "org-1", kind: "OPERATOR", role: "ADMIN",
+      permissions: ["SITES_READ", "SITES_WRITE", "SPATIAL_DATA_READ"],
+    } });
+    const html = await render();
+    expect(html).toContain('href="/sites/site-1/measurements/new?workAreaId=area-1"');
+    expect(html).toContain(`href="/sites/site-1/measurements/new?workAreaId=area-1&amp;featureId=${FEATURE_ID}"`);
+    expect(html).toContain("이 선 고치기");
+  });
+
+  it("쓰기 권한이 없으면 진입을 보이지 않는다", async () => {
+    const html = await render();
+    expect(html).not.toContain("/measurements/new");
+  });
+
+  it("보관된 구역에는 진입을 보이지 않는다", async () => {
+    mocked.session.mockResolvedValue({ kind: "ready", principal: {
+      principalId: "operator-1", organizationId: "org-1", kind: "OPERATOR", role: "ADMIN",
+      permissions: ["SITES_READ", "SITES_WRITE", "SPATIAL_DATA_READ"],
+    } });
+    mocked.areas.mockResolvedValue({ workAreas: [{ ...area, status: "ARCHIVED" }] });
+    expect(await render()).not.toContain("/measurements/new");
+  });
+
+  it("선이 하나도 없을 때 쓰기 권한이 있으면 그리기로 안내한다", async () => {
+    mocked.session.mockResolvedValue({ kind: "ready", principal: {
+      principalId: "operator-1", organizationId: "org-1", kind: "OPERATOR", role: "ADMIN",
+      permissions: ["SITES_READ", "SITES_WRITE", "SPATIAL_DATA_READ"],
+    } });
+    mocked.features.mockResolvedValueOnce({ features: [] });
+    const html = await render();
+    expect(html).toContain("측정 선 그리기");
+    expect(html).toContain("/measurements/new?workAreaId=area-1");
+  });
+
   it("저장한 선이 없으면 빈 상태다", async () => {
     mocked.features.mockResolvedValueOnce({ features: [] });
     const html = await render();

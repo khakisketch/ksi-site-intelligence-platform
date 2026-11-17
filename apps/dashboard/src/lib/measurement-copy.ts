@@ -45,3 +45,25 @@ export function resultErrorText(status: number): string {
   if (status === 410) return "보관 기한이 지나 표시하지 않습니다.";
   return "일시적으로 불러오지 못했습니다.";
 }
+
+const SAVE_REFUSALS: Record<string, string> = {
+  REVISION_CONFLICT: "다른 사람이 먼저 이 선을 고쳤습니다. 화면을 새로 열어 최신 선을 확인한 뒤 다시 고치세요.",
+  WORK_AREA_NOT_ACTIVE: "보관된 작업구역에는 선을 저장할 수 없습니다.",
+  TOO_MANY_FEATURES: "이 작업구역의 측정 선이 한도에 닿았습니다. 쓰지 않는 선이 있는지 담당자에게 확인하세요.",
+  TOO_MANY_REVISIONS: "이 선의 고친 횟수가 한도에 닿았습니다. 새 선으로 저장하세요.",
+  IDEMPOTENCY_CONFLICT: "같은 요청이 다른 내용으로 이미 처리되었습니다. 화면을 새로 연 뒤 다시 하세요.",
+  UNKNOWN_FEATURE: "고치려는 선을 찾을 수 없습니다. 화면을 새로 열어 확인하세요.",
+  UNKNOWN_WORK_AREA: "작업구역을 찾을 수 없거나 접근 권한이 없습니다.",
+  INVALID: "선의 내용을 확인해 주세요.",
+};
+
+/** 측정 선 저장이 거부됐을 때의 사람용 문구. 모르는 코드는 상태로 접는다. */
+export function saveLineErrorText(status: number, code: string | undefined): string {
+  if (code && Object.prototype.hasOwnProperty.call(SAVE_REFUSALS, code)) return SAVE_REFUSALS[code]!;
+  if (status === 401) return "세션이 만료되었습니다. 다시 로그인하세요.";
+  if (status === 403) return "측정 선을 저장할 권한이 없습니다.";
+  if (status === 404) return "작업구역을 찾을 수 없거나 접근 권한이 없습니다.";
+  if (status === 422 || status === 400) return "선의 내용을 확인해 주세요.";
+  if (status === 503) return "지금은 저장할 수 없습니다. 잠시 후 다시 시도하세요.";
+  return "선을 저장하지 못했습니다. 잠시 후 다시 시도하세요.";
+}

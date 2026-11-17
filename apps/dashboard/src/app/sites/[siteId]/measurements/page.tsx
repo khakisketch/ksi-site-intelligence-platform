@@ -122,6 +122,9 @@ export default async function MeasurementsPage({
   }
   if (!selectedArea) return shell(null, <>{chooser}<p className="text-body text-ink-2">작업구역을 선택하면 저장한 측정 선을 볼 수 있습니다.</p></>);
   const workAreaId = selectedArea.workAreaId;
+  // 선 그리기는 쓰기라서 권한이 있고 보관되지 않은 구역일 때만 연다. 모바일에서는 화면이 숨긴다.
+  const canDraw = permissions.includes("SITES_WRITE") && selectedArea.status === "ACTIVE";
+  const drawHref = `${basePath}/new?workAreaId=${encodeURIComponent(workAreaId)}`;
 
   let features: MeasurementFeatureRevision[];
   try {
@@ -131,7 +134,11 @@ export default async function MeasurementsPage({
     return shell(workAreaId, <>{chooser}{readError(error, "측정 선을 불러오지 못했습니다.")}</>);
   }
   if (features.length === 0) {
-    return shell(workAreaId, <>{chooser}<EmptyState title="저장한 측정 선이 없습니다" description="측정 선을 저장하면 날짜별 높이 단면을 볼 수 있습니다." /></>);
+    return shell(workAreaId, <>{chooser}<EmptyState
+      title="저장한 측정 선이 없습니다"
+      description="측정 선을 저장하면 날짜별 높이 단면을 볼 수 있습니다."
+      action={canDraw ? { label: "측정 선 그리기", href: drawHref, responsiveAction: "WORK_ORDERS_WRITE", desktopOnly: true, compactReason: "측정 선은 노트북에서 지도에 그립니다." } : undefined}
+    /></>);
   }
 
   const featureParam = single(query.feature);
@@ -209,6 +216,12 @@ export default async function MeasurementsPage({
   const hasAny = baseline !== null || current !== null;
   return shell(workAreaId, <>
     {chooser}
+    {canDraw && (
+      <div className="hidden justify-end gap-2 lg:flex">
+        <Link href={`${drawHref}&featureId=${encodeURIComponent(selected.featureId)}`} className="btn">이 선 고치기</Link>
+        <Link href={drawHref} className="btn">새 선 그리기</Link>
+      </div>
+    )}
     {jobsDisconnected && <InlineNotice tone="high" role="alert">이 환경에서는 단면 기능이 연결되어 있지 않아 결과를 읽을 수 없습니다.</InlineNotice>}
     {failureNotices}
     {hasAny

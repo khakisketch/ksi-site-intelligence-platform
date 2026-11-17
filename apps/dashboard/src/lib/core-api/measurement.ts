@@ -1,11 +1,14 @@
 import "server-only";
 
-import { coreFetch, CoreApiError } from "./client";
+import { coreFetch, coreFetchWithToken, CoreApiError } from "./client";
+import type { CreateLineBody, ReviseLineBody } from "@/lib/measurement-line";
 import {
   isFeatureList,
+  isFeatureRevision,
   isJobPage,
   isProfileResultView,
   type MeasurementFeatureList,
+  type MeasurementFeatureRevision,
   type SurfaceProfileJobPage,
   type SurfaceProfileResultView,
 } from "./measurement-types";
@@ -58,4 +61,43 @@ export async function getSurfaceProfileResult(
   );
   if (!isProfileResultView(value)) throw malformed();
   return value;
+}
+
+function unwrapRevision(value: unknown): MeasurementFeatureRevision {
+  const revision = typeof value === "object" && value !== null ? (value as Record<string, unknown>).revision : null;
+  if (!isFeatureRevision(revision)) throw malformed();
+  return revision;
+}
+
+/** 새 측정 선(개정 1). 같은 요청 토큰으로 계정 확인과 쓰기를 잇는다. 위치만 저장하며 어떤 자료도 읽지 않는다. */
+export async function createMeasurementFeatureWithToken(
+  siteId: string,
+  workAreaId: string,
+  body: CreateLineBody,
+  idempotencyKey: string,
+  token: string,
+): Promise<MeasurementFeatureRevision> {
+  const value = await coreFetchWithToken<unknown>(`${areaPath(siteId, workAreaId)}/measurement-features`, token, {
+    method: "POST",
+    body,
+    headers: { "Idempotency-Key": idempotencyKey },
+  });
+  return unwrapRevision(value);
+}
+
+/** 선을 고친다 = 새 개정. 이미 그 개정으로 읽은 단면은 그 개정에 묶인 채 남는다. */
+export async function reviseMeasurementFeatureWithToken(
+  siteId: string,
+  workAreaId: string,
+  featureId: string,
+  body: ReviseLineBody,
+  idempotencyKey: string,
+  token: string,
+): Promise<MeasurementFeatureRevision> {
+  const value = await coreFetchWithToken<unknown>(
+    `${areaPath(siteId, workAreaId)}/measurement-features/${encodeURIComponent(featureId)}/revisions`,
+    token,
+    { method: "POST", body, headers: { "Idempotency-Key": idempotencyKey } },
+  );
+  return unwrapRevision(value);
 }
