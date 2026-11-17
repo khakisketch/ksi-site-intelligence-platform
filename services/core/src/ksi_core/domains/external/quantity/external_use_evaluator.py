@@ -9,7 +9,7 @@ observation, verdict, storage key, or numeric result.
 from __future__ import annotations
 
 import hashlib
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, Literal, Protocol, cast
@@ -43,6 +43,7 @@ from ksi_core.domains.external.ingress.external_validation_policy import (
     ExternalValidationPolicyRegistry,
     PolicySelectionStatus,
 )
+from ksi_core.domains.external.ingress.spatial_asset_catalog import asset_ref_for_subject
 from ksi_core.domains.external.quantity.external_relative_volume_authorities import (
     DefaultClosedExternalRelativeVolumeAuthorityPort,
     ExternalRelativeVolumeAuthority,
@@ -94,6 +95,41 @@ class ExternalInspectionDecisionPort(Protocol):
     ) -> SanitizedDisplayReceiptV1 | None: ...
 
 
+class DeclaredVerticalReferencePort(Protocol):
+    """사용자가 선언한 DSM 수직 기준. 선언은 주장이며, 읽기(HEIGHT)만 이것을 근거로 삼는다.
+
+    비교·체적·준비도는 이 포트를 받지 않는다. 파일에서 관측한 수직 기준이 있으면 포트는 묻지 않는다.
+    """
+
+    def active_declaration(
+        self, *, organization_id: str, site_id: str, asset_ref: str, at: datetime | None = None
+    ) -> object | None: ...
+
+
+def declared_vertical_checker(
+    port: DeclaredVerticalReferencePort | None,
+    subject: SealedExternalSubjectV1,
+    *,
+    at: datetime | None = None,
+) -> Callable[[str], bool] | None:
+    """DSM 산출물 id → 그 시점에 유효한 선언이 있는가. 포트가 없으면 선언을 쓰지 않는다."""
+    if port is None:
+        return None
+
+    def declared(artifact_id: str) -> bool:
+        return (
+            port.active_declaration(
+                organization_id=subject.organization_id,
+                site_id=subject.site_id,
+                asset_ref=asset_ref_for_subject(subject, artifact_id),
+                at=at,
+            )
+            is not None
+        )
+
+    return declared
+
+
 class CoreExternalUseDecisionHistoryVerifier(ExternalUseDecisionHistoryVerifier):
     """Replay verifier for independently retained Core source journals.
 
@@ -111,6 +147,7 @@ class CoreExternalUseDecisionHistoryVerifier(ExternalUseDecisionHistoryVerifier)
         evidence_validations: ExternalEvidenceValidationStore,
         relative_volume_authority: ExternalRelativeVolumeAuthorityPort | None = None,
         single_volume_authority: ExternalSingleVolumeAuthorityPort | None = None,
+        declared_vertical: DeclaredVerticalReferencePort | None = None,
     ) -> None:
         self._reconstruction = reconstruction
         self._inspections = inspections
@@ -118,6 +155,7 @@ class CoreExternalUseDecisionHistoryVerifier(ExternalUseDecisionHistoryVerifier)
         self._evidence_validations = evidence_validations
         self._relative_volume_authority = relative_volume_authority
         self._single_volume_authority = single_volume_authority
+        self._declared_vertical = declared_vertical
 
     def verify(self, candidate: DecisionCandidate) -> bool:
         if isinstance(candidate, ExternalUseDecisionV1):
@@ -201,7 +239,14 @@ class CoreExternalUseDecisionHistoryVerifier(ExternalUseDecisionHistoryVerifier)
             # A height read binds the measured DSM's own facts and never a display receipt.
             return (
                 candidate.sanitized_display_receipt_digest is None
-                and ExternalUseEvaluator._height_blocker(revision, report) is None
+                and ExternalUseEvaluator._height_blocker(
+                    revision,
+                    report,
+                    declared=declared_vertical_checker(
+                        self._declared_vertical, candidate.subject, at=candidate.decided_at
+                    ),
+                )
+                is None
             )
         if (
             not ExternalUseEvaluator._measured_kind(revision, report, ProcessingArtifactKind.ORTHO)
@@ -376,6 +421,7 @@ class ExternalUseEvaluator:
         coordinator: ExternalAuthorityCurrentnessCoordinator,
         relative_volume_authority: ExternalRelativeVolumeAuthorityPort | None = None,
         single_volume_authority: ExternalSingleVolumeAuthorityPort | None = None,
+        declared_vertical: DeclaredVerticalReferencePort | None = None,
     ) -> None:
         for name, dependency in (
             ("external decision store", decisions),
@@ -402,6 +448,7 @@ class ExternalUseEvaluator:
         self._policy_registry = policy_registry
         self._evidence_validations = evidence_validations
         self._coordinator = coordinator
+        self._declared_vertical = declared_vertical
         self._relative_volume_authority = relative_volume_authority or (
             DefaultClosedExternalRelativeVolumeAuthorityPort(currentness_coordinator=coordinator)
         )
@@ -839,7 +886,11 @@ class ExternalUseEvaluator:
                 or not self._report_binds(subject, report, resolved.policy)
             ):
                 return "INSPECTION_REPORT_BINDING_INVALID"
-            return self._height_blocker(revision, report)
+            return self._height_blocker(
+                revision,
+                report,
+                declared=declared_vertical_checker(self._declared_vertical, subject),
+            )
 
     def _single_snapshot(self, subject: SealedExternalSubjectV1, use: str) -> _SingleSnapshot:
         selected = self._policy_registry.select_for_use(use, (subject,))
@@ -1075,7 +1126,11 @@ class ExternalUseEvaluator:
         if not self._report_binds(subject, report, snapshot.policy):
             return "INSPECTION_REPORT_BINDING_INVALID"
         if use == "HEIGHT":
-            return self._height_blocker(snapshot.revision, report)
+            return self._height_blocker(
+                snapshot.revision,
+                report,
+                declared=declared_vertical_checker(self._declared_vertical, subject),
+            )
         if not self._measured_kind(snapshot.revision, report, ProcessingArtifactKind.ORTHO):
             return "ORTHO_MEASUREMENT_UNAVAILABLE"
         receipt = snapshot.display
@@ -1333,13 +1388,17 @@ class ExternalUseEvaluator:
     def _height_blocker(
         revision: ExternalReconstructionRevision,
         report: ExternalArtifactInspectionReportV1 | None,
+        *,
+        declared: Callable[[str], bool] | None = None,
     ) -> str | None:
         """Why a measured DSM cannot be read for heights, or ``None``.
 
         Reading heights from one grid needs the grid itself (a measured single-band float
-        DSM) and a parser-observed vertical reference — the horizontal axis being metres says
-        nothing about the elevation unit.  It does not need a zone, a second epoch or a
-        compatibility mapping: those belong to quantitative comparison, not to reading.
+        DSM) and a vertical reference — the horizontal axis being metres says nothing about the
+        elevation unit.  The reference is the parser-observed one; only when the file carries none,
+        a user declaration (a claim, recorded apart from the observation) may stand in, and only
+        for this read.  It does not need a zone, a second epoch or a compatibility mapping: those
+        belong to quantitative comparison, not to reading, and they never see a declaration.
         """
         dsms = tuple(
             outcome
@@ -1352,13 +1411,15 @@ class ExternalUseEvaluator:
         )
         if not dsms:
             return "DSM_MEASUREMENT_UNAVAILABLE"
-        if not any(
+        if any(
             outcome.measurements is not None
             and outcome.measurements.observed_vertical_reference is not None
             for outcome in dsms
         ):
-            return "VERTICAL_REFERENCE_UNKNOWN"
-        return None
+            return None
+        if declared is not None and any(declared(outcome.artifact_id) for outcome in dsms):
+            return None
+        return "VERTICAL_REFERENCE_UNKNOWN"
 
     @staticmethod
     def _report_measures_dsm(

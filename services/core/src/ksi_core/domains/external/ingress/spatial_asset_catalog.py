@@ -52,6 +52,27 @@ _ASSET_REF_RE = re.compile(r"^ksa-v1-[0-9a-f]{64}$")
 _CURSOR_RE = re.compile(r"^[A-Za-z0-9_-]{1,1024}$")
 
 
+def build_spatial_asset_ref(submission_ref: str, revision: int, artifact_id: str) -> str:
+    """The one identity of a registered artifact. Declarations and the catalog both bind to it."""
+    identity = {
+        "version": "spatial-asset-ref.v1",
+        "submissionRef": submission_ref,
+        "revision": revision,
+        "artifactId": artifact_id,
+    }
+    return "ksa-v1-" + hashlib.sha256(canonical_json_bytes(identity)).hexdigest()
+
+
+def asset_ref_for_subject(subject: Any, artifact_id: str) -> str:
+    """Asset reference of one artifact of a sealed external subject, without any store lookup."""
+    submission_ref = build_external_reconstruction_submission_ref(
+        organization_id=subject.organization_id,
+        work_order_id=subject.work_order_id,
+        submission_id=subject.submission_id,
+    )
+    return build_spatial_asset_ref(submission_ref, subject.revision, artifact_id)
+
+
 class SpatialAssetCatalog:
     """Build catalog views only from current scoped Core stores."""
 
@@ -93,13 +114,7 @@ class SpatialAssetCatalog:
 
     @staticmethod
     def _asset_ref(submission_ref: str, revision: int, artifact_id: str) -> str:
-        identity = {
-            "version": "spatial-asset-ref.v1",
-            "submissionRef": submission_ref,
-            "revision": revision,
-            "artifactId": artifact_id,
-        }
-        return "ksa-v1-" + hashlib.sha256(canonical_json_bytes(identity)).hexdigest()
+        return build_spatial_asset_ref(submission_ref, revision, artifact_id)
 
     def _snapshot_for(self, record: ExternalReconstructionRevision) -> tuple[str, Any]:
         """Fetch the bounded current inspection snapshot for one exact revision.

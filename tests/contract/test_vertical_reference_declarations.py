@@ -259,6 +259,40 @@ def test_a_declaration_can_follow_a_withdrawal(world: World) -> None:
     assert world.current() == again.declaration
 
 
+def test_the_declaration_in_force_at_a_past_instant_is_answered_from_the_ledger(
+    world: World,
+) -> None:
+    from datetime import timedelta
+
+    later = NOW + timedelta(hours=1)
+    world.declare()  # NOW 에 선언
+    world.store.withdraw(
+        organization_id=ORG,
+        principal_id="alice",
+        facts=facts(),
+        body=WithdrawVerticalReferenceV1(expected_sequence=1),
+        idempotency_key="w-later",
+        now=later,
+    )
+
+    def active(at: datetime | None) -> Any:
+        return world.store.active_declaration(
+            organization_id=ORG, site_id=SITE, asset_ref=ASSET, at=at
+        )
+
+    assert active(NOW - timedelta(seconds=1)) is None  # 선언 전
+    assert active(NOW) is not None  # 선언 시각
+    assert active(later - timedelta(seconds=1)) is not None  # 철회 직전
+    assert active(later) is None  # 철회 시각
+    assert active(None) is None  # 지금은 철회됨
+    assert (
+        world.store.active_declaration(
+            organization_id=OTHER_ORG, site_id=SITE, asset_ref=ASSET, at=NOW
+        )
+        is None
+    )
+
+
 def test_the_ledger_is_bounded(world: World) -> None:
     for number in range(MAX_DECLARATIONS_PER_ASSET):
         result = world.declare(

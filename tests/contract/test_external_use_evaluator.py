@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
@@ -1434,3 +1435,148 @@ def test_a_blocked_or_other_use_decision_never_licenses_a_read(tmp_path: Path) -
         sealed_subject, use="DISPLAY", idempotency_key="d", principal=_principal(), now=NOW
     )
     assert evaluator.height_blocker_now(display, now=NOW) == "HEIGHT_NOT_ELIGIBLE"
+
+
+# ── HEIGHT: 파일에 수직 기준이 없을 때 사용자 선언이 읽기에만 근거가 된다 ──────────────
+
+
+class _Declarations:
+    """선언 원장 대역: 자료 참조별 (선언 시각, 활성 여부) 이력. 호출 횟수를 센다."""
+
+    def __init__(self) -> None:
+        self.history: dict[str, list[tuple[datetime, bool]]] = {}
+        self.calls = 0
+
+    def declare(self, asset_ref: str, at: datetime, *, active: bool = True) -> None:
+        self.history.setdefault(asset_ref, []).append((at, active))
+
+    def active_declaration(
+        self, *, organization_id: str, site_id: str, asset_ref: str, at: datetime | None = None
+    ) -> object | None:
+        self.calls += 1
+        del organization_id, site_id
+        rows = [row for row in self.history.get(asset_ref, []) if at is None or row[0] <= at]
+        return object() if rows and rows[-1][1] else None
+
+
+def _declared_world(tmp_path: Path, ledger: _Declarations, **kwargs: Any) -> _HeightWorld:
+    world = _HeightWorld(
+        tmp_path,
+        measurements=kwargs.pop("measurements", _dsm_measurements(vertical=False)),
+        **kwargs,
+    )
+    world.evaluator._declared_vertical = ledger  # noqa: SLF001 - 판정이 읽는 포트를 꽂는다
+    return world
+
+
+def _dsm_asset_ref(world: _HeightWorld, artifact_id: str = "dsm") -> str:
+    from ksi_core.domains.external.ingress.spatial_asset_catalog import asset_ref_for_subject
+
+    return asset_ref_for_subject(world.subject, artifact_id)
+
+
+def test_a_declaration_lets_a_dsm_without_a_vertical_reference_be_read(tmp_path: Path) -> None:
+    ledger = _Declarations()
+    world = _declared_world(tmp_path, ledger)
+    assert world.height("before").reasons == ("VERTICAL_REFERENCE_UNKNOWN",)
+
+    ledger.declare(_dsm_asset_ref(world), NOW - timedelta(minutes=1))
+    decision = world.height("after")
+    assert decision.verdict is DecisionVerdict.ELIGIBLE
+    assert decision.reasons == ("HEIGHT_ELIGIBLE",)
+    assert decision.sanitized_display_receipt_digest is None
+    assert decision.evidence_record_digests == ()
+
+
+def test_a_declaration_for_another_asset_or_a_withdrawn_one_opens_nothing(tmp_path: Path) -> None:
+    ledger = _Declarations()
+    world = _declared_world(tmp_path, ledger)
+    ledger.declare(_dsm_asset_ref(world, "some-other-artifact"), NOW)
+    assert world.height("other").reasons == ("VERTICAL_REFERENCE_UNKNOWN",)
+
+    ledger.declare(_dsm_asset_ref(world), NOW - timedelta(minutes=2))
+    ledger.declare(_dsm_asset_ref(world), NOW - timedelta(minutes=1), active=False)
+    assert world.height("withdrawn").reasons == ("VERTICAL_REFERENCE_UNKNOWN",)
+
+
+def test_the_files_own_vertical_reference_wins_and_the_ledger_is_not_asked(tmp_path: Path) -> None:
+    ledger = _Declarations()
+    world = _declared_world(tmp_path, ledger, measurements=_dsm_measurements(vertical=True))
+    assert world.height().verdict is DecisionVerdict.ELIGIBLE
+    assert ledger.calls == 0
+
+
+def test_without_a_ledger_nothing_changes(tmp_path: Path) -> None:
+    world = _HeightWorld(tmp_path, measurements=_dsm_measurements(vertical=False))
+    assert world.height().reasons == ("VERTICAL_REFERENCE_UNKNOWN",)
+
+
+def test_a_decision_made_on_a_declaration_stops_licensing_reads_when_it_is_withdrawn(
+    tmp_path: Path,
+) -> None:
+    ledger = _Declarations()
+    world = _declared_world(tmp_path, ledger)
+    ledger.declare(_dsm_asset_ref(world), NOW - timedelta(minutes=2))
+    decision = world.height()
+    assert world.evaluator.height_blocker_now(decision, now=NOW) is None
+
+    ledger.declare(_dsm_asset_ref(world), NOW - timedelta(minutes=1), active=False)
+    assert world.evaluator.height_blocker_now(decision, now=NOW) == "VERTICAL_REFERENCE_UNKNOWN"
+
+
+def test_history_checks_the_declaration_as_of_the_decision_time(tmp_path: Path) -> None:
+    ledger = _Declarations()
+    world = _declared_world(tmp_path, ledger)
+    ledger.declare(_dsm_asset_ref(world), NOW - timedelta(minutes=2))
+    decision = world.height()
+    verifier = CoreExternalUseDecisionHistoryVerifier(
+        reconstruction=world.reconstruction,  # type: ignore[arg-type]
+        inspections=world.inspections,
+        policy_registry=world.registry,
+        evidence_validations=world.validations,
+        declared_vertical=ledger,
+    )
+    assert verifier.verify(decision) is True
+    # 철회돼도 과거 판정은 그 시점에 근거가 있었다 — 이력은 다시 쓰지 않는다.
+    ledger.declare(_dsm_asset_ref(world), NOW + timedelta(minutes=1), active=False)
+    assert verifier.verify(decision) is True
+    # 판정 시점에 선언이 없었다면, 나중에 선언해도 그 판정은 근거가 없다.
+    late = _Declarations()
+    late.declare(_dsm_asset_ref(world), NOW + timedelta(minutes=5))
+    late_verifier = CoreExternalUseDecisionHistoryVerifier(
+        reconstruction=world.reconstruction,  # type: ignore[arg-type]
+        inspections=world.inspections,
+        policy_registry=world.registry,
+        evidence_validations=world.validations,
+        declared_vertical=late,
+    )
+    assert late_verifier.verify(decision) is False
+    # 포트가 없는 검증기는 선언을 근거로 인정하지 않는다.
+    assert world.verifier().verify(decision) is False
+
+
+def test_display_decisions_never_ask_the_declaration_ledger(tmp_path: Path) -> None:
+    ledger = _Declarations()
+    world = _declared_world(tmp_path, ledger, with_receipt=True)
+    ledger.declare(_dsm_asset_ref(world), NOW - timedelta(minutes=1))
+    decision = world.evaluator.request_single(
+        world.subject, use="DISPLAY", idempotency_key="display", principal=_principal(), now=NOW
+    )
+    assert decision.reasons == ("DISPLAY_ELIGIBLE",)
+    assert ledger.calls == 0
+
+
+def test_only_the_assembly_may_import_the_declaration_ledger() -> None:
+    """선언은 주장이다 — 비교·체적·준비도 모듈이 원장을 직접 읽기 시작하면 이 시험이 실패한다.
+
+    판정은 원장 모듈이 아니라 좁은 포트(``DeclaredVerticalReferencePort``)만 안다.
+    """
+    root = Path(__file__).resolve().parents[2] / "services/core/src/ksi_core"
+    pattern = re.compile(r"(from|import)\s+[\w.]*vertical_reference_declarations\b")
+    importers = {
+        str(path.relative_to(root))
+        for path in root.rglob("*.py")
+        if path.name != "vertical_reference_declarations.py"
+        and pattern.search(path.read_text(encoding="utf-8"))
+    }
+    assert importers == {"composition/platform_graph.py", "composition/routes/external.py"}

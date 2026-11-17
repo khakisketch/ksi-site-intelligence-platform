@@ -323,3 +323,27 @@ def test_a_viewer_can_read_but_not_declare(env: Env) -> None:
         env.base + "/declarations", json=BODY, headers=env.headers("viewer", "k1")
     )
     assert denied.status_code == 403
+
+
+def test_the_asset_reference_a_decision_derives_is_the_one_the_catalog_serves(env: Env) -> None:
+    """판정은 봉인 대상(subject)에서 자료 참조를 만든다. 카탈로그가 내 주는 참조와 같아야 선언이 닿는다."""
+    from ksi_core.domains.external.ingress.spatial_asset_catalog import asset_ref_for_subject
+
+    subject = SimpleNamespace(
+        organization_id="org-a",
+        site_id=env.order.site_id,
+        work_order_id=env.order.work_order_id,
+        submission_id="submission-dsm",
+        revision=1,
+    )
+    assert asset_ref_for_subject(subject, "dsm") == env.asset_ref
+    assert asset_ref_for_subject(subject, "other") != env.asset_ref
+    assert asset_ref_for_subject(SimpleNamespace(**{**vars(subject), "revision": 2}), "dsm") != (
+        env.asset_ref
+    )
+    assert (
+        asset_ref_for_subject(
+            SimpleNamespace(**{**vars(subject), "organization_id": "org-b"}), "dsm"
+        )
+        != env.asset_ref
+    )

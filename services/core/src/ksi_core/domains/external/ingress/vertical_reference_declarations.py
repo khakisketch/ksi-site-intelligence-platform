@@ -225,6 +225,24 @@ class VerticalReferenceDeclarationStore:
             return history[-1]
         return None
 
+    def active_declaration(
+        self,
+        *,
+        organization_id: str,
+        site_id: str,
+        asset_ref: str,
+        at: datetime | None = None,
+    ) -> VerticalReferenceDeclarationV1 | None:
+        """``at`` 시점(없으면 지금)에 유효했던 선언. 과거 판정의 근거를 그 시점으로 묻는 용도다."""
+        history = self.history(
+            organization_id=organization_id, site_id=site_id, asset_ref=asset_ref
+        )
+        if at is not None:
+            history = tuple(item for item in history if item.declared_at <= at)
+        if history and history[-1].status == "ACTIVE":
+            return history[-1]
+        return None
+
     # ── 쓰기 ────────────────────────────────────────────────────────────
     def declare(
         self,

@@ -180,6 +180,7 @@ def build_platform_graph(
         coordinator=coordinator,
         policy_authority_currentness=policy_authority_currentness,
         evidence_context_authority=evidence_context_authority,
+        vertical_declarations=vertical_declaration_store,
     )
     organization_work_roster_store = OrganizationWorkRosterStore(
         journal("organization-work-roster.jsonl"), coordinator=coordinator
