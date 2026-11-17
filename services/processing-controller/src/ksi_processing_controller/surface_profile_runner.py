@@ -129,7 +129,7 @@ def _receipt(
     job: SurfaceProfileFrozenJobV1, result: SurfaceProfileResultV1, now: datetime
 ) -> SurfaceProfileReceiptV1:
     measured = job.source.inspection.measurements
-    assert measured is not None and measured.observed_vertical_reference is not None
+    assert measured is not None
     return SurfaceProfileReceiptV1(
         job_id=job.job_id,
         job_digest=job.job_digest or "",
@@ -144,7 +144,7 @@ def _receipt(
         source_size_bytes=job.source.observed_size_bytes,
         observed_crs_identifier=measured.observed_crs_identifier,
         observed_crs_digest=measured.observed_crs_digest,
-        observed_vertical_reference=measured.observed_vertical_reference,
+        vertical_reference=job.vertical_reference,
         result_digest=result.result_digest or "",
         read_window=job.read_window,
         window_cells_read=result.window_cells_read,

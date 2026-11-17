@@ -82,7 +82,8 @@ and is **not** a quantitative, comparability, accuracy or customer-acceptance cl
 this change keep their retained `HEIGHT_PRODUCT_DEFINITION_UNRESOLVED` blocker and are never rewritten.
 단일 subject 판정으로 유지된다. C2c는 이 판정을 재확인하는 작업 HTTP와 완료 검증을 제공하지만, 실제 파일을 읽는 C3 워커와 운영 활성화는 아직 제공하지 않는다.
 
-**Declared vertical reference (decided 2026-11-17, contract only so far).** Most DSM exports carry no
+**Declared vertical reference (decided 2026-11-17; ledger, HEIGHT and profile consumers implemented
+2026-11-18, no Console yet).** Most DSM exports carry no
 vertical CRS, so their heights could never be read. A person who knows the basis may declare it for one
 registered DSM (asset), so a single-surface height or profile read can proceed. The declaration is a claim,
 never an observation: it has its own append-only record (`vertical-reference-declaration.v1`), keyed by asset
@@ -91,8 +92,15 @@ only; the datum is the closed platform vocabulary, not free text; a correction o
 A file that carries its own vertical reference needs no declaration and one is refused. A declared basis never
 feeds quantitative comparison, relative volume or analysis readiness, which keep reading the observed value
 only (INV-017, INV-020, INV-053), and no result may call a declared basis observed or accurate (INV-024,
-INV-040). Until the ledger and the HEIGHT/profile consumers land, the text above still holds: a missing
-parser-observed vertical reference is a typed blocker.
+INV-040). Implemented: the append-only ledger and its read/declare/withdraw routes (WORK_ORDERS_WRITE to
+write), the HEIGHT decision accepting a current declaration only when the file carries no vertical reference
+(decision issue, current re-proof and historical verification, the latter as of the decision time), and a
+profile job that freezes the provenance (`OBSERVED` or `DECLARED` with the declaration record digest). The
+worker receipt repeats it and Core refuses a receipt that changes it. A job frozen on a declaration continues
+only while that exact record is current; a correction or withdrawal closes new reads and withholds the
+numbers. A test pins that only the assembly imports the ledger, so comparison, volume and readiness stay on
+the observed value. Still absent: any Console screen to declare or to show the "declared" label next to the
+numbers, and the export marking. Until those land, a declared read must not be offered to users.
 
 ## Boundaries
 

@@ -501,7 +501,9 @@ def neighbour_window(
     )
 
 
-def profile_support_blocker(measurements: RasterMeasurementsV1) -> SurfaceProfileErrorReason | None:
+def profile_support_blocker(
+    measurements: RasterMeasurementsV1, *, vertical_declared: bool = False
+) -> SurfaceProfileErrorReason | None:
     """Core 가 읽기 전에 쓰는 사전 확인 — 검사 보고서의 사실만으로 이 엔진이 읽을 수 있는가.
 
     HEIGHT 허용(``external_use_evaluator._height_blocker``)은 "높이를 읽어도 되는 자료"를
@@ -518,8 +520,9 @@ def profile_support_blocker(measurements: RasterMeasurementsV1) -> SurfaceProfil
         assert_supported_project_crs(measurements.observed_crs_identifier)
     except UnsupportedCrsError:
         return SurfaceProfileErrorReason.UNSUPPORTED_CRS
-    if measurements.observed_vertical_reference is None:
+    if measurements.observed_vertical_reference is None and not vertical_declared:
         # 표고를 m 로 말할 근거가 없다 — 수평축 단위로 짐작하지 않는다.
+        # 근거는 파일의 관측값이거나, 호출자가 현재 유효한 사용자 선언을 확인했다는 표시뿐이다.
         return SurfaceProfileErrorReason.UNSUPPORTED_CRS
     return None
 

@@ -168,6 +168,7 @@ def build_surface_profile_wiring(
     currentness: Any,
     data_policy: Any,
     coordinator: ExternalAuthorityCurrentnessCoordinator,
+    declarations: Any = None,
 ) -> SurfaceProfileWiring:
     """넘겨받은 Core 실제 참가자 위에 권한·작업 저장소를 조립한다."""
     if (
@@ -193,6 +194,7 @@ def build_surface_profile_wiring(
         profile_policy_digest=config.policy.policy_digest or "",
         runtime_digest=config.runtime.runtime_digest or "",
         coordinator=coordinator,
+        declarations=declarations,
     )
     jobs = SurfaceProfileJobStore(
         journal(SURFACE_PROFILE_JOBS_JOURNAL),

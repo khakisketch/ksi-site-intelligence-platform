@@ -308,6 +308,7 @@ def build_platform_graph(
             currentness=data_lane.currentness,
             data_policy=data_lane.config.policy,
             coordinator=coordinator,
+            declarations=vertical_declaration_store,
         )
     masked_lane = None
     if masked_quantitative is not None:

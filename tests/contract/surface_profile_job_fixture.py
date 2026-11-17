@@ -29,11 +29,13 @@ from ksi_event_contracts.measurement_feature import MeasurementFeatureRevisionV1
 from ksi_event_contracts.surface_profile import CreateSurfaceProfileV1, SurfaceProfileResultV1
 from ksi_event_contracts.surface_profile_job import (
     CreateSurfaceProfileJobV1,
+    SurfaceProfileDeclaredVerticalV1,
     SurfaceProfileFrozenJobV1,
     SurfaceProfilePolicyV1,
     SurfaceProfileReadWindowV1,
     SurfaceProfileReceiptV1,
     SurfaceProfileRuntimeV1,
+    SurfaceProfileVerticalReferenceV1,
 )
 from ksi_geo_spatial.surface_profile import (
     SurfaceProfilePolicy,
@@ -156,11 +158,13 @@ def feature_revision(
     ).sealed()
 
 
-def measured_source() -> Any:
+def measured_source(*, observed_vertical: bool = True) -> Any:
     measurements = make_measurements(
         observed_crs_identifier="EPSG:5186",
-        observed_vertical_reference=ObservedVerticalReferenceV1(
-            identifier="EPSG:5773", basis="EGM96 height"
+        observed_vertical_reference=(
+            ObservedVerticalReferenceV1(identifier="EPSG:5773", basis="EGM96 height")
+            if observed_vertical
+            else None
         ),
         transform=(1.0, 0.0, ORIGIN_X, 0.0, -1.0, ORIGIN_Y),
         width=WIDTH,
@@ -176,6 +180,28 @@ def measured_source() -> Any:
         ),
         observed_crs_units="metre",
     )
+
+
+def observed_vertical(source: Any) -> SurfaceProfileVerticalReferenceV1:
+    """The vertical reference a job on this source stands on when the file carries its own."""
+    return SurfaceProfileVerticalReferenceV1(
+        provenance="OBSERVED",
+        observed=source.inspection.measurements.observed_vertical_reference,
+    )
+
+
+def declared_vertical(**overrides: Any) -> SurfaceProfileDeclaredVerticalV1:
+    """A user's vertical-reference claim, as a frozen job carries it."""
+    values: dict[str, Any] = dict(
+        declaration_id="vrd-" + "1" * 32,
+        declaration_digest="sha256:" + "5" * 64,
+        datum="orthometric_kngeoid2018",
+        basis="Terra에서 정표고(KNGeoid18)로 내보냄",
+        declared_by="operator-local",
+        declared_at=NOW,
+    )
+    values.update(overrides)
+    return SurfaceProfileDeclaredVerticalV1(**values)
 
 
 def sdp(policy: SurfaceProfilePolicyV1) -> SurfaceProfilePolicy:
@@ -202,6 +228,8 @@ class FakeAuthority:
         )
     )
     deny: dict[str, str] = field(default_factory=dict)  # operation -> reason
+    #: 파일에 수직 기준이 없을 때 이 작업이 기대는 사용자 선언. ``None`` 이면 관측값을 쓴다.
+    declared: SurfaceProfileDeclaredVerticalV1 | None = None
     admit_error: str | None = None
     activated: bool = True
     scope_error: bool = False
@@ -265,6 +293,13 @@ class FakeAuthority:
             grant=self.grant,
             data_policy_digest=make_policy().policy_digest or "",
             height_decision_digest=DIGEST,
+            vertical_reference=(
+                SurfaceProfileVerticalReferenceV1(provenance="DECLARED", declared=self.declared)
+                if self.declared is not None
+                else SurfaceProfileVerticalReferenceV1(
+                    provenance="OBSERVED", observed=measured.observed_vertical_reference
+                )
+            ),
             read_window=window,
         )
 
@@ -343,7 +378,7 @@ def receipt_for(
     job: SurfaceProfileFrozenJobV1, result: SurfaceProfileResultV1, now: datetime, **overrides: Any
 ) -> SurfaceProfileReceiptV1:
     measured = job.source.inspection.measurements
-    assert measured is not None and measured.observed_vertical_reference is not None
+    assert measured is not None
     payload: dict[str, Any] = dict(
         job_id=job.job_id,
         job_digest=job.job_digest,
@@ -358,7 +393,7 @@ def receipt_for(
         source_size_bytes=job.source.observed_size_bytes,
         observed_crs_identifier=measured.observed_crs_identifier,
         observed_crs_digest=measured.observed_crs_digest,
-        observed_vertical_reference=measured.observed_vertical_reference,
+        vertical_reference=job.vertical_reference,
         result_digest=result.result_digest,
         read_window=job.read_window,
         window_cells_read=result.window_cells_read,

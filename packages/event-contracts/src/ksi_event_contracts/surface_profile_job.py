@@ -55,8 +55,46 @@ from ksi_event_contracts.surface_profile import (
     PositiveMetres,
     SurfaceProfileResultV1,
 )
+from ksi_event_contracts.vertical_reference import VerticalDatum
 
 SURFACE_PROFILE_PROFILE: Literal["ksi-surface-profile.v1"] = "ksi-surface-profile.v1"
+
+
+class SurfaceProfileDeclaredVerticalV1(SpatialDataModel):
+    """The user's vertical-reference claim a job was frozen on.  Never an observation.
+
+    Frozen with its record digest so the job proves exactly which claim licensed the read; a
+    corrected or withdrawn declaration is a different record and no longer licenses it.
+    """
+
+    declaration_id: Text
+    declaration_digest: Digest
+    datum: VerticalDatum
+    unit: Literal["metre"] = "metre"
+    basis: Text
+    declared_by: Text
+    declared_at: UtcTimestamp
+
+
+class SurfaceProfileVerticalReferenceV1(SpatialDataModel):
+    """Where the heights' vertical reference comes from: the file (observed) or a user (declared).
+
+    Exactly one of the two facts is present.  A declared basis is carried here, next to the
+    numbers, so no screen or export can present it as something the parser observed.
+    """
+
+    provenance: Literal["OBSERVED", "DECLARED"]
+    observed: ObservedVerticalReferenceV1 | None = None
+    declared: SurfaceProfileDeclaredVerticalV1 | None = None
+
+    @model_validator(mode="after")
+    def _exactly_the_stated_provenance(self) -> Self:
+        if self.provenance == "OBSERVED" and (self.observed is None or self.declared is not None):
+            raise ValueError("an observed vertical reference carries the observation only")
+        if self.provenance == "DECLARED" and (self.declared is None or self.observed is not None):
+            raise ValueError("a declared vertical reference carries the declaration only")
+        return self
+
 
 SurfaceProfileJobId = Annotated[
     str,
@@ -278,6 +316,7 @@ class SurfaceProfileFrozenJobV1(SpatialDataDigestModel):
     grant: SpatialDataGrantV1
     data_policy_digest: Digest
     height_decision_digest: Digest
+    vertical_reference: SurfaceProfileVerticalReferenceV1
     policy: SurfaceProfilePolicyV1
     runtime: SurfaceProfileRuntimeV1
     # ``None`` = every sample is outside the surface, so nothing may be read at all.
@@ -331,6 +370,12 @@ class SurfaceProfileFrozenJobV1(SpatialDataDigestModel):
         measured = source.inspection.measurements
         if measured is None or measured.observed_crs_digest != grant.observed_crs_digest:
             raise ValueError("source CRS must match the grant")
+        vertical = self.vertical_reference
+        if vertical.provenance == "OBSERVED":
+            if vertical.observed != measured.observed_vertical_reference:
+                raise ValueError("an observed vertical reference must be the source's own")
+        elif measured.observed_vertical_reference is not None:
+            raise ValueError("a file that carries its own vertical reference takes no declaration")
         if not {"PREPARE", "READ"} <= set(grant.operations) or (
             "GENERAL_DATA_USE" not in grant.purposes
         ):
@@ -396,7 +441,7 @@ class SurfaceProfileReceiptV1(SpatialDataDigestModel):
     source_size_bytes: PositiveInt
     observed_crs_identifier: Text
     observed_crs_digest: Digest
-    observed_vertical_reference: ObservedVerticalReferenceV1
+    vertical_reference: SurfaceProfileVerticalReferenceV1
     result_digest: Digest
     read_window: SurfaceProfileReadWindowV1 | None
     window_cells_read: Annotated[int, Field(strict=True, ge=0, le=MAX_COUNTER)]

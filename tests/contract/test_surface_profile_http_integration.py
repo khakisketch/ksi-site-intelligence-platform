@@ -1093,3 +1093,115 @@ def test_actual_worker_reads_sealed_dsm_bytes_through_real_core_and_owners(tmp_p
         assert valid >= 2
     finally:
         flow.close()
+
+
+def _horizontal_only_geotiff(values: Any, *, transform: Any = None) -> bytes:
+    """수직 좌표계 없이 수평 EPSG:5186 만 담은 DSM. 일반 벤더 내보내기와 같은 모양이다."""
+    from analysis_api_local_fixture import _ORIGIN_X as origin_x
+    from analysis_api_local_fixture import _ORIGIN_Y as origin_y
+    from rasterio.crs import CRS
+    from rasterio.io import MemoryFile
+    from rasterio.transform import from_origin
+
+    with MemoryFile() as memory:
+        with memory.open(
+            driver="GTiff",
+            height=values.shape[0],
+            width=values.shape[1],
+            count=1,
+            dtype="float64",
+            crs=CRS.from_user_input("EPSG:5186"),
+            transform=transform or from_origin(origin_x, origin_y, 1.0, 1.0),
+        ) as dataset:
+            dataset.write(values, 1)
+        return memory.read()
+
+
+def test_a_declared_vertical_reference_opens_height_and_the_real_worker_reads_on_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """파일에 수직 기준이 없는 DSM: 선언 전에는 막히고, 선언하면 열리고, 철회하면 숫자가 닫힌다."""
+    import test_platform_core_http_integration as platform_flow
+
+    monkeypatch.setattr(platform_flow, "_geotiff_bytes", _horizontal_only_geotiff)
+    flow = _ReadyFlow(tmp_path)
+    try:
+        flow.seal()
+        flow.serve_and_measure()
+        assert flow.http is not None and flow.servers is not None
+        http = flow.http
+        submission_ref = build_external_reconstruction_submission_ref(
+            organization_id="org-a",
+            work_order_id=flow.current_order.work_order_id,
+            submission_id=flow.current_subject.submission_id,
+        )
+        decisions = (
+            f"/v1/observation-work-orders/{flow.current_order.work_order_id}/"
+            f"external-reconstruction-submissions/{submission_ref}/revisions/1/"
+            "use-decisions/single"
+        )
+        blocked = http.post(
+            decisions, headers=_reader_headers("height-before"), json={"use": "HEIGHT"}
+        )
+        assert blocked.json()["decision"]["verdict"] == "BLOCKED", blocked.text
+        assert blocked.json()["decision"]["reasons"] == ["VERTICAL_REFERENCE_UNKNOWN"]
+
+        ledger = (
+            f"/v1/sites/site-a/work-areas/{flow.area_id}/spatial-assets/{flow.asset_ref}"
+            "/vertical-reference"
+        )
+        state = http.get(ledger, headers=_reader_headers()).json()
+        assert state["observed"] is False and state["current"] is None
+        declared = http.post(
+            ledger + "/declarations",
+            headers=_reader_headers("declare-1"),
+            json={
+                "datum": "orthometric_kngeoid2018",
+                "unit": "metre",
+                "basis": "Terra에서 정표고(KNGeoid18)로 내보냄",
+                "expectedSequence": 0,
+            },
+        )
+        assert declared.status_code == 201, declared.text
+
+        decision_id = _height_decision_id(
+            http, flow.current_order, flow.current_subject, key="height-after"
+        )
+        issued = http.post(
+            flow.requester_base,
+            headers=_reader_headers("declared-job"),
+            json=flow.issue_body(flow.asset_ref, decision_id),
+        )
+        assert issued.status_code == 200, issued.text
+        job_id = issued.json()["jobId"]
+        assert _run_surface_worker(flow, flow.servers.core_origin) is True
+        status = http.get(f"{flow.requester_base}/{job_id}", headers=_reader_headers())
+        assert status.json()["executionState"] == "COMPLETED", status.text
+        vertical = status.json()["receipt"]["verticalReference"]
+        assert vertical["provenance"] == "DECLARED" and vertical["observed"] is None
+        assert (
+            vertical["declared"]["declarationId"] == declared.json()["declaration"]["declarationId"]
+        )
+        assert vertical["declared"]["unit"] == "metre"
+        released = http.get(f"{flow.requester_base}/{job_id}/result", headers=_reader_headers())
+        assert released.status_code == 200, released.text
+        assert any(s["elevationM"] is not None for s in released.json()["result"]["samples"])
+
+        # 철회하면 이 선언이 허락한 숫자는 더 내보내지 않고, 새 읽기도 열리지 않는다.
+        withdrawn = http.post(
+            ledger + "/withdrawals",
+            headers=_reader_headers("withdraw-1"),
+            json={"expectedSequence": 1},
+        )
+        assert withdrawn.status_code == 201, withdrawn.text
+        closed = http.get(f"{flow.requester_base}/{job_id}/result", headers=_reader_headers())
+        assert closed.status_code == 409 and "samples" not in closed.text
+        again = http.post(
+            flow.requester_base,
+            headers=_reader_headers("declared-job-2"),
+            json=flow.issue_body(flow.asset_ref, decision_id),
+        )
+        # 선언도 파일의 관측값도 없으니 이 엔진은 표고를 m 로 말할 근거가 없다.
+        assert again.status_code == 422 and again.json()["reason"] == "UNSUPPORTED_CRS", again.text
+    finally:
+        flow.close()

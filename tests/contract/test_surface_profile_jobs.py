@@ -29,6 +29,7 @@ from surface_profile_job_fixture import (
     genuine_answer,
     issue_request,
     later,
+    measured_source,
     profile_policy,
     profile_runtime,
     receipt_for,
@@ -688,3 +689,65 @@ def test_replay_rechecks_completed_report_before_serving_numbers(
     _rewrite(lane, records)
     with pytest.raises(SurfaceProfileJobRecoveryError):
         lane._open()  # noqa: SLF001 - 재시작 경계
+
+
+# ── 수직 기준 출처는 동결 입력이 정하고, 일꾼의 영수증은 그대로 되풀이해야 한다 ──────────────
+
+
+def _declared_lane(tmp_path: Path) -> Lane:
+    from surface_profile_job_fixture import declared_vertical
+
+    lane = Lane(tmp_path)
+    lane.authority.source = measured_source(observed_vertical=False)
+    lane.authority.declared = declared_vertical()
+    return lane
+
+
+def test_a_job_on_a_declaration_completes_when_the_receipt_repeats_the_frozen_provenance(
+    tmp_path: Path,
+) -> None:
+    lane = _declared_lane(tmp_path)
+    job_id = lane.issue().job_id
+    attempt = lane.lease(job_id)
+    job = lane.store.worker_input(
+        job_id=job_id, worker=worker(), attempt=attempt, now=NOW + later(1)
+    )
+    assert job.vertical_reference.provenance == "DECLARED"
+    result, receipt = lane.answer(job)
+    assert receipt.vertical_reference == job.vertical_reference
+    done = lane.complete(job_id, attempt, result, receipt)
+    assert done.execution_state.value == "COMPLETED"
+    assert done.receipt is not None and done.receipt.vertical_reference.provenance == "DECLARED"
+
+
+def test_a_receipt_that_changes_the_vertical_provenance_is_refused(tmp_path: Path) -> None:
+    from surface_profile_job_fixture import observed_vertical
+
+    lane = _declared_lane(tmp_path)
+    job_id = lane.issue().job_id
+    attempt = lane.lease(job_id)
+    job = lane.store.worker_input(
+        job_id=job_id, worker=worker(), attempt=attempt, now=NOW + later(1)
+    )
+    result, _ = lane.answer(job)
+    # 선언 위의 작업을 "파일의 관측값"이나 다른 선언으로 보고해도 거부한다.
+    from ksi_event_contracts.surface_profile_job import SurfaceProfileVerticalReferenceV1
+    from surface_profile_job_fixture import declared_vertical
+
+    claims = (
+        observed_vertical(measured_source()),
+        SurfaceProfileVerticalReferenceV1(
+            provenance="DECLARED", declared=declared_vertical(basis="다른 근거")
+        ),
+    )
+    for claim in claims:
+        bad = receipt_for(job, result, NOW + later(2), vertical_reference=claim)
+        assert _refusal(lambda b=bad: lane.complete(job_id, attempt, result, b)).reason == (
+            "INTEGRITY_MISMATCH"
+        )
+    assert (
+        lane.store.get(
+            job_id=job_id, principal=requester(), now=NOW + later(2)
+        ).execution_state.value
+        == "RUNNING"
+    )

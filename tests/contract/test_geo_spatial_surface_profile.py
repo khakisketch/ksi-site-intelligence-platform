@@ -717,6 +717,23 @@ def test_the_preflight_names_why_the_engine_cannot_read_a_measured_dsm(
     assert profile_support_blocker(_measured(**variant)) is reason
 
 
+def test_a_current_declaration_stands_in_only_for_the_missing_vertical_reference() -> None:
+    missing = _measured(vertical=False)
+    assert profile_support_blocker(missing) is SurfaceProfileErrorReason.UNSUPPORTED_CRS
+    assert profile_support_blocker(missing, vertical_declared=True) is None
+    # 선언은 수직 기준 자리만 채운다 — 엔진이 읽지 못하는 격자·좌표계를 열지 않는다.
+    assert (
+        profile_support_blocker(_measured(vertical=False, crs="EPSG:3857"), vertical_declared=True)
+        is SurfaceProfileErrorReason.UNSUPPORTED_CRS
+    )
+    assert (
+        profile_support_blocker(_measured(vertical=False, bands=3), vertical_declared=True)
+        is SurfaceProfileErrorReason.UNSUPPORTED_RASTER
+    )
+    # 파일이 스스로 갖고 있으면 선언 표시와 무관하다.
+    assert profile_support_blocker(_measured(), vertical_declared=False) is None
+
+
 def test_the_preflight_agrees_with_what_the_reader_actually_accepts(tmp_path: Path) -> None:
     """사전 확인이 통과시키는 파일은 읽을 수 있고, 거르는 파일은 읽기도 거부한다."""
     cases: list[tuple[str, dict[str, Any], dict[str, Any]]] = [

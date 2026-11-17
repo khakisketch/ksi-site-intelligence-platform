@@ -1393,6 +1393,62 @@
       "title": "SurfaceProfileCompleteRequestV1",
       "type": "object"
     },
+    "SurfaceProfileDeclaredVerticalV1": {
+      "additionalProperties": false,
+      "description": "The user's vertical-reference claim a job was frozen on.  Never an observation.\n\nFrozen with its record digest so the job proves exactly which claim licensed the read; a\ncorrected or withdrawn declaration is a different record and no longer licenses it.",
+      "properties": {
+        "declarationId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Declarationid",
+          "type": "string"
+        },
+        "declarationDigest": {
+          "maxLength": 71,
+          "minLength": 71,
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Declarationdigest",
+          "type": "string"
+        },
+        "datum": {
+          "$ref": "#/$defs/VerticalDatum"
+        },
+        "unit": {
+          "const": "metre",
+          "default": "metre",
+          "title": "Unit",
+          "type": "string"
+        },
+        "basis": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Basis",
+          "type": "string"
+        },
+        "declaredBy": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Declaredby",
+          "type": "string"
+        },
+        "declaredAt": {
+          "format": "date-time",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?(?:Z|\\+00:00)$",
+          "title": "Declaredat",
+          "type": "string"
+        }
+      },
+      "required": [
+        "declarationId",
+        "declarationDigest",
+        "datum",
+        "basis",
+        "declaredBy",
+        "declaredAt"
+      ],
+      "title": "SurfaceProfileDeclaredVerticalV1",
+      "type": "object"
+    },
     "SurfaceProfileErrorV1": {
       "additionalProperties": false,
       "properties": {
@@ -1604,6 +1660,9 @@
           "title": "Heightdecisiondigest",
           "type": "string"
         },
+        "verticalReference": {
+          "$ref": "#/$defs/SurfaceProfileVerticalReferenceV1"
+        },
         "policy": {
           "$ref": "#/$defs/SurfaceProfilePolicyV1"
         },
@@ -1675,6 +1734,7 @@
         "grant",
         "dataPolicyDigest",
         "heightDecisionDigest",
+        "verticalReference",
         "policy",
         "runtime",
         "readWindow",
@@ -2199,8 +2259,8 @@
           "title": "Observedcrsdigest",
           "type": "string"
         },
-        "observedVerticalReference": {
-          "$ref": "#/$defs/ObservedVerticalReferenceV1"
+        "verticalReference": {
+          "$ref": "#/$defs/SurfaceProfileVerticalReferenceV1"
         },
         "resultDigest": {
           "maxLength": 71,
@@ -2282,7 +2342,7 @@
         "sourceSizeBytes",
         "observedCrsIdentifier",
         "observedCrsDigest",
-        "observedVerticalReference",
+        "verticalReference",
         "resultDigest",
         "readWindow",
         "windowCellsRead",
@@ -2653,6 +2713,47 @@
       "title": "SurfaceProfileSampleV1",
       "type": "object"
     },
+    "SurfaceProfileVerticalReferenceV1": {
+      "additionalProperties": false,
+      "description": "Where the heights' vertical reference comes from: the file (observed) or a user (declared).\n\nExactly one of the two facts is present.  A declared basis is carried here, next to the\nnumbers, so no screen or export can present it as something the parser observed.",
+      "properties": {
+        "provenance": {
+          "enum": [
+            "OBSERVED",
+            "DECLARED"
+          ],
+          "title": "Provenance",
+          "type": "string"
+        },
+        "observed": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ObservedVerticalReferenceV1"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "declared": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SurfaceProfileDeclaredVerticalV1"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "provenance"
+      ],
+      "title": "SurfaceProfileVerticalReferenceV1",
+      "type": "object"
+    },
     "SurfaceProfileWorkerInputResponseV1": {
       "additionalProperties": false,
       "properties": {
@@ -2726,6 +2827,17 @@
       ],
       "title": "SurfaceProfileWorkerPendingPageV1",
       "type": "object"
+    },
+    "VerticalDatum": {
+      "description": "산출물이 어느 수직기준인지 — wire 계약에 실리는 값.\n\n``ELLIPSOIDAL_NATIVE`` 는 \"재구성 엔진이 낸 타원체고를 변환 없이 그대로\n쓴다\"는 뜻이다. ``ELLIPSOIDAL`` 과 굳이 나눈 이유는, 전자가 **의도적으로\n선택한 기준**이 아니라 **변환을 하지 못해 남은 상태**임을 소비자가 구분할\n수 있어야 하기 때문이다 — 나중에 격자가 확보되면 이 값이 남아 있는\n산출물이 곧 재처리 대상 목록이 된다.\n\n두 값의 이 차이는 **호환성 판정에는 영향이 없다** — 둘 다 타원체 기준의\n높이라 서로 빼도 되는 값이다(:func:`family_of`). 재처리 대상 표시와\n비교 가능성은 다른 축이다.\n\n**정표고 멤버가 지오이드 모델 이름을 달고 있는 이유.** 정표고가 서 있는\n기준면은 하나다(KVD1964 = 인천 평균해면, EPSG:5193). 그런데 그 높이를\n타원체고와 잇는 지오이드고 N 은 **격자 모델이 준다** — 즉 모델 이름은\n\"이 높이가 어느 격자로 되돌려지는가\"다. 모델이 다르면 국내 지점 대조에서\n수 cm 가 어긋나고(KNGeoid18↔24 실측 비교 0.001~0.071m), 그 크기는 체적\n집계 문턱(``DEFAULT_VOLUME_THRESHOLD_M`` = 0.05m)과 같은 자릿수다. 그래서\n모델을 이름에 박아 두고, **우리가 실제로 격자를 가진 모델만** 타원체고와\n잇는다(:data:`_GEOID_BRIDGEABLE_ORTHOMETRIC`).",
+      "enum": [
+        "ellipsoidal",
+        "ellipsoidal_native",
+        "orthometric_kngeoid2018",
+        "orthometric_kngeoid2024"
+      ],
+      "title": "VerticalDatum",
+      "type": "string"
     }
   },
   "$schema": "https://json-schema.org/draft/2020-12/schema"

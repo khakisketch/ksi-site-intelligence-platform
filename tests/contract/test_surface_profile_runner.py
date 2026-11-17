@@ -208,6 +208,42 @@ def test_worker_reads_sealed_bytes_and_reports_the_analytic_surface(tmp_path: Pa
         assert run(graph) is False  # 대기 중인 작업이 없다
 
 
+def test_a_job_on_a_declared_vertical_reference_runs_and_the_receipt_says_so(
+    tmp_path: Path,
+) -> None:
+    """파일에 수직 기준이 없어도 선언 위에서 읽고, 영수증이 선언임을 그대로 되풀이한다."""
+    from surface_profile_job_fixture import declared_vertical
+
+    raster = write_raster(tmp_path / "dsm.tif")
+    with object_server({"bytes": raster.read_bytes()}) as origin:
+        graph = lane(tmp_path, origin, raster, claimed={"observed_vertical_reference": None})
+        graph.lane.authority.declared = declared_vertical()
+        job_id = issue(graph)
+        assert run(graph) is True
+        state = view(graph, job_id)
+        assert state["executionState"] == "COMPLETED"
+        vertical = state["receipt"]["verticalReference"]
+        assert vertical["provenance"] == "DECLARED" and vertical["observed"] is None
+        assert vertical["declared"]["unit"] == "metre"
+        assert vertical["declared"]["declarationId"] == "vrd-" + "1" * 32
+        released = graph.http.get(BASE + "/" + job_id + "/result", headers=AUTH)
+        assert released.status_code == 200, released.text
+        assert released.json()["job"]["receipt"]["verticalReference"] == vertical
+
+
+def test_a_job_on_a_file_observation_says_observed_and_names_no_declaration(
+    tmp_path: Path,
+) -> None:
+    raster = write_raster(tmp_path / "dsm.tif")
+    with object_server({"bytes": raster.read_bytes()}) as origin:
+        graph = lane(tmp_path, origin, raster)
+        job_id = issue(graph)
+        assert run(graph) is True
+        vertical = view(graph, job_id)["receipt"]["verticalReference"]
+        assert vertical["provenance"] == "OBSERVED" and vertical["declared"] is None
+        assert vertical["observed"]["identifier"] == "EPSG:5773"
+
+
 def test_bytes_that_differ_from_the_sealed_digest_fail_the_job_without_a_result(
     tmp_path: Path,
 ) -> None:

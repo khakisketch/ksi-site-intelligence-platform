@@ -21,6 +21,7 @@ from ksi_event_contracts.surface_profile_job import (
     SurfaceProfileFrozenJobV1,
     SurfaceProfileJobViewV1,
     SurfaceProfileReadWindowV1,
+    SurfaceProfileVerticalReferenceV1,
 )
 from pydantic import ValidationError
 from spatial_data_fixture import ASSET, DIGEST, NOW, make_grant, make_policy
@@ -29,11 +30,13 @@ from surface_profile_job_fixture import (
     ORG,
     SITE,
     FakeAuthority,
+    declared_vertical,
     feature_revision,
     genuine_answer,
     issue_request,
     line,
     measured_source,
+    observed_vertical,
     profile_policy,
     profile_runtime,
     receipt_for,
@@ -47,6 +50,8 @@ JOB_ID = "spj-" + "0" * 32
 def _job(**overrides: Any) -> SurfaceProfileFrozenJobV1:
     feature = feature_revision()
     request = issue_request()
+    source = overrides.pop("source", None) or measured_source()
+    vertical = overrides.pop("vertical_reference", None) or observed_vertical(source)
     from ksi_event_contracts.surface_profile import CreateSurfaceProfileV1
 
     payload: dict[str, Any] = dict(
@@ -60,10 +65,11 @@ def _job(**overrides: Any) -> SurfaceProfileFrozenJobV1:
         profile_request=CreateSurfaceProfileV1(
             asset_ref=ASSET, line=feature.line, feature=feature.ref()
         ),
-        source=measured_source(),
+        source=source,
         grant=FakeAuthority(coordinator=None).grant,  # type: ignore[arg-type]
         data_policy_digest=make_policy().policy_digest,
         height_decision_digest=DIGEST,
+        vertical_reference=vertical,
         policy=profile_policy(),
         runtime=profile_runtime(),
         read_window=SurfaceProfileReadWindowV1(
@@ -182,7 +188,12 @@ def test_a_surface_profile_reads_a_dsm_and_never_an_ortho() -> None:
         ),
     )
     with pytest.raises(ValidationError, match="DSM"):
-        _job(source=ortho)
+        _job(
+            source=ortho,
+            vertical_reference=SurfaceProfileVerticalReferenceV1(
+                provenance="DECLARED", declared=declared_vertical()
+            ),
+        )
 
 
 def test_the_saved_line_must_belong_to_the_jobs_work_area() -> None:
@@ -374,3 +385,75 @@ def test_the_published_schema_matches_the_models_and_validates_wire_bodies() -> 
     wire = issue_request().model_dump(by_alias=True, mode="json")
     validator("CreateSurfaceProfileJobV1").validate(wire)
     assert list(validator("CreateSurfaceProfileJobV1").iter_errors({**wire, "line": {}}))
+
+
+# ── 수직 기준 출처: 파일의 관측값인가, 사용자의 선언인가 ──────────────────────────────
+
+
+def test_a_vertical_reference_names_exactly_one_provenance() -> None:
+    observed = observed_vertical(measured_source())
+    assert observed.provenance == "OBSERVED" and observed.declared is None
+    declared = SurfaceProfileVerticalReferenceV1(
+        provenance="DECLARED", declared=declared_vertical()
+    )
+    assert declared.observed is None
+    with pytest.raises(ValidationError):
+        SurfaceProfileVerticalReferenceV1(provenance="OBSERVED")
+    with pytest.raises(ValidationError):
+        SurfaceProfileVerticalReferenceV1(provenance="DECLARED")
+    with pytest.raises(ValidationError):
+        SurfaceProfileVerticalReferenceV1(
+            provenance="DECLARED", declared=declared_vertical(), observed=observed.observed
+        )
+    with pytest.raises(ValidationError):
+        SurfaceProfileVerticalReferenceV1(
+            provenance="OBSERVED", observed=observed.observed, declared=declared_vertical()
+        )
+
+
+def test_a_declared_vertical_is_metres_only_with_a_closed_datum() -> None:
+    with pytest.raises(ValidationError):
+        declared_vertical(unit="foot")
+    with pytest.raises(ValidationError):
+        declared_vertical(datum="EGM96")
+
+
+def test_a_job_on_a_file_observation_must_carry_that_very_observation() -> None:
+    source = measured_source()
+    other = SurfaceProfileVerticalReferenceV1(
+        provenance="OBSERVED",
+        observed=source.inspection.measurements.observed_vertical_reference.model_copy(
+            update={"basis": "다른 기준"}
+        ),
+    )
+    with pytest.raises(ValidationError, match="source's own"):
+        _job(vertical_reference=other)
+
+
+def test_a_declaration_is_only_for_a_file_without_a_vertical_reference() -> None:
+    declared = SurfaceProfileVerticalReferenceV1(
+        provenance="DECLARED", declared=declared_vertical()
+    )
+    with pytest.raises(ValidationError, match="takes no declaration"):
+        _job(vertical_reference=declared)  # 이 원본은 자기 수직 기준을 갖고 있다
+    job = _job(source=measured_source(observed_vertical=False), vertical_reference=declared)
+    assert job.vertical_reference.provenance == "DECLARED"
+    # 선언 위의 작업이 수직 기준 관측값을 주장해도 안 된다.
+    with pytest.raises(ValidationError):
+        _job(
+            source=measured_source(observed_vertical=False),
+            vertical_reference=observed_vertical(measured_source()),
+        )
+
+
+def test_the_job_digest_binds_the_vertical_provenance() -> None:
+    declared_a = SurfaceProfileVerticalReferenceV1(
+        provenance="DECLARED", declared=declared_vertical()
+    )
+    declared_b = SurfaceProfileVerticalReferenceV1(
+        provenance="DECLARED", declared=declared_vertical(basis="다른 근거")
+    )
+    source = measured_source(observed_vertical=False)
+    first = _job(source=source, vertical_reference=declared_a)
+    second = _job(source=source, vertical_reference=declared_b)
+    assert first.job_digest != second.job_digest

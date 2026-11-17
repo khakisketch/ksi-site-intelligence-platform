@@ -60,6 +60,7 @@ from ksi_event_contracts.surface_profile_job import (
     SurfaceProfileReceiptV1,
     SurfaceProfileResultViewV1,
     SurfaceProfileRuntimeV1,
+    SurfaceProfileVerticalReferenceV1,
 )
 from ksi_geo_spatial.crs import normalise_crs
 from ksi_geo_spatial.surface_profile import (
@@ -104,6 +105,7 @@ class SurfaceProfileAdmission:
     grant: SpatialDataGrantV1
     data_policy_digest: str
     height_decision_digest: str
+    vertical_reference: SurfaceProfileVerticalReferenceV1
     read_window: SurfaceProfileReadWindowV1 | None
 
 
@@ -579,6 +581,7 @@ class SurfaceProfileJobStore:
                     grant=admission.grant,
                     data_policy_digest=admission.data_policy_digest,
                     height_decision_digest=admission.height_decision_digest,
+                    vertical_reference=admission.vertical_reference,
                     policy=self._policy,
                     runtime=self._runtime,
                     read_window=admission.read_window,
@@ -942,7 +945,7 @@ class SurfaceProfileJobStore:
 
         source, policy = job.source, job.policy
         measured = source.inspection.measurements
-        if measured is None or measured.observed_vertical_reference is None:
+        if measured is None:
             raise refuse()
         if (
             receipt.receipt_digest != receipt.canonical_digest()
@@ -961,7 +964,7 @@ class SurfaceProfileJobStore:
             or receipt.source_size_bytes != source.observed_size_bytes
             or receipt.observed_crs_identifier != measured.observed_crs_identifier
             or receipt.observed_crs_digest != measured.observed_crs_digest
-            or receipt.observed_vertical_reference != measured.observed_vertical_reference
+            or receipt.vertical_reference != job.vertical_reference
             or receipt.read_window != job.read_window
             or receipt.result_digest != result.result_digest
             or receipt.window_cells_read != result.window_cells_read

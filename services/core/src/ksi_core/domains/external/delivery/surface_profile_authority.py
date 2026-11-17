@@ -31,14 +31,18 @@ from ksi_event_contracts.spatial_data_authority import SpatialDataGrantV1, Spati
 from ksi_event_contracts.surface_profile_job import (
     CreateSurfaceProfileJobV1,
     SurfaceProfileActivationV1,
+    SurfaceProfileDeclaredVerticalV1,
     SurfaceProfileFrozenJobV1,
     SurfaceProfilePolicyV1,
     SurfaceProfileReadWindowV1,
+    SurfaceProfileVerticalReferenceV1,
 )
+from ksi_event_contracts.vertical_reference_declaration import VerticalReferenceDeclarationV1
 from ksi_geo_spatial.crs import normalise_crs
 from ksi_geo_spatial.external_native_window_geometry import NativeWindowGeometryV1
 from ksi_geo_spatial.surface_profile import (
     SurfaceProfileError,
+    SurfaceProfileErrorReason,
     SurfaceProfilePlan,
     SurfaceProfilePolicy,
     locate_profile_samples,
@@ -95,6 +99,28 @@ class _Decisions(Protocol):
     def height_blocker_now(
         self, decision: ExternalUseDecisionV1, *, now: datetime
     ) -> str | None: ...
+
+
+class _Declarations(Protocol):
+    """사용자가 선언한 DSM 수직 기준 원장의 읽기 전용 창. 선언은 주장이며 관측과 섞지 않는다."""
+
+    def active_declaration(
+        self, *, organization_id: str, site_id: str, asset_ref: str, at: datetime | None = None
+    ) -> VerticalReferenceDeclarationV1 | None: ...
+
+
+def _declared_vertical(record: VerticalReferenceDeclarationV1) -> SurfaceProfileDeclaredVerticalV1:
+    assert record.datum is not None and record.basis is not None
+    assert record.declaration_digest is not None
+    return SurfaceProfileDeclaredVerticalV1(
+        declaration_id=record.declaration_id,
+        declaration_digest=record.declaration_digest,
+        datum=record.datum,
+        unit=record.unit,
+        basis=record.basis,
+        declared_by=record.declared_by,
+        declared_at=record.declared_at,
+    )
 
 
 # A refusal from an owning component keeps its meaning when this lane knows the word; otherwise it
@@ -184,6 +210,7 @@ class SurfaceProfileCoreAuthority:
         currentness: SpatialDataJobCurrentnessPort,
         data_policy: SpatialDataPolicyV1,
         activation: SurfaceProfileActivationV1,
+        declarations: _Declarations | None = None,
         profile_policy_digest: str,
         runtime_digest: str,
         coordinator: ExternalAuthorityCurrentnessCoordinator,
@@ -204,6 +231,7 @@ class SurfaceProfileCoreAuthority:
         self._grants = grants
         self._features = features
         self._decisions = decisions
+        self._declarations = declarations
         self._currentness = currentness
         self._data_policy = data_policy.model_copy(deep=True)
         self._activation = activation.model_copy(deep=True)
@@ -226,6 +254,33 @@ class SurfaceProfileCoreAuthority:
             and self._currentness is currentness
             and self.coordinator is coordinator
             and currentness.coordinator is coordinator
+        )
+
+    def _vertical_reference(
+        self, source: SpatialDataSourceV1
+    ) -> SurfaceProfileVerticalReferenceV1 | None:
+        """The vertical reference this read stands on: the file's own, else a current declaration.
+
+        The file's observation always wins and the declaration ledger is not even asked then.  With
+        neither there is nothing to stand on, and the answer is ``None``.
+        """
+        measured = source.inspection.measurements
+        assert measured is not None
+        if measured.observed_vertical_reference is not None:
+            return SurfaceProfileVerticalReferenceV1(
+                provenance="OBSERVED", observed=measured.observed_vertical_reference
+            )
+        if self._declarations is None:
+            return None
+        record = self._declarations.active_declaration(
+            organization_id=source.sealed_subject.organization_id,
+            site_id=source.site_id,
+            asset_ref=source.asset_ref,
+        )
+        if record is None:
+            return None
+        return SurfaceProfileVerticalReferenceV1(
+            provenance="DECLARED", declared=_declared_vertical(record)
         )
 
     # ── scope ────────────────────────────────────────────────────────────
@@ -267,9 +322,12 @@ class SurfaceProfileCoreAuthority:
         measured = source.inspection.measurements
         if source.artifact_kind != "dsm" or measured is None:
             raise SurfaceProfileDomainError("UNSUPPORTED_RASTER", 422)
-        blocker = profile_support_blocker(measured)
-        if blocker is not None:
-            raise SurfaceProfileDomainError(blocker.value, 422)
+        vertical = self._vertical_reference(source)
+        blocker = profile_support_blocker(measured, vertical_declared=vertical is not None)
+        if blocker is not None or vertical is None:
+            raise SurfaceProfileDomainError(
+                (blocker or SurfaceProfileErrorReason.UNSUPPORTED_CRS).value, 422
+            )
 
         decision = self._decisions.get_scoped(
             request.height_decision_id, principal=principal, site_id=site_id
@@ -330,6 +388,7 @@ class SurfaceProfileCoreAuthority:
             grant=grants[0],
             data_policy_digest=self._data_policy.policy_digest or "",
             height_decision_digest=decision.decision_digest,
+            vertical_reference=vertical,
             read_window=window,
         )
 
@@ -377,6 +436,13 @@ class SurfaceProfileCoreAuthority:
             or self._decisions.height_blocker_now(decision, now=now) is not None
         ):
             raise SurfaceProfileDomainError("HEIGHT_NOT_ELIGIBLE", 409)
+
+        # 선언 위에서 열린 작업은 그 선언 기록이 그대로 유효할 때만 계속된다. 정정·철회는 다른
+        # 기록이므로 이전 선언이 허락한 읽기는 이어지지 않는다(관측 위의 작업에는 묻지 않는다).
+        if job.vertical_reference.provenance == "DECLARED":
+            vertical = self._vertical_reference(source)
+            if vertical is None or vertical != job.vertical_reference:
+                raise SurfaceProfileDomainError("HEIGHT_NOT_ELIGIBLE", 409)
 
         window = job.read_window
         if window is None:

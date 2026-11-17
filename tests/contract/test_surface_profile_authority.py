@@ -38,6 +38,7 @@ from surface_profile_job_fixture import (
     ORIGIN_X,
     ORIGIN_Y,
     SITE,
+    declared_vertical,
     feature_revision,
     genuine_answer,
     issue_request,
@@ -358,6 +359,142 @@ def test_scope_errors_are_translated(rig: Rig) -> None:
     assert _reason(lambda: rig.authority.require_scope(SITE, AREA, requester())) == "NOT_FOUND"
 
 
+# ── 수직 기준: 파일의 관측값이 먼저, 없으면 현재 유효한 사용자 선언 ──────────────────
+
+
+class Declarations:
+    """선언 원장 대역: 현재 유효한 기록을 돌려주고, 물어본 횟수를 센다."""
+
+    def __init__(self) -> None:
+        self.record: Any = None
+        self.asked: list[dict[str, Any]] = []
+
+    def active_declaration(self, **kwargs: Any) -> Any:
+        self.asked.append(kwargs)
+        return self.record
+
+
+def _declaration(
+    *, datum: str = "orthometric_kngeoid2018", basis: str = "Terra 정표고(KNGeoid18)"
+) -> Any:
+    from datetime import UTC, datetime
+
+    from ksi_event_contracts.vertical_reference import VerticalDatum
+    from ksi_event_contracts.vertical_reference_declaration import VerticalReferenceDeclarationV1
+    from surface_profile_job_fixture import ASSET
+
+    return VerticalReferenceDeclarationV1(
+        declaration_id="vrd-" + "1" * 32,
+        site_id=SITE,
+        work_area_id=AREA,
+        asset_ref=ASSET,
+        sequence=1,
+        status="ACTIVE",
+        datum=VerticalDatum(datum),
+        basis=basis,
+        declared_by="operator-local",
+        declared_at=datetime(2026, 11, 17, tzinfo=UTC),
+    ).sealed()
+
+
+def _without_observed_vertical(rig: Rig) -> Declarations:
+    rig.sources.source = measured_source(observed_vertical=False)
+    ledger = Declarations()
+    rig.authority = rig.build(declarations=ledger)
+    return ledger
+
+
+def test_a_file_that_carries_its_own_vertical_reference_is_read_on_that_and_the_ledger_is_not_asked(
+    rig: Rig,
+) -> None:
+    ledger = Declarations()
+    ledger.record = _declaration()
+    rig.authority = rig.build(declarations=ledger)
+    admission = rig.admit()
+    assert admission.vertical_reference.provenance == "OBSERVED"
+    assert admission.vertical_reference.declared is None
+    assert admission.vertical_reference.observed == (
+        rig.sources.source.inspection.measurements.observed_vertical_reference
+    )
+    assert ledger.asked == []
+
+
+def test_without_a_vertical_reference_a_current_declaration_licenses_the_read(rig: Rig) -> None:
+    ledger = _without_observed_vertical(rig)
+    ledger.record = _declaration()
+    admission = rig.admit()
+    vertical = admission.vertical_reference
+    assert vertical.provenance == "DECLARED" and vertical.observed is None
+    assert vertical.declared is not None
+    assert vertical.declared.declaration_id == ledger.record.declaration_id
+    assert vertical.declared.declaration_digest == ledger.record.declaration_digest
+    assert (vertical.declared.datum, vertical.declared.unit) == (ledger.record.datum, "metre")
+    assert vertical.declared.basis == ledger.record.basis
+    (asked,) = ledger.asked
+    source = rig.sources.source
+    assert asked["organization_id"] == source.sealed_subject.organization_id
+    assert (asked["site_id"], asked["asset_ref"]) == (source.site_id, source.asset_ref)
+
+
+def test_neither_a_file_reference_nor_a_declaration_refuses_before_any_grant_is_asked(
+    rig: Rig,
+) -> None:
+    ledger = _without_observed_vertical(rig)
+    assert _reason(rig.admit) == "UNSUPPORTED_CRS"
+    assert len(ledger.asked) == 1 and rig.grants.selected == []
+
+
+def test_a_declaration_does_not_open_what_the_engine_cannot_read(rig: Rig) -> None:
+    ledger = _without_observed_vertical(rig)
+    ledger.record = _declaration()
+    source = rig.sources.source
+    measured = source.inspection.measurements.model_copy(update={"band_count": 3})
+    rig.sources.source = source.model_copy(
+        update={"inspection": source.inspection.model_copy(update={"measurements": measured})}
+    )
+    assert _reason(rig.admit) == "UNSUPPORTED_RASTER"
+
+
+def test_a_job_frozen_on_a_declaration_continues_only_while_that_exact_record_is_current(
+    rig: Rig, tmp_path: Path
+) -> None:
+    ledger = _without_observed_vertical(rig)
+    ledger.record = _declaration()
+    job = _job(rig, tmp_path)
+    assert job.vertical_reference.provenance == "DECLARED"
+    rig.authority.reprove(job, operation="PREPARE", now=NOW + later(2))
+    rig.authority.reprove(job, operation="READ", now=NOW + later(2))
+
+    ledger.record = _declaration(basis="정정한 근거")  # 다른 기록: 이전 선언이 허락한 읽기가 아니다
+    for operation in ("PREPARE", "READ"):
+        assert (
+            _reason(
+                lambda op=operation: rig.authority.reprove(job, operation=op, now=NOW + later(3))
+            )
+            == "HEIGHT_NOT_ELIGIBLE"
+        )
+    ledger.record = None  # 철회
+    assert (
+        _reason(lambda: rig.authority.reprove(job, operation="READ", now=NOW + later(3)))
+        == "HEIGHT_NOT_ELIGIBLE"
+    )
+
+
+def test_a_job_on_a_file_observation_never_asks_the_declaration_ledger_again(
+    rig: Rig, tmp_path: Path
+) -> None:
+    ledger = Declarations()
+    rig.authority = rig.build(declarations=ledger)
+    job = _job(rig, tmp_path)
+    rig.authority.reprove(job, operation="READ", now=NOW + later(2))
+    assert ledger.asked == []
+
+
+def test_the_declared_vertical_fixture_is_a_well_formed_claim() -> None:
+    claim = declared_vertical()
+    assert (claim.unit, claim.datum.value) == ("metre", "orthometric_kngeoid2018")
+
+
 # ── 이후의 모든 전이 ─────────────────────────────────────────────────────────
 
 
@@ -384,6 +521,7 @@ def _job(rig: Rig, tmp_path: Path) -> Any:
         grant=admission.grant,
         data_policy_digest=admission.data_policy_digest,
         height_decision_digest=admission.height_decision_digest,
+        vertical_reference=admission.vertical_reference,
         policy=rig.policy,
         runtime=rig.runtime,
         read_window=admission.read_window,
