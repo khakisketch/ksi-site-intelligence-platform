@@ -28,7 +28,7 @@ describe("ExternalObservationCreateForm path selection", () => {
     // Next step is explicit: the action stays disabled until scope is complete.
     const submit = screen.getByRole("button", { name: "관측 자료 등록 계속" }) as HTMLButtonElement;
     expect(submit.disabled).toBe(true);
-    expect(screen.getByText("작업 이름을 입력하고 비교할 작업구역을 하나 이상 선택하세요.")).toBeTruthy();
+    expect(screen.getByText("비교할 작업구역을 하나 이상 선택하세요.")).toBeTruthy();
     // The preserved comparison record stays a plain navigation link, not a competing action.
     expect(screen.getByRole("link", { name: /외부 비교 기록/ }).getAttribute("href")).toBe("/sites/site-1/observations");
   });
