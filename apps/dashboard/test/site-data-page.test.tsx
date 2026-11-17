@@ -166,6 +166,20 @@ describe("자료 섹션 화면 (ADR-KSI-043)", () => {
     expect(html).toContain("/sites/site-1/spatial-data-requests?workAreaId=area-1");
   });
 
+  it("검사를 마친 DSM 상세에서 공간 보기와 측정 선 단면 읽기로 이어진다", async () => {
+    const html = await render({ workAreaId: "area-1", assetRef });
+    expect(html).toContain('aria-label="이어서 할 일"');
+    expect(html).toContain('href="/sites/site-1?workAreaId=area-1"');
+    expect(html).toContain('href="/sites/site-1/measurements?workAreaId=area-1"');
+  });
+
+  it("검사로 확인되지 않은 자료에는 이어서 할 일을 보이지 않는다", async () => {
+    mocked.detail.mockResolvedValue(asset(assetRef, "north-dsm.tif", "area-1", "COMPLETED", "REJECTED"));
+    const html = await render({ workAreaId: "area-1", assetRef });
+    expect(html).not.toContain("이어서 할 일");
+    expect(html).not.toContain("/measurements?workAreaId=");
+  });
+
   it("고르지 않았으면 안내만 두고 상세를 읽지 않는다", async () => {
     const html = await render();
     expect(mocked.detail).not.toHaveBeenCalled();

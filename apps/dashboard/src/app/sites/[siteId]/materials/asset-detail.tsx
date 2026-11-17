@@ -8,6 +8,7 @@ import { Disclosure } from "@/components/ui/Disclosure";
 import { StateBadge } from "@/components/ui/StatusBadge";
 import { formatKoreanDateTime } from "@/lib/datetime";
 import { describeInspectionReason } from "@/lib/external-inspection-reasons";
+import { assetNextSteps } from "@/lib/asset-next-steps";
 import { formatBytesKo, formatCountKo } from "@/lib/number-format";
 import { capturePeriodTitle, dataKindLabel, isSupportedDataKind, isSupportedLifecycleState } from "@/lib/operator-language";
 import type { validateRegistrationHistory } from "@/lib/registration-history";
@@ -204,6 +205,7 @@ export function DetailBlock({ detail, workName, areaName, headline, compareHref,
   requestProps: { siteId: string; workAreaId: string; inspectedRaster: SpatialAssetCatalogItem["inspection"]["raster"]; canRequest: boolean };
 }) {
   const availability = availabilityStatus(detail);
+  const nextSteps = assetNextSteps(detail);
   const captureLine = capturePeriodTitle(detail.declared.captureStartedAt, detail.declared.captureEndedAt, {
     captureDate: detail.declared.captureDate ?? null,
   });
@@ -229,6 +231,9 @@ export function DetailBlock({ detail, workName, areaName, headline, compareHref,
       <CompactFact label="수직 기준" value={detail.inspection.raster?.observedVerticalReference?.identifier ?? "확인 불가"} />
       {detail.inspection.raster && <CompactFact label="파일 범위" value={`${formatCountKo(detail.inspection.raster.width)} × ${formatCountKo(detail.inspection.raster.height)} 픽셀`} />}
     </dl>
+    {nextSteps.length > 0 && <div className="flex flex-wrap gap-2" aria-label="이어서 할 일">
+      {nextSteps.map((step) => <Link key={step.key} href={step.href} className="btn">{step.label}</Link>)}
+    </div>}
     {availability.retry && retryHref && <p className="text-caption text-high-ink">처리 실패는 <Link className="tap-target underline" href={retryHref}>구역 자료 준비</Link>에서 확인하세요.</p>}
     {requestProps.canRequest && <AssetRequestDialog triggerLabel="이 자료 새로 준비 요청">{requestAction}</AssetRequestDialog>}
     {compareHref && <p className="text-caption">분석에 사용할 자료는 <Link href={compareHref} className="tap-target underline">분석 조건에서 선택</Link>하세요.</p>}
