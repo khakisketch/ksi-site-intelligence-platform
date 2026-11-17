@@ -40,8 +40,13 @@ describe("날짜별 단면 요청", () => {
     expect(init.headers["Idempotency-Key"]).toMatch(/^console-/);
   });
 
-  it("응답을 모르는 실패는 같은 키로 다시 보내고, 서버가 답한 뒤에는 새 키를 쓴다", async () => {
-    fetchMock.mockRejectedValueOnce(new Error("net")).mockResolvedValueOnce(reply(503, { code: "X" })).mockResolvedValueOnce(reply(200, {}));
+  it("결과를 모르는 실패(네트워크·5xx)는 같은 키로 다시 보내고, 4xx로 답한 뒤에는 새 키를 쓴다", async () => {
+    fetchMock
+      .mockRejectedValueOnce(new Error("net"))
+      .mockResolvedValueOnce(reply(503, { code: "X" }))
+      .mockResolvedValueOnce(reply(502, { code: "Y" }))
+      .mockResolvedValueOnce(reply(422, { code: "LINE_OUTSIDE_SURFACE" }))
+      .mockResolvedValueOnce(reply(200, {}));
     show([row()]);
     const press = () => fireEvent.click(screen.getByRole("button", { name: /단면 요청|다시 요청/ }));
     press();
@@ -49,10 +54,17 @@ describe("날짜별 단면 요청", () => {
     press();
     await screen.findByText(/지금은 요청할 수 없습니다/);
     press();
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
+    await waitFor(() => expect((screen.getByRole("button", { name: /단면 요청|다시 요청/ }) as HTMLButtonElement).disabled).toBe(false));
+    press();
+    await screen.findByText("이 선이 등록된 범위에 닿지 않았습니다.");
+    press();
     await waitFor(() => expect(nav.refresh).toHaveBeenCalled());
     const keys = fetchMock.mock.calls.map((call) => call[1].headers["Idempotency-Key"]);
-    expect(keys[0]).toBe(keys[1]);
-    expect(keys[2]).not.toBe(keys[1]);
+    expect(keys[0]).toBe(keys[1]); // 네트워크 오류 뒤
+    expect(keys[1]).toBe(keys[2]); // 503 뒤 — Core가 처리했는지 모른다
+    expect(keys[2]).toBe(keys[3]); // 502 뒤
+    expect(keys[4]).not.toBe(keys[3]); // 422로 서버가 답한 뒤에는 새 요청
   });
 
   it("높이 판정이 막히면 사유·다음 조치와 자료 상세 링크를 보인다", async () => {

@@ -100,7 +100,9 @@ export function ProfileRequests({
         router.refresh();
         return;
       }
-      keys.current.delete(fingerprint);
+      // 5xx는 Core가 이미 처리했는지 모르는 응답이다(예: 판정·작업은 만들었는데 응답 검사에서 502).
+      // 키를 두어 다음 시도가 같은 요청으로 가게 한다. 4xx는 서버가 답한 것이므로 새 키를 쓴다.
+      if (response.status < 500) keys.current.delete(fingerprint);
       const code = typeof body.code === "string" ? body.code : undefined;
       const decision = body.decision as { reasons?: unknown; remediations?: unknown } | undefined;
       if (code === "HEIGHT_NOT_ELIGIBLE" && decision && Array.isArray(decision.reasons) && Array.isArray(decision.remediations)) {
