@@ -1264,6 +1264,7 @@ def test_platform_opens_no_extra_journal(tmp_path: Path) -> None:
             "spatial-data-grants.jsonl",
             "spatial-data-jobs.jsonl",
             "spatial-data-metadata-audit.jsonl",
+            "vertical-reference-declarations.jsonl",
             "work-areas.jsonl",
             "work-inbox.jsonl",
         ]

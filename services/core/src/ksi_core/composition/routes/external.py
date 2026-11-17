@@ -33,6 +33,7 @@ def mount_external_routes(
     external_analysis_wiring: Any = None,
     external_delta_wiring: Any = None,
     external_masked_wiring: Any = None,
+    vertical_reference_declarations: Any = None,
 ) -> Any:
     if spatial_data is not None:
         from ksi_core.composition.spatial_data_graph import (
@@ -189,6 +190,33 @@ def mount_external_routes(
                     inspections=external_artifact_inspection_store,
                 )
             )
+
+            if vertical_reference_declarations is not None:
+                from datetime import UTC, datetime
+
+                from ksi_core.domains.external.ingress.spatial_asset_catalog import (
+                    SpatialAssetCatalog,
+                )
+                from ksi_core.domains.external.ingress.vertical_reference_declarations import (
+                    CatalogDeclarationAssetPort,
+                    mount_vertical_reference_declarations,
+                )
+
+                # 선언은 같은 카탈로그가 현재 권한 범위에서 말해 준 자료에만 한다.
+                mount_vertical_reference_declarations(
+                    app,
+                    vertical_reference_declarations,
+                    CatalogDeclarationAssetPort(
+                        SpatialAssetCatalog(
+                            reconstruction=external_reconstruction_store,
+                            work_orders=observation_work_order_store,
+                            sites=site_store,
+                            work_areas=work_area_store,
+                            inspections=external_artifact_inspection_store,
+                        )
+                    ),
+                    clock=lambda: datetime.now(UTC),
+                )
 
             from ksi_core.domains.external.ingress.site_spatial_workspace import (
                 build_site_spatial_workspace_router,

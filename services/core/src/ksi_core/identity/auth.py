@@ -750,6 +750,21 @@ _OIDC_SCOPED_OPERATOR_ROUTE_ALLOWLIST: frozenset[tuple[str, str]] = frozenset(
             "GET",
             "/v1/sites/{site_id}/work-areas/{work_area_id}/spatial-assets/{asset_ref}",
         ),
+        # Vertical reference declaration: the handler resolves the asset through the same scoped
+        # catalog (organization, allowedSiteIds, allowedWorkAreaIds) before any read or write, and
+        # writes need WORK_ORDERS_WRITE. Records are append-only; a declaration is a claim only.
+        (
+            "GET",
+            "/v1/sites/{site_id}/work-areas/{work_area_id}/spatial-assets/{asset_ref}/vertical-reference",
+        ),
+        (
+            "POST",
+            "/v1/sites/{site_id}/work-areas/{work_area_id}/spatial-assets/{asset_ref}/vertical-reference/declarations",
+        ),
+        (
+            "POST",
+            "/v1/sites/{site_id}/work-areas/{work_area_id}/spatial-assets/{asset_ref}/vertical-reference/withdrawals",
+        ),
         (
             "GET",
             "/v1/sites/{site_id}/work-areas/{work_area_id}/spatial-workspace-observations",

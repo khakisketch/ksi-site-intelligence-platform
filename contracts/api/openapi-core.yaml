@@ -3184,6 +3184,109 @@ paths:
         '404': { description: Site, WorkArea or saved line is absent or outside the caller scope }
         '401': { description: Authentication required }
         '403': { description: SITES_READ permission required }
+  /v1/sites/{site_id}/work-areas/{work_area_id}/spatial-assets/{asset_ref}/vertical-reference:
+    get:
+      tags: [vertical-reference-declarations]
+      summary: What is declared for one DSM's vertical reference
+      description: >-
+        SITES_READ required. `observed` is true when the file itself carries a vertical reference; then
+        no declaration is accepted. `current` is the active declaration, if any, and is a user claim,
+        never a parser observation. `history` lists every record, oldest first.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: site_id, required: true, schema: { type: string } }
+        - { in: path, name: work_area_id, required: true, schema: { type: string } }
+        - { in: path, name: asset_ref, required: true, schema: { type: string, pattern: '^ksa-v1-[0-9a-f]{64}$' } }
+      responses:
+        '200':
+          description: Declaration state
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/VerticalReferenceDeclarationStateViewV1' }
+        '404': { description: Site, WorkArea or asset is absent or outside the caller scope }
+        '401': { description: Authentication required }
+        '403': { description: SITES_READ permission required }
+  /v1/sites/{site_id}/work-areas/{work_area_id}/spatial-assets/{asset_ref}/vertical-reference/declarations:
+    post:
+      tags: [vertical-reference-declarations]
+      summary: Declare the vertical reference of a measured DSM
+      description: >-
+        WORK_ORDERS_WRITE required. A claim about a measured DSM whose file carries no vertical
+        reference; heights are metres only and the datum is the closed platform vocabulary. It never
+        changes the registered submission or any recorded decision. `expectedSequence` is the
+        sequence the caller saw (0 = none yet). The same Idempotency-Key with the same body returns
+        the original (200); another body is a 409. The raw key is not retained.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: site_id, required: true, schema: { type: string } }
+        - { in: path, name: work_area_id, required: true, schema: { type: string } }
+        - { in: path, name: asset_ref, required: true, schema: { type: string, pattern: '^ksa-v1-[0-9a-f]{64}$' } }
+        - { in: header, name: Idempotency-Key, required: true, schema: { type: string, minLength: 1, maxLength: 255 } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DeclareVerticalReferenceV1' }
+      responses:
+        '201':
+          description: DECLARED
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/VerticalReferenceDeclarationWriteViewV1' }
+        '200':
+          description: REPLAYED — the same request already happened
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/VerticalReferenceDeclarationWriteViewV1' }
+        '404': { description: Site, WorkArea or asset is absent or outside the caller scope }
+        '409':
+          description: NOT_A_DSM · NOT_MEASURED · OBSERVED_REFERENCE_PRESENT · SEQUENCE_CONFLICT · TOO_MANY_DECLARATIONS · IDEMPOTENCY_CONFLICT
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/VerticalReferenceDeclarationRefusalV1' }
+        '422': { description: Invalid body or Idempotency-Key }
+        '503': { description: STORE_UNAVAILABLE — Retry-After }
+        '401': { description: Authentication required }
+        '403': { description: WORK_ORDERS_WRITE permission required }
+  /v1/sites/{site_id}/work-areas/{work_area_id}/spatial-assets/{asset_ref}/vertical-reference/withdrawals:
+    post:
+      tags: [vertical-reference-declarations]
+      summary: Withdraw the current vertical reference declaration
+      description: >-
+        WORK_ORDERS_WRITE required. Appends a withdrawal record; nothing is deleted. Heights can no
+        longer be read from the withdrawn declaration. Same idempotency rules as declaring.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: site_id, required: true, schema: { type: string } }
+        - { in: path, name: work_area_id, required: true, schema: { type: string } }
+        - { in: path, name: asset_ref, required: true, schema: { type: string, pattern: '^ksa-v1-[0-9a-f]{64}$' } }
+        - { in: header, name: Idempotency-Key, required: true, schema: { type: string, minLength: 1, maxLength: 255 } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/WithdrawVerticalReferenceV1' }
+      responses:
+        '201':
+          description: WITHDRAWN
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/VerticalReferenceDeclarationWriteViewV1' }
+        '200':
+          description: REPLAYED — the same request already happened
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/VerticalReferenceDeclarationWriteViewV1' }
+        '404': { description: Site, WorkArea or asset is absent or outside the caller scope }
+        '409':
+          description: NOTHING_TO_WITHDRAW · SEQUENCE_CONFLICT · NOT_A_DSM · NOT_MEASURED · TOO_MANY_DECLARATIONS · IDEMPOTENCY_CONFLICT
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/VerticalReferenceDeclarationRefusalV1' }
+        '422': { description: Invalid body or Idempotency-Key }
+        '503': { description: STORE_UNAVAILABLE — Retry-After }
+        '401': { description: Authentication required }
+        '403': { description: WORK_ORDERS_WRITE permission required }
   /v1/sites/{site_id}/design-progress:
     get:
       summary: Zone-by-zone progress against the design surface (M4-C)
@@ -20306,6 +20409,18 @@ components:
       $ref: '../schemas/measurement-feature.v1.json#/$defs/MeasurementFeatureRevisionListViewV1'
     MeasurementFeatureRefusalV1:
       $ref: '../schemas/measurement-feature.v1.json#/$defs/MeasurementFeatureRefusalV1'
+    DeclareVerticalReferenceV1:
+      $ref: '../schemas/vertical-reference-declaration.v1.json#/$defs/DeclareVerticalReferenceV1'
+    WithdrawVerticalReferenceV1:
+      $ref: '../schemas/vertical-reference-declaration.v1.json#/$defs/WithdrawVerticalReferenceV1'
+    VerticalReferenceDeclarationV1:
+      $ref: '../schemas/vertical-reference-declaration.v1.json#/$defs/VerticalReferenceDeclarationV1'
+    VerticalReferenceDeclarationWriteViewV1:
+      $ref: '../schemas/vertical-reference-declaration.v1.json#/$defs/VerticalReferenceDeclarationWriteViewV1'
+    VerticalReferenceDeclarationStateViewV1:
+      $ref: '../schemas/vertical-reference-declaration.v1.json#/$defs/VerticalReferenceDeclarationStateViewV1'
+    VerticalReferenceDeclarationRefusalV1:
+      $ref: '../schemas/vertical-reference-declaration.v1.json#/$defs/VerticalReferenceDeclarationRefusalV1'
 
     SpatialDataRequestV1:
       $ref: '../schemas/spatial-data.v1.json#/$defs/SpatialDataRequestV1'

@@ -47,6 +47,9 @@ from ksi_core.composition.surface_profile_graph import (
     SurfaceProfileWiring,
     build_surface_profile_wiring,
 )
+from ksi_core.domains.external.ingress.vertical_reference_declarations import (
+    VerticalReferenceDeclarationStore,
+)
 from ksi_core.domains.sites.external_report_resolver import ExternalVolumeReportResolver
 from ksi_core.domains.sites.measurement_features import MeasurementFeatureStore
 from ksi_core.domains.sites.observation_work_orders import ObservationWorkOrderStore
@@ -87,6 +90,7 @@ class PlatformGraph:
     masked: MaskedQuantitativeWiring | None = None
     spatial_tasks: Any = None
     measurement_features: MeasurementFeatureStore | None = None
+    vertical_declarations: VerticalReferenceDeclarationStore | None = None
 
 
 def build_platform_graph(
@@ -163,6 +167,9 @@ def build_platform_graph(
             site_store.get_scoped(site_id, organization_id) is not None
         ),
         coordinator=coordinator,
+    )
+    vertical_declaration_store = VerticalReferenceDeclarationStore(
+        journal("vertical-reference-declarations.jsonl"), coordinator=coordinator
     )
     external_pre_work_order = build_external_pre_work_order_graph(
         journal=journal,
@@ -350,6 +357,7 @@ def build_platform_graph(
         masked=masked_lane,
         spatial_tasks=spatial_task_store,
         measurement_features=measurement_feature_store,
+        vertical_declarations=vertical_declaration_store,
     )
 
 

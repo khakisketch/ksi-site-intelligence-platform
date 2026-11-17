@@ -1373,6 +1373,15 @@
       "migrationStatus": "T3_NEW_MODULE"
     },
     {
+      "sourceModule": "ksi_core.domains.external.ingress.vertical_reference_declarations",
+      "activeCanonicalModule": "ksi_core.domains.external.ingress.vertical_reference_declarations",
+      "activePath": "ksi_core/domains/external/ingress/vertical_reference_declarations.py",
+      "plannedCanonicalModule": "ksi_core.domains.external.ingress.vertical_reference_declarations",
+      "plannedPath": "ksi_core/domains/external/ingress/vertical_reference_declarations.py",
+      "ownerBoundary": "domains/external/ingress",
+      "migrationStatus": "T3_NEW_MODULE"
+    },
+    {
       "sourceModule": "ksi_core.domains.external.delivery.storage_s3",
       "activeCanonicalModule": "ksi_core.domains.external.delivery.storage_s3",
       "activePath": "ksi_core/domains/external/delivery/storage_s3.py",
