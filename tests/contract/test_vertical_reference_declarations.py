@@ -293,14 +293,28 @@ def test_the_declaration_in_force_at_a_past_instant_is_answered_from_the_ledger(
     )
 
 
-def test_the_ledger_is_bounded(world: World) -> None:
-    for number in range(MAX_DECLARATIONS_PER_ASSET):
+def test_the_ledger_is_bounded_but_the_last_slot_always_withdraws(world: World) -> None:
+    usable = MAX_DECLARATIONS_PER_ASSET - 1  # 마지막 한 칸은 철회 전용
+    for number in range(usable):
         result = world.declare(
             key=f"k{number}", body=declare_body(basis=f"근거 {number}", expected=number)
         )
         assert result.verdict is DeclarationVerdict.DECLARED
-    over = world.declare(key="over", body=declare_body(expected=MAX_DECLARATIONS_PER_ASSET))
+    over = world.declare(key="over", body=declare_body(expected=usable))
     assert over.verdict is DeclarationVerdict.TOO_MANY_DECLARATIONS
+    assert world.current() is not None
+    # 상한 직전의 활성 선언도 철회할 수 있다 — 틀린 선언이 영구히 숫자를 열어 두지 않는다.
+    closed = world.withdraw(key="close", expected=usable)
+    assert closed.verdict is DeclarationVerdict.WITHDRAWN
+    assert world.current() is None
+    assert len(world.store.history(organization_id=ORG, site_id=SITE, asset_ref=ASSET)) == (
+        MAX_DECLARATIONS_PER_ASSET
+    )
+    # 이제 더 쓸 수 없다: 새 선언도, 철회할 것도 없다.
+    again = world.declare(key="again", body=declare_body(expected=MAX_DECLARATIONS_PER_ASSET))
+    assert again.verdict is DeclarationVerdict.TOO_MANY_DECLARATIONS
+    nothing = world.withdraw(key="nothing", expected=MAX_DECLARATIONS_PER_ASSET)
+    assert nothing.verdict is DeclarationVerdict.NOTHING_TO_WITHDRAW
 
 
 def test_another_organization_or_asset_sees_nothing(world: World) -> None:

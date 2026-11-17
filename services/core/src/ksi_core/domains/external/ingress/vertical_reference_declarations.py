@@ -348,10 +348,13 @@ class VerticalReferenceDeclarationStore:
                 )
             if declaration is None and (not history or history[-1].record.status != "ACTIVE"):
                 return DeclarationResult(DeclarationVerdict.NOTHING_TO_WITHDRAW)
-            if len(history) >= MAX_DECLARATIONS_PER_ASSET:
+            # 마지막 한 칸은 철회 전용이다. 상한에 닿은 뒤에도 활성 선언을 닫을 수 있어야
+            # 틀린 선언이 영구히 숫자를 열어 두지 않는다.
+            limit = MAX_DECLARATIONS_PER_ASSET - (1 if declaration is not None else 0)
+            if len(history) >= limit:
                 return DeclarationResult(
                     DeclarationVerdict.TOO_MANY_DECLARATIONS,
-                    detail=f"선언 기록이 상한 {MAX_DECLARATIONS_PER_ASSET}개다",
+                    detail=f"선언 기록이 상한 {MAX_DECLARATIONS_PER_ASSET}개다(마지막은 철회 전용)",
                 )
             number = len(history) + 1
             try:
