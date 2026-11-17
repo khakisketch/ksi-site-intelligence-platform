@@ -1403,6 +1403,8 @@ function ExternalReconstructionPanelState({ workOrderId, siteId = "", expectedEp
         {hashing && <button className="btn w-fit" onClick={cancelHash}>파일 확인 취소</button>}
         <p className="text-ink-2">{ortho ? `정사영상 ${formatFileSize(ortho.size)} 확인 완료` : dsm ? "정사영상 미선택" : "등록할 파일(정사영상 또는 DSM)을 선택하세요."}{dsm ? ` · DSM ${formatFileSize(dsm.size)} 확인 완료` : ortho ? " · DSM 미선택" : ""}</p>
         {hasFile && !formIsFrozen && metadataIssue !== null && <p role="status" className="text-ink-2">{metadataIssue}</p>}
+        {/* 버튼이 말없이 잠기지 않게 이유를 밝힌다. 촬영 기록 식별자가 없으면 새 등록을 시작할 수 없다. */}
+        {hasFile && !formIsFrozen && !resume && newIntentAllowed && !expectedEpochId && !busy && !hashing && !sealedComplete && <p role="alert" className="text-[13px] text-high-ink">이 작업의 촬영 기록이 아직 준비되지 않아 새 등록을 시작할 수 없습니다. 화면을 새로고침해도 같으면 작업 상세의 상태를 확인하거나 관리자에게 문의하세요.</p>}
         {/* 서버 확인 계정이 없으면 새 쓰기를 보내지 않는다. 버튼 잠금과 함께
             이유를 밝혀 두되, 등록 자료·검사 상태 읽기는 그대로 둔다. */}
         {!formIsFrozen && !continuity && <p role="alert" className="text-[13px] text-high-ink">계정을 확인하지 못해 산출물 등록을 시작할 수 없습니다. 연결과 로그인 상태를 확인한 뒤 화면을 다시 여세요. 등록 자료와 검사 상태 확인은 계속할 수 있습니다.</p>}

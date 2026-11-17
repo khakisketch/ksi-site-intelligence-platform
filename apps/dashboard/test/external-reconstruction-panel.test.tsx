@@ -891,6 +891,28 @@ describe("ExternalReconstructionPanel header auto-recognition (AX-3)", () => {
     expect(notes.textContent).toContain("‘mystery.tif’: 정사영상인지 DSM인지 파일에서 알 수 없습니다");
   });
 
+  it("explains why registration cannot start when the work order has no observation epoch", async () => {
+    registerFlow();
+    headerMock.read.mockResolvedValue(orthoHeader);
+    render(<ExternalReconstructionPanel workOrderId="work-1" expectedEpochId={null} canWrite accountIdentity={continuity} />);
+    await screen.findByText("아직 등록된 관측 자료가 없습니다.");
+    expect(screen.queryByText(/촬영 기록이 아직 준비되지 않아/)).toBeNull();
+    fireEvent.change(screen.getByLabelText("정사영상 GeoTIFF"), { target: { files: [new File(["x"], "ortho.tif")] } });
+    await screen.findByText(/정사영상 1 KB 확인 완료/);
+    expect(screen.getAllByText(/촬영 기록이 아직 준비되지 않아 새 등록을 시작할 수 없습니다/)).toHaveLength(1);
+    expect((screen.getByRole("button", { name: "자료 등록 마치기" }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("does not show the missing-epoch notice when the epoch is known", async () => {
+    registerFlow();
+    headerMock.read.mockResolvedValue(orthoHeader);
+    render(<ExternalReconstructionPanel workOrderId="work-1" expectedEpochId="epoch-1" canWrite accountIdentity={continuity} />);
+    await screen.findByText("아직 등록된 관측 자료가 없습니다.");
+    fireEvent.change(screen.getByLabelText("정사영상 GeoTIFF"), { target: { files: [new File(["x"], "ortho.tif")] } });
+    await screen.findByText(/정사영상 1 KB 확인 완료/);
+    expect(screen.queryByText(/촬영 기록이 아직 준비되지 않아/)).toBeNull();
+  });
+
   it("does not offer the drop zone without write permission", async () => {
     registerFlow();
     headerMock.read.mockResolvedValue(orthoHeader);
