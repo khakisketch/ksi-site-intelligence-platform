@@ -12,6 +12,10 @@ from ksi_core.auth import Principal, PrincipalKind, Role
 from ksi_core.domains.external.quantity.external_single_volume_authorities import (
     ExternalSingleVolumeAuthority,
 )
+from ksi_core.domains.external.quantity.external_use_evaluator import (
+    PAIR_REASON_REMEDIATIONS,
+    CoreExternalUseDecisionHistoryVerifier,
+)
 from ksi_core.durable_journal import DurableJournal
 from ksi_core.external_artifact_inspections import PublicInspectionSnapshot
 from ksi_core.external_authority_currentness import ExternalAuthorityCurrentnessCoordinator
@@ -35,6 +39,9 @@ from ksi_event_contracts.external_artifact_validation import (
     ExternalArtifactInspectionReportV1,
     ExternalPairUseDecisionV1,
     ExternalValidationPolicyV1,
+    NodataRepresentation,
+    ObservedVerticalReferenceV1,
+    RasterMeasurementsV1,
     SealedArtifactBindingV1,
     SealedExternalSubjectV1,
     SealedZoneReferenceV1,
@@ -258,6 +265,7 @@ def _registry(
     sealed_subject: SealedExternalSubjectV1,
     *,
     coordinator: ExternalAuthorityCurrentnessCoordinator | None = None,
+    uses: tuple[str, ...] = ("DISPLAY", "HEIGHT"),
 ) -> tuple[ExternalValidationPolicyRegistry, ExternalValidationPolicyV1]:
     template = policy_template()
     authority = PolicyAuthorityRecord(
@@ -265,7 +273,7 @@ def _registry(
         policy_version=template.version,
         authorized_policy_body_digest=authorized_policy_body_digest(template),
         permitted_subjects=(sealed_subject,),
-        permitted_uses=("DISPLAY", "HEIGHT"),
+        permitted_uses=uses,
         authorized_actor_ids=("authority",),
         active_from=NOW - timedelta(minutes=1),
         active_until=NOW + timedelta(days=14),
@@ -492,7 +500,9 @@ def test_display_evaluation_rechecks_the_current_inspection_snapshot_before_appe
     assert decision.verdict is DecisionVerdict.BLOCKED
 
 
-def test_height_is_explicitly_blocked_and_exact_retry_reads_history(tmp_path: Path) -> None:
+def test_height_without_a_measured_dsm_is_blocked_and_exact_retry_reads_history(
+    tmp_path: Path,
+) -> None:
     evaluator = _evaluator(tmp_path, receipt=None)
     sealed_subject = subject()
 
@@ -512,7 +522,8 @@ def test_height_is_explicitly_blocked_and_exact_retry_reads_history(tmp_path: Pa
     )
 
     assert first.verdict is DecisionVerdict.BLOCKED
-    assert first.reasons == ("HEIGHT_PRODUCT_DEFINITION_UNRESOLVED",)
+    assert first.reasons == ("DSM_MEASUREMENT_UNAVAILABLE",)
+    assert first.remediations == ("MEASURE_DECLARED_DSM",)
     assert retried == first
 
 
@@ -1143,3 +1154,253 @@ def test_single_volume_requires_a_zone_and_does_not_collide_with_display(tmp_pat
             principal=_principal(),
             now=NOW,
         )
+
+
+# ── HEIGHT: 한 격자의 높이를 읽을 수 있는지 — 체적·두 시점 비교 판정이 아니다 ──────────────
+
+
+def _dsm_measurements(
+    *, vertical: bool = True, dtype: str = "float32", band_count: int = 1
+) -> RasterMeasurementsV1:
+    return RasterMeasurementsV1(
+        observed_crs_identifier="EPSG:5186",
+        observed_crs_digest=digest("c"),
+        observed_vertical_reference=(
+            ObservedVerticalReferenceV1(identifier="EPSG:5773", basis="EGM96 height")
+            if vertical
+            else None
+        ),
+        transform=(1.0, 0.0, 0.0, 0.0, -1.0, 2.0),
+        footprint_wkt="POLYGON((0 0,2 0,2 2,0 2,0 0))",
+        footprint_digest=digest("c"),
+        width=2,
+        height=2,
+        band_count=band_count,
+        dtype=dtype,
+        layout="striped",
+        nodata_representation=NodataRepresentation.NONE,
+        valid_pixel_count=4,
+    )
+
+
+def _report_with_dsm_outcome(
+    original: ExternalArtifactInspectionReportV1, outcome: ArtifactInspectionOutcomeV1
+) -> ExternalArtifactInspectionReportV1:
+    payload = original.measurement_payload.model_copy(
+        update={
+            "outcomes": tuple(
+                outcome if item.artifact_id == "dsm" else item
+                for item in original.measurement_payload.outcomes
+            )
+        },
+        deep=True,
+    )
+    return original.model_copy(
+        update={
+            "measurement_payload": payload,
+            "measurement_payload_digest": None,
+            "report_digest": None,
+        },
+        deep=True,
+    ).sealed()
+
+
+class _HeightWorld:
+    """One subject whose manifest has a DSM; the report decides what was measured."""
+
+    def __init__(
+        self,
+        tmp_path: Path,
+        *,
+        measurements: RasterMeasurementsV1 | None = None,
+        measured: bool = True,
+        uses: tuple[str, ...] = ("DISPLAY", "HEIGHT"),
+        withdraw_after_initial_snapshot: bool = False,
+        with_receipt: bool = False,
+    ) -> None:
+        self.subject = subject(include_dsm=True)
+        self.coordinator = ExternalAuthorityCurrentnessCoordinator()
+        self.registry, self.policy = _registry(
+            tmp_path, self.subject, coordinator=self.coordinator, uses=uses
+        )
+        base = report(request_id="request-1", policy=self.policy, include_dsm=True)
+        outcome = ArtifactInspectionOutcomeV1(
+            artifact_id="dsm",
+            observed_sha256=digest("d"),
+            outcome=ArtifactOutcome.MEASURED if measured else ArtifactOutcome.REJECTED,
+            reason=None if measured else "UNSUPPORTED_RASTER",
+            measurements=(measurements or _dsm_measurements()) if measured else None,
+        )
+        self.report = _report_with_dsm_outcome(base, outcome)
+        self.reconstruction = _Reconstruction(self.subject, self.coordinator)
+        self.reconstruction._revision = SimpleNamespace(  # noqa: SLF001 - fixture wiring
+            manifest=sealed_manifest(include_dsm=True)
+        )
+        self.inspections = _Inspections(
+            self.subject,
+            self.report,
+            _receipt(self.report, self.policy) if with_receipt else None,
+            self.coordinator,
+            withdraw_after_initial_snapshot=withdraw_after_initial_snapshot,
+        )
+        self.validations = ExternalEvidenceValidationStore(
+            DurableJournal(tmp_path / "validations.jsonl"),
+            evidence=_Evidence(self.coordinator),
+            policy_registry=self.registry,
+            coordinator=self.coordinator,
+            clock=lambda: NOW,
+        )
+        self.journal_path = tmp_path / "decisions.jsonl"
+        self.evaluator = ExternalUseEvaluator(
+            decisions=ExternalUseDecisionStore(
+                DurableJournal(self.journal_path),
+                coordinator=self.coordinator,
+                history_verifier=_SyntheticHistoryVerifier(),
+            ),
+            reconstruction=self.reconstruction,  # type: ignore[arg-type]
+            inspections=self.inspections,
+            policy_registry=self.registry,
+            evidence_validations=self.validations,
+            coordinator=self.coordinator,
+        )
+
+    def verifier(self) -> CoreExternalUseDecisionHistoryVerifier:
+        return CoreExternalUseDecisionHistoryVerifier(
+            reconstruction=self.reconstruction,  # type: ignore[arg-type]
+            inspections=self.inspections,
+            policy_registry=self.registry,
+            evidence_validations=self.validations,
+        )
+
+    def height(self, key: str = "height-1") -> Any:
+        return self.evaluator.request_single(
+            self.subject, use="HEIGHT", idempotency_key=key, principal=_principal(), now=NOW
+        )
+
+
+def test_height_is_eligible_for_a_measured_dsm_with_a_vertical_reference(tmp_path: Path) -> None:
+    world = _HeightWorld(tmp_path)
+    decision = world.height()
+
+    assert decision.verdict is DecisionVerdict.ELIGIBLE
+    assert decision.reasons == ("HEIGHT_ELIGIBLE",)
+    assert decision.remediations == ("CURRENT_DEPENDENCIES_RETAINED",)
+    assert decision.policy_digest == world.policy.policy_digest
+    assert decision.inspection_report_digest == world.report.report_digest
+    # 한 격자를 읽는 판정이다 — 표시 영수증·증거·구역·매핑을 요구하지도 묶지도 않는다.
+    assert decision.sanitized_display_receipt_digest is None
+    assert decision.evidence_record_digests == ()
+    assert world.height() == decision
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "reason", "remediation"),
+    [
+        (dict(measured=False), "DSM_MEASUREMENT_UNAVAILABLE", "MEASURE_DECLARED_DSM"),
+        (
+            dict(measurements=_dsm_measurements(dtype="uint8")),
+            "DSM_MEASUREMENT_UNAVAILABLE",
+            "MEASURE_DECLARED_DSM",
+        ),
+        (
+            dict(measurements=_dsm_measurements(band_count=3)),
+            "DSM_MEASUREMENT_UNAVAILABLE",
+            "MEASURE_DECLARED_DSM",
+        ),
+        (
+            dict(measurements=_dsm_measurements(vertical=False)),
+            "VERTICAL_REFERENCE_UNKNOWN",
+            "OBSERVE_VERTICAL_REFERENCE",
+        ),
+        (dict(uses=("DISPLAY",)), "POLICY_UNAVAILABLE", "AUTHORIZE_POLICY"),
+        (
+            dict(withdraw_after_initial_snapshot=True),
+            "INSPECTION_REPORT_BINDING_INVALID",
+            "COMPLETE_CURRENT_INSPECTION",
+        ),
+    ],
+)
+def test_height_names_the_exact_blocker_and_never_guesses_a_unit(
+    tmp_path: Path, kwargs: dict[str, Any], reason: str, remediation: str
+) -> None:
+    decision = _HeightWorld(tmp_path, **kwargs).height()
+
+    assert decision.verdict is DecisionVerdict.BLOCKED
+    assert decision.reasons == (reason,)
+    assert decision.remediations == (remediation,)
+    assert decision.policy_digest is None and decision.inspection_report_digest is None
+
+
+def test_an_ortho_only_measurement_is_not_height_evidence(tmp_path: Path) -> None:
+    evaluator = _evaluator(tmp_path, receipt=None)
+    decision = evaluator.request_single(
+        subject(), use="HEIGHT", idempotency_key="h", principal=_principal(), now=NOW
+    )
+    assert decision.reasons == ("DSM_MEASUREMENT_UNAVAILABLE",)
+
+
+def test_the_catalog_explains_every_height_blocker() -> None:
+    from ksi_core.domains.external.quantity.external_use_blockers import (
+        load_external_use_blocker_catalog,
+    )
+
+    catalog = load_external_use_blocker_catalog()
+    for code in ("DSM_MEASUREMENT_UNAVAILABLE", "VERTICAL_REFERENCE_UNKNOWN"):
+        assert code in catalog.reasons
+        assert PAIR_REASON_REMEDIATIONS[code] in catalog.remediations
+
+
+def test_an_eligible_height_decision_survives_replay_from_retained_sources(
+    tmp_path: Path,
+) -> None:
+    world = _HeightWorld(tmp_path)
+    decision = world.height()
+    assert world.verifier().verify(decision) is True
+
+    world.evaluator._decisions._journal.close()  # noqa: SLF001 - reopen like a restart
+    reopened = ExternalUseDecisionStore(
+        DurableJournal(world.journal_path),
+        coordinator=world.coordinator,
+        history_verifier=world.verifier(),
+    )
+    assert reopened is not None  # 복구가 재검증을 통과했다
+
+
+def test_replay_refuses_height_history_whose_sources_no_longer_support_it(
+    tmp_path: Path,
+) -> None:
+    world = _HeightWorld(tmp_path / "a")
+    decision = world.height()
+    # The same decision, replayed where the retained report has no vertical reference.
+    other = _HeightWorld(tmp_path / "b", measurements=_dsm_measurements(vertical=False))
+    forged = decision.model_copy(
+        update={
+            "inspection_report_digest": other.report.report_digest,
+            "decision_digest": None,
+        }
+    ).sealed()
+    assert other.verifier().verify(forged) is False
+
+    nothing = _HeightWorld(tmp_path / "c")
+    nothing.inspections._subject = subject()  # noqa: SLF001 - no retained report for it
+    assert nothing.verifier().verify(decision) is False
+
+
+def test_display_decisions_are_unchanged_by_opening_height(tmp_path: Path) -> None:
+    sealed_subject = subject()
+    registry, policy = _registry(tmp_path, sealed_subject)
+    accepted_report = report(request_id="request-1", policy=policy)
+    decision = _evaluator(
+        tmp_path / "evaluator", receipt=_receipt(accepted_report, policy)
+    ).request_single(
+        sealed_subject, use="DISPLAY", idempotency_key="d", principal=_principal(), now=NOW
+    )
+    assert decision.reasons == ("DISPLAY_ELIGIBLE",)
+    assert decision.remediations == ("DISPLAY_RECEIPT_RETAINED",)
+    assert decision.sanitized_display_receipt_digest is not None
+
+
+def test_height_never_binds_a_display_receipt_even_when_one_exists(tmp_path: Path) -> None:
+    decision = _HeightWorld(tmp_path, with_receipt=True).height()
+    assert decision.verdict is DecisionVerdict.ELIGIBLE
+    assert decision.sanitized_display_receipt_digest is None
