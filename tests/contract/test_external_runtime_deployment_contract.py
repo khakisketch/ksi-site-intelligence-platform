@@ -218,7 +218,12 @@ def _run_validator_as_configured_user(
         # DIAG(임시): 샌드박스 안의 uid 매핑·capability를 stderr로 남긴다.
         "{ echo DIAG-uid_map; cat /proc/self/uid_map; "
         "grep -E '^(Uid|Cap|NoNewPrivs|Seccomp)' /proc/self/status; "
-        "echo DIAG-bwrap; /usr/bin/bwrap --version; } >&2; exec \"$@\"",
+        "echo DIAG-bwrap; /usr/bin/bwrap --version; "
+        "echo DIAG-lsm; cat /sys/kernel/security/lsm; echo; "
+        "echo DIAG-label; cat /proc/self/attr/current; "
+        "echo DIAG-setpriv-plain; /usr/bin/setpriv --reuid=10001 /usr/bin/id; "
+        "echo DIAG-setpriv-clear; /usr/bin/setpriv --reuid=10001 --regid=10001 --clear-groups "
+        "/usr/bin/id; echo DIAG-end; } >&2; exec \"$@\"",
         "sh",
         setpriv,
         f"--reuid={uid}",
