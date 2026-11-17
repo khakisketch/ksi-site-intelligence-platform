@@ -1130,19 +1130,12 @@ def test_a_declared_vertical_reference_opens_height_and_the_real_worker_reads_on
         flow.serve_and_measure()
         assert flow.http is not None and flow.servers is not None
         http = flow.http
-        submission_ref = build_external_reconstruction_submission_ref(
-            organization_id="org-a",
-            work_order_id=flow.current_order.work_order_id,
-            submission_id=flow.current_subject.submission_id,
+        height = (
+            f"/v1/sites/site-a/work-areas/{flow.area_id}/spatial-assets/{flow.asset_ref}"
+            "/height-decision"
         )
-        decisions = (
-            f"/v1/observation-work-orders/{flow.current_order.work_order_id}/"
-            f"external-reconstruction-submissions/{submission_ref}/revisions/1/"
-            "use-decisions/single"
-        )
-        blocked = http.post(
-            decisions, headers=_reader_headers("height-before"), json={"use": "HEIGHT"}
-        )
+        blocked = http.post(height, headers=_reader_headers("height-before"))
+        assert blocked.status_code == 201, blocked.text
         assert blocked.json()["decision"]["verdict"] == "BLOCKED", blocked.text
         assert blocked.json()["decision"]["reasons"] == ["VERTICAL_REFERENCE_UNKNOWN"]
 
@@ -1164,9 +1157,10 @@ def test_a_declared_vertical_reference_opens_height_and_the_real_worker_reads_on
         )
         assert declared.status_code == 201, declared.text
 
-        decision_id = _height_decision_id(
-            http, flow.current_order, flow.current_subject, key="height-after"
-        )
+        after = http.post(height, headers=_reader_headers("height-after"))
+        assert after.status_code == 201, after.text
+        assert after.json()["decision"]["verdict"] == "ELIGIBLE", after.text
+        decision_id = after.json()["decision"]["decisionId"]
         issued = http.post(
             flow.requester_base,
             headers=_reader_headers("declared-job"),
@@ -1203,5 +1197,39 @@ def test_a_declared_vertical_reference_opens_height_and_the_real_worker_reads_on
         )
         # 선언도 파일의 관측값도 없으니 이 엔진은 표고를 m 로 말할 근거가 없다.
         assert again.status_code == 422 and again.json()["reason"] == "UNSUPPORTED_CRS", again.text
+    finally:
+        flow.close()
+
+
+def test_the_asset_height_decision_route_feeds_a_job_for_a_file_with_its_own_vertical_reference(
+    tmp_path: Path,
+) -> None:
+    """파일이 수직 기준을 담은 DSM: 자료 참조로 받은 판정이 그대로 단면 작업의 근거가 된다."""
+    flow = _ReadyFlow(tmp_path)
+    try:
+        flow.seal()
+        flow.serve_and_measure()
+        assert flow.http is not None
+        http = flow.http
+        height = (
+            f"/v1/sites/site-a/work-areas/{flow.area_id}/spatial-assets/{flow.asset_ref}"
+            "/height-decision"
+        )
+        first = http.post(height, headers=_reader_headers("asset-height"))
+        again = http.post(height, headers=_reader_headers("asset-height"))
+        assert first.status_code == 201, first.text
+        assert first.json()["decision"]["verdict"] == "ELIGIBLE", first.text
+        assert again.json()["decision"]["decisionId"] == first.json()["decision"]["decisionId"]
+        issued = http.post(
+            flow.requester_base,
+            headers=_reader_headers("asset-height-job"),
+            json=flow.issue_body(flow.asset_ref, first.json()["decision"]["decisionId"]),
+        )
+        assert issued.status_code == 200, issued.text
+        # 다른 조직과 모르는 자료에는 같은 404다.
+        foreign_headers = {"Authorization": "Bearer " + _FOREIGN_TOKEN, "Idempotency-Key": "x"}
+        assert http.post(height, headers=foreign_headers).status_code == 404
+        unknown = height.replace(flow.asset_ref, "ksa-v1-" + "c" * 64)
+        assert http.post(unknown, headers=_reader_headers("y")).status_code == 404
     finally:
         flow.close()

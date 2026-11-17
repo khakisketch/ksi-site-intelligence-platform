@@ -413,6 +413,43 @@ class SpatialAssetCatalog:
             raise HTTPException(status_code=404, detail=_NOT_FOUND)
         return item.model_copy(update={"inspection": self._inspection(record, item.artifact_id)})
 
+    def revision_for(
+        self, site_id: str, work_area_id: str, asset_ref: str, principal: Principal
+    ) -> tuple[SpatialAssetCatalogItemV1, ExternalReconstructionRevision] | None:
+        """One exact asset and the retained revision it names, inside the caller's current scope.
+
+        Scope is checked first and an out-of-scope caller gets the same 404 as every catalog read.
+        ``None`` only means the reference names nothing visible; the item carries no inspection.
+        """
+        if _ASSET_REF_RE.fullmatch(asset_ref) is None:
+            return None
+        candidate = next(
+            (
+                item
+                for item in self.items(site_id, work_area_id, principal)
+                if item.asset_ref == asset_ref
+            ),
+            None,
+        )
+        if candidate is None:
+            return None
+        submission_id = self._reconstruction.resolve_submission_ref(
+            candidate.work_order_id,
+            candidate.submission_ref,
+            organization_id=principal.organization_id,
+            site_id=candidate.site_id,
+        )
+        if submission_id is None:
+            return None
+        record = self._reconstruction.get(
+            candidate.work_order_id,
+            submission_id,
+            candidate.revision,
+            organization_id=principal.organization_id,
+            site_id=candidate.site_id,
+        )
+        return (candidate, record) if record is not None else None
+
     def describe(
         self, site_id: str, work_area_id: str, asset_ref: str, principal: Principal
     ) -> SpatialAssetDescriptionV1:

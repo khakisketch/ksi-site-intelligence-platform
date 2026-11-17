@@ -765,6 +765,13 @@ _OIDC_SCOPED_OPERATOR_ROUTE_ALLOWLIST: frozenset[tuple[str, str]] = frozenset(
             "POST",
             "/v1/sites/{site_id}/work-areas/{work_area_id}/spatial-assets/{asset_ref}/vertical-reference/withdrawals",
         ),
+        # HEIGHT use decision by asset reference: the handler resolves the asset through the same
+        # scoped catalog (organization, allowedSiteIds, allowedWorkAreaIds) before evaluating, needs
+        # SITES_WRITE and a human operator, and only ever evaluates the existing HEIGHT rule.
+        (
+            "POST",
+            "/v1/sites/{site_id}/work-areas/{work_area_id}/spatial-assets/{asset_ref}/height-decision",
+        ),
         (
             "GET",
             "/v1/sites/{site_id}/work-areas/{work_area_id}/spatial-workspace-observations",

@@ -320,6 +320,28 @@ def mount_external_routes(
             reconstruction=external_reconstruction_store,
             work_orders=observation_work_order_store,
         )
+        if site_store is not None and work_area_store is not None:
+            from ksi_core.domains.external.ingress.spatial_asset_catalog import (
+                SpatialAssetCatalog as _HeightCatalog,
+            )
+            from ksi_core.domains.external.quantity.asset_height_decision import (
+                build_asset_height_decision_router,
+            )
+
+            # 단면 요청이 판정 식별자를 얻는 길: 같은 카탈로그 범위 안의 자료에만 닿는다.
+            app.include_router(
+                build_asset_height_decision_router(
+                    external_use_evaluator,
+                    _HeightCatalog(
+                        reconstruction=external_reconstruction_store,
+                        work_orders=observation_work_order_store,
+                        sites=site_store,
+                        work_areas=work_area_store,
+                        inspections=external_artifact_inspection_store,
+                    ),
+                    work_orders=observation_work_order_store,
+                )
+            )
 
     if external_artifact_inspection_store is not None:
         from ksi_core.external_artifact_inspections import mount_external_artifact_inspections

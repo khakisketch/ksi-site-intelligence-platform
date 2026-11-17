@@ -3287,6 +3287,32 @@ paths:
         '503': { description: STORE_UNAVAILABLE — Retry-After }
         '401': { description: Authentication required }
         '403': { description: WORK_ORDERS_WRITE permission required }
+  /v1/sites/{site_id}/work-areas/{work_area_id}/spatial-assets/{asset_ref}/height-decision:
+    post:
+      tags: [external-use-decisions]
+      summary: Request the HEIGHT use decision for one registered DSM
+      description: >-
+        SITES_WRITE required and a human operator. The asset is resolved through the same scoped catalog
+        as every spatial-asset read, then the existing HEIGHT rule is evaluated (policy, inspection report,
+        measured single-band float DSM, and a vertical reference that is observed in the file or declared
+        for this asset). A BLOCKED decision is returned with its reasons (201) so a client can explain what is
+        missing. The same Idempotency-Key returns the same decision. Only a DSM can be asked.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: site_id, required: true, schema: { type: string } }
+        - { in: path, name: work_area_id, required: true, schema: { type: string } }
+        - { in: path, name: asset_ref, required: true, schema: { type: string, pattern: '^ksa-v1-[0-9a-f]{64}$' } }
+        - { in: header, name: Idempotency-Key, required: true, schema: { type: string, minLength: 1, maxLength: 255 } }
+      responses:
+        '201':
+          description: The decision (ELIGIBLE or BLOCKED with reasons)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ExternalUseDecisionResponse' }
+        '403': { description: SITES_WRITE permission or a human operator is required }
+        '404': { description: Site, WorkArea or asset is absent or outside the caller scope }
+        '409': { description: NOT_A_DSM · EXTERNAL_RECONSTRUCTION_NOT_SEALED · IDEMPOTENCY_CONFLICT · EXTERNAL_WORKFLOW_CLOSED }
+        '401': { description: Authentication required }
   /v1/sites/{site_id}/design-progress:
     get:
       summary: Zone-by-zone progress against the design surface (M4-C)

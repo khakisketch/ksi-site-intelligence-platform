@@ -1373,6 +1373,15 @@
       "migrationStatus": "T3_NEW_MODULE"
     },
     {
+      "sourceModule": "ksi_core.domains.external.quantity.asset_height_decision",
+      "activeCanonicalModule": "ksi_core.domains.external.quantity.asset_height_decision",
+      "activePath": "ksi_core/domains/external/quantity/asset_height_decision.py",
+      "plannedCanonicalModule": "ksi_core.domains.external.quantity.asset_height_decision",
+      "plannedPath": "ksi_core/domains/external/quantity/asset_height_decision.py",
+      "ownerBoundary": "domains/external/quantity",
+      "migrationStatus": "T3_NEW_MODULE"
+    },
+    {
       "sourceModule": "ksi_core.domains.external.ingress.vertical_reference_declarations",
       "activeCanonicalModule": "ksi_core.domains.external.ingress.vertical_reference_declarations",
       "activePath": "ksi_core/domains/external/ingress/vertical_reference_declarations.py",
