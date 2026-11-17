@@ -28,6 +28,25 @@
       "title": "CreateMeasurementFeatureV1",
       "type": "object"
     },
+    "MeasurementFeatureListViewV1": {
+      "additionalProperties": false,
+      "description": "Latest revision of each saved line in one work area.",
+      "properties": {
+        "features": {
+          "items": {
+            "$ref": "#/$defs/MeasurementFeatureRevisionV1"
+          },
+          "maxItems": 1000,
+          "title": "Features",
+          "type": "array"
+        }
+      },
+      "required": [
+        "features"
+      ],
+      "title": "MeasurementFeatureListViewV1",
+      "type": "object"
+    },
     "MeasurementFeatureRefV1": {
       "additionalProperties": false,
       "description": "Exact revision a request or result is bound to.",
@@ -59,6 +78,64 @@
         "lineDigest"
       ],
       "title": "MeasurementFeatureRefV1",
+      "type": "object"
+    },
+    "MeasurementFeatureRefusalV1": {
+      "additionalProperties": false,
+      "description": "Typed refusal body. No path, stack or other tenant's identifier.",
+      "properties": {
+        "verdict": {
+          "enum": [
+            "UNKNOWN_WORK_AREA",
+            "UNKNOWN_FEATURE",
+            "WORK_AREA_NOT_ACTIVE",
+            "REVISION_CONFLICT",
+            "IDEMPOTENCY_CONFLICT",
+            "TOO_MANY_FEATURES",
+            "TOO_MANY_REVISIONS",
+            "INVALID",
+            "STORE_UNAVAILABLE"
+          ],
+          "title": "Verdict",
+          "type": "string"
+        },
+        "detail": {
+          "anyOf": [
+            {
+              "maxLength": 512,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Detail"
+        }
+      },
+      "required": [
+        "verdict"
+      ],
+      "title": "MeasurementFeatureRefusalV1",
+      "type": "object"
+    },
+    "MeasurementFeatureRevisionListViewV1": {
+      "additionalProperties": false,
+      "description": "Every revision of one saved line, oldest first.",
+      "properties": {
+        "revisions": {
+          "items": {
+            "$ref": "#/$defs/MeasurementFeatureRevisionV1"
+          },
+          "maxItems": 1000,
+          "title": "Revisions",
+          "type": "array"
+        }
+      },
+      "required": [
+        "revisions"
+      ],
+      "title": "MeasurementFeatureRevisionListViewV1",
       "type": "object"
     },
     "MeasurementFeatureRevisionV1": {
@@ -144,6 +221,30 @@
         "createdAt"
       ],
       "title": "MeasurementFeatureRevisionV1",
+      "type": "object"
+    },
+    "MeasurementFeatureWriteViewV1": {
+      "additionalProperties": false,
+      "description": "Result of a successful write. ``REPLAYED`` = the same request already happened.",
+      "properties": {
+        "verdict": {
+          "enum": [
+            "CREATED",
+            "REVISED",
+            "REPLAYED"
+          ],
+          "title": "Verdict",
+          "type": "string"
+        },
+        "revision": {
+          "$ref": "#/$defs/MeasurementFeatureRevisionV1"
+        }
+      },
+      "required": [
+        "verdict",
+        "revision"
+      ],
+      "title": "MeasurementFeatureWriteViewV1",
       "type": "object"
     },
     "MeasurementLineV1": {

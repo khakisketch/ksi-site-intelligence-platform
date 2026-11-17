@@ -3032,6 +3032,158 @@ paths:
         '503': { description: STORE_UNAVAILABLE — 봉인됨, Retry-After }
         '401': { description: 인증 실패 }
         '403': { description: SITES_WRITE 권한 없음 }
+  /v1/sites/{site_id}/work-areas/{work_area_id}/measurement-features:
+    post:
+      tags: [measurement-features]
+      summary: Save a measurement line in a work area
+      description: >-
+        SITES_WRITE required. Revision 1 of a new line. The line only fixes *where*; it grants no
+        read of any surface and never widens the parent work area's current access. The same
+        Idempotency-Key with the same body returns the original (200); another body is a 409.
+        The raw key is not retained.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: site_id, required: true, schema: { type: string } }
+        - { in: path, name: work_area_id, required: true, schema: { type: string } }
+        - { in: header, name: Idempotency-Key, required: true, schema: { type: string, minLength: 1, maxLength: 255 } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateMeasurementFeatureV1' }
+      responses:
+        '201':
+          description: CREATED
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MeasurementFeatureWriteViewV1' }
+        '200':
+          description: REPLAYED — the same request already happened
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MeasurementFeatureWriteViewV1' }
+        '404': { description: Site, WorkArea or saved line is absent or outside the caller scope }
+        '409':
+          description: WORK_AREA_NOT_ACTIVE · REVISION_CONFLICT · IDEMPOTENCY_CONFLICT · TOO_MANY_FEATURES · TOO_MANY_REVISIONS
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MeasurementFeatureRefusalV1' }
+        '422': { description: Invalid line, name or Idempotency-Key }
+        '503': { description: STORE_UNAVAILABLE — Retry-After }
+        '401': { description: Authentication required }
+        '403': { description: SITES_WRITE permission required }
+    get:
+      tags: [measurement-features]
+      summary: List the latest revision of each saved line
+      description: SITES_READ required. Bounded by the per-area line limit.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: site_id, required: true, schema: { type: string } }
+        - { in: path, name: work_area_id, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: Latest revisions
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MeasurementFeatureListViewV1' }
+        '404': { description: Site, WorkArea or saved line is absent or outside the caller scope }
+        '401': { description: Authentication required }
+        '403': { description: SITES_READ permission required }
+  /v1/sites/{site_id}/work-areas/{work_area_id}/measurement-features/{feature_id}:
+    get:
+      tags: [measurement-features]
+      summary: Get the latest revision of one saved line
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: site_id, required: true, schema: { type: string } }
+        - { in: path, name: work_area_id, required: true, schema: { type: string } }
+        - { in: path, name: feature_id, required: true, schema: { type: string, pattern: '^mf-[0-9a-f]{32}$' } }
+      responses:
+        '200':
+          description: Latest revision
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MeasurementFeatureRevisionV1' }
+        '404': { description: Site, WorkArea or saved line is absent or outside the caller scope }
+        '401': { description: Authentication required }
+        '403': { description: SITES_READ permission required }
+  /v1/sites/{site_id}/work-areas/{work_area_id}/measurement-features/{feature_id}/revisions:
+    post:
+      tags: [measurement-features]
+      summary: Edit a saved line — a new revision, never an in-place change
+      description: >-
+        SITES_WRITE required. ``expectedRevision`` must be the current latest revision, otherwise
+        409 REVISION_CONFLICT. Earlier revisions stay readable and keep their digests, so a result
+        computed from revision N stays bound to revision N. A retry with the same Idempotency-Key
+        and body returns the original revision.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: site_id, required: true, schema: { type: string } }
+        - { in: path, name: work_area_id, required: true, schema: { type: string } }
+        - { in: path, name: feature_id, required: true, schema: { type: string, pattern: '^mf-[0-9a-f]{32}$' } }
+        - { in: header, name: Idempotency-Key, required: true, schema: { type: string, minLength: 1, maxLength: 255 } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ReviseMeasurementFeatureV1' }
+      responses:
+        '201':
+          description: REVISED
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MeasurementFeatureWriteViewV1' }
+        '200':
+          description: REPLAYED
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MeasurementFeatureWriteViewV1' }
+        '404': { description: Site, WorkArea or saved line is absent or outside the caller scope }
+        '409':
+          description: WORK_AREA_NOT_ACTIVE · REVISION_CONFLICT · IDEMPOTENCY_CONFLICT · TOO_MANY_FEATURES · TOO_MANY_REVISIONS
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MeasurementFeatureRefusalV1' }
+        '422': { description: Invalid line, name or Idempotency-Key }
+        '503': { description: STORE_UNAVAILABLE — Retry-After }
+        '401': { description: Authentication required }
+        '403': { description: SITES_WRITE permission required }
+    get:
+      tags: [measurement-features]
+      summary: List every revision of one saved line, oldest first
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: site_id, required: true, schema: { type: string } }
+        - { in: path, name: work_area_id, required: true, schema: { type: string } }
+        - { in: path, name: feature_id, required: true, schema: { type: string, pattern: '^mf-[0-9a-f]{32}$' } }
+      responses:
+        '200':
+          description: All revisions
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MeasurementFeatureRevisionListViewV1' }
+        '404': { description: Site, WorkArea or saved line is absent or outside the caller scope }
+        '401': { description: Authentication required }
+        '403': { description: SITES_READ permission required }
+  /v1/sites/{site_id}/work-areas/{work_area_id}/measurement-features/{feature_id}/revisions/{revision}:
+    get:
+      tags: [measurement-features]
+      summary: Get one exact revision of a saved line
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: site_id, required: true, schema: { type: string } }
+        - { in: path, name: work_area_id, required: true, schema: { type: string } }
+        - { in: path, name: feature_id, required: true, schema: { type: string, pattern: '^mf-[0-9a-f]{32}$' } }
+        - { in: path, name: revision, required: true, schema: { type: integer, minimum: 1 } }
+      responses:
+        '200':
+          description: The exact revision
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MeasurementFeatureRevisionV1' }
+        '404': { description: Site, WorkArea or saved line is absent or outside the caller scope }
+        '401': { description: Authentication required }
+        '403': { description: SITES_READ permission required }
   /v1/sites/{site_id}/design-progress:
     get:
       summary: Zone-by-zone progress against the design surface (M4-C)
@@ -19944,6 +20096,21 @@ components:
 
     SpatialAssetDescriptionV1:
       $ref: '../schemas/spatial-asset-description.v1.json'
+
+    CreateMeasurementFeatureV1:
+      $ref: '../schemas/measurement-feature.v1.json#/$defs/CreateMeasurementFeatureV1'
+    ReviseMeasurementFeatureV1:
+      $ref: '../schemas/measurement-feature.v1.json#/$defs/ReviseMeasurementFeatureV1'
+    MeasurementFeatureRevisionV1:
+      $ref: '../schemas/measurement-feature.v1.json#/$defs/MeasurementFeatureRevisionV1'
+    MeasurementFeatureWriteViewV1:
+      $ref: '../schemas/measurement-feature.v1.json#/$defs/MeasurementFeatureWriteViewV1'
+    MeasurementFeatureListViewV1:
+      $ref: '../schemas/measurement-feature.v1.json#/$defs/MeasurementFeatureListViewV1'
+    MeasurementFeatureRevisionListViewV1:
+      $ref: '../schemas/measurement-feature.v1.json#/$defs/MeasurementFeatureRevisionListViewV1'
+    MeasurementFeatureRefusalV1:
+      $ref: '../schemas/measurement-feature.v1.json#/$defs/MeasurementFeatureRefusalV1'
 
     SpatialDataRequestV1:
       $ref: '../schemas/spatial-data.v1.json#/$defs/SpatialDataRequestV1'

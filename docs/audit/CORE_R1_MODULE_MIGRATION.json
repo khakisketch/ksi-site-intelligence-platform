@@ -245,6 +245,15 @@
       "migrationStatus": "T3_NEW_MODULE"
     },
     {
+      "sourceModule": "ksi_core.domains.sites.measurement_features",
+      "activeCanonicalModule": "ksi_core.domains.sites.measurement_features",
+      "activePath": "ksi_core/domains/sites/measurement_features.py",
+      "plannedCanonicalModule": "ksi_core.domains.sites.measurement_features",
+      "plannedPath": "ksi_core/domains/sites/measurement_features.py",
+      "ownerBoundary": "domains/sites",
+      "migrationStatus": "T3_NEW_MODULE"
+    },
+    {
       "sourceModule": "ksi_core.artifact_manifest",
       "activeCanonicalModule": "ksi_core.domains.artifacts.artifact_manifest",
       "activePath": "ksi_core/domains/artifacts/artifact_manifest.py",

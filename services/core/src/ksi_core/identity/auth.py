@@ -717,6 +717,24 @@ _OIDC_SCOPED_OPERATOR_ROUTE_ALLOWLIST: frozenset[tuple[str, str]] = frozenset(
         ("GET", "/v1/sites"),
         ("GET", "/v1/sites/{site_id}"),
         ("GET", "/v1/sites/{site_id}/work-areas"),
+        # Saved measurement lines: the handler re-checks allowedSiteIds/allowedWorkAreaIds, the
+        # organization-visible Site and the exact WorkArea before any read or write, and writes
+        # still need SITES_WRITE. Revisions are append-only; nothing here deletes or rewrites.
+        ("GET", "/v1/sites/{site_id}/work-areas/{work_area_id}/measurement-features"),
+        ("POST", "/v1/sites/{site_id}/work-areas/{work_area_id}/measurement-features"),
+        ("GET", "/v1/sites/{site_id}/work-areas/{work_area_id}/measurement-features/{feature_id}"),
+        (
+            "GET",
+            "/v1/sites/{site_id}/work-areas/{work_area_id}/measurement-features/{feature_id}/revisions",
+        ),
+        (
+            "POST",
+            "/v1/sites/{site_id}/work-areas/{work_area_id}/measurement-features/{feature_id}/revisions",
+        ),
+        (
+            "GET",
+            "/v1/sites/{site_id}/work-areas/{work_area_id}/measurement-features/{feature_id}/revisions/{revision}",
+        ),
         # Audited mixed retained history: the handler verifies exact current and
         # baseline source WorkOrders/zone grants before rows, cursors and paging.
         # Only separately audited exact details are open; aliases/mutations stay closed.

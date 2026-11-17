@@ -1209,6 +1209,7 @@ def test_platform_opens_no_extra_journal(tmp_path: Path) -> None:
             "external-spatial-tasks.jsonl",
             "external-use-decisions.jsonl",
             "external-validation-policy.jsonl",
+            "measurement-features.jsonl",
             "observation-work-orders.jsonl",
             "organization-work-roster.jsonl",
             "quantitative-authority.jsonl",

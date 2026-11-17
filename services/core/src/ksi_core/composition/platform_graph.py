@@ -43,6 +43,7 @@ from ksi_core.composition.spatial_data_graph import (
     build_spatial_data_wiring,
 )
 from ksi_core.domains.sites.external_report_resolver import ExternalVolumeReportResolver
+from ksi_core.domains.sites.measurement_features import MeasurementFeatureStore
 from ksi_core.domains.sites.observation_work_orders import ObservationWorkOrderStore
 from ksi_core.domains.sites.organization_work_roster import OrganizationWorkRosterStore
 from ksi_core.domains.sites.sites import (
@@ -79,6 +80,7 @@ class PlatformGraph:
     delta: DeltaPublicationWiring | None = None
     masked: MaskedQuantitativeWiring | None = None
     spatial_tasks: Any = None
+    measurement_features: MeasurementFeatureStore | None = None
 
 
 def build_platform_graph(
@@ -146,6 +148,14 @@ def build_platform_graph(
         site_exists=lambda site_id: site_store.get(site_id) is not None,
         coordinator=coordinator,
         registration_stopped=registration_stopped,
+    )
+    measurement_feature_store = MeasurementFeatureStore(
+        journal("measurement-features.jsonl"),
+        work_areas=work_area_store,
+        site_visible_to=lambda site_id, organization_id: (
+            site_store.get_scoped(site_id, organization_id) is not None
+        ),
+        coordinator=coordinator,
     )
     external_pre_work_order = build_external_pre_work_order_graph(
         journal=journal,
@@ -312,6 +322,7 @@ def build_platform_graph(
         delta=delta_lane,
         masked=masked_lane,
         spatial_tasks=spatial_task_store,
+        measurement_features=measurement_feature_store,
     )
 
 

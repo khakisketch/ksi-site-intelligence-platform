@@ -15,6 +15,7 @@ readiness surface reads.
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 from fastapi import FastAPI
@@ -71,6 +72,11 @@ def create_platform_app(
     from ksi_core.work_areas import mount_work_areas
 
     mount_work_areas(app, graph.work_areas, site_store=graph.sites)
+
+    if graph.measurement_features is not None:
+        from ksi_core.domains.sites.measurement_features import mount_measurement_features
+
+        mount_measurement_features(app, graph.measurement_features, clock=lambda: datetime.now(UTC))
 
     from ksi_core.domains.sites.observation_work_orders import (
         build_observation_work_order_router,

@@ -96,6 +96,45 @@ class CreateMeasurementFeatureV1(SpatialDataModel):
     line: MeasurementLineV1
 
 
+MeasurementFeatureVerdictV1 = Literal["CREATED", "REVISED", "REPLAYED"]
+
+
+class MeasurementFeatureWriteViewV1(SpatialDataModel):
+    """Result of a successful write. ``REPLAYED`` = the same request already happened."""
+
+    verdict: MeasurementFeatureVerdictV1
+    revision: MeasurementFeatureRevisionV1
+
+
+class MeasurementFeatureListViewV1(SpatialDataModel):
+    """Latest revision of each saved line in one work area."""
+
+    features: Annotated[tuple[MeasurementFeatureRevisionV1, ...], Field(max_length=1000)]
+
+
+class MeasurementFeatureRevisionListViewV1(SpatialDataModel):
+    """Every revision of one saved line, oldest first."""
+
+    revisions: Annotated[tuple[MeasurementFeatureRevisionV1, ...], Field(max_length=1000)]
+
+
+class MeasurementFeatureRefusalV1(SpatialDataModel):
+    """Typed refusal body. No path, stack or other tenant's identifier."""
+
+    verdict: Literal[
+        "UNKNOWN_WORK_AREA",
+        "UNKNOWN_FEATURE",
+        "WORK_AREA_NOT_ACTIVE",
+        "REVISION_CONFLICT",
+        "IDEMPOTENCY_CONFLICT",
+        "TOO_MANY_FEATURES",
+        "TOO_MANY_REVISIONS",
+        "INVALID",
+        "STORE_UNAVAILABLE",
+    ]
+    detail: Annotated[str, Field(max_length=512)] | None = None
+
+
 class ReviseMeasurementFeatureV1(SpatialDataModel):
     """Edit = new revision; the caller names the revision it edited so a stale edit conflicts."""
 
