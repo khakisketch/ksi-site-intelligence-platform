@@ -30,7 +30,14 @@ export function requestRows(input: {
       && job.feature.revision === input.feature.revision
       && job.feature.lineDigest === input.feature.lineDigest)
     .sort(newestFirst);
-  return input.assets.map((asset) => {
+  // 같은 날짜가 겹치면 자료 참조 끝자리로 구분한다(날짜 선택지와 같은 규칙).
+  const seen = new Map<string, number>();
+  for (const asset of input.assets) seen.set(asset.label, (seen.get(asset.label) ?? 0) + 1);
+  const named = input.assets.map((asset) => ({
+    assetRef: asset.assetRef,
+    label: (seen.get(asset.label) ?? 0) > 1 ? `${asset.label} · #${asset.assetRef.slice(-4)}` : asset.label,
+  }));
+  return named.map((asset) => {
     const mine = exact.filter((job) => job.assetRef === asset.assetRef);
     // 진행 중인 작업이 있으면 그것이 먼저다(중복 요청을 막는다). 그다음 가장 최근 작업.
     const active = mine.find((job) => job.executionState === "QUEUED" || job.executionState === "RUNNING");

@@ -57,6 +57,11 @@ describe("requestRows", () => {
     expect(hasActiveRequest(rows([]))).toBe(false);
   });
 
+  it("같은 날짜의 자료는 자료 참조 끝자리로 구분하고, 겹치지 않으면 날짜만 쓴다", () => {
+    const same = requestRows({ assets: [{ assetRef: asset(1), label: "2026-11-18" }, { assetRef: asset(2), label: "2026-11-18" }, { assetRef: asset(3), label: "2026-11-27" }], jobs: [], feature: FEATURE });
+    expect(same.map((row) => row.label)).toEqual([`2026-11-18 · #${"1".repeat(4)}`, `2026-11-18 · #${"2".repeat(4)}`, "2026-11-27"]);
+  });
+
   it("같은 시각이면 식별자 순서가 일정하다", () => {
     const a = job(1, 1, { createdAt: "2026-11-01T00:00:00Z", executionState: "FAILED", availability: "UNAVAILABLE", reason: "A" });
     const b = job(1, 2, { createdAt: "2026-11-01T00:00:00Z", executionState: "FAILED", availability: "UNAVAILABLE", reason: "B" });
