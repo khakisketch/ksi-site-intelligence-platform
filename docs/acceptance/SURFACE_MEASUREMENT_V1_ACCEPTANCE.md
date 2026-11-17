@@ -61,7 +61,7 @@ CLI and MCP return the same result with the same limits.
 | SM-AC-05 | Saved line geometry is revisioned; editing creates a new revision, old results stay bound to the old one; the same line is reusable for the next observation with a new request and result | contract and persistence tests including restart and duplicate request | 저장 선·결과의 exact revision 결속, 편집 뒤 과거 결과 유지, 멱등·작업 재생 통과; 두 시점 비교 흐름은 별도 |
 | SM-AC-06 | Rights and egress: no read, CSV or agent response widens the caller's current site/work-area permission or AI-egress consent; exports carry no credentials or signed URLs | permission, revocation and egress tests | Core HTTP의 현재 grant·HEIGHT 정책 철회와 자격 재확인 통과; MCP 단면 접근은 거부, CSV·AI-egress 경로는 미구현 |
 | SM-AC-07 | Console, API, CLI and MCP return the same input revision, result ID, values and unknown reasons | cross-surface contract test | not implemented |
-| SM-AC-08 | A field user completes draw → read graph → change date → export in the real browser at 390/768/1280/1440px and 200% zoom, with keyboard and touch, stale values withdrawn on input change, and no write request from selection alone | real-browser test; later unaided task test with field staff | read graph / change date / CSV export / keyboard: implemented in a read-only Console view and checked at 390 and 1440 px against a stand-in Core; draw, 768/1280 px, 200% zoom, touch and the unaided field test not done |
+| SM-AC-08 | A field user completes draw → read graph → change date → export in the real browser at 390/768/1280/1440px and 200% zoom, with keyboard and touch, stale values withdrawn on input change, and no write request from selection alone | real-browser test; later unaided task test with field staff | draw (map, laptop only), request per date, read graph, change date, CSV export, keyboard: implemented in the Console; checked at 390 and 1440 px against a stand-in Core, and the request → real worker → graph path at 1440 px against the real Core owners and worker; 768/1280 px, 200% zoom, touch, the mobile view against the real Core and the unaided field test not done |
 | SM-AC-09 | Real customer data: the P-AC customer sample (same work area, t0/t1/t2 DSM, intended lines, CRS/vertical/quality evidence, usage rights) read with an independent reference comparison | customer-approved data and independent review | not evaluated |
 
 ## Decision: two-epoch difference gate (2026-11-17, user)
@@ -82,8 +82,8 @@ and is **not** a quantitative, comparability, accuracy or customer-acceptance cl
 this change keep their retained `HEIGHT_PRODUCT_DEFINITION_UNRESOLVED` blocker and are never rewritten.
 단일 subject 판정으로 유지된다. C2c는 이 판정을 재확인하는 작업 HTTP와 완료 검증을 제공하지만, 실제 파일을 읽는 C3 워커와 운영 활성화는 아직 제공하지 않는다.
 
-**Declared vertical reference (decided 2026-11-17; ledger, HEIGHT and profile consumers implemented
-2026-11-18, no Console yet).** Most DSM exports carry no
+**Declared vertical reference (decided 2026-11-17; ledger, HEIGHT, profile consumers and Console
+screens implemented 2026-11-18).** Most DSM exports carry no
 vertical CRS, so their heights could never be read. A person who knows the basis may declare it for one
 registered DSM (asset), so a single-surface height or profile read can proceed. The declaration is a claim,
 never an observation: it has its own append-only record (`vertical-reference-declaration.v1`), keyed by asset
@@ -99,8 +99,15 @@ profile job that freezes the provenance (`OBSERVED` or `DECLARED` with the decla
 worker receipt repeats it and Core refuses a receipt that changes it. A job frozen on a declaration continues
 only while that exact record is current; a correction or withdrawal closes new reads and withholds the
 numbers. A test pins that only the assembly imports the ledger, so comparison, volume and readiness stay on
-the observed value. Still absent: any Console screen to declare or to show the "declared" label next to the
-numbers, and the export marking. Until those land, a declared read must not be offered to users.
+the observed value. The Console declares, corrects and withdraws on the asset detail, shows the provenance
+("file observed" or "user declared, not verified") next to the numbers, warns when two dates sit on different
+bases, and marks the CSV with a `vertical_reference` column. The measurements screen asks for a date's profile
+only through a Core HEIGHT decision made by asset reference (`POST …/spatial-assets/{asset_ref}/height-decision`,
+human operator with SITES_WRITE, scope-checked through the same catalog as every asset read, BLOCKED returned
+with its reasons); a BLOCKED date is explained and points at the declaration instead of creating a job. Still
+absent: the declared read on a production stack (the surface lane is not activated there), an independent
+check that a declaration is right (Core never verifies it), and any use of a declaration beyond height and
+profile.
 
 ## Boundaries
 
@@ -124,3 +131,5 @@ suitability for a use, quantitative analysis, accuracy evaluation and human revi
 | 2026-11-17 | 단면 일꾼(C3 1단계): Core 입력이 활성 instance·현재 attempt digest를 증명한 뒤 lease·작업 기한·grant·활성화 중 가장 이른 만료의 원본 읽기 capability를 발급하고, 발급 뒤 요청자·권한을 다시 증명(`surface_profile_worker_api.py`). 일꾼 `surface_profile_core_client.py`·`surface_profile_runner.py`는 받은 바이트의 길이·SHA-256을 봉인 값과 대조하고, 읽은 파일 사실(폭·높이·해상도·CRS)을 봉인된 측정값과 다시 대조한 뒤에만 계산해 receipt를 보고. 계산 거부는 같은 이름의 사유로 작업을 실패시키고, 저장소 연결 장애만 재시도 대기로 돌림. `test_surface_profile_runner.py` 8개(주입 결함 4개 검출: 폭·해상도·CRS 대조 제거, 거부 처리 제거), `test_surface_profile_worker_api.py` +3개, 실제 소유자 loopback 통합 +1개(봉인 DSM 바이트를 rasterio 이중선형 독립 기준과 비교). 관련 회귀 467개 통과, 린트 통과, mypy는 변경 전과 동일 | 일꾼은 프로세스 안에서 계산하며 OS 격리·시간·메모리·동시성 한도는 증명하지 않음(SM-AC-03 일꾼 한도 미완). 객체 저장소는 loopback 대역이며 서명·만료·철회는 실제 저장소로 검증하지 않음. 상시 실행 진입점과 운영 설정은 없음. 정확도·고객 수락의 증거가 아님 |
 | 2026-11-17 | 단면 일꾼 상시 실행(C3-2): `surface_profile_worker_config.py`(운영자가 고정한 Ed25519 키의 분리 서명 `ksi-surface-profile-activation.v1`, 철회·유효 기간, 유한 예산, 소유자 전용 파일, 환경 자격 없음)와 `surface_profile_service.py`(매 Core 호출 전 설정을 다시 읽어 철회·교체 반영, 자격 파일 재읽기, `--once`). `test_surface_profile_worker_config.py` 22개(서명 대상 분리·철회·만료·예산 시험, 주입 결함 4개 검출), `test_surface_profile_service.py` 4개(서명 설정으로 작업 완료, 시작 뒤 철회 시 lease 전 호출 중단, 자격 파일 보호 상실 시 중단, 환경 자격 무시). 관련 시험·린트 통과, mypy는 변경 전과 동일 | 일꾼은 여전히 프로세스 안에서 계산하며 OS 격리·시간·메모리·동시성 한도는 증명하지 않음. 기존 native 일꾼의 격리는 Linux 전용이라 이 호스트에서 검증하지 못함. Core 운영 활성화(서명된 단면 activation 로드)는 없음 |
 | 2026-11-17 | Console 읽기 전용 단면 화면(PR-A): `apps/dashboard/src/app/sites/[siteId]/measurements/`(서버 페이지·작업대·그래프·보드), `lib/measurement-*.ts`. 승인 시안 `docs/design/MEASUREMENT_PROFILE_DESIGN_2026-11-17.html`. 저장 선·단면 작업 목록·결과를 읽기만 하고 날짜는 이미 있는 완료 결과 가운데서만 고른다(선택만으로 요청을 보내지 않음). 선 모양·자료·작업구역이 어긋난 결과는 표시하지 않고, 권한 철회·접근 기한 만료·미연결(404)은 이유와 함께 알린다. 모르는 지점은 선을 끊고 이유를 보이며 0으로 채우지 않는다(CSV도 빈 칸과 이유 코드). 구간 선택은 키보드·마우스로 길이·높이 차·기울기를 읽고 보드에 같은 구간을 표시한다. 시험 대시보드 +82개(순수 계산 21·형식 가드 16·선택 규칙 13·상호작용 16·서버 페이지 16, 주입 결함 17개 중 처음 13개 검출, 놓친 4개는 시험을 보강해 모두 검출), 대시보드 전체 3649 통과. 실제 Chromium으로 1440·390 px 정상·권한 철회·실패·빈 상태, 마우스 끌기, 키보드, 날짜 변경을 확인하고 7–22 m 구간 기울기를 손계산(+0.88 m, 5.9 %)과 대조 | 응답은 임시 가짜 Core로 대신했다. 실제 Core의 단면 활성화·실제 소유자와의 통합, 단면 요청·선 그리기·두 시점 차이 화면은 없다. 색은 이 앱의 중립 토큰을 쓴다(시안의 청록과 다름). 고객·현장 수락이나 사용성 시험이 아니다 |
+| 2026-11-17~18 | 수직 기준 선언(D1–D6, 올리기 전 점검, 선언 화면): 선언 원장·HEIGHT/단면 소비·동결·영수증 되풀이·Core 재대조, 자료 상세의 선언·정정·철회, 숫자 옆 출처 표시·CSV 열, 브라우저의 올리기 전 첫 IFD 점검(검사기 규칙 거울, 실제 검사기와 대조). `test_vertical_reference_declaration*.py`·`test_surface_profile_*`·`test_asset_height_decision.py`(12개, 실제 카탈로그·작업 저장소 위)와 실제 소유자 loopback 통합(선언 전 BLOCKED → 선언 → ELIGIBLE → 작업 → 영수증 DECLARED, 실제 일꾼이 선언 기준으로 읽음, 철회 시 숫자 닫힘). 주입 결함은 의미 있는 것 모두 검출(사람 확인 방어 코드는 기존 경로와 같아 새 시험으로 도달하지 못함) | 합성 DSM과 실제 검사기 1건(user-defined 투영 CRS DSM)만. 선언의 정확성은 검증하지 않는다. 운영 스택의 단면 활성화 없음. Pix4D·Terra 등 실제 벤더 산출물은 시험하지 않았다 |
+| 2026-11-18 | 측정 선 그리기(PR B)와 날짜별 단면 요청(PR C): 지도에서 그려 저장·새 개정으로 고치기(`expectedRevision`), 봉인된 DSM마다 요청·진행·취소·재요청·사유 안내(BFF가 자료 참조로 판정을 받아 작업 발급, 키 파생으로 재시도 중복 방지, 판정이 ELIGIBLE이 아니면 작업 없음), 요청자 목록의 `feature_id` 필터(한도 적용 전 선 단위로 좁힘). 대시보드 전체 vitest 3979개·`next build`·tsc 통과, Core 관련 시험 통과, 필터 변이 3건 검출. 실제 브라우저: 가짜 Core로 막힘·거부·진행→자동 갱신→완료·취소·모바일(요청 버튼 숨김·가로 넘침 없음), 실제 Core 소유자·실제 일꾼으로 요청→처리→그래프(1440 px) | 이 Mac은 전체 백엔드 시험을 돌릴 수 없다: 384개 시험 파일 중 80개가 실패·시간 초과이며 `main`에서도 같은 개수로 실패했다(원인 미분석, Linux 전용 검사기·컨테이너·소켓으로 추정). 실제 Core 확인은 시험용 조립을 임시로 띄운 것이며 운영 활성화·배포 증거가 아니다. 목록은 Core 정책의 `max_list_records`를 넘으면 오래된 요청이 보이지 않는다. 두 시점 차이 화면은 없다 |
