@@ -91,7 +91,7 @@ from typing import TYPE_CHECKING, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Response
 from ksi_domain.signed_payload import canonical_payload_bytes, sha256_digest
-from ksi_geo_spatial.crs import SUPPORTED_PROJECT_CRS, UnsupportedCrsError, normalise_crs
+from ksi_geo_spatial.crs import KOREA_PLANE_CRS, UnsupportedCrsError, normalise_crs
 from pydantic import Field, model_validator
 
 from ksi_core.domains.artifacts.evidence import (
@@ -846,7 +846,7 @@ class SourceMediaStore:
             raise SourceMediaRecoveryError(
                 f"재생: 해석할 수 없는 기준점 좌표계({crs!r}) — missionId={mission_id}: {exc}"
             ) from exc
-        if normalised not in SUPPORTED_PROJECT_CRS:
+        if normalised not in KOREA_PLANE_CRS:
             raise SourceMediaRecoveryError(
                 f"재생: 허용 목록 밖 기준점 좌표계({normalised}) — missionId={mission_id}"
             )
@@ -1164,12 +1164,12 @@ class SourceMediaStore:
                 normalised = normalise_crs(crs)
             except UnsupportedCrsError as exc:
                 return GroundControlResult(GroundControlVerdict.UNSUPPORTED_CRS, detail=str(exc))
-            if normalised not in SUPPORTED_PROJECT_CRS:
+            if normalised not in KOREA_PLANE_CRS:
                 return GroundControlResult(
                     GroundControlVerdict.UNSUPPORTED_CRS,
                     detail=(
                         f"{normalised} 은 이 시스템이 비교에 쓰는 좌표계가 아니다 — 허용: "
-                        f"{sorted(SUPPORTED_PROJECT_CRS)}. 기준점 성과를 현행 한국 "
+                        f"{sorted(KOREA_PLANE_CRS)}. 기준점 성과를 현행 한국 "
                         "평면직각좌표계로 받아야 두 시점 비교가 성립한다"
                     ),
                 )
