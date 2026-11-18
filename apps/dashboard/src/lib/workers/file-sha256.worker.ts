@@ -15,8 +15,10 @@ export async function hashFileStream(file: StreamedFile, chunkBytes: number, onP
     for (;;) {
       const { done, value } = await reader.read();
       if (done) break;
-      if (!value || value.byteLength > chunkBytes) throw new Error("hash chunk exceeded configured bound");
-      hash.update(value);
+      if (!value) throw new Error("hash chunk missing");
+      // 브라우저는 큰 파일 스트림에서 설정한 크기보다 큰 조각(Chromium은 최대 2 MiB)을 줄 수 있다. 조각을
+      // 거부하면 큰 파일이 전부 해시에 실패하므로, 이미 읽은 조각을 설정한 크기 이하로 나눠 해시기에 넣는다.
+      for (let at = 0; at < value.byteLength; at += chunkBytes) hash.update(value.subarray(at, Math.min(at + chunkBytes, value.byteLength)));
       offset += value.byteLength;
       onProgress?.(offset);
     }
