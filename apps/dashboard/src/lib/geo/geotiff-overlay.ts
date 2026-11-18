@@ -7,7 +7,8 @@ import {
 
 import { formatCountKo } from "@/lib/number-format";
 
-import { proj4, registerKoreaProjections } from "./proj4-defs";
+import { isKnownProjectedCrs } from "./known-crs";
+import { proj4, registerKnownProjections } from "./proj4-defs";
 
 /** Leaflet ImageOverlay가 받는 `[south, west] → [north, east]` 경계다. */
 export type Wgs84RasterBounds = [[number, number], [number, number]];
@@ -34,7 +35,6 @@ export const MAX_RASTER_RENDER_PIXELS = 4_194_304;
 // 거부한다. 틀린 최대값을 표시하는 것보다 명시적으로 막는 편이 안전하다.
 export const MAX_DIFF_ANALYSIS_PIXELS = 32_000_000;
 
-const SUPPORTED_EPSG = new Set([4326, 3857, 5179, 5185, 5186, 5187, 5188]);
 const EPSILON = 1e-12;
 
 function asNumberArray(value: unknown): number[] | null {
@@ -63,7 +63,7 @@ export function resolveGeoTiffCrs(geoKeys: Record<string, unknown> | null): stri
   if (epsg === null) {
     throw new Error("GeoTIFF 좌표 기준(EPSG)을 찾지 못했습니다");
   }
-  if (!SUPPORTED_EPSG.has(epsg)) {
+  if (epsg !== 4326 && epsg !== 3857 && !isKnownProjectedCrs(`EPSG:${epsg}`)) {
     throw new Error(`지원하지 않는 GeoTIFF 좌표 기준(EPSG:${epsg})입니다`);
   }
   return `EPSG:${epsg}`;
@@ -103,7 +103,7 @@ function imageBoundsInWgs84(image: GeoTIFFImage): Wgs84RasterBounds {
   const sourceCrs = resolveGeoTiffCrs(image.getGeoKeys() as Record<string, unknown> | null);
   const [minX, minY, maxX, maxY] = assertFiniteSourceBounds(image.getBoundingBox());
 
-  registerKoreaProjections();
+  registerKnownProjections();
   const corners = [
     proj4(sourceCrs, "EPSG:4326", [minX, minY]),
     proj4(sourceCrs, "EPSG:4326", [minX, maxY]),

@@ -13,7 +13,7 @@ import { getSite } from "@/lib/core-api/sites";
 import { listWorkAreas } from "@/lib/core-api/workAreas";
 import { toDisplayVertices } from "@/lib/geo/display-geometry";
 import { proj4 } from "@/lib/geo/proj4-defs";
-import { registerKoreaProjections } from "@/lib/geo/proj4-defs";
+import { registerKnownProjections } from "@/lib/geo/proj4-defs";
 import { savedLineToEditorVertices, type LineVertex } from "@/lib/measurement-line";
 
 import { LineEditor } from "./LineEditor";
@@ -27,7 +27,7 @@ function single(value: SearchValue): string | undefined {
 }
 
 function project(crs: string, vertex: readonly [number, number]): [number, number] {
-  registerKoreaProjections();
+  registerKnownProjections();
   const [lon, lat] = proj4(crs, "EPSG:4326", [vertex[0], vertex[1]]);
   return [lon!, lat!];
 }

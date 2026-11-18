@@ -145,6 +145,8 @@ describe("site spatial geometry guards", () => {
   it("certifies plane units only for known coordinate systems", () => {
     expect(planeUnitForCrs("EPSG:5186")).toBe("meters");
     expect(planeUnitForCrs("epsg:4326")).toBe("degrees");
+    expect(planeUnitForCrs("EPSG:32652")).toBe("meters");
+    expect(planeUnitForCrs("EPSG:5174")).toBe("unknown");
     expect(planeUnitForCrs("EPSG:9999")).toBe("unknown");
   });
 
