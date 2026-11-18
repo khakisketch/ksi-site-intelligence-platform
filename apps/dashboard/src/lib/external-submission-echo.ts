@@ -1,3 +1,4 @@
+import type { ExternalArtifactInspectionView } from "@/lib/core-api/external-reconstruction";
 import type {
   ExternalArtifactKind,
   ExternalV3CaptureBasis,
@@ -369,3 +370,15 @@ export function isUploadGrantView(value: unknown): value is UploadGrantView {
     !!grant.requiredHeaders && typeof grant.requiredHeaders === "object" &&
     Object.values(grant.requiredHeaders as Record<string, unknown>).every((header) => typeof header === "string");
 }
+
+export function isExternalArtifactInspectionView(value: unknown): value is ExternalArtifactInspectionView {
+  if (!value || typeof value !== "object") return false;
+  const candidate = value as Record<string, unknown>;
+  const inspection = candidate.inspection;
+  const display = candidate.display;
+  return (candidate.registrationState === "REGISTERED" || candidate.registrationState === "SEALED") &&
+    (candidate.sealState === "UNSEALED" || candidate.sealState === "SEALED") &&
+    !!inspection && typeof inspection === "object" && typeof (inspection as Record<string, unknown>).state === "string" &&
+    !!display && typeof display === "object" && typeof (display as Record<string, unknown>).state === "string";
+}
+

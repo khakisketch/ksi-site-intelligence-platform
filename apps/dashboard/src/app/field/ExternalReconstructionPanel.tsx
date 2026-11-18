@@ -36,7 +36,7 @@ import {
 import type { ExternalArtifactInspectionView } from "@/lib/core-api/external-reconstruction";
 import { hashFile, type HashResult } from "@/lib/file-sha256";
 import {
-  declarationEchoOfRequest, isRevisionViewForAttempt, isUploadGrantView, retainedEchoOf,
+  declarationEchoOfRequest, isExternalArtifactInspectionView, isRevisionViewForAttempt, isUploadGrantView, retainedEchoOf,
   type AttemptEcho, type DeclarationEcho, type ArtifactDeclaration, type Revision, type V3DeclarationBody,
 } from "@/lib/external-submission-echo";
 
@@ -93,17 +93,6 @@ function unknownResponseMessage(): string {
   return "응답을 확인하지 못했습니다. 같은 시도는 같은 식별자로 다시 확인할 수 있으니 목록에서 실제 상태를 먼저 확인하세요.";
 }
 
-
-function isExternalArtifactInspectionView(value: unknown): value is ExternalArtifactInspectionView {
-  if (!value || typeof value !== "object") return false;
-  const candidate = value as Record<string, unknown>;
-  const inspection = candidate.inspection;
-  const display = candidate.display;
-  return (candidate.registrationState === "REGISTERED" || candidate.registrationState === "SEALED") &&
-    (candidate.sealState === "UNSEALED" || candidate.sealState === "SEALED") &&
-    !!inspection && typeof inspection === "object" && typeof (inspection as Record<string, unknown>).state === "string" &&
-    !!display && typeof display === "object" && typeof (display as Record<string, unknown>).state === "string";
-}
 
 
 function artifact(kind: ExternalArtifactKind, value: HashResult, crs: string): ArtifactDeclaration {
