@@ -142,7 +142,18 @@ describe("UploadScreen", () => {
     expect(runs[0]!.files.map((item) => [item.kind, item.sha256, item.declaredCrs])).toEqual([["ortho", "a".repeat(64), "EPSG:5186"], ["dsm", "a".repeat(64), "EPSG:5186"]]);
     expect(await screen.findByText("올리기가 끝났습니다")).toBeTruthy();
     expect(screen.getByText(/DSM에 높이 기준이 없습니다/)).toBeTruthy();
-    expect(screen.getByRole("link", { name: "자료에서 높이 기준 선택" }).getAttribute("href")).toBe("/sites/site-1/materials?workAreaId=wa-1");
+    expect(screen.getByRole("link", { name: "자료에서 높이 기준 선택" }).getAttribute("href")).toBe("/sites/site-1/upload/open?workAreaId=wa-1&workOrderId=wo-1&submissionRef=ers-v1-ref&revision=1&artifactId=dsm");
+  });
+
+  it("opens the uploaded orthophoto when no DSM was uploaded", async () => {
+    const { deps } = makeDeps();
+    await mount(deps);
+    await pick([file("ortho.tif")]);
+    fillTimes();
+    await waitFor(() => expect((upload() as HTMLButtonElement).disabled).toBe(false));
+    await act(async () => { fireEvent.click(upload()); });
+    expect(await screen.findByText("올리기가 끝났습니다")).toBeTruthy();
+    expect(screen.getByRole("link", { name: "자료 보기" }).getAttribute("href")).toMatch(/&artifactId=ortho$/);
   });
 
   it("retries the same session after an ambiguous failure instead of starting a new one", async () => {

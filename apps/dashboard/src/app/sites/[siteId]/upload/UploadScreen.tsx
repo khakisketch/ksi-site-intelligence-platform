@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { ConsolePage } from "@/components/nav/ConsolePage";
+import { siteDataHref } from "@/components/nav/site-context";
 import { ResponsiveActionBoundary } from "@/components/responsive/ResponsiveActionBoundary";
 import { presentExternalInspectionStatus } from "@/app/field/external-reconstruction-status";
 import type { ExternalArtifactInspectionView } from "@/lib/core-api/external-reconstruction";
@@ -235,7 +236,11 @@ export function UploadScreen({ siteId, siteName, workAreas, initialWorkAreaId, a
   const inspectionView = inspection ? presentExternalInspectionStatus(inspection) : null;
   const dsmNeedsVertical = assignment.dsm?.findings.some((finding) => finding.code === "NO_VERTICAL_REFERENCE") ?? false;
   const returnHref = `/sites/${encodeURIComponent(siteId)}${area ? `?workAreaId=${encodeURIComponent(area.workAreaId)}` : ""}`;
-  const materialsHref = `/sites/${encodeURIComponent(siteId)}/materials${area ? `?workAreaId=${encodeURIComponent(area.workAreaId)}` : ""}`;
+  // 방금 올린 자료의 상세로 연다. DSM을 올렸으면 DSM(높이 기준 선택이 거기 있다), 아니면 정사영상.
+  const openHref = result && area ? `/sites/${encodeURIComponent(siteId)}/upload/open?${new URLSearchParams({
+    workAreaId: area.workAreaId, workOrderId: result.workOrderId, submissionRef: result.submissionRef,
+    revision: String(result.revision), artifactId: assignment.dsm ? "dsm" : "ortho",
+  }).toString()}` : siteDataHref(siteId, { workAreaId: area?.workAreaId });
 
   return (
     <ConsolePage density="dense" className="!max-w-[1180px]">
@@ -292,7 +297,7 @@ export function UploadScreen({ siteId, siteName, workAreas, initialWorkAreaId, a
                   )}
                   {dsmNeedsVertical && <p className="rounded-lg bg-high-bg px-3 py-2 text-body text-high-ink">DSM에 높이 기준이 없습니다. 자료 상세에서 한 번 선택하면 높이·단면을 쓸 수 있습니다.</p>}
                   <div className="grid grid-cols-2 gap-2">
-                    <Link href={materialsHref} className="btn btn-primary col-span-2">{dsmNeedsVertical ? "자료에서 높이 기준 선택" : "자료 보기"}</Link>
+                    <Link href={openHref} prefetch={false} className="btn btn-primary col-span-2">{dsmNeedsVertical ? "자료에서 높이 기준 선택" : "자료 보기"}</Link>
                     <Link href={returnHref} className="btn">지도에서 보기</Link>
                     <button type="button" className="btn" onClick={reset}>하나 더 올리기</button>
                   </div>
