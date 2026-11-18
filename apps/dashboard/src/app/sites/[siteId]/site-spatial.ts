@@ -6,6 +6,7 @@ import type {
   SpatialAssetCatalogPage,
 } from "@/lib/core-api/spatial-assets";
 import type { WorkArea } from "@/lib/core-api/types";
+import { isKnownProjectedCrs } from "@/lib/geo/known-crs";
 import { assetBusinessTitle, assetLifecycleLabel, capturePeriodTitle } from "@/lib/operator-language";
 
 /**
@@ -78,19 +79,10 @@ export function normalizeCrs(crs: string): string {
 /** 평면 단위 판정 — 아는 좌표계만 단언한다. 모르는 CRS는 단위를 정하지 않는다. */
 export type PlaneUnit = "meters" | "degrees" | "unknown";
 
-/** `display-geometry.ts`의 알려진 집합과 같은 목록 — 바뀌면 함께 바꾼다. */
-const KNOWN_PROJECTED_CRS = new Set([
-  "EPSG:5185",
-  "EPSG:5186",
-  "EPSG:5187",
-  "EPSG:5188",
-  "EPSG:5179",
-]);
-
 export function planeUnitForCrs(crs: string): PlaneUnit {
   const code = normalizeCrs(crs);
   if (code === "EPSG:4326") return "degrees";
-  if (KNOWN_PROJECTED_CRS.has(code)) return "meters";
+  if (isKnownProjectedCrs(code)) return "meters";
   return "unknown";
 }
 

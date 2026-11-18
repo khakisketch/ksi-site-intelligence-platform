@@ -2,7 +2,8 @@ import proj4 from "proj4";
 
 import type { AoiVertex } from "@/lib/core-api/types";
 
-import { registerKoreaProjections } from "./proj4-defs";
+import { isKnownProjectedCrs } from "./known-crs";
+import { registerKnownProjections } from "./proj4-defs";
 
 /**
  * 등록된 작업구역 기하의 **화면 표시 전용** 변환(U02 P1 안전 기초).
@@ -31,15 +32,6 @@ export type DisplayVerticesResult =
   | { ok: true; vertices: AoiVertex[] }
   | { ok: false; reason: string };
 
-/** `proj4-defs.ts`가 등록하는 정의와 같은 집합 — 여기가 바뀌면 저기도 함께. */
-const SUPPORTED_PROJECTED_CRS = new Set([
-  "EPSG:5185",
-  "EPSG:5186",
-  "EPSG:5187",
-  "EPSG:5188",
-  "EPSG:5179",
-]);
-
 /** 한 구역 미리보기가 다룰 상한 — 초과는 비정상으로 보고 막는다. */
 const MAX_DISPLAY_VERTICES = 512;
 
@@ -56,7 +48,7 @@ export function toDisplayVertices(
 ): DisplayVerticesResult {
   const code = crs.trim().toUpperCase();
   const geographic = code === "EPSG:4326";
-  const projected = SUPPORTED_PROJECTED_CRS.has(code);
+  const projected = isKnownProjectedCrs(code);
   if (!geographic && !projected) {
     return fail(`좌표계 "${crs}"은 미리보기를 지원하지 않습니다.`);
   }
@@ -133,7 +125,7 @@ export function toDisplayVertices(
     return { ok: true, vertices };
   }
 
-  registerKoreaProjections();
+  registerKnownProjections();
   const vertices: AoiVertex[] = [];
   for (const [easting, northing] of distinct) {
     if (Math.abs(easting) > MAX_PROJECTED_ABS || Math.abs(northing) > MAX_PROJECTED_ABS) {

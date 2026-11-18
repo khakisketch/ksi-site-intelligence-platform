@@ -15,10 +15,11 @@
  * - 바이트·원본 키·서명 URL·해시·파일명·GSD·revision은 기술서에 두지 않고
  *   타일에도 표시하지 않는다. `dataAccess` 는 카탈로그 상수일 뿐 읽을 값이
  *   아니라서 참조하지 않는다.
- * - `site-spatial.ts` 의 순수 규칙과 같은 규율이다. 알려진 좌표계 집합이
- *   바뀌면 양쪽을 함께 바꾼다.
+ * - `site-spatial.ts` 의 순수 규칙과 같은 규율이다. 알려진 좌표계 집합은
+ *   `known-crs.ts` 한 곳을 함께 쓴다.
  */
 
+import { isKnownProjectedCrs } from "@/lib/geo/known-crs";
 import {
   capturePeriodTitle,
   dataKindLabel,
@@ -82,19 +83,10 @@ export function normalizeVisualCrs(crs: string): string {
 /** 평면 단위 판정 — 아는 좌표계만 단언한다. 모르는 CRS는 단위를 정하지 않는다. */
 export type VisualPlaneUnit = "meters" | "degrees" | "unknown";
 
-/** `site-spatial.ts` 의 알려진 집합과 같은 목록 — 바뀌면 함께 바꾼다. */
-const KNOWN_PROJECTED_CRS = new Set([
-  "EPSG:5185",
-  "EPSG:5186",
-  "EPSG:5187",
-  "EPSG:5188",
-  "EPSG:5179",
-]);
-
 export function planeUnitForVisualCrs(crs: string): VisualPlaneUnit {
   const code = normalizeVisualCrs(crs);
   if (code === "EPSG:4326") return "degrees";
-  if (KNOWN_PROJECTED_CRS.has(code)) return "meters";
+  if (isKnownProjectedCrs(code)) return "meters";
   return "unknown";
 }
 

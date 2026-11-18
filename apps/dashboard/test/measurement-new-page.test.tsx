@@ -89,7 +89,7 @@ describe("측정 선 그리기 화면(서버)", () => {
   });
 
   it("구역 모양을 지도에 올릴 수 없으면 경계 없이 연다(안에 있다고 하지 않는다)", async () => {
-    mocked.areas.mockResolvedValue({ workAreas: [{ ...geoArea, crs: "EPSG:32652" }] });
+    mocked.areas.mockResolvedValue({ workAreas: [{ ...geoArea, crs: "EPSG:5174" }] });
     await call();
     expect(captured.props!.ring).toBeNull();
   });

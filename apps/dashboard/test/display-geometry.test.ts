@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import type { AoiVertex } from "@/lib/core-api/types";
 import { toZonePolygon } from "@/lib/comparison-submit";
 import { toDisplayVertices } from "@/lib/geo/display-geometry";
-import { registerKoreaProjections } from "@/lib/geo/proj4-defs";
+import { registerKnownProjections } from "@/lib/geo/proj4-defs";
 
 // U02 P1 — 투영좌표(m) 구역을 위경도(°)로 잘못 읽으면 "다시 그리기"가 지구
 // 반대편 수평선이 된다. 이 헬퍼는 알려진 좌표계만 화면용 WGS84로 되돌리고,
@@ -18,7 +18,7 @@ const SEOnUsquare: AoiVertex[] = [
 ];
 
 function to5186(vertices: readonly AoiVertex[]): Record<string, unknown> {
-  registerKoreaProjections();
+  registerKnownProjections();
   const ring = vertices.map((v) => proj4("EPSG:4326", "EPSG:5186", [v.lonDeg, v.latDeg]));
   const first = ring[0];
   const last = ring[ring.length - 1];
@@ -74,11 +74,23 @@ describe("toDisplayVertices", () => {
   });
 
   it("지원하지 않는 좌표계는 막는다 — EPSG:4326으로 단정하지 않는다", () => {
-    for (const crs of ["EPSG:3857", "EPSG:32652", "EPSG:9999", ""]) {
+    // 5174(Bessel 구 좌표계)는 현행 좌표계와 수백 m 어긋나 일부러 모른다. 32661은 없는 UTM 존이다.
+    for (const crs of ["EPSG:3857", "EPSG:5174", "EPSG:32661", "EPSG:9999", ""]) {
       const result = toDisplayVertices(toZonePolygon(SEOnUsquare)!, crs);
       expect(result.ok).toBe(false);
       if (!result.ok) expect(result.reason).toContain("지원하지 않습니다");
     }
+  });
+
+  it("WGS84 UTM 52N 구역을 위경도로 되돌린다(Pix4D·DJI Terra 기본 출력)", () => {
+    // 기대값은 pyproj(EPSG:4326 → EPSG:32652)로 따로 계산한 서울시청 근처 한 점이다.
+    const [e, n] = [321424.286, 4159640.641];
+    const polygon = { type: "Polygon", coordinates: [[[e, n], [e + 100, n], [e + 100, n + 100], [e, n + 100], [e, n]]] };
+    const result = toDisplayVertices(polygon, "EPSG:32652");
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.vertices[0].lonDeg).toBeCloseTo(126.978, 5);
+    expect(result.vertices[0].latDeg).toBeCloseTo(37.5665, 5);
   });
 
   it("구멍이 있는 폴리곤은 막는다 — 바깥 경계만 보여주지 않는다", () => {

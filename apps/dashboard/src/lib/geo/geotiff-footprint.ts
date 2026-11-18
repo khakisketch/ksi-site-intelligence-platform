@@ -1,6 +1,6 @@
 import type { GeoTiffRawHeader } from "@/lib/geo/geotiff-header";
 import { resolveGeoTiffCrs } from "@/lib/geo/geotiff-overlay";
-import { proj4, registerKoreaProjections } from "@/lib/geo/proj4-defs";
+import { proj4, registerKnownProjections } from "@/lib/geo/proj4-defs";
 
 /**
  * 올리기 화면이 "이 파일이 선택한 작업구역을 덮는가"를 눈으로 보이게 하는 순수 계산.
@@ -30,7 +30,7 @@ export function fileFootprintWgs84(header: GeoTiffRawHeader): FileFootprint | nu
   } catch {
     return null;
   }
-  registerKoreaProjections();
+  registerKnownProjections();
   try {
     const corners = [[minX, minY], [minX, maxY], [maxX, maxY], [maxX, minY]] as const;
     const ring = corners.map(([x, y]) => {

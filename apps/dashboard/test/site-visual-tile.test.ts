@@ -168,6 +168,7 @@ describe("visual CRS honesty", () => {
   it("asserts a unit only for known coordinate systems", () => {
     expect(planeUnitForVisualCrs("EPSG:5186")).toBe("meters");
     expect(planeUnitForVisualCrs("EPSG:4326")).toBe("degrees");
+    expect(planeUnitForVisualCrs("EPSG:32652")).toBe("meters");
     // Floreat sample CRS and anything unknown assert no unit.
     expect(planeUnitForVisualCrs("EPSG:7850")).toBe("unknown");
     expect(planeUnitForVisualCrs("EPSG:9999")).toBe("unknown");

@@ -11,13 +11,15 @@ describe("GeoTIFF browser overlay boundary", () => {
   it("uses the embedded projected CRS rather than a Site default", () => {
     expect(resolveGeoTiffCrs({ ProjectedCSTypeGeoKey: 5186 })).toBe("EPSG:5186");
     expect(resolveGeoTiffCrs({ GeographicTypeGeoKey: 4326 })).toBe("EPSG:4326");
+    expect(resolveGeoTiffCrs({ ProjectedCSTypeGeoKey: 32652 })).toBe("EPSG:32652");
+    expect(resolveGeoTiffCrs({ ProjectedCSTypeGeoKey: 32751 })).toBe("EPSG:32751");
   });
 
   it("fails closed when a GeoTIFF has no supported EPSG code", () => {
     expect(() => resolveGeoTiffCrs(null)).toThrow("좌표 기준");
-    expect(() => resolveGeoTiffCrs({ ProjectedCSTypeGeoKey: 32652 })).toThrow(
-      "지원하지 않는",
-    );
+    for (const code of [5174, 32661, 32767]) {
+      expect(() => resolveGeoTiffCrs({ ProjectedCSTypeGeoKey: code })).toThrow("지원하지 않는");
+    }
   });
 
   it("caps only browser render resolution, not the source artifact", () => {

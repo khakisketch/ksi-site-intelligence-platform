@@ -39,7 +39,19 @@ describe("fileFootprintWgs84", () => {
     expect(fileFootprintWgs84(header({ boundingBox: undefined }))).toBeNull();
     expect(fileFootprintWgs84(header({ boundingBox: [5, 5, 1, 9] }))).toBeNull();
     expect(fileFootprintWgs84(header({ geoKeys: null }))).toBeNull();
-    expect(fileFootprintWgs84(header({ geoKeys: { ProjectedCSTypeGeoKey: 32652 } }))).toBeNull();
+    expect(fileFootprintWgs84(header({ geoKeys: { ProjectedCSTypeGeoKey: 5174 } }))).toBeNull();
+  });
+
+  it("draws a WGS84 UTM file (Pix4D·DJI Terra default export) in the right place", () => {
+    // 왼쪽 아래 모서리의 기대값은 pyproj(EPSG:4326 → EPSG:32652)로 따로 계산했다.
+    const footprint = fileFootprintWgs84(header({
+      geoKeys: { ProjectedCSTypeGeoKey: 32652 },
+      boundingBox: [321424.286, 4159640.641, 322424.286, 4160640.641],
+    }));
+    expect(footprint?.crs).toBe("EPSG:32652");
+    const [lon, lat] = footprint!.ring[0]!;
+    expect(lon).toBeCloseTo(126.978, 5);
+    expect(lat).toBeCloseTo(37.5665, 5);
   });
 });
 
