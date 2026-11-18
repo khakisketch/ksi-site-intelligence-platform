@@ -16,6 +16,7 @@ import { listObservationWorkOrders } from "@/lib/core-api/observation-work-order
 import { hasAllPermissions } from "@/lib/core-api/permissions";
 import { getSite } from "@/lib/core-api/sites";
 import { listSpatialAssets } from "@/lib/core-api/spatial-assets";
+import { sortByCaptureDescending } from "@/lib/spatial-asset-order";
 import { listSpatialDataRequests } from "@/lib/core-api/spatial-data-requests";
 import { getVerticalDeclarationState } from "@/lib/core-api/vertical-reference";
 import { listWorkAreas } from "@/lib/core-api/workAreas";
@@ -108,7 +109,7 @@ export default async function SiteDataPage({
       )
     : { status: "not-requested" as const };
   const page = assets.status === "ready" ? assets.page : null;
-  const filtered = page ? applyCatalogFilters(page.assets, filters) : [];
+  const filtered = page ? sortByCaptureDescending(applyCatalogFilters(page.assets, filters)) : [];
   const kinds = page ? [...new Set([...page.assets.map((item) => item.kind), ...(filters.kind ? [filters.kind] : [])])] : [];
 
   // 선택 자료 — 이번에 읽은 페이지 안에 있는 자산만 받는다. 없으면 조용히 다른 자료로 바꾸지 않고 안내한다.
