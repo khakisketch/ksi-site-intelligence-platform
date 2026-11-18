@@ -105,7 +105,7 @@ describe("Site spatial overview data bounds", () => {
     mocked.areas.mockResolvedValue({ workAreas: [] });
     await renderDefaultTab({});
     expect(screen.getByRole("heading", { name: "등록된 작업구역이 없습니다" })).toBeTruthy();
-    expect(screen.getByRole("list", { name: "자료 등록 순서" })).toBeTruthy();
+    expect(screen.getByRole("list", { name: "자료 올리기 순서" })).toBeTruthy();
     expect(mocked.assets).not.toHaveBeenCalled();
     expect(screen.queryByRole("img")).toBeNull();
   });

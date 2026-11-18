@@ -142,6 +142,11 @@ export function siteDataHref(siteId: string, scope: SiteDataScope = {}): string 
   return `/sites/${encodeURIComponent(siteId)}/data${text ? `?${text}` : ""}`;
 }
 
+/** 한 화면 올리기. 구역을 알면 그 구역으로 열고, 모르면 화면이 첫 구역을 고른다. */
+export function siteUploadHref(sitePath: string, workAreaId?: string | null): string {
+  return `${sitePath}/upload${workAreaId ? `?workAreaId=${encodeURIComponent(workAreaId)}` : ""}`;
+}
+
 /** 다른 프로젝트로 전환할 때 지금 보던 섹션을 유지한다. 섹션을 모르면 공간으로 간다. */
 export function projectSwitchHref(siteId: string, section: ProjectSection | null): string {
   return projectSectionHref(siteId, section);

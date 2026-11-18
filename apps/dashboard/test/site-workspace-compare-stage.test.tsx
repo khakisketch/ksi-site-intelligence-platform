@@ -463,9 +463,9 @@ describe("explore empty state", () => {
     render(shell(exploreProps()));
     const stage = screen.getByRole("region", { name: "선택 관측 보기" });
     expect(within(stage).getByText("미세 분석 구역에 확인된 관측이 없습니다")).toBeTruthy();
-    expect(within(stage).getByRole("list", { name: "자료 등록 순서" })).toBeTruthy();
-    const primary = within(stage).getByRole("link", { name: "자료 등록" });
-    expect(primary.getAttribute("href")).toBe("/sites/site-1/observations/new?workAreaId=tiny-1");
+    expect(within(stage).getByRole("list", { name: "자료 올리기 순서" })).toBeTruthy();
+    const primary = within(stage).getByRole("link", { name: "자료 올리기" });
+    expect(primary.getAttribute("href")).toBe("/sites/site-1/upload?workAreaId=tiny-1");
     expect(primary.className).toContain("btn-primary");
   });
 

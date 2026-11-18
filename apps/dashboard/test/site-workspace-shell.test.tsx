@@ -520,7 +520,7 @@ describe("workspace shell structure", () => {
     const stage = screen.getByRole("region", { name: "선택 관측 보기" });
     expect(within(stage).queryByLabelText("관측 시점")).toBeNull();
     expect(within(stage).getByText("미세 분석 구역에 확인된 관측이 없습니다")).toBeTruthy();
-    expect(within(stage).getByRole("list", { name: "자료 등록 순서" })).toBeTruthy();
+    expect(within(stage).getByRole("list", { name: "자료 올리기 순서" })).toBeTruthy();
     expect(stage.querySelectorAll(".btn-primary")).toHaveLength(1);
     expect(stage.textContent).not.toMatch(/무대에서.*선택|그림 바로 위에서/);
   });
@@ -534,7 +534,7 @@ describe("workspace shell structure", () => {
     const stage = screen.getByRole("region", { name: "선택 관측 보기" });
     expect(within(stage).getByText("미세 분석 구역에 확인된 관측이 없습니다")).toBeTruthy();
     // 읽기 전용이라 등록 길 자체가 없다.
-    expect(within(stage).queryByRole("link", { name: "자료 등록" })).toBeNull();
+    expect(within(stage).queryByRole("link", { name: "자료 올리기" })).toBeNull();
   });
 
   it("keeps exactly one primary register link for a true empty area", async () => {
@@ -542,9 +542,9 @@ describe("workspace shell structure", () => {
     mocked.areas.mockResolvedValue({ workAreas: [areaFixture()] });
     await renderOverview({});
     const stage = screen.getByRole("region", { name: "선택 관측 보기" });
-    const registerLinks = within(stage).getAllByRole("link", { name: "자료 등록" });
+    const registerLinks = within(stage).getAllByRole("link", { name: "자료 올리기" });
     expect(registerLinks).toHaveLength(1);
-    expect(registerLinks[0]!.getAttribute("href")).toBe("/sites/site-1/observations/new?workAreaId=tiny-1");
+    expect(registerLinks[0]!.getAttribute("href")).toBe("/sites/site-1/upload?workAreaId=tiny-1");
     // 진입 패널 본문은 같은 등록 길을 반복하지 않는다.
     expect(screen.queryByRole("region", { name: "기본 관측 선택 상태" })).toBeNull();
   });

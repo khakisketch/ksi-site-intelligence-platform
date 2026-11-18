@@ -1,3 +1,4 @@
+import { siteUploadHref } from "@/components/nav/site-context";
 import { EXACT_ANALYSIS_HINT_QUERY_KEYS, VISUAL_PAIR_QUERY_KEYS } from "./site-visual-pair";
 
 /**
@@ -54,7 +55,7 @@ export function resolveSiteAreaNextAction(input: {
     }
     return `${target.pathname}?${target.searchParams.toString()}${target.hash}`;
   };
-  const scopedRegisterHref = `${sitePath}/observations/new?workAreaId=${encodeURIComponent(workAreaId)}`;
+  const scopedRegisterHref = siteUploadHref(sitePath, workAreaId);
   const scopedCompareHref = withPair(`${sitePath}/analysis?workAreaId=${encodeURIComponent(workAreaId)}&request=new#new-analysis-request`);
   const scopedAnalysisListHref = withPair(active
     ? `${sitePath}/analysis?workAreaId=${encodeURIComponent(workAreaId)}`
@@ -68,7 +69,7 @@ export function resolveSiteAreaNextAction(input: {
     }
     : {
       href: canRegisterHere ? scopedRegisterHref : scopedAnalysisListHref,
-      label: canRegisterHere ? "관측 자료 등록" : "변화 분석 보기",
+      label: canRegisterHere ? "자료 올리기" : "변화 분석 보기",
     };
   return {
     primary,

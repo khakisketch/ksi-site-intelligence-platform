@@ -1,4 +1,5 @@
 import type { ResponsiveAction } from "@/components/responsive/responsive-actions";
+import { siteUploadHref } from "@/components/nav/site-context";
 import type { SiteView } from "@/lib/core-api/types";
 
 export type OperatorNextActionKind = "MANAGE_WORK_AREAS" | "CREATE_OBSERVATION";
@@ -30,8 +31,8 @@ export function resolveSiteOperatorNextAction(
   ) {
     return {
       kind: "CREATE_OBSERVATION",
-      label: "관측 자료 등록",
-      href: `${siteHref}/observations/new`,
+      label: "자료 올리기",
+      href: siteUploadHref(siteHref),
       responsiveAction: "WORK_ORDERS_WRITE",
       siteId: site.siteId,
     };
