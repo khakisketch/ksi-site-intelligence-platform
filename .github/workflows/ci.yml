@@ -19,7 +19,9 @@ concurrency:
 
 jobs:
   gates:
-    runs-on: ubuntu-latest
+    # ubuntu-latest가 26.04로 바뀌며 bwrap 자식 프로세스가 AppArmor(unpriv_bwrap)로 제한되어 샌드박스 시험이 깨진다.
+    # 시험을 26.04에 맞게 고칠 때까지 마지막으로 통과한 이미지에 고정한다.
+    runs-on: ubuntu-24.04
     steps:
       # 서브모듈은 클론하지 않는다 — 테스트·가드에 불필요하고 private 인증도 불필요.
       # 핀 검증은 gitlink SHA(ls-tree)로 수행한다 (scripts/verify_reference_pins.sh 폴백).
