@@ -113,7 +113,7 @@ describe("측정 선 그리기 화면(서버)", () => {
   });
 
   it("모르는 좌표계의 선은 고칠 수 없다고 말한다", async () => {
-    mocked.features.mockResolvedValue({ features: [feature("EPSG:32652", [[500000, 4000000], [500100, 4000000]])] });
+    mocked.features.mockResolvedValue({ features: [feature("EPSG:32617", [[500000, 4000000], [500100, 4000000]])] });
     expect(await call({ workAreaId: "area-1", featureId: FEATURE_ID })).toContain("고칠 수 없습니다");
     expect(captured.props).toBeNull();
   });

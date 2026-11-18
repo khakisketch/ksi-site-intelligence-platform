@@ -5,6 +5,8 @@
  * 읽을 때 하며, 여기서는 아무것도 추정하거나 맞추지 않는다. 저장은 위치만 기억하고 어떤 자료도 읽지 않는다.
  */
 
+import { isAnalysisCrs } from "@/lib/geo/known-crs";
+
 /** [경도, 위도]. Core 계약의 EPSG:4326 꼭짓점 순서와 같다. */
 export type LineVertex = [number, number];
 
@@ -162,11 +164,9 @@ export function reviseLineBody(expectedRevision: number, name: string, vertices:
   return { expectedRevision, name: name.trim(), line: { crs: LINE_CRS, vertices: vertices.map(roundVertex) } };
 }
 
-const KOREA_CRS = new Set(["EPSG:5179", "EPSG:5185", "EPSG:5186", "EPSG:5187", "EPSG:5188"]);
-
 /**
- * 저장된 선을 편집기에 올릴 경위도로 바꾼다. 경위도로 저장된 선은 그대로, 한국 투영좌표계의 선은 같은 정의로
- * 변환한다. 그 밖의 좌표계는 모른다고 답한다(다른 좌표를 지어내지 않는다). 변환 뒤 저장하면 새 개정은 경위도 선이 된다.
+ * 저장된 선을 편집기에 올릴 경위도로 바꾼다. 경위도로 저장된 선은 그대로, 분석 좌표계(한국 투영좌표계·한국 UTM)의
+ * 선은 같은 정의로 변환한다. 그 밖의 좌표계는 모른다고 답한다(다른 좌표를 지어내지 않는다). 변환 뒤 저장하면 새 개정은 경위도 선이 된다.
  */
 export function savedLineToEditorVertices(
   line: { crs: string; vertices: readonly (readonly [number, number])[] },
@@ -174,7 +174,7 @@ export function savedLineToEditorVertices(
 ): { ok: true; vertices: LineVertex[]; converted: boolean } | { ok: false; reason: string } {
   const code = line.crs.trim().toUpperCase();
   if (code === LINE_CRS) return { ok: true, vertices: line.vertices.map(([lon, lat]) => roundVertex([lon, lat])), converted: false };
-  if (!KOREA_CRS.has(code)) return { ok: false, reason: `좌표계 ${line.crs}의 선은 이 화면에서 고칠 수 없습니다.` };
+  if (!isAnalysisCrs(code)) return { ok: false, reason: `좌표계 ${line.crs}의 선은 이 화면에서 고칠 수 없습니다.` };
   const vertices = line.vertices.map((vertex) => roundVertex(project(code, vertex)));
   if (vertices.some((vertex) => !validCoordinate(vertex))) return { ok: false, reason: "선의 좌표를 지도 좌표로 바꾸지 못했습니다." };
   return { ok: true, vertices, converted: true };

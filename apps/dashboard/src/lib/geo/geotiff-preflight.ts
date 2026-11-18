@@ -1,4 +1,5 @@
 import type { ArtifactSlot, GeoTiffRawHeader } from "@/lib/geo/geotiff-header";
+import { isAnalysisCrs } from "@/lib/geo/known-crs";
 
 /**
  * 올리기 전 점검: 브라우저가 읽은 첫 IFD 사실만으로 KSI 파일 검사(external_geotiff_inspector)가
@@ -22,8 +23,6 @@ export type PreflightFinding = {
 
 // 검사기 입력 상한의 절대값이다(external_validation_worker_config 의 2^31). 이보다 크면 정책과 무관하게 거부된다.
 export const MAX_INSPECTABLE_BYTES = 2 ** 31;
-// 체적 분석이 받는 투영좌표계(ksi_geo_spatial.crs.SUPPORTED_PROJECT_CRS).
-const ANALYSIS_CRS = new Set(["EPSG:5179", "EPSG:5185", "EPSG:5186", "EPSG:5187", "EPSG:5188"]);
 const USER_DEFINED = 32767;
 const METRE = 9001;
 
@@ -78,8 +77,8 @@ export function preflightGeoTiff(slot: ArtifactSlot, header: GeoTiffRawHeader, f
     } else if (slot === "dsm" && layout.projLinearUnits !== null && layout.projLinearUnits !== METRE) {
       add("DSM_UNIT_NOT_METRE", "may", "DSM 좌표 단위가 미터가 아닌 것으로 표시되어 있습니다.", "단위가 미터인 투영 좌표계로 내보내세요.");
     }
-    if (slot === "dsm" && code !== null && projected && !ANALYSIS_CRS.has(code)) {
-      add("CRS_NOT_ANALYSIS", "notice", `${code} 좌표계는 등록·표시는 되지만 체적 분석은 한국 좌표계(EPSG:5179, 5185~5188)에서만 합니다.`, "체적 분석이 필요하면 한국 좌표계로 내보내세요.");
+    if (slot === "dsm" && code !== null && projected && !isAnalysisCrs(code)) {
+      add("CRS_NOT_ANALYSIS", "notice", `${code} 좌표계는 등록·표시는 되지만 단면·체적 분석은 한국 좌표계(EPSG:5179, 5185~5188)와 한국 UTM(51N·52N)에서만 합니다.`, "분석이 필요하면 한국 좌표계나 WGS84 UTM 51N·52N으로 내보내세요.");
     }
     if (slot === "dsm") {
       if (layout.verticalCsType === null) {

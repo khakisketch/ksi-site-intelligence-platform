@@ -123,6 +123,18 @@ describe("preflightGeoTiff — DSM", () => {
     expect(codes(preflightGeoTiff("dsm", dsm({}, { verticalUnits: 9001 }), null))).toEqual([]);
   });
 
+  it("한국 UTM(51N·52N) DSM 은 분석 좌표계라 제한을 알리지 않는다", () => {
+    for (const code of [32651, 32652]) {
+      const findings = preflightGeoTiff("dsm", dsm({ geoKeys: { GTModelTypeGeoKey: 1, ProjectedCSTypeGeoKey: code } }), null);
+      expect(codes(findings)).not.toContain("CRS_NOT_ANALYSIS");
+    }
+  });
+
+  it("한국 밖 UTM 존 DSM 은 분석 제한을 알린다", () => {
+    const findings = preflightGeoTiff("dsm", dsm({ geoKeys: { GTModelTypeGeoKey: 1, ProjectedCSTypeGeoKey: 32617 } }), null);
+    expect(codes(findings)).toContain("CRS_NOT_ANALYSIS");
+  });
+
   it("한국 좌표계가 아닌 투영 DSM 은 분석 제한만 알린다", () => {
     const findings = preflightGeoTiff("dsm", dsm({ geoKeys: { GTModelTypeGeoKey: 1, ProjectedCSTypeGeoKey: 7850 } }), null);
     expect(findings).toHaveLength(1);
