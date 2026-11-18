@@ -161,6 +161,22 @@ describe("UploadScreen", () => {
     expect(await screen.findByText("올리기가 끝났습니다")).toBeTruthy();
   });
 
+  it("locks files and the shooting window once a request has started so a retry cannot drift from what is shown", async () => {
+    const { deps, run } = makeDeps();
+    run.mockRejectedValueOnce(new UploadFlowError("register", true, "응답을 확인하지 못했습니다. 다시 시도하면 같은 요청으로 이어서 확인합니다."));
+    await mount(deps);
+    await pick([file("dsm.tif")]);
+    fillTimes();
+    await waitFor(() => expect((upload() as HTMLButtonElement).disabled).toBe(false));
+    expect(screen.getByRole("button", { name: "DSM (높이) 파일 빼기" })).toBeTruthy();
+    await act(async () => { fireEvent.click(upload()); });
+    await screen.findByText(/응답을 확인하지 못했습니다/);
+    expect(screen.queryByRole("button", { name: "DSM (높이) 파일 빼기" })).toBeNull();
+    expect(screen.getByLabelText("촬영 종료 시각").matches(":disabled")).toBe(true);
+    await pick([file("ortho.tif")]);
+    expect(within(screen.getByRole("region", { name: "정사영상" })).getByText("아직 없음")).toBeTruthy();
+  });
+
   it("starts a fresh session only after the server definitely refused", async () => {
     const { deps, runs, run } = makeDeps();
     run.mockRejectedValueOnce(new UploadFlowError("register", false, "올린 내용이 등록 기준에 맞지 않아 접수되지 않았습니다."));

@@ -76,6 +76,8 @@ export function UploadScreen({ siteId, siteName, workAreas, initialWorkAreaId, a
   const [endTime, setEndTime] = useState("");
   const [touched, setTouched] = useState(false);
   const [phase, setPhase] = useState<Phase>("select");
+  // 한 번 시작한 요청은 같은 내용으로만 다시 보내므로, 실패 뒤에도 입력을 잠가 화면과 요청이 어긋나지 않게 한다.
+  const [frozen, setFrozen] = useState(false);
   const [stage, setStage] = useState<string | null>(null);
   const [doneKinds, setDoneKinds] = useState<string[]>([]);
   const [error, setError] = useState<{ message: string; ambiguous: boolean } | null>(null);
@@ -134,13 +136,13 @@ export function UploadScreen({ siteId, siteName, workAreas, initialWorkAreaId, a
   }, [assignedKey, deps]);
 
   const addFiles = useCallback(async (files: File[]) => {
-    if (phase !== "select" || files.length === 0) return;
+    if (phase !== "select" || frozen || files.length === 0) return;
     const next = await Promise.all(files.map((file) => {
       candidateCounter += 1;
       return deps.inspect(file, `f${candidateCounter}`, area?.polygon ?? null);
     }));
     setCandidates((current) => [...current, ...next]);
-  }, [area, deps, phase]);
+  }, [area, deps, phase, frozen]);
 
   const removeCandidate = (id: string) => {
     hashAbort.current.get(id)?.abort();
@@ -154,6 +156,7 @@ export function UploadScreen({ siteId, siteName, workAreas, initialWorkAreaId, a
   const hashed = assigned.every(({ candidate }) => hashes[candidate.id]?.result);
   const hashing = assigned.some(({ candidate }) => { const state = hashes[candidate.id]; return !state || (!state.result && !state.failed); });
   const hashFailed = assigned.some(({ candidate }) => hashes[candidate.id]?.failed);
+  const locked = phase !== "select" || frozen;
   const canStart = Boolean(accountIdentity) && area !== null && assigned.length > 0 && hashed && timeIssue === null && phase === "select";
 
   const run = async () => {
@@ -176,6 +179,7 @@ export function UploadScreen({ siteId, siteName, workAreas, initialWorkAreaId, a
       }),
     });
     sessionRef.current = session;
+    setFrozen(true);
     const controller = new AbortController();
     runAbort.current = controller;
     try {
@@ -194,7 +198,7 @@ export function UploadScreen({ siteId, siteName, workAreas, initialWorkAreaId, a
   };
 
   // 서버가 분명히 거부한 경우에만 처음부터 새로 시작한다. 불확실한 실패는 같은 요청을 이어서 다시 보낸다.
-  const startOver = () => { sessionRef.current = null; setError(null); setDoneKinds([]); };
+  const startOver = () => { sessionRef.current = null; setFrozen(false); setError(null); setDoneKinds([]); };
 
   useEffect(() => {
     if (phase !== "done" || !result) return;
@@ -221,6 +225,7 @@ export function UploadScreen({ siteId, siteName, workAreas, initialWorkAreaId, a
 
   const reset = () => {
     sessionRef.current = null;
+    setFrozen(false);
     setCandidates([]); setHashes({}); setStartTime(""); setEndTime(""); setTouched(false);
     setError(null); setResult(null); setInspection(null); setDoneKinds([]); setStage(null); setPhase("select");
   };
@@ -249,7 +254,7 @@ export function UploadScreen({ siteId, siteName, workAreas, initialWorkAreaId, a
           {workAreas.length > 1 && (
             <div role="group" aria-label="작업구역" className="flex flex-wrap gap-2">
               {workAreas.map((item) => (
-                <button key={item.workAreaId} type="button" aria-pressed={item.workAreaId === areaId} disabled={phase !== "select"} onClick={() => setAreaId(item.workAreaId)}
+                <button key={item.workAreaId} type="button" aria-pressed={item.workAreaId === areaId} disabled={locked} onClick={() => setAreaId(item.workAreaId)}
                   className={`tap-target rounded-full border px-3 py-1 text-body ${item.workAreaId === areaId ? "border-ink-1 bg-ink-1 text-surface" : "border-line-strong bg-surface text-ink-1"}`}>{item.name}</button>
               ))}
             </div>
@@ -257,12 +262,12 @@ export function UploadScreen({ siteId, siteName, workAreas, initialWorkAreaId, a
 
           <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_340px]">
             <div
-              className={`relative min-h-[420px] rounded-xl ${dragging ? "ring-2 ring-ink-1" : ""}`}
-              onDragOver={(event) => { event.preventDefault(); if (phase === "select") setDragging(true); }}
+              className={`relative min-h-[520px] rounded-xl ${dragging ? "ring-2 ring-ink-1" : ""}`}
+              onDragOver={(event) => { event.preventDefault(); if (!locked) setDragging(true); }}
               onDragLeave={() => setDragging(false)}
               onDrop={(event) => { event.preventDefault(); setDragging(false); void addFiles(Array.from(event.dataTransfer.files)); }}
             >
-              <UploadMap area={areaRing} areaName={area?.name ?? ""} footprints={footprints} className="absolute inset-0" />
+              <UploadMap area={areaRing} areaName={area?.name ?? ""} footprints={footprints} />
               {assigned.length === 0 && (
                 <div className="absolute inset-4 grid place-items-center rounded-xl border-2 border-dashed border-line-strong bg-surface/70 text-center">
                   <div className="flex flex-col items-center gap-3 px-4">
@@ -304,7 +309,7 @@ export function UploadScreen({ siteId, siteName, workAreas, initialWorkAreaId, a
                             <p className="font-bold">{KIND_LABEL[kind]}</p>
                             <p className="truncate text-caption text-ink-muted">{candidate ? `${candidate.file.name} · ${formatBytesKo(candidate.file.size)}` : "아직 없음"}</p>
                           </div>
-                          {candidate && phase === "select" && <button type="button" className="tap-target text-caption text-ink-2 underline" aria-label={`${KIND_LABEL[kind]} 파일 빼기`} onClick={() => removeCandidate(candidate.id)}>빼기</button>}
+                          {candidate && !locked && <button type="button" className="tap-target text-caption text-ink-2 underline" aria-label={`${KIND_LABEL[kind]} 파일 빼기`} onClick={() => removeCandidate(candidate.id)}>빼기</button>}
                         </div>
                         {candidate && (
                           <>
@@ -322,12 +327,12 @@ export function UploadScreen({ siteId, siteName, workAreas, initialWorkAreaId, a
                   })}
                   {assignment.skipped.map((item) => (
                     <section key={item.id} className="rounded-xl border border-high bg-surface p-3">
-                      <div className="flex items-start justify-between gap-2"><p className="min-w-0 truncate font-bold">{item.name}</p><button type="button" className="tap-target text-caption text-ink-2 underline" onClick={() => removeCandidate(item.id)}>빼기</button></div>
+                      <div className="flex items-start justify-between gap-2"><p className="min-w-0 truncate font-bold">{item.name}</p>{!locked && <button type="button" className="tap-target text-caption text-ink-2 underline" onClick={() => removeCandidate(item.id)}>빼기</button>}</div>
                       <p className="mt-1 text-caption text-high-ink">{item.reason}</p>
                     </section>
                   ))}
 
-                  <fieldset className="flex flex-col gap-2 rounded-xl border border-line bg-surface p-3" disabled={phase !== "select"}>
+                  <fieldset className="flex flex-col gap-2 rounded-xl border border-line bg-surface p-3" disabled={locked}>
                     <legend className="px-1 text-caption text-ink-muted">촬영 (한국 표준시)</legend>
                     <input type="date" aria-label="촬영 날짜" className="input" value={effectiveDate} suppressHydrationWarning onChange={(event) => { setDate(event.target.value); setTouched(true); }} />
                     <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2">

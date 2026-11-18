@@ -30,6 +30,7 @@ export function projectRings(rings: readonly (readonly LonLat[])[], width: numbe
 
 const FILL: Record<string, string> = { ortho: "var(--mid)", dsm: "var(--ink-muted)" };
 
+/** 부모는 `relative`여야 하고 크기를 정한다. 이 지도는 부모를 가득 채운다. */
 export function UploadMap({ area, areaName, footprints, className = "" }: { area: readonly LonLat[] | null; areaName: string; footprints: readonly MapFootprint[]; className?: string }) {
   const W = 800;
   const H = 520;
@@ -40,7 +41,7 @@ export function UploadMap({ area, areaName, footprints, className = "" }: { area
     ? `작업구역 ${areaName}`
     : `작업구역 ${areaName} 위에 올릴 파일 ${footprints.map((item) => item.label).join(", ")}의 범위`;
   return (
-    <div className={`upload-map relative overflow-hidden rounded-xl border border-line ${className}`.trim()} style={{ background: "var(--sunk)" }}>
+    <div className={`upload-map absolute inset-0 overflow-hidden rounded-xl border border-line ${className}`.trim()} style={{ background: "var(--sunk)" }}>
       <svg role="img" aria-label={description} viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="xMidYMid meet" className="absolute inset-0 h-full w-full">
         <defs>
           <pattern id="upload-map-grid" width="40" height="40" patternUnits="userSpaceOnUse"><path d="M40 0H0V40" fill="none" stroke="var(--line)" strokeWidth="1" /></pattern>
