@@ -29,6 +29,7 @@ describe("site context path resolution", () => {
     expect(resolveSiteSection("/sites/site-1", query("manage"))).toBeNull();
     expect(resolveSiteSection("/sites/site-1/spatial-assets", query())).toBe("space");
     expect(resolveSiteSection("/sites/site-1/spatial-data-requests", query())).toBe("space");
+    expect(resolveSiteSection("/sites/site-1/measurements", query())).toBe("space");
     expect(resolveSiteSection("/sites/site-1/work-areas", query())).toBe("space");
     expect(resolveSiteSection("/sites/site-1/analysis", query())).toBe("analysis");
     expect(resolveSiteSection("/sites/site-1/observations/new", query())).toBe("analysis");

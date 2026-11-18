@@ -3032,6 +3032,287 @@ paths:
         '503': { description: STORE_UNAVAILABLE — 봉인됨, Retry-After }
         '401': { description: 인증 실패 }
         '403': { description: SITES_WRITE 권한 없음 }
+  /v1/sites/{site_id}/work-areas/{work_area_id}/measurement-features:
+    post:
+      tags: [measurement-features]
+      summary: Save a measurement line in a work area
+      description: >-
+        SITES_WRITE required. Revision 1 of a new line. The line only fixes *where*; it grants no
+        read of any surface and never widens the parent work area's current access. The same
+        Idempotency-Key with the same body returns the original (200); another body is a 409.
+        The raw key is not retained.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: site_id, required: true, schema: { type: string } }
+        - { in: path, name: work_area_id, required: true, schema: { type: string } }
+        - { in: header, name: Idempotency-Key, required: true, schema: { type: string, minLength: 1, maxLength: 255 } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateMeasurementFeatureV1' }
+      responses:
+        '201':
+          description: CREATED
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MeasurementFeatureWriteViewV1' }
+        '200':
+          description: REPLAYED — the same request already happened
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MeasurementFeatureWriteViewV1' }
+        '404': { description: Site, WorkArea or saved line is absent or outside the caller scope }
+        '409':
+          description: WORK_AREA_NOT_ACTIVE · REVISION_CONFLICT · IDEMPOTENCY_CONFLICT · TOO_MANY_FEATURES · TOO_MANY_REVISIONS
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MeasurementFeatureRefusalV1' }
+        '422': { description: Invalid line, name or Idempotency-Key }
+        '503': { description: STORE_UNAVAILABLE — Retry-After }
+        '401': { description: Authentication required }
+        '403': { description: SITES_WRITE permission required }
+    get:
+      tags: [measurement-features]
+      summary: List the latest revision of each saved line
+      description: SITES_READ required. Bounded by the per-area line limit.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: site_id, required: true, schema: { type: string } }
+        - { in: path, name: work_area_id, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: Latest revisions
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MeasurementFeatureListViewV1' }
+        '404': { description: Site, WorkArea or saved line is absent or outside the caller scope }
+        '401': { description: Authentication required }
+        '403': { description: SITES_READ permission required }
+  /v1/sites/{site_id}/work-areas/{work_area_id}/measurement-features/{feature_id}:
+    get:
+      tags: [measurement-features]
+      summary: Get the latest revision of one saved line
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: site_id, required: true, schema: { type: string } }
+        - { in: path, name: work_area_id, required: true, schema: { type: string } }
+        - { in: path, name: feature_id, required: true, schema: { type: string, pattern: '^mf-[0-9a-f]{32}$' } }
+      responses:
+        '200':
+          description: Latest revision
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MeasurementFeatureRevisionV1' }
+        '404': { description: Site, WorkArea or saved line is absent or outside the caller scope }
+        '401': { description: Authentication required }
+        '403': { description: SITES_READ permission required }
+  /v1/sites/{site_id}/work-areas/{work_area_id}/measurement-features/{feature_id}/revisions:
+    post:
+      tags: [measurement-features]
+      summary: Edit a saved line — a new revision, never an in-place change
+      description: >-
+        SITES_WRITE required. ``expectedRevision`` must be the current latest revision, otherwise
+        409 REVISION_CONFLICT. Earlier revisions stay readable and keep their digests, so a result
+        computed from revision N stays bound to revision N. A retry with the same Idempotency-Key
+        and body returns the original revision.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: site_id, required: true, schema: { type: string } }
+        - { in: path, name: work_area_id, required: true, schema: { type: string } }
+        - { in: path, name: feature_id, required: true, schema: { type: string, pattern: '^mf-[0-9a-f]{32}$' } }
+        - { in: header, name: Idempotency-Key, required: true, schema: { type: string, minLength: 1, maxLength: 255 } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ReviseMeasurementFeatureV1' }
+      responses:
+        '201':
+          description: REVISED
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MeasurementFeatureWriteViewV1' }
+        '200':
+          description: REPLAYED
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MeasurementFeatureWriteViewV1' }
+        '404': { description: Site, WorkArea or saved line is absent or outside the caller scope }
+        '409':
+          description: WORK_AREA_NOT_ACTIVE · REVISION_CONFLICT · IDEMPOTENCY_CONFLICT · TOO_MANY_FEATURES · TOO_MANY_REVISIONS
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MeasurementFeatureRefusalV1' }
+        '422': { description: Invalid line, name or Idempotency-Key }
+        '503': { description: STORE_UNAVAILABLE — Retry-After }
+        '401': { description: Authentication required }
+        '403': { description: SITES_WRITE permission required }
+    get:
+      tags: [measurement-features]
+      summary: List every revision of one saved line, oldest first
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: site_id, required: true, schema: { type: string } }
+        - { in: path, name: work_area_id, required: true, schema: { type: string } }
+        - { in: path, name: feature_id, required: true, schema: { type: string, pattern: '^mf-[0-9a-f]{32}$' } }
+      responses:
+        '200':
+          description: All revisions
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MeasurementFeatureRevisionListViewV1' }
+        '404': { description: Site, WorkArea or saved line is absent or outside the caller scope }
+        '401': { description: Authentication required }
+        '403': { description: SITES_READ permission required }
+  /v1/sites/{site_id}/work-areas/{work_area_id}/measurement-features/{feature_id}/revisions/{revision}:
+    get:
+      tags: [measurement-features]
+      summary: Get one exact revision of a saved line
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: site_id, required: true, schema: { type: string } }
+        - { in: path, name: work_area_id, required: true, schema: { type: string } }
+        - { in: path, name: feature_id, required: true, schema: { type: string, pattern: '^mf-[0-9a-f]{32}$' } }
+        - { in: path, name: revision, required: true, schema: { type: integer, minimum: 1 } }
+      responses:
+        '200':
+          description: The exact revision
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MeasurementFeatureRevisionV1' }
+        '404': { description: Site, WorkArea or saved line is absent or outside the caller scope }
+        '401': { description: Authentication required }
+        '403': { description: SITES_READ permission required }
+  /v1/sites/{site_id}/work-areas/{work_area_id}/spatial-assets/{asset_ref}/vertical-reference:
+    get:
+      tags: [vertical-reference-declarations]
+      summary: What is declared for one DSM's vertical reference
+      description: >-
+        SITES_READ required. `observed` is true when the file itself carries a vertical reference; then
+        no declaration is accepted. `current` is the active declaration, if any, and is a user claim,
+        never a parser observation. `history` lists every record, oldest first.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: site_id, required: true, schema: { type: string } }
+        - { in: path, name: work_area_id, required: true, schema: { type: string } }
+        - { in: path, name: asset_ref, required: true, schema: { type: string, pattern: '^ksa-v1-[0-9a-f]{64}$' } }
+      responses:
+        '200':
+          description: Declaration state
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/VerticalReferenceDeclarationStateViewV1' }
+        '404': { description: Site, WorkArea or asset is absent or outside the caller scope }
+        '401': { description: Authentication required }
+        '403': { description: SITES_READ permission required }
+  /v1/sites/{site_id}/work-areas/{work_area_id}/spatial-assets/{asset_ref}/vertical-reference/declarations:
+    post:
+      tags: [vertical-reference-declarations]
+      summary: Declare the vertical reference of a measured DSM
+      description: >-
+        WORK_ORDERS_WRITE required. A claim about a measured DSM whose file carries no vertical
+        reference; heights are metres only and the datum is the closed platform vocabulary. It never
+        changes the registered submission or any recorded decision. `expectedSequence` is the
+        sequence the caller saw (0 = none yet). The same Idempotency-Key with the same body returns
+        the original (200); another body is a 409. The raw key is not retained.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: site_id, required: true, schema: { type: string } }
+        - { in: path, name: work_area_id, required: true, schema: { type: string } }
+        - { in: path, name: asset_ref, required: true, schema: { type: string, pattern: '^ksa-v1-[0-9a-f]{64}$' } }
+        - { in: header, name: Idempotency-Key, required: true, schema: { type: string, minLength: 1, maxLength: 255 } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DeclareVerticalReferenceV1' }
+      responses:
+        '201':
+          description: DECLARED
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/VerticalReferenceDeclarationWriteViewV1' }
+        '200':
+          description: REPLAYED — the same request already happened
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/VerticalReferenceDeclarationWriteViewV1' }
+        '404': { description: Site, WorkArea or asset is absent or outside the caller scope }
+        '409':
+          description: NOT_A_DSM · NOT_MEASURED · OBSERVED_REFERENCE_PRESENT · SEQUENCE_CONFLICT · TOO_MANY_DECLARATIONS · IDEMPOTENCY_CONFLICT
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/VerticalReferenceDeclarationRefusalV1' }
+        '422': { description: Invalid body or Idempotency-Key }
+        '503': { description: STORE_UNAVAILABLE — Retry-After }
+        '401': { description: Authentication required }
+        '403': { description: WORK_ORDERS_WRITE permission required }
+  /v1/sites/{site_id}/work-areas/{work_area_id}/spatial-assets/{asset_ref}/vertical-reference/withdrawals:
+    post:
+      tags: [vertical-reference-declarations]
+      summary: Withdraw the current vertical reference declaration
+      description: >-
+        WORK_ORDERS_WRITE required. Appends a withdrawal record; nothing is deleted. Heights can no
+        longer be read from the withdrawn declaration. Same idempotency rules as declaring.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: site_id, required: true, schema: { type: string } }
+        - { in: path, name: work_area_id, required: true, schema: { type: string } }
+        - { in: path, name: asset_ref, required: true, schema: { type: string, pattern: '^ksa-v1-[0-9a-f]{64}$' } }
+        - { in: header, name: Idempotency-Key, required: true, schema: { type: string, minLength: 1, maxLength: 255 } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/WithdrawVerticalReferenceV1' }
+      responses:
+        '201':
+          description: WITHDRAWN
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/VerticalReferenceDeclarationWriteViewV1' }
+        '200':
+          description: REPLAYED — the same request already happened
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/VerticalReferenceDeclarationWriteViewV1' }
+        '404': { description: Site, WorkArea or asset is absent or outside the caller scope }
+        '409':
+          description: NOTHING_TO_WITHDRAW · SEQUENCE_CONFLICT · NOT_A_DSM · NOT_MEASURED · TOO_MANY_DECLARATIONS · IDEMPOTENCY_CONFLICT
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/VerticalReferenceDeclarationRefusalV1' }
+        '422': { description: Invalid body or Idempotency-Key }
+        '503': { description: STORE_UNAVAILABLE — Retry-After }
+        '401': { description: Authentication required }
+        '403': { description: WORK_ORDERS_WRITE permission required }
+  /v1/sites/{site_id}/work-areas/{work_area_id}/spatial-assets/{asset_ref}/height-decision:
+    post:
+      tags: [external-use-decisions]
+      summary: Request the HEIGHT use decision for one registered DSM
+      description: >-
+        SITES_WRITE required and a human operator. The asset is resolved through the same scoped catalog
+        as every spatial-asset read, then the existing HEIGHT rule is evaluated (policy, inspection report,
+        measured single-band float DSM, and a vertical reference that is observed in the file or declared
+        for this asset). A BLOCKED decision is returned with its reasons (201) so a client can explain what is
+        missing. The same Idempotency-Key returns the same decision. Only a DSM can be asked.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: site_id, required: true, schema: { type: string } }
+        - { in: path, name: work_area_id, required: true, schema: { type: string } }
+        - { in: path, name: asset_ref, required: true, schema: { type: string, pattern: '^ksa-v1-[0-9a-f]{64}$' } }
+        - { in: header, name: Idempotency-Key, required: true, schema: { type: string, minLength: 1, maxLength: 255 } }
+      responses:
+        '201':
+          description: The decision (ELIGIBLE or BLOCKED with reasons)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ExternalUseDecisionResponse' }
+        '403': { description: SITES_WRITE permission or a human operator is required }
+        '404': { description: Site, WorkArea or asset is absent or outside the caller scope }
+        '409': { description: NOT_A_DSM · EXTERNAL_RECONSTRUCTION_NOT_SEALED · ASSET_VERTICAL_REFERENCE_UNKNOWN (the submission-level decision is ELIGIBLE only because another DSM carries a reference; this asset has neither an observed reference nor a current declaration) · IDEMPOTENCY_CONFLICT · EXTERNAL_WORKFLOW_CLOSED }
+        '401': { description: Authentication required }
   /v1/sites/{site_id}/design-progress:
     get:
       summary: Zone-by-zone progress against the design surface (M4-C)
@@ -8716,7 +8997,206 @@ paths:
       requestBody:
         required: true
         content: {application/json: {schema: {$ref: '#/components/schemas/SpatialDataFailureRequestV1'}}}
-      responses: *spatialDataMutationResponses
+  /v1/sites/{site_id}/work-areas/{work_area_id}/surface-profile-jobs:
+    x-assembly: explicit-local-surface-profile-wiring
+    description: >-
+      SDP-PROFILE-01 single-DSM saved-line profile only. Sealed profile
+      policy/runtime/activation, current grant/HEIGHT verdict and the exact
+      sampler read window are re-proved on every transition. No pixel heights
+      are recomputed by Core; no file bytes, pixel arrays or signed URLs leave
+      this lane.
+    parameters: &surfaceProfileScope
+      - {name: site_id, in: path, required: true, schema: {type: string}}
+      - {name: work_area_id, in: path, required: true, schema: {type: string}}
+    get:
+      summary: List scoped profile jobs with current availability, never raw numbers
+      description: >-
+        Newest first, only the caller's own jobs. The optional feature_id narrows to one saved line
+        before the limit applies, so a busy work area cannot push one line's older jobs out of a page.
+      security: [{bearerAuth: []}]
+      parameters:
+        - {name: limit, in: query, schema: {type: integer, minimum: 1}}
+        - {name: feature_id, in: query, required: false, schema: {type: string, pattern: '^mf-[0-9a-f]{32}$'}}
+      responses:
+        '200':
+          description: Retained immutable history with current availability
+          content: {application/json: {schema: {$ref: '#/components/schemas/SurfaceProfileJobPageV1'}}}
+        '401': {description: Authentication required}
+        '403': {description: Read permission denied}
+        '404': {description: Scope unavailable or foreign}
+        '422': {description: Invalid bounded query}
+        '503': {description: Authority unavailable}
+    post:
+      summary: Admit one saved-line profile job under current exact rights
+      security: [{bearerAuth: []}]
+      parameters:
+        - {name: Idempotency-Key, in: header, required: true, schema: {type: string, minLength: 1}}
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/CreateSurfaceProfileJobV1'}}}
+      responses:
+        '200':
+          description: Same durable job on an authorized identical retry
+          content: {application/json: {schema: {$ref: '#/components/schemas/SurfaceProfileJobViewV1'}}}
+        '401': {description: Authentication required}
+        '403': {description: Rights purpose or location denied}
+        '404': {description: Scope or source unavailable or foreign}
+        '409': {description: Idempotency conflict}
+        '422': {description: Bounded strict UTF-8 JSON or request invalid}
+        '429': {description: Organization profile job budget exhausted}
+        '503': {description: Authority or journal unavailable}
+  /v1/sites/{site_id}/work-areas/{work_area_id}/surface-profile-jobs/{job_id}:
+    x-assembly: explicit-local-surface-profile-wiring
+    parameters: &surfaceProfileJobScope
+      - {name: site_id, in: path, required: true, schema: {type: string}}
+      - {name: work_area_id, in: path, required: true, schema: {type: string}}
+      - {name: job_id, in: path, required: true, schema: {type: string}}
+    get:
+      summary: Read owned profile state and receipt with separate current availability
+      security: [{bearerAuth: []}]
+      responses:
+        '200':
+          description: Exact immutable profile identity and optional receipt
+          content: {application/json: {schema: {$ref: '#/components/schemas/SurfaceProfileJobViewV1'}}}
+        '401': {description: Authentication required}
+        '403': {description: Read permission denied}
+        '404': {description: Scope or job unavailable or foreign}
+        '503': {description: Journal unavailable}
+  /v1/sites/{site_id}/work-areas/{work_area_id}/surface-profile-jobs/{job_id}/result:
+    x-assembly: explicit-local-surface-profile-wiring
+    parameters: *surfaceProfileJobScope
+    get:
+      summary: Read owned profile numbers after a separate current READ proof
+      security: [{bearerAuth: []}]
+      responses:
+        '200':
+          description: Core-verified profile numbers bound to the frozen job
+          content: {application/json: {schema: {$ref: '#/components/schemas/SurfaceProfileResultViewV1'}}}
+        '401': {description: Authentication required}
+        '403': {description: Current read rights denied}
+        '404': {description: Scope or job unavailable or foreign}
+        '409': {description: Result not ready}
+        '503': {description: Authority or journal unavailable}
+  /v1/sites/{site_id}/work-areas/{work_area_id}/surface-profile-jobs/{job_id}/cancel:
+    x-assembly: explicit-local-surface-profile-wiring
+    parameters: *surfaceProfileJobScope
+    post:
+      summary: Idempotently cancel an owned active profile job without deleting retained history
+      security: [{bearerAuth: []}]
+      requestBody:
+        required: false
+        content: {application/json: {schema: {type: object, additionalProperties: false}}}
+      responses:
+        '200':
+          description: Current durable state after cancellation
+          content: {application/json: {schema: {$ref: '#/components/schemas/SurfaceProfileJobViewV1'}}}
+        '401': {description: Authentication required}
+        '403': {description: Request permission denied}
+        '404': {description: Scope or job unavailable or foreign}
+        '409': {description: Cannot cancel completed profile}
+        '422': {description: Only an absent or empty strict JSON body is accepted}
+        '503': {description: Journal unavailable}
+  /v1/internal/surface-profile-jobs:
+    x-assembly: explicit-local-surface-profile-wiring
+    parameters: &surfaceProfileWorkerIdentity
+      - name: X-Surface-Profile-Worker-Instance-Id
+        in: header
+        required: true
+        schema: {type: string, minLength: 1, maxLength: 255}
+    get:
+      summary: Bounded pending profile jobs for the dedicated activated worker only
+      security: [{bearerAuth: []}]
+      parameters:
+        - {name: limit, in: query, schema: {type: integer, minimum: 1}}
+      responses:
+        '200':
+          description: Bounded frozen job ids; never a public client response
+          content: {application/json: {schema: {$ref: '#/components/schemas/SurfaceProfileWorkerPendingPageV1'}}}
+        '401': {description: Authentication required}
+        '403': {description: Dedicated worker permission required}
+        '409': {description: Worker instance mismatch}
+        '503': {description: Current profile activation unavailable}
+  /v1/internal/surface-profile-jobs/{job_id}/lease:
+    x-assembly: explicit-local-surface-profile-wiring
+    parameters:
+      - {name: job_id, in: path, required: true, schema: {type: string}}
+      - {name: X-Surface-Profile-Worker-Instance-Id, in: header, required: true, schema: {type: string}}
+    post:
+      summary: Acquire a finite exact-worker attempt with durable monotonic fence
+      security: [{bearerAuth: []}]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/SurfaceProfileLeaseRequestV1'}}}
+      responses: &surfaceProfileLeaseResponses
+        '200':
+          description: Exact leased attempt and full payload digest
+          content: {application/json: {schema: {$ref: '#/components/schemas/SurfaceProfileLeaseViewV1'}}}
+        '401': {description: Authentication required}
+        '403': {description: Worker or current profile rights denied}
+        '404': {description: Unknown or foreign job}
+        '409': {description: Lease fence state or acquisition conflict}
+        '422': {description: Strict body invalid}
+        '503': {description: Authority or journal unavailable}
+  /v1/internal/surface-profile-jobs/{job_id}/renew:
+    x-assembly: explicit-local-surface-profile-wiring
+    parameters: &surfaceProfileWorkerFence
+      - {name: job_id, in: path, required: true, schema: {type: string}}
+      - {name: X-Surface-Profile-Worker-Instance-Id, in: header, required: true, schema: {type: string}}
+      - name: X-Surface-Profile-Attempt-Digest
+        in: header
+        required: true
+        schema: {type: string, pattern: '^sha256:[0-9a-f]{64}$'}
+    post:
+      summary: Renew the current exact attempt and supersede its payload digest
+      security: [{bearerAuth: []}]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/SurfaceProfileRenewRequestV1'}}}
+      responses: *surfaceProfileLeaseResponses
+  /v1/internal/surface-profile-jobs/{job_id}/input:
+    x-assembly: explicit-local-surface-profile-wiring
+    parameters: *surfaceProfileWorkerFence
+    get:
+      summary: Resolve exactly bound input after current authority checks before and after I/O
+      security: [{bearerAuth: []}]
+      responses:
+        '200':
+          description: Worker-private sealed admission bound by lease grant activation and deadline
+          content: {application/json: {schema: {$ref: '#/components/schemas/SurfaceProfileWorkerInputResponseV1'}}}
+        '401': {description: Current credentials required}
+        '403': {description: Worker or profile rights denied}
+        '404': {description: Unknown or foreign job}
+        '409': {description: Stale instance fence or lease}
+        '503': {description: Current authority storage or integrity unavailable}
+  /v1/internal/surface-profile-jobs/{job_id}/complete:
+    x-assembly: explicit-local-surface-profile-wiring
+    parameters: *surfaceProfileWorkerFence
+    post:
+      summary: Accept Core-verified profile numbers under current exact fence and rights
+      security: [{bearerAuth: []}]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/SurfaceProfileCompleteRequestV1'}}}
+      responses: &surfaceProfileMutationResponses
+        '200':
+          description: Durable state; identical completion retries preserve the accepted numbers
+          content: {application/json: {schema: {$ref: '#/components/schemas/SurfaceProfileJobViewV1'}}}
+        '401': {description: Current credentials required}
+        '403': {description: Worker or profile rights denied}
+        '404': {description: Unknown or foreign job}
+        '409': {description: Fence lease state or report conflict}
+        '422': {description: Strict body invalid}
+        '503': {description: Current authority storage integrity or journal unavailable}
+  /v1/internal/surface-profile-jobs/{job_id}/failure:
+    x-assembly: explicit-local-surface-profile-wiring
+    parameters: *surfaceProfileWorkerFence
+    post:
+      summary: Preserve typed failure with storage-only bounded retry classification
+      security: [{bearerAuth: []}]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/SurfaceProfileFailureRequestV1'}}}
+      responses: *surfaceProfileMutationResponses
 
 components:
   parameters:
@@ -19945,6 +20425,33 @@ components:
     SpatialAssetDescriptionV1:
       $ref: '../schemas/spatial-asset-description.v1.json'
 
+    CreateMeasurementFeatureV1:
+      $ref: '../schemas/measurement-feature.v1.json#/$defs/CreateMeasurementFeatureV1'
+    ReviseMeasurementFeatureV1:
+      $ref: '../schemas/measurement-feature.v1.json#/$defs/ReviseMeasurementFeatureV1'
+    MeasurementFeatureRevisionV1:
+      $ref: '../schemas/measurement-feature.v1.json#/$defs/MeasurementFeatureRevisionV1'
+    MeasurementFeatureWriteViewV1:
+      $ref: '../schemas/measurement-feature.v1.json#/$defs/MeasurementFeatureWriteViewV1'
+    MeasurementFeatureListViewV1:
+      $ref: '../schemas/measurement-feature.v1.json#/$defs/MeasurementFeatureListViewV1'
+    MeasurementFeatureRevisionListViewV1:
+      $ref: '../schemas/measurement-feature.v1.json#/$defs/MeasurementFeatureRevisionListViewV1'
+    MeasurementFeatureRefusalV1:
+      $ref: '../schemas/measurement-feature.v1.json#/$defs/MeasurementFeatureRefusalV1'
+    DeclareVerticalReferenceV1:
+      $ref: '../schemas/vertical-reference-declaration.v1.json#/$defs/DeclareVerticalReferenceV1'
+    WithdrawVerticalReferenceV1:
+      $ref: '../schemas/vertical-reference-declaration.v1.json#/$defs/WithdrawVerticalReferenceV1'
+    VerticalReferenceDeclarationV1:
+      $ref: '../schemas/vertical-reference-declaration.v1.json#/$defs/VerticalReferenceDeclarationV1'
+    VerticalReferenceDeclarationWriteViewV1:
+      $ref: '../schemas/vertical-reference-declaration.v1.json#/$defs/VerticalReferenceDeclarationWriteViewV1'
+    VerticalReferenceDeclarationStateViewV1:
+      $ref: '../schemas/vertical-reference-declaration.v1.json#/$defs/VerticalReferenceDeclarationStateViewV1'
+    VerticalReferenceDeclarationRefusalV1:
+      $ref: '../schemas/vertical-reference-declaration.v1.json#/$defs/VerticalReferenceDeclarationRefusalV1'
+
     SpatialDataRequestV1:
       $ref: '../schemas/spatial-data.v1.json#/$defs/SpatialDataRequestV1'
     SpatialDataPageV1:
@@ -19977,6 +20484,31 @@ components:
       $ref: '../schemas/spatial-data-worker.v1.json#/$defs/SpatialDataFailureRequestV1'
     SpatialDataWorkerMutationViewV1:
       $ref: '../schemas/spatial-data-worker.v1.json#/$defs/SpatialDataWorkerMutationViewV1'
+
+    CreateSurfaceProfileJobV1:
+      $ref: '../schemas/surface-profile-job.v1.json#/$defs/CreateSurfaceProfileJobV1'
+    SurfaceProfileJobPageV1:
+      $ref: '../schemas/surface-profile-job.v1.json#/$defs/SurfaceProfileJobPageV1'
+    SurfaceProfileJobViewV1:
+      $ref: '../schemas/surface-profile-job.v1.json#/$defs/SurfaceProfileJobViewV1'
+    SurfaceProfileResultViewV1:
+      $ref: '../schemas/surface-profile-job.v1.json#/$defs/SurfaceProfileResultViewV1'
+    SurfaceProfileErrorV1:
+      $ref: '../schemas/surface-profile-job.v1.json#/$defs/SurfaceProfileErrorV1'
+    SurfaceProfileWorkerPendingPageV1:
+      $ref: '../schemas/surface-profile-job.v1.json#/$defs/SurfaceProfileWorkerPendingPageV1'
+    SurfaceProfileLeaseRequestV1:
+      $ref: '../schemas/surface-profile-job.v1.json#/$defs/SurfaceProfileLeaseRequestV1'
+    SurfaceProfileLeaseViewV1:
+      $ref: '../schemas/surface-profile-job.v1.json#/$defs/SurfaceProfileLeaseViewV1'
+    SurfaceProfileRenewRequestV1:
+      $ref: '../schemas/surface-profile-job.v1.json#/$defs/SurfaceProfileRenewRequestV1'
+    SurfaceProfileWorkerInputResponseV1:
+      $ref: '../schemas/surface-profile-job.v1.json#/$defs/SurfaceProfileWorkerInputResponseV1'
+    SurfaceProfileCompleteRequestV1:
+      $ref: '../schemas/surface-profile-job.v1.json#/$defs/SurfaceProfileCompleteRequestV1'
+    SurfaceProfileFailureRequestV1:
+      $ref: '../schemas/surface-profile-job.v1.json#/$defs/SurfaceProfileFailureRequestV1'
   securitySchemes:
     bearerAuth:
       type: http

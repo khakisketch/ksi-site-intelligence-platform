@@ -38,6 +38,7 @@ from ksi_event_contracts.spatial_data_worker import (
     SpatialDataWorkerMutationViewV1,
     SpatialDataWorkerPendingPageV1,
 )
+from pydantic import BaseModel
 
 from ksi_core.domains.external.delivery.ai_egress import SpatialDataAiEgress
 from ksi_core.domains.external.delivery.asset_discovery import SpatialDataAssetDiscovery
@@ -390,17 +391,19 @@ class SpatialDataLocalAssemblyConfig:
             raise ValueError("audit working set must be a validated working-set config or None")
 
 
-def bind_spatial_data_openapi(app: FastAPI) -> None:
-    """Keep exact data-contract bounds; FastAPI's schema DTO rounds large integers to float.
+def bind_exact_contract_models(
+    app: FastAPI,
+    *,
+    models: tuple[type[BaseModel], ...],
+    path_marker: str,
+    name: Callable[[str], str],
+) -> None:
+    """명시적으로 장착한 lane의 모델·경로에만 정확한 계약 한도를 반영한다.
 
-    Only opt-in data models/paths are overlaid. Shared non-data leaf names are namespaced
-    rather than altering existing inspection/analysis documentation. Actual route discovery
-    and caching remain the application's original OpenAPI generator's responsibility.
+    공유 leaf는 호출자의 namespace 함수로 분리해 기존 문서를 보존한다.
+    실제 경로 탐색과 캐시는 애플리케이션의 OpenAPI 생성기가 계속 담당한다.
     """
     original = app.openapi
-
-    def name(value: str) -> str:
-        return value if value.startswith("SpatialData") else "SpatialDataV1__" + value
 
     def rewrite(value: Any) -> Any:
         if isinstance(value, list):
@@ -416,36 +419,18 @@ def bind_spatial_data_openapi(app: FastAPI) -> None:
             }
         return value
 
-    models = (
-        SpatialDataErrorV1,
-        SpatialDataJobViewV1,
-        SpatialDataPageV1,
-        SpatialDataRequestV1,
-        SpatialDataAssetViewV1,
-        SpatialDataAssetPageV1,
-        SpatialDataCompleteRequestV1,
-        SpatialDataFailureRequestV1,
-        SpatialDataLeaseRequestV1,
-        SpatialDataLeaseViewV1,
-        SpatialDataOutputUploadRequestV1,
-        SpatialDataOutputUploadViewV1,
-        SpatialDataRenewRequestV1,
-        SpatialDataWorkerInputResponseV1,
-        SpatialDataWorkerMutationViewV1,
-        SpatialDataWorkerPendingPageV1,
-    )
     exact: dict[str, Any] = {}
     for model in models:
         schema = model.model_json_schema(by_alias=True)
         definitions = schema.pop("$defs", {})
         exact.update({name(key): rewrite(value) for key, value in definitions.items()})
-        exact[model.__name__] = rewrite(schema)
+        exact[name(model.__name__)] = rewrite(schema)
 
     def openapi() -> dict[str, Any]:
         schema = original()
         schema.setdefault("components", {}).setdefault("schemas", {}).update(exact)
         for path, operations in schema["paths"].items():
-            if "spatial-data" not in path:
+            if path_marker not in path:
                 continue
             for operation in operations.values():
                 body = operation.get("requestBody", {}).get("content", {}).get("application/json")
@@ -457,3 +442,39 @@ def bind_spatial_data_openapi(app: FastAPI) -> None:
 
     # FastAPI's documented per-instance hook replaces a method with a zero-argument callable.
     setattr(app, "openapi", openapi)  # noqa: B010 -- intentional supported method customization
+
+
+def bind_spatial_data_openapi(app: FastAPI) -> None:
+    """Keep exact data-contract bounds; FastAPI's schema DTO rounds large integers to float.
+
+    Only opt-in data models/paths are overlaid. Shared non-data leaf names are namespaced
+    rather than altering existing inspection/analysis documentation. Actual route discovery
+    and caching remain the application's original OpenAPI generator's responsibility.
+    """
+
+    def name(value: str) -> str:
+        return value if value.startswith("SpatialData") else "SpatialDataV1__" + value
+
+    bind_exact_contract_models(
+        app,
+        models=(
+            SpatialDataErrorV1,
+            SpatialDataJobViewV1,
+            SpatialDataPageV1,
+            SpatialDataRequestV1,
+            SpatialDataAssetViewV1,
+            SpatialDataAssetPageV1,
+            SpatialDataCompleteRequestV1,
+            SpatialDataFailureRequestV1,
+            SpatialDataLeaseRequestV1,
+            SpatialDataLeaseViewV1,
+            SpatialDataOutputUploadRequestV1,
+            SpatialDataOutputUploadViewV1,
+            SpatialDataRenewRequestV1,
+            SpatialDataWorkerInputResponseV1,
+            SpatialDataWorkerMutationViewV1,
+            SpatialDataWorkerPendingPageV1,
+        ),
+        path_marker="spatial-data",
+        name=name,
+    )

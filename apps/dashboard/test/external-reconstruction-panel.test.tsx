@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ExternalReconstructionPanel } from "@/app/field/ExternalReconstructionPanel";
 import { NotGeoTiffError, type GeoTiffRawHeader } from "@/lib/geo/geotiff-header";
+import { installFakeLocalStorage } from "./storage-fakes";
 
 const headerMock = vi.hoisted(() => ({ read: vi.fn() }));
 vi.mock("@/lib/geo/geotiff-header", async (importOriginal) => ({
@@ -170,6 +171,7 @@ const ORTHO_GRANT = { grants: [
 ] };
 
 beforeEach(() => {
+  installFakeLocalStorage();
   vi.stubGlobal("fetch", fetchMock);
   vi.stubGlobal("Worker", FakeWorker);
   fetchMock.mockResolvedValue({ ok: true, json: async () => ({ submissions: [] }) });
@@ -866,12 +868,105 @@ describe("ExternalReconstructionPanel header auto-recognition (AX-3)", () => {
     expect((screen.getByLabelText("재구성 소프트웨어 버전") as HTMLInputElement).value).toBe("4.8.4");
   });
 
+  it("splits two files dropped together into the ortho and DSM slots by their headers", async () => {
+    registerFlow();
+    headerMock.read.mockImplementation(async (file: File) => (file.name === "ground.tif" ? dsmHeader : orthoHeader));
+    render(<ExternalReconstructionPanel workOrderId="work-1" expectedEpochId="epoch-1" canWrite accountIdentity={continuity} />);
+    await screen.findByText("아직 등록된 관측 자료가 없습니다.");
+    // 이름으로는 구분할 수 없게 둔다. 헤더만이 칸을 정한다.
+    fireEvent.drop(screen.getByTestId("external-file-drop-zone"), { dataTransfer: { files: [new File(["x"], "ground.tif"), new File(["y"], "picture.tif")] } });
+    await screen.findByText(/정사영상 1 KB 확인 완료 · DSM 1 KB 확인 완료/);
+    expect(screen.queryByLabelText("파일 나누기 안내")).toBeNull();
+  });
+
+  it("tells which dropped files were not placed and why", async () => {
+    registerFlow();
+    headerMock.read.mockImplementation(async (file: File) => (file.name === "mystery.tif" ? { ...orthoHeader, samplesPerPixel: 2 } : orthoHeader));
+    render(<ExternalReconstructionPanel workOrderId="work-1" expectedEpochId="epoch-1" canWrite accountIdentity={continuity} />);
+    await screen.findByText("아직 등록된 관측 자료가 없습니다.");
+    fireEvent.drop(screen.getByTestId("external-file-drop-zone"), { dataTransfer: { files: [new File(["x"], "photo.jpg"), new File(["y"], "mystery.tif"), new File(["z"], "ortho.tif")] } });
+    await screen.findByText(/정사영상 1 KB 확인 완료/);
+    const notes = screen.getByLabelText("파일 나누기 안내");
+    expect(notes.textContent).toContain("‘photo.jpg’: GeoTIFF(.tif, .tiff) 파일만");
+    expect(notes.textContent).toContain("‘mystery.tif’: 정사영상인지 DSM인지 파일에서 알 수 없습니다");
+  });
+
+  it("explains why registration cannot start when the work order has no observation epoch", async () => {
+    registerFlow();
+    headerMock.read.mockResolvedValue(orthoHeader);
+    render(<ExternalReconstructionPanel workOrderId="work-1" expectedEpochId={null} canWrite accountIdentity={continuity} />);
+    await screen.findByText("아직 등록된 관측 자료가 없습니다.");
+    expect(screen.queryByText(/촬영 기록이 아직 준비되지 않아/)).toBeNull();
+    fireEvent.change(screen.getByLabelText("정사영상 GeoTIFF"), { target: { files: [new File(["x"], "ortho.tif")] } });
+    await screen.findByText(/정사영상 1 KB 확인 완료/);
+    expect(screen.getAllByText(/촬영 기록이 아직 준비되지 않아 새 등록을 시작할 수 없습니다/)).toHaveLength(1);
+    expect((screen.getByRole("button", { name: "자료 등록 마치기" }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("does not show the missing-epoch notice when the epoch is known", async () => {
+    registerFlow();
+    headerMock.read.mockResolvedValue(orthoHeader);
+    render(<ExternalReconstructionPanel workOrderId="work-1" expectedEpochId="epoch-1" canWrite accountIdentity={continuity} />);
+    await screen.findByText("아직 등록된 관측 자료가 없습니다.");
+    fireEvent.change(screen.getByLabelText("정사영상 GeoTIFF"), { target: { files: [new File(["x"], "ortho.tif")] } });
+    await screen.findByText(/정사영상 1 KB 확인 완료/);
+    expect(screen.queryByText(/촬영 기록이 아직 준비되지 않아/)).toBeNull();
+  });
+
+  it("does not offer the drop zone without write permission", async () => {
+    registerFlow();
+    headerMock.read.mockResolvedValue(orthoHeader);
+    render(<ExternalReconstructionPanel workOrderId="work-1" expectedEpochId="epoch-1" canWrite={false} accountIdentity={continuity} />);
+    await screen.findByText("아직 등록된 관측 자료가 없습니다.");
+    expect(screen.queryByTestId("external-file-drop-zone")).toBeNull();
+  });
+
   it("warns when a DSM-looking file is placed in the ortho slot without moving it", async () => {
     registerFlow();
     headerMock.read.mockResolvedValue(dsmHeader);
     await chooseOrtho();
     expect(await screen.findByText(/이 파일은 DSM처럼 보입니다/)).toBeTruthy();
     expect(screen.getByText(/정사영상 1 KB 확인 완료/)).toBeTruthy();
+  });
+
+  const jpegAlphaLayout = {
+    compression: 7, predictor: 1, photometric: 6, planarConfiguration: 1, extraSamples: [2], hasNoDataTag: false,
+    scale: null, offset: null, georeferenced: true, modelType: 1, projLinearUnits: null, verticalCsType: null, verticalUnits: null,
+  };
+
+  it("tells the operator before upload that a JPEG RGBA ortho will be rejected, with how to export it again, and still allows registering", async () => {
+    const registrations = registerFlow();
+    headerMock.read.mockResolvedValue({ ...orthoHeader, layout: jpegAlphaLayout });
+    await chooseOrtho();
+    const alert = await screen.findByRole("alert", { name: "정사영상 올리기 전 점검" });
+    expect(alert.textContent).toContain("올려도 검사에서 거부될 가능성이 높습니다");
+    expect(alert.textContent).toContain("투명도(알파)가 있는 정사영상은 JPEG 압축을 받지 않습니다");
+    expect(alert.textContent).toContain("LZW나 Deflate 압축으로 내보내세요");
+    expect(alert.textContent).toContain("등록 뒤 KSI 검사가 최종 확인합니다");
+    // 안내일 뿐이다: 등록 버튼은 막히지 않는다.
+    fireEvent.click(screen.getByRole("radio", { name: "촬영 시점 미상" }));
+    fireEvent.click(screen.getByRole("button", { name: "자료 등록 마치기" }));
+    await waitFor(() => expect(registrations).toHaveLength(1));
+  });
+
+  it("shows only notices (not an alert) for a DSM without a vertical reference", async () => {
+    registerFlow();
+    const layout = { ...jpegAlphaLayout, compression: 8, photometric: 1, extraSamples: [] };
+    headerMock.read.mockResolvedValue({ ...dsmHeader, layout });
+    render(<ExternalReconstructionPanel workOrderId="work-1" expectedEpochId="epoch-1" canWrite accountIdentity={continuity} />);
+    await screen.findByText("아직 등록된 관측 자료가 없습니다.");
+    fireEvent.change(screen.getByLabelText("DSM GeoTIFF"), { target: { files: [new File(["x"], "dsm.tif")] } });
+    const status = await screen.findByRole("status", { name: "DSM 올리기 전 점검" });
+    expect(status.textContent).toContain("수직 기준(높이 기준)이 없습니다");
+    expect(status.textContent).not.toContain("거부될 가능성");
+    expect(screen.queryByRole("alert", { name: "DSM 올리기 전 점검" })).toBeNull();
+  });
+
+  it("shows no pre-upload check when the header gives nothing to judge, and none while resuming", async () => {
+    registerFlow();
+    headerMock.read.mockResolvedValue(orthoHeader);
+    await chooseOrtho();
+    expect(screen.queryByLabelText("정사영상 올리기 전 점검")).toBeNull();
   });
 
   it("warns on an unreadable header and declares no CRS", async () => {
@@ -883,6 +978,20 @@ describe("ExternalReconstructionPanel header auto-recognition (AX-3)", () => {
     fireEvent.click(screen.getByRole("button", { name: "자료 등록 마치기" }));
     await waitFor(() => expect(registrations).toHaveLength(1));
     expect((registrations[0].artifacts as { declaredCrs: unknown }[])[0].declaredCrs).toBeNull();
+  });
+
+  it("does not show the pre-upload check when resuming an already registered declaration", async () => {
+    const registered = { submissionRef: "opaque", state: "REGISTERED", submission: { revision: 1, observationEpochId: "epoch-1", producerDeclaration: { softwareName: "ODM", softwareVersion: "1" }, artifacts: [{ artifactId: "ortho", kind: "ortho", fileName: "ortho.tif", declaredSha256: "a".repeat(64), declaredSizeBytes: 1 }] } };
+    fetchMock.mockImplementation(async () => ({ ok: true, json: async () => ({ submissions: [registered] }) }));
+    vi.spyOn(FakeWorker.prototype, "postMessage").mockImplementation(function (this: FakeWorker, request: { id: string }) {
+      this.onmessage?.({ data: { id: request.id, sha256: "a".repeat(64), size: 1 } } as MessageEvent);
+    });
+    headerMock.read.mockResolvedValue({ ...orthoHeader, layout: jpegAlphaLayout });
+    render(<ExternalReconstructionPanel workOrderId="work-1" expectedEpochId="epoch-1" canWrite accountIdentity={continuity} />);
+    fireEvent.click(await screen.findByRole("button", { name: "등록 이어하기" }));
+    fireEvent.change(screen.getByLabelText("정사영상 GeoTIFF"), { target: { files: [new File(["x"], "ortho.tif")] } });
+    await screen.findByText(/파일 헤더에서 읽은 정사영상 정보입니다/);
+    expect(screen.queryByLabelText("정사영상 올리기 전 점검")).toBeNull();
   });
 
   it("shows header facts but no CRS field when resuming an already registered declaration", async () => {
@@ -1036,6 +1145,136 @@ describe("ExternalReconstructionPanel submit safety", () => {
     });
     return { posts, release: () => releaseUpload?.() };
   }
+
+  it("remembers the confirmed software and fills only empty fields on the next registration", async () => {
+    const { posts, release } = queuedFlow();
+    const first = render(<ExternalReconstructionPanel workOrderId="work-1" expectedEpochId="epoch-1" canWrite accountIdentity={continuity} />);
+    await screen.findByText("아직 등록된 관측 자료가 없습니다.");
+    fireEvent.change(screen.getByLabelText("재구성 소프트웨어 이름"), { target: { value: "Metashape" } });
+    fireEvent.change(screen.getByLabelText("재구성 소프트웨어 버전"), { target: { value: "2.1" } });
+    fireEvent.change(screen.getByLabelText("정사영상 GeoTIFF"), { target: { files: [new File(["x"], "ortho.tif")] } });
+    await screen.findByText(/정사영상 1 KB 확인 완료/);
+    // 확인되기 전에는 기억하지 않는다.
+    expect(window.localStorage.getItem("ksi.external-upload-defaults.v1")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "자료 등록 마치기" }));
+    await waitFor(() => expect(posts).toHaveLength(1));
+    release();
+    await screen.findByText("파일 등록을 확인했습니다. 파일 형식과 측정 적합성 확인은 아직 진행되지 않았습니다.");
+    expect(JSON.parse(window.localStorage.getItem("ksi.external-upload-defaults.v1") ?? "null")).toEqual({ softwareName: "Metashape", softwareVersion: "2.1" });
+    first.unmount();
+
+    // 다음 등록: 파일을 고르면 빈 칸이 채워진다.
+    render(<ExternalReconstructionPanel workOrderId="work-2" expectedEpochId="epoch-2" canWrite accountIdentity={continuity} />);
+    await screen.findByText("아직 등록된 관측 자료가 없습니다.");
+    expect((screen.getByLabelText("재구성 소프트웨어 이름") as HTMLInputElement).value).toBe("");
+    fireEvent.change(screen.getByLabelText("정사영상 GeoTIFF"), { target: { files: [new File(["x"], "ortho2.tif")] } });
+    await screen.findByText(/정사영상 1 KB 확인 완료/);
+    expect((screen.getByLabelText("재구성 소프트웨어 이름") as HTMLInputElement).value).toBe("Metashape");
+    expect((screen.getByLabelText("재구성 소프트웨어 버전") as HTMLInputElement).value).toBe("2.1");
+  });
+
+  it("never overwrites typed software or the file header's software with the remembered one", async () => {
+    window.localStorage.setItem("ksi.external-upload-defaults.v1", JSON.stringify({ softwareName: "Metashape", softwareVersion: "2.1" }));
+    headerMock.read.mockResolvedValue({
+      width: 4000, height: 3000, samplesPerPixel: 4, bitsPerSample: 8, sampleFormat: 1,
+      geoKeys: { ProjectedCSTypeGeoKey: 5186 }, software: "Pix4Dmapper 4.8.4", dateTime: null, pixelSize: [0.05, 0.05],
+    });
+    render(<ExternalReconstructionPanel workOrderId="work-1" expectedEpochId="epoch-1" canWrite accountIdentity={continuity} />);
+    await screen.findByText("아직 등록된 관측 자료가 없습니다.");
+    fireEvent.change(screen.getByLabelText("정사영상 GeoTIFF"), { target: { files: [new File(["x"], "ortho.tif")] } });
+    await screen.findByLabelText("정사영상 좌표계 신고");
+    // 헤더(Pix4Dmapper 4.8.4)가 기억 값보다 우선한다.
+    expect((screen.getByLabelText("재구성 소프트웨어 이름") as HTMLInputElement).value).toBe("Pix4Dmapper");
+    expect((screen.getByLabelText("재구성 소프트웨어 버전") as HTMLInputElement).value).toBe("4.8.4");
+  });
+
+  it("does not mix a remembered version into software the operator typed or the header named without a version", async () => {
+    window.localStorage.setItem("ksi.external-upload-defaults.v1", JSON.stringify({ softwareName: "Metashape", softwareVersion: "2.1" }));
+    // 운영자가 이름만 입력한 경우
+    const typed = render(<ExternalReconstructionPanel workOrderId="work-1" expectedEpochId="epoch-1" canWrite accountIdentity={continuity} />);
+    await screen.findByText("아직 등록된 관측 자료가 없습니다.");
+    fireEvent.change(screen.getByLabelText("재구성 소프트웨어 이름"), { target: { value: "Custom" } });
+    fireEvent.change(screen.getByLabelText("정사영상 GeoTIFF"), { target: { files: [new File(["x"], "ortho.tif")] } });
+    await screen.findByText(/정사영상 1 KB 확인 완료/);
+    expect((screen.getByLabelText("재구성 소프트웨어 이름") as HTMLInputElement).value).toBe("Custom");
+    expect((screen.getByLabelText("재구성 소프트웨어 버전") as HTMLInputElement).value).toBe("");
+    typed.unmount();
+    // 운영자가 버전만 입력한 경우: 입력한 버전을 지우거나 다른 이름을 붙이지 않는다.
+    const versionOnly = render(<ExternalReconstructionPanel workOrderId="work-1" expectedEpochId="epoch-1" canWrite accountIdentity={continuity} />);
+    await screen.findByText("아직 등록된 관측 자료가 없습니다.");
+    fireEvent.change(screen.getByLabelText("재구성 소프트웨어 버전"), { target: { value: "9" } });
+    fireEvent.change(screen.getByLabelText("정사영상 GeoTIFF"), { target: { files: [new File(["x"], "ortho.tif")] } });
+    await screen.findByText(/정사영상 1 KB 확인 완료/);
+    expect((screen.getByLabelText("재구성 소프트웨어 이름") as HTMLInputElement).value).toBe("");
+    expect((screen.getByLabelText("재구성 소프트웨어 버전") as HTMLInputElement).value).toBe("9");
+    versionOnly.unmount();
+    // 파일 헤더가 버전 없이 이름만 알려 준 경우
+    headerMock.read.mockResolvedValue({
+      width: 10, height: 10, samplesPerPixel: 3, bitsPerSample: 8, sampleFormat: 1,
+      geoKeys: { ProjectedCSTypeGeoKey: 5186 }, software: "Pix4Dmapper", dateTime: null, pixelSize: [0.05, 0.05],
+    });
+    render(<ExternalReconstructionPanel workOrderId="work-2" expectedEpochId="epoch-2" canWrite accountIdentity={continuity} />);
+    await screen.findByText("아직 등록된 관측 자료가 없습니다.");
+    fireEvent.change(screen.getByLabelText("정사영상 GeoTIFF"), { target: { files: [new File(["x"], "ortho.tif")] } });
+    await screen.findByLabelText("정사영상 좌표계 신고");
+    expect((screen.getByLabelText("재구성 소프트웨어 이름") as HTMLInputElement).value).toBe("Pix4Dmapper");
+    expect((screen.getByLabelText("재구성 소프트웨어 버전") as HTMLInputElement).value).toBe("");
+  });
+
+  it("does not remember software the operator typed and then declared unknown", async () => {
+    const { posts, release } = queuedFlow();
+    render(<ExternalReconstructionPanel workOrderId="work-1" expectedEpochId="epoch-1" canWrite accountIdentity={continuity} />);
+    await screen.findByText("아직 등록된 관측 자료가 없습니다.");
+    fireEvent.change(screen.getByLabelText("재구성 소프트웨어 이름"), { target: { value: "Metashape" } });
+    fireEvent.click(within(screen.getByRole("radiogroup", { name: "재구성 소프트웨어 확인 방식" })).getByRole("radio", { name: "미상" }));
+    fireEvent.change(screen.getByLabelText("정사영상 GeoTIFF"), { target: { files: [new File(["x"], "ortho.tif")] } });
+    await screen.findByText(/정사영상 1 KB 확인 완료/);
+    fireEvent.click(screen.getByRole("button", { name: "자료 등록 마치기" }));
+    await waitFor(() => expect(posts).toHaveLength(1));
+    release();
+    await screen.findByText("파일 등록을 확인했습니다. 파일 형식과 측정 적합성 확인은 아직 진행되지 않았습니다.");
+    expect(window.localStorage.getItem("ksi.external-upload-defaults.v1")).toBeNull();
+  });
+
+  it("does not remember software when resuming an already registered declaration", async () => {
+    window.localStorage.setItem("ksi.external-upload-defaults.v1", JSON.stringify({ softwareName: "Metashape", softwareVersion: "2.1" }));
+    const registered = { submissionRef: ECHO_REF, state: "REGISTERED", submission: {
+      contractVersion: "external-reconstruction-submission.v3", revision: 1, submissionId: "resume-1", observationEpochId: "epoch-1",
+      producerDeclaration: { producerKnowledge: "DECLARED", softwareName: "ODM", softwareVersion: "3.5" },
+      inputDeclaration: { captureBasis: "UNKNOWN", captureDate: null, captureStartedAt: null, captureEndedAt: null },
+      artifacts: [{ artifactId: "ortho", kind: "ortho", fileName: "ortho.tif", declaredSha256: "a".repeat(64), declaredSizeBytes: 1 }],
+    } };
+    fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+      if (!init?.method) return { ok: true, json: async () => ({ submissions: [registered] }) };
+      if (url.endsWith("/upload-grants")) return { ok: true, json: async () => ({ grants: [{ artifactId: "ortho", uploadUrl: "https://upload.test/ortho", requiredHeaders: {} }] }) };
+      if (url.endsWith("/seal")) return { ok: true, json: async () => sealedEchoFor(registered) };
+      return { ok: true, json: async () => ({}) };
+    });
+    vi.spyOn(FakeWorker.prototype, "postMessage").mockImplementation(function (this: FakeWorker, request: { id: string }) {
+      this.onmessage?.({ data: { id: request.id, sha256: "a".repeat(64), size: 1 } } as MessageEvent);
+    });
+    render(<ExternalReconstructionPanel workOrderId="work-1" expectedEpochId="epoch-1" canWrite accountIdentity={continuity} />);
+    fireEvent.click(await screen.findByRole("button", { name: "등록 이어하기" }));
+    fireEvent.change(screen.getByLabelText("정사영상 GeoTIFF"), { target: { files: [new File(["x"], "ortho.tif")] } });
+    await screen.findByText(/정사영상 1 KB 확인 완료/);
+    fireEvent.click(screen.getByRole("button", { name: "자료 등록 마치기" }));
+    await screen.findByText("파일 등록을 확인했습니다. 파일 형식과 측정 적합성 확인은 아직 진행되지 않았습니다.");
+    expect(JSON.parse(window.localStorage.getItem("ksi.external-upload-defaults.v1") ?? "null")).toEqual({ softwareName: "Metashape", softwareVersion: "2.1" });
+  });
+
+  it("does not remember a registration declared with unknown software", async () => {
+    const { posts, release } = queuedFlow();
+    render(<ExternalReconstructionPanel workOrderId="work-1" expectedEpochId="epoch-1" canWrite accountIdentity={continuity} />);
+    await screen.findByText("아직 등록된 관측 자료가 없습니다.");
+    fireEvent.click(within(screen.getByRole("radiogroup", { name: "재구성 소프트웨어 확인 방식" })).getByRole("radio", { name: "미상" }));
+    fireEvent.change(screen.getByLabelText("정사영상 GeoTIFF"), { target: { files: [new File(["x"], "ortho.tif")] } });
+    await screen.findByText(/정사영상 1 KB 확인 완료/);
+    fireEvent.click(screen.getByRole("button", { name: "자료 등록 마치기" }));
+    await waitFor(() => expect(posts).toHaveLength(1));
+    release();
+    await screen.findByText("파일 등록을 확인했습니다. 파일 형식과 측정 적합성 확인은 아직 진행되지 않았습니다.");
+    expect(window.localStorage.getItem("ksi.external-upload-defaults.v1")).toBeNull();
+  });
 
   it("sends one declaration for a double click while the first attempt is in flight", async () => {
     const { posts, release } = queuedFlow();
@@ -1441,7 +1680,10 @@ describe("ExternalReconstructionPanel V3 missing-info intake", () => {
   it("never asks for raw photos: only ortho/DSM slots exist and retention stays a declaration", async () => {
     render(<ExternalReconstructionPanel workOrderId="work-1" expectedEpochId="epoch-1" canWrite accountIdentity={continuity} />);
     await screen.findByText("아직 등록된 관측 자료가 없습니다.");
-    expect(document.querySelectorAll('input[type="file"]')).toHaveLength(2);
+    // 칸별 입력 둘과 "한 번에 선택" 입력 하나. 모두 GeoTIFF 만 받고, 원본 사진 입력은 없다.
+    const inputs = Array.from(document.querySelectorAll('input[type="file"]'));
+    expect(inputs).toHaveLength(3);
+    expect(inputs.map((input) => input.getAttribute("accept"))).toEqual([".tif,.tiff", ".tif,.tiff", ".tif,.tiff"]);
     expect(screen.getByText(/제출할 GeoTIFF가 아니라 재구성에 사용한 원본 사진·관측 자료의 보관 위치/)).toBeTruthy();
     expect(screen.getByText(/원본 업로드는 요청하지 않습니다/)).toBeTruthy();
     expect(screen.queryByLabelText(/원본 사진/)).toBeNull();
@@ -1841,6 +2083,8 @@ describe("ExternalReconstructionPanel continuity and echo verification", () => {
     // PUT/grant/seal 추가 재발행 없이 이전 기록 확인으로 복구한다.
     expect(posts.some(({ url }) => url.endsWith("/upload-grants") || url.endsWith("/seal"))).toBe(false);
     expect(fetchMock.mock.calls.filter(([, init]) => (init as RequestInit | undefined)?.method === "PUT")).toHaveLength(0);
+    // 복구로 확인된 등록도 소프트웨어를 기억한다.
+    expect(window.localStorage.getItem("ksi.external-upload-defaults.v1")).not.toBeNull();
     // 목록은 다시 읽되 자동 route refresh는 하지 않는다.
     const replayListReads = () => fetchMock.mock.calls.filter(([url, init]) => !(init as RequestInit | undefined)?.method && (url as string).endsWith("/external-reconstruction-submissions")).length;
     await waitFor(() => expect(replayListReads()).toBeGreaterThan(1));

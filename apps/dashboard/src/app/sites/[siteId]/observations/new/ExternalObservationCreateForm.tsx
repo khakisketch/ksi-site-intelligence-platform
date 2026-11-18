@@ -9,6 +9,7 @@ import { ResponsiveActionBoundary } from "@/components/responsive/ResponsiveActi
 import { useOnlineStatus } from "@/hooks/useOnlineStatus";
 import type { TemporalCoherencePolicy } from "@/lib/core-api/types";
 import { isAccountContinuityMismatch } from "@/lib/account-continuity-mismatch";
+import { defaultObservationName } from "@/lib/observation-default-name";
 
 type WorkAreaOption = { workAreaId: string; name: string };
 
@@ -82,6 +83,11 @@ export function ExternalObservationCreateForm({
   const online = useOnlineStatus();
   const fingerprint = accountIdentity?.fingerprint;
   const canStart = typeof fingerprint === "string" && FINGERPRINT_PATTERN.test(fingerprint);
+  // 이름을 비워 두면 선택한 구역과 오늘 날짜로 기본 이름을 쓴다. 날짜는 hydration 뒤에만 계산한다.
+  const selectedNames = selected.flatMap((workAreaId) => {
+    const index = workAreas.findIndex((area) => area.workAreaId === workAreaId);
+    return index >= 0 ? [workAreaLabel(workAreas[index]!, index)] : [];
+  });
   const key = useRef<string | null>(null);
   const submitLock = useRef(false);
   const active = useRef(true);
@@ -133,12 +139,15 @@ export function ExternalObservationCreateForm({
     ? `/field?q=${encodeURIComponent(attempt.body.name)}&site=${encodeURIComponent(siteId)}`
     : "/field";
 
+  const defaultName = hydrated ? defaultObservationName(selectedNames, new Date()) : "";
+  const effectiveName = name.trim() || defaultName;
+
   const submit = async () => {
     if (busy || submitLock.current) return;
     if (!attempt && !canStart) return;
     const nextAttempt = attempt ?? (() => {
       const body: CreateAttempt["body"] = {
-        name: name.trim(),
+        name: effectiveName,
         workAreaIds: selected,
         scheduleId: null,
         executionMode: "EXTERNAL_RECONSTRUCTION",
@@ -300,8 +309,8 @@ export function ExternalObservationCreateForm({
               {scopeNotice && <p role="status" className="mt-2 rounded-lg bg-sunk px-3 py-2 text-body leading-5 text-ink-2">{scopeNotice}</p>}
               {!hydrated && <p role="status" className="mt-2 rounded-lg bg-sunk px-3 py-2 text-body leading-5 text-ink-2">화면을 준비하고 있습니다. 입력란이 활성화되면 작업 이름과 작업구역을 확인하고 등록하세요. 이 안내가 계속 보이면 자바스크립트 실행과 연결 상태를 확인하세요.</p>}
             </div>
-            <label className="flex flex-col gap-1 text-body font-semibold">작업 이름
-              <input key={hydrated ? "name-live" : "name-ssr"} aria-label="작업 이름" className="input" maxLength={200} value={name} disabled={!hydrated || busy || attempt !== null} onChange={(event) => setName(event.target.value)} placeholder={suggestedName ?? "예: 9월 6일 현황 비교"} />
+            <label className="flex flex-col gap-1 text-body font-semibold">작업 이름 (비우면 아래 이름으로 만듭니다)
+              <input key={hydrated ? "name-live" : "name-ssr"} aria-label="작업 이름" className="input" maxLength={200} value={name} disabled={!hydrated || busy || attempt !== null} onChange={(event) => setName(event.target.value)} placeholder={suggestedName ?? (defaultName || "예: 9월 6일 현황 비교")} />
             </label>
             <fieldset disabled={!hydrated || busy || attempt !== null}>
               <legend className="text-body font-semibold">비교할 작업구역</legend>
@@ -322,7 +331,7 @@ export function ExternalObservationCreateForm({
                 안내가 서로 다른 항목처럼 읽힌다. */}
             <div className="flex flex-col gap-2">
             <div className="flex flex-wrap gap-2">
-              <button className="btn btn-primary" disabled={!hydrated || busy || !name.trim() || selected.length === 0 || (!attempt && !canStart)} onClick={() => void submit()}>{busy ? "작업 만드는 중" : attempt ? "같은 요청 다시 시도" : "관측 자료 등록 계속"}</button>
+              <button className="btn btn-primary" disabled={!hydrated || busy || !effectiveName || selected.length === 0 || (!attempt && !canStart)} onClick={() => void submit()}>{busy ? "작업 만드는 중" : attempt ? "같은 요청 다시 시도" : "관측 자료 등록 계속"}</button>
               {attempt && !busy && error && <button className="btn" onClick={startOver}>새 요청으로 시작</button>}
             </div>
             {!attempt && !canStart && <p role="alert" className="text-body text-high-ink">계정을 확인하지 못해 요청을 보낼 수 없습니다. 연결과 로그인 상태를 확인한 뒤 화면을 다시 여세요. 화면을 떠나면 입력은 사라집니다.</p>}
@@ -331,9 +340,7 @@ export function ExternalObservationCreateForm({
             <p className="text-caption leading-5 text-ink-2">계속하면 작업이 만들어집니다. 파일은 다음 화면에서 제출합니다.</p>
             {/* 준비 게이트가 열리기 전에는 필수 입력 안내를 내지 않는다. 잠긴 입력칸에
                 입력하라는 안내는 모순이므로, 준비 안내가 그 자리를 대신한다. */}
-            {hydrated && !busy && !attempt && !name.trim() && selected.length === 0 && <p className="text-body leading-5 text-ink-2">작업 이름을 입력하고 비교할 작업구역을 하나 이상 선택하세요.</p>}
-            {hydrated && !busy && !attempt && !name.trim() && selected.length > 0 && <p className="text-body leading-5 text-ink-2">작업 이름을 입력하세요.</p>}
-            {hydrated && !busy && !attempt && name.trim() && selected.length === 0 && <p className="text-body leading-5 text-ink-2">비교할 작업구역을 하나 이상 선택하세요.</p>}
+            {hydrated && !busy && !attempt && selected.length === 0 && <p className="text-body leading-5 text-ink-2">비교할 작업구역을 하나 이상 선택하세요.</p>}
             {error && <p role="alert" className="text-body text-high-ink">{error}{attempt && <> <Link href={workQueueHref} target="_blank" rel="noopener noreferrer" className="font-semibold underline">작업 목록 확인(새 탭)</Link></>}</p>}
             </div>
           </section>

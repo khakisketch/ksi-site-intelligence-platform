@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
@@ -11,6 +12,10 @@ import pytest
 from ksi_core.auth import Principal, PrincipalKind, Role
 from ksi_core.domains.external.quantity.external_single_volume_authorities import (
     ExternalSingleVolumeAuthority,
+)
+from ksi_core.domains.external.quantity.external_use_evaluator import (
+    PAIR_REASON_REMEDIATIONS,
+    CoreExternalUseDecisionHistoryVerifier,
 )
 from ksi_core.durable_journal import DurableJournal
 from ksi_core.external_artifact_inspections import PublicInspectionSnapshot
@@ -35,6 +40,9 @@ from ksi_event_contracts.external_artifact_validation import (
     ExternalArtifactInspectionReportV1,
     ExternalPairUseDecisionV1,
     ExternalValidationPolicyV1,
+    NodataRepresentation,
+    ObservedVerticalReferenceV1,
+    RasterMeasurementsV1,
     SealedArtifactBindingV1,
     SealedExternalSubjectV1,
     SealedZoneReferenceV1,
@@ -258,6 +266,7 @@ def _registry(
     sealed_subject: SealedExternalSubjectV1,
     *,
     coordinator: ExternalAuthorityCurrentnessCoordinator | None = None,
+    uses: tuple[str, ...] = ("DISPLAY", "HEIGHT"),
 ) -> tuple[ExternalValidationPolicyRegistry, ExternalValidationPolicyV1]:
     template = policy_template()
     authority = PolicyAuthorityRecord(
@@ -265,7 +274,7 @@ def _registry(
         policy_version=template.version,
         authorized_policy_body_digest=authorized_policy_body_digest(template),
         permitted_subjects=(sealed_subject,),
-        permitted_uses=("DISPLAY", "HEIGHT"),
+        permitted_uses=uses,
         authorized_actor_ids=("authority",),
         active_from=NOW - timedelta(minutes=1),
         active_until=NOW + timedelta(days=14),
@@ -492,7 +501,9 @@ def test_display_evaluation_rechecks_the_current_inspection_snapshot_before_appe
     assert decision.verdict is DecisionVerdict.BLOCKED
 
 
-def test_height_is_explicitly_blocked_and_exact_retry_reads_history(tmp_path: Path) -> None:
+def test_height_without_a_measured_dsm_is_blocked_and_exact_retry_reads_history(
+    tmp_path: Path,
+) -> None:
     evaluator = _evaluator(tmp_path, receipt=None)
     sealed_subject = subject()
 
@@ -512,7 +523,8 @@ def test_height_is_explicitly_blocked_and_exact_retry_reads_history(tmp_path: Pa
     )
 
     assert first.verdict is DecisionVerdict.BLOCKED
-    assert first.reasons == ("HEIGHT_PRODUCT_DEFINITION_UNRESOLVED",)
+    assert first.reasons == ("DSM_MEASUREMENT_UNAVAILABLE",)
+    assert first.remediations == ("MEASURE_DECLARED_DSM",)
     assert retried == first
 
 
@@ -1143,3 +1155,498 @@ def test_single_volume_requires_a_zone_and_does_not_collide_with_display(tmp_pat
             principal=_principal(),
             now=NOW,
         )
+
+
+# ── HEIGHT: 한 격자의 높이를 읽을 수 있는지 — 체적·두 시점 비교 판정이 아니다 ──────────────
+
+
+def _dsm_measurements(
+    *, vertical: bool = True, dtype: str = "float32", band_count: int = 1
+) -> RasterMeasurementsV1:
+    return RasterMeasurementsV1(
+        observed_crs_identifier="EPSG:5186",
+        observed_crs_digest=digest("c"),
+        observed_vertical_reference=(
+            ObservedVerticalReferenceV1(identifier="EPSG:5773", basis="EGM96 height")
+            if vertical
+            else None
+        ),
+        transform=(1.0, 0.0, 0.0, 0.0, -1.0, 2.0),
+        footprint_wkt="POLYGON((0 0,2 0,2 2,0 2,0 0))",
+        footprint_digest=digest("c"),
+        width=2,
+        height=2,
+        band_count=band_count,
+        dtype=dtype,
+        layout="striped",
+        nodata_representation=NodataRepresentation.NONE,
+        valid_pixel_count=4,
+    )
+
+
+def _report_with_dsm_outcome(
+    original: ExternalArtifactInspectionReportV1, outcome: ArtifactInspectionOutcomeV1
+) -> ExternalArtifactInspectionReportV1:
+    payload = original.measurement_payload.model_copy(
+        update={
+            "outcomes": tuple(
+                outcome if item.artifact_id == "dsm" else item
+                for item in original.measurement_payload.outcomes
+            )
+        },
+        deep=True,
+    )
+    return original.model_copy(
+        update={
+            "measurement_payload": payload,
+            "measurement_payload_digest": None,
+            "report_digest": None,
+        },
+        deep=True,
+    ).sealed()
+
+
+class _HeightWorld:
+    """One subject whose manifest has a DSM; the report decides what was measured."""
+
+    def __init__(
+        self,
+        tmp_path: Path,
+        *,
+        measurements: RasterMeasurementsV1 | None = None,
+        measured: bool = True,
+        uses: tuple[str, ...] = ("DISPLAY", "HEIGHT"),
+        withdraw_after_initial_snapshot: bool = False,
+        with_receipt: bool = False,
+    ) -> None:
+        self.subject = subject(include_dsm=True)
+        self.coordinator = ExternalAuthorityCurrentnessCoordinator()
+        self.registry, self.policy = _registry(
+            tmp_path, self.subject, coordinator=self.coordinator, uses=uses
+        )
+        base = report(request_id="request-1", policy=self.policy, include_dsm=True)
+        outcome = ArtifactInspectionOutcomeV1(
+            artifact_id="dsm",
+            observed_sha256=digest("d"),
+            outcome=ArtifactOutcome.MEASURED if measured else ArtifactOutcome.REJECTED,
+            reason=None if measured else "UNSUPPORTED_RASTER",
+            measurements=(measurements or _dsm_measurements()) if measured else None,
+        )
+        self.report = _report_with_dsm_outcome(base, outcome)
+        self.reconstruction = _Reconstruction(self.subject, self.coordinator)
+        self.reconstruction._revision = SimpleNamespace(  # noqa: SLF001 - fixture wiring
+            manifest=sealed_manifest(include_dsm=True)
+        )
+        self.inspections = _Inspections(
+            self.subject,
+            self.report,
+            _receipt(self.report, self.policy) if with_receipt else None,
+            self.coordinator,
+            withdraw_after_initial_snapshot=withdraw_after_initial_snapshot,
+        )
+        self.validations = ExternalEvidenceValidationStore(
+            DurableJournal(tmp_path / "validations.jsonl"),
+            evidence=_Evidence(self.coordinator),
+            policy_registry=self.registry,
+            coordinator=self.coordinator,
+            clock=lambda: NOW,
+        )
+        self.journal_path = tmp_path / "decisions.jsonl"
+        self.evaluator = ExternalUseEvaluator(
+            decisions=ExternalUseDecisionStore(
+                DurableJournal(self.journal_path),
+                coordinator=self.coordinator,
+                history_verifier=_SyntheticHistoryVerifier(),
+            ),
+            reconstruction=self.reconstruction,  # type: ignore[arg-type]
+            inspections=self.inspections,
+            policy_registry=self.registry,
+            evidence_validations=self.validations,
+            coordinator=self.coordinator,
+        )
+
+    def verifier(self) -> CoreExternalUseDecisionHistoryVerifier:
+        return CoreExternalUseDecisionHistoryVerifier(
+            reconstruction=self.reconstruction,  # type: ignore[arg-type]
+            inspections=self.inspections,
+            policy_registry=self.registry,
+            evidence_validations=self.validations,
+        )
+
+    def height(self, key: str = "height-1") -> Any:
+        return self.evaluator.request_single(
+            self.subject, use="HEIGHT", idempotency_key=key, principal=_principal(), now=NOW
+        )
+
+
+def test_height_is_eligible_for_a_measured_dsm_with_a_vertical_reference(tmp_path: Path) -> None:
+    world = _HeightWorld(tmp_path)
+    decision = world.height()
+
+    assert decision.verdict is DecisionVerdict.ELIGIBLE
+    assert decision.reasons == ("HEIGHT_ELIGIBLE",)
+    assert decision.remediations == ("CURRENT_DEPENDENCIES_RETAINED",)
+    assert decision.policy_digest == world.policy.policy_digest
+    assert decision.inspection_report_digest == world.report.report_digest
+    # 한 격자를 읽는 판정이다 — 표시 영수증·증거·구역·매핑을 요구하지도 묶지도 않는다.
+    assert decision.sanitized_display_receipt_digest is None
+    assert decision.evidence_record_digests == ()
+    assert world.height() == decision
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "reason", "remediation"),
+    [
+        (dict(measured=False), "DSM_MEASUREMENT_UNAVAILABLE", "MEASURE_DECLARED_DSM"),
+        (
+            dict(measurements=_dsm_measurements(dtype="uint8")),
+            "DSM_MEASUREMENT_UNAVAILABLE",
+            "MEASURE_DECLARED_DSM",
+        ),
+        (
+            dict(measurements=_dsm_measurements(band_count=3)),
+            "DSM_MEASUREMENT_UNAVAILABLE",
+            "MEASURE_DECLARED_DSM",
+        ),
+        (
+            dict(measurements=_dsm_measurements(vertical=False)),
+            "VERTICAL_REFERENCE_UNKNOWN",
+            "OBSERVE_VERTICAL_REFERENCE",
+        ),
+        (dict(uses=("DISPLAY",)), "POLICY_UNAVAILABLE", "AUTHORIZE_POLICY"),
+        (
+            dict(withdraw_after_initial_snapshot=True),
+            "INSPECTION_REPORT_BINDING_INVALID",
+            "COMPLETE_CURRENT_INSPECTION",
+        ),
+    ],
+)
+def test_height_names_the_exact_blocker_and_never_guesses_a_unit(
+    tmp_path: Path, kwargs: dict[str, Any], reason: str, remediation: str
+) -> None:
+    decision = _HeightWorld(tmp_path, **kwargs).height()
+
+    assert decision.verdict is DecisionVerdict.BLOCKED
+    assert decision.reasons == (reason,)
+    assert decision.remediations == (remediation,)
+    assert decision.policy_digest is None and decision.inspection_report_digest is None
+
+
+def test_an_ortho_only_measurement_is_not_height_evidence(tmp_path: Path) -> None:
+    evaluator = _evaluator(tmp_path, receipt=None)
+    decision = evaluator.request_single(
+        subject(), use="HEIGHT", idempotency_key="h", principal=_principal(), now=NOW
+    )
+    assert decision.reasons == ("DSM_MEASUREMENT_UNAVAILABLE",)
+
+
+def test_the_catalog_explains_every_height_blocker() -> None:
+    from ksi_core.domains.external.quantity.external_use_blockers import (
+        load_external_use_blocker_catalog,
+    )
+
+    catalog = load_external_use_blocker_catalog()
+    for code in ("DSM_MEASUREMENT_UNAVAILABLE", "VERTICAL_REFERENCE_UNKNOWN"):
+        assert code in catalog.reasons
+        assert PAIR_REASON_REMEDIATIONS[code] in catalog.remediations
+
+
+def test_an_eligible_height_decision_survives_replay_from_retained_sources(
+    tmp_path: Path,
+) -> None:
+    world = _HeightWorld(tmp_path)
+    decision = world.height()
+    assert world.verifier().verify(decision) is True
+
+    world.evaluator._decisions._journal.close()  # noqa: SLF001 - reopen like a restart
+    reopened = ExternalUseDecisionStore(
+        DurableJournal(world.journal_path),
+        coordinator=world.coordinator,
+        history_verifier=world.verifier(),
+    )
+    assert reopened is not None  # 복구가 재검증을 통과했다
+
+
+def test_replay_refuses_height_history_whose_sources_no_longer_support_it(
+    tmp_path: Path,
+) -> None:
+    world = _HeightWorld(tmp_path / "a")
+    decision = world.height()
+    # The same decision, replayed where the retained report has no vertical reference.
+    other = _HeightWorld(tmp_path / "b", measurements=_dsm_measurements(vertical=False))
+    forged = decision.model_copy(
+        update={
+            "inspection_report_digest": other.report.report_digest,
+            "decision_digest": None,
+        }
+    ).sealed()
+    assert other.verifier().verify(forged) is False
+
+    nothing = _HeightWorld(tmp_path / "c")
+    nothing.inspections._subject = subject()  # noqa: SLF001 - no retained report for it
+    assert nothing.verifier().verify(decision) is False
+
+
+def test_display_decisions_are_unchanged_by_opening_height(tmp_path: Path) -> None:
+    sealed_subject = subject()
+    registry, policy = _registry(tmp_path, sealed_subject)
+    accepted_report = report(request_id="request-1", policy=policy)
+    decision = _evaluator(
+        tmp_path / "evaluator", receipt=_receipt(accepted_report, policy)
+    ).request_single(
+        sealed_subject, use="DISPLAY", idempotency_key="d", principal=_principal(), now=NOW
+    )
+    assert decision.reasons == ("DISPLAY_ELIGIBLE",)
+    assert decision.remediations == ("DISPLAY_RECEIPT_RETAINED",)
+    assert decision.sanitized_display_receipt_digest is not None
+
+
+def test_height_never_binds_a_display_receipt_even_when_one_exists(tmp_path: Path) -> None:
+    decision = _HeightWorld(tmp_path, with_receipt=True).height()
+    assert decision.verdict is DecisionVerdict.ELIGIBLE
+    assert decision.sanitized_display_receipt_digest is None
+
+
+def test_a_recorded_height_decision_is_re_proved_before_anything_acts_on_it(tmp_path: Path) -> None:
+    world = _HeightWorld(tmp_path)
+    decision = world.height()
+    assert world.evaluator.height_blocker_now(decision, now=NOW) is None
+
+    # 정책의 유효 기간이 끝나면 과거 ELIGIBLE 은 더 이상 읽기 근거가 아니다.
+    assert world.evaluator.height_blocker_now(decision, now=NOW + timedelta(days=30)) == (
+        "POLICY_UNAVAILABLE"
+    )
+    # 검사 보고가 더 이상 그 결정이 묶은 것이 아니면 막는다.
+    world.inspections._subject = subject()  # noqa: SLF001 - the report is no longer reported
+    assert world.evaluator.height_blocker_now(decision, now=NOW) == (
+        "INSPECTION_REPORT_BINDING_INVALID"
+    )
+
+
+def test_a_blocked_or_other_use_decision_never_licenses_a_read(tmp_path: Path) -> None:
+    blocked = _HeightWorld(tmp_path / "a", measured=False)
+    assert blocked.evaluator.height_blocker_now(blocked.height(), now=NOW) == "HEIGHT_NOT_ELIGIBLE"
+
+    sealed_subject = subject()
+    registry, policy = _registry(tmp_path / "b", sealed_subject)
+    accepted = report(request_id="request-1", policy=policy)
+    evaluator = _evaluator(tmp_path / "evaluator", receipt=_receipt(accepted, policy))
+    display = evaluator.request_single(
+        sealed_subject, use="DISPLAY", idempotency_key="d", principal=_principal(), now=NOW
+    )
+    assert evaluator.height_blocker_now(display, now=NOW) == "HEIGHT_NOT_ELIGIBLE"
+
+
+# ── HEIGHT: 파일에 수직 기준이 없을 때 사용자 선언이 읽기에만 근거가 된다 ──────────────
+
+
+class _Declarations:
+    """선언 원장 대역: 자료 참조별 (선언 시각, 활성 여부) 이력. 호출 횟수를 센다."""
+
+    def __init__(self) -> None:
+        self.history: dict[str, list[tuple[datetime, bool]]] = {}
+        self.calls = 0
+
+    def declare(self, asset_ref: str, at: datetime, *, active: bool = True) -> None:
+        self.history.setdefault(asset_ref, []).append((at, active))
+
+    def active_declaration(
+        self, *, organization_id: str, site_id: str, asset_ref: str, at: datetime | None = None
+    ) -> object | None:
+        self.calls += 1
+        del organization_id, site_id
+        rows = [row for row in self.history.get(asset_ref, []) if at is None or row[0] <= at]
+        return object() if rows and rows[-1][1] else None
+
+
+def _declared_world(tmp_path: Path, ledger: _Declarations, **kwargs: Any) -> _HeightWorld:
+    world = _HeightWorld(
+        tmp_path,
+        measurements=kwargs.pop("measurements", _dsm_measurements(vertical=False)),
+        **kwargs,
+    )
+    world.evaluator._declared_vertical = ledger  # noqa: SLF001 - 판정이 읽는 포트를 꽂는다
+    return world
+
+
+def _dsm_asset_ref_for(sealed_subject: Any, artifact_id: str) -> str:
+    from ksi_core.domains.external.ingress.spatial_asset_catalog import asset_ref_for_subject
+
+    return asset_ref_for_subject(sealed_subject, artifact_id)
+
+
+def _dsm_asset_ref(world: _HeightWorld, artifact_id: str = "dsm") -> str:
+    from ksi_core.domains.external.ingress.spatial_asset_catalog import asset_ref_for_subject
+
+    return asset_ref_for_subject(world.subject, artifact_id)
+
+
+def test_a_declaration_lets_a_dsm_without_a_vertical_reference_be_read(tmp_path: Path) -> None:
+    ledger = _Declarations()
+    world = _declared_world(tmp_path, ledger)
+    assert world.height("before").reasons == ("VERTICAL_REFERENCE_UNKNOWN",)
+
+    ledger.declare(_dsm_asset_ref(world), NOW - timedelta(minutes=1))
+    decision = world.height("after")
+    assert decision.verdict is DecisionVerdict.ELIGIBLE
+    assert decision.reasons == ("HEIGHT_ELIGIBLE",)
+    assert decision.sanitized_display_receipt_digest is None
+    assert decision.evidence_record_digests == ()
+
+
+def test_a_declaration_recorded_after_the_decision_time_is_not_its_basis(tmp_path: Path) -> None:
+    # 요청 시각을 잡은 뒤 락을 얻기 전에 선언이 기록된 경쟁: 판정은 판정 시각에 있던 선언만 본다.
+    # 그렇지 않으면 ELIGIBLE 이 저널에 남지만 이력 검증(판정 시각 기준)은 근거를 찾지 못한다.
+    ledger = _Declarations()
+    world = _declared_world(tmp_path, ledger)
+    ledger.declare(_dsm_asset_ref(world), NOW + timedelta(seconds=1))
+    decision = world.height("race")
+    assert decision.reasons == ("VERTICAL_REFERENCE_UNKNOWN",)
+    # 판정 시각 이전에 있던 선언은 근거가 되고, 그 판정은 이력 검증도 통과한다.
+    earlier = _Declarations()
+    earlier_world = _declared_world(tmp_path / "earlier", earlier)
+    earlier.declare(_dsm_asset_ref(earlier_world), NOW)
+    eligible = earlier_world.height("same-instant")
+    assert eligible.verdict is DecisionVerdict.ELIGIBLE
+    verifier = CoreExternalUseDecisionHistoryVerifier(
+        reconstruction=earlier_world.reconstruction,  # type: ignore[arg-type]
+        inspections=earlier_world.inspections,
+        policy_registry=earlier_world.registry,
+        evidence_validations=earlier_world.validations,
+        declared_vertical=earlier,
+    )
+    assert verifier.verify(eligible) is True
+
+
+def test_a_declaration_for_another_asset_or_a_withdrawn_one_opens_nothing(tmp_path: Path) -> None:
+    ledger = _Declarations()
+    world = _declared_world(tmp_path, ledger)
+    ledger.declare(_dsm_asset_ref(world, "some-other-artifact"), NOW)
+    assert world.height("other").reasons == ("VERTICAL_REFERENCE_UNKNOWN",)
+
+    ledger.declare(_dsm_asset_ref(world), NOW - timedelta(minutes=2))
+    ledger.declare(_dsm_asset_ref(world), NOW - timedelta(minutes=1), active=False)
+    assert world.height("withdrawn").reasons == ("VERTICAL_REFERENCE_UNKNOWN",)
+
+
+def test_the_files_own_vertical_reference_wins_and_the_ledger_is_not_asked(tmp_path: Path) -> None:
+    ledger = _Declarations()
+    world = _declared_world(tmp_path, ledger, measurements=_dsm_measurements(vertical=True))
+    assert world.height().verdict is DecisionVerdict.ELIGIBLE
+    assert ledger.calls == 0
+
+
+def test_without_a_ledger_nothing_changes(tmp_path: Path) -> None:
+    world = _HeightWorld(tmp_path, measurements=_dsm_measurements(vertical=False))
+    assert world.height().reasons == ("VERTICAL_REFERENCE_UNKNOWN",)
+
+
+def test_a_decision_made_on_a_declaration_stops_licensing_reads_when_it_is_withdrawn(
+    tmp_path: Path,
+) -> None:
+    ledger = _Declarations()
+    world = _declared_world(tmp_path, ledger)
+    ledger.declare(_dsm_asset_ref(world), NOW - timedelta(minutes=2))
+    decision = world.height()
+    assert world.evaluator.height_blocker_now(decision, now=NOW) is None
+
+    ledger.declare(_dsm_asset_ref(world), NOW - timedelta(minutes=1), active=False)
+    assert world.evaluator.height_blocker_now(decision, now=NOW) == "VERTICAL_REFERENCE_UNKNOWN"
+
+
+def test_history_checks_the_declaration_as_of_the_decision_time(tmp_path: Path) -> None:
+    ledger = _Declarations()
+    world = _declared_world(tmp_path, ledger)
+    ledger.declare(_dsm_asset_ref(world), NOW - timedelta(minutes=2))
+    decision = world.height()
+    verifier = CoreExternalUseDecisionHistoryVerifier(
+        reconstruction=world.reconstruction,  # type: ignore[arg-type]
+        inspections=world.inspections,
+        policy_registry=world.registry,
+        evidence_validations=world.validations,
+        declared_vertical=ledger,
+    )
+    assert verifier.verify(decision) is True
+    # 철회돼도 과거 판정은 그 시점에 근거가 있었다 — 이력은 다시 쓰지 않는다.
+    ledger.declare(_dsm_asset_ref(world), NOW + timedelta(minutes=1), active=False)
+    assert verifier.verify(decision) is True
+    # 판정 시점에 선언이 없었다면, 나중에 선언해도 그 판정은 근거가 없다.
+    late = _Declarations()
+    late.declare(_dsm_asset_ref(world), NOW + timedelta(minutes=5))
+    late_verifier = CoreExternalUseDecisionHistoryVerifier(
+        reconstruction=world.reconstruction,  # type: ignore[arg-type]
+        inspections=world.inspections,
+        policy_registry=world.registry,
+        evidence_validations=world.validations,
+        declared_vertical=late,
+    )
+    assert late_verifier.verify(decision) is False
+    # 포트가 없는 검증기는 선언을 근거로 인정하지 않는다.
+    assert world.verifier().verify(decision) is False
+
+
+def test_display_decisions_never_ask_the_declaration_ledger(tmp_path: Path) -> None:
+    ledger = _Declarations()
+    world = _declared_world(tmp_path, ledger, with_receipt=True)
+    ledger.declare(_dsm_asset_ref(world), NOW - timedelta(minutes=1))
+    decision = world.evaluator.request_single(
+        world.subject, use="DISPLAY", idempotency_key="display", principal=_principal(), now=NOW
+    )
+    assert decision.reasons == ("DISPLAY_ELIGIBLE",)
+    assert ledger.calls == 0
+
+
+def test_quantity_decisions_never_ask_the_declaration_ledger(tmp_path: Path) -> None:
+    """선언은 높이 읽기에만 근거가 된다 — 체적·두 시점 비교 판정은 원장을 묻지 않는다(행동 시험).
+
+    원장이 꽂혀 있고 모든 자료에 선언이 있어도, 상대 체적·단일 체적 판정 경로가 포트를 한 번도
+    부르지 않는다. import 검사(아래 시험)만으로는 이미 꽂힌 포트를 새 경로가 부르기 시작하는
+    변경을 잡지 못한다.
+    """
+    ledger = _Declarations()
+    pair_evaluator, baseline, current, _ = _volume_pair_evaluator(tmp_path / "pair", attested=True)
+    pair_evaluator._declared_vertical = ledger  # noqa: SLF001 - 판정이 읽는 포트를 꽂는다
+    for artifact_id in ("dsm", "some-other-artifact"):
+        for sealed in (baseline, current):
+            ledger.declare(_dsm_asset_ref_for(sealed, artifact_id), NOW - timedelta(minutes=1))
+    pair = pair_evaluator.request_pair(
+        baseline,
+        current,
+        use="RELATIVE_VOLUME",
+        zone_id="zone-1",
+        idempotency_key="no-ledger-pair",
+        principal=_principal(),
+        now=NOW,
+    )
+    assert pair.verdict is DecisionVerdict.ELIGIBLE
+
+    single_evaluator, sealed_subject, _ = _single_volume_evaluator(
+        tmp_path / "single", attested=True
+    )
+    single_evaluator._declared_vertical = ledger  # noqa: SLF001
+    ledger.declare(_dsm_asset_ref_for(sealed_subject, "dsm"), NOW - timedelta(minutes=1))
+    single = single_evaluator.request_single_volume(
+        sealed_subject,
+        zone_id="zone-1",
+        idempotency_key="no-ledger-single",
+        principal=_principal(),
+        now=NOW,
+    )
+    assert single.verdict is DecisionVerdict.ELIGIBLE
+    assert ledger.calls == 0
+
+
+def test_only_the_assembly_may_import_the_declaration_ledger() -> None:
+    """선언은 주장이다 — 비교·체적·준비도 모듈이 원장을 직접 읽기 시작하면 이 시험이 실패한다.
+
+    판정은 원장 모듈이 아니라 좁은 포트(``DeclaredVerticalReferencePort``)만 안다.
+    """
+    root = Path(__file__).resolve().parents[2] / "services/core/src/ksi_core"
+    pattern = re.compile(r"(from|import)\s+[\w.]*vertical_reference_declarations\b")
+    importers = {
+        str(path.relative_to(root))
+        for path in root.rglob("*.py")
+        if path.name != "vertical_reference_declarations.py"
+        and pattern.search(path.read_text(encoding="utf-8"))
+    }
+    assert importers == {"composition/platform_graph.py", "composition/routes/external.py"}

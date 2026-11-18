@@ -53,6 +53,8 @@ describe("동적 경로", () => {
     expect(resolvePageTitle("/sites/SITE-1/spatial-assets/")).toBe("공간");
     expect(resolvePageTitle("/sites/SITE-1/spatial-data-requests")).toBe("구역 자료 준비");
     expect(resolvePageTitle("/sites/SITE-1/spatial-data-requests/")).toBe("구역 자료 준비");
+    expect(resolvePageTitle("/sites/SITE-1/measurements")).toBe("측정 선");
+    expect(resolvePageTitle("/sites/SITE-1/measurements/")).toBe("측정 선");
   });
 
   it("후행 슬래시가 있어도 같은 제목이다", () => {

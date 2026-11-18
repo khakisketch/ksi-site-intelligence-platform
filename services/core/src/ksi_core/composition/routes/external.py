@@ -29,9 +29,11 @@ def mount_external_routes(
     spatial_data: Any = None,
     external_artifact_inspection_store: Any,
     external_display_artifact_store: Any,
+    surface_profile: Any = None,
     external_analysis_wiring: Any = None,
     external_delta_wiring: Any = None,
     external_masked_wiring: Any = None,
+    vertical_reference_declarations: Any = None,
 ) -> Any:
     if spatial_data is not None:
         from ksi_core.composition.spatial_data_graph import (
@@ -84,6 +86,43 @@ def mount_external_routes(
             )
         app.state.spatial_data = spatial_data
         bind_spatial_data_openapi(app)
+    if surface_profile is not None:
+        from ksi_core.composition.surface_profile_graph import (
+            SurfaceProfileWiring,
+            bind_surface_profile_openapi,
+        )
+        from ksi_core.domains.external.delivery.surface_profile_api import (
+            build_surface_profile_router,
+        )
+        from ksi_core.domains.external.delivery.surface_profile_worker_api import (
+            build_surface_profile_worker_router,
+        )
+
+        if spatial_data is None:
+            raise ValueError("surface profile requires the mounted spatial data lane")
+        if not isinstance(surface_profile, SurfaceProfileWiring):
+            raise ValueError("surface profile requires complete explicit wiring")
+        if not surface_profile.uses_data_lane(spatial_data):
+            raise ValueError("surface profile must bind the mounted spatial data lane")
+        surface_profile.verify_participants()
+        app.include_router(
+            build_surface_profile_router(
+                jobs=surface_profile.jobs,
+                limits=surface_profile.config.http_limits,
+                clock=surface_profile.config.clock,
+            )
+        )
+        app.include_router(
+            build_surface_profile_worker_router(
+                jobs=surface_profile.jobs,
+                limits=surface_profile.config.http_limits,
+                clock=surface_profile.config.clock,
+                storage=spatial_data.storage,
+                activation=surface_profile.config.activation,
+            )
+        )
+        app.state.surface_profile = surface_profile
+        bind_surface_profile_openapi(app)
     external_result_projection = external_result_read_projector
     single_volume_store = (
         external_single_volume.store if external_single_volume is not None else None
@@ -151,6 +190,33 @@ def mount_external_routes(
                     inspections=external_artifact_inspection_store,
                 )
             )
+
+            if vertical_reference_declarations is not None:
+                from datetime import UTC, datetime
+
+                from ksi_core.domains.external.ingress.spatial_asset_catalog import (
+                    SpatialAssetCatalog,
+                )
+                from ksi_core.domains.external.ingress.vertical_reference_declarations import (
+                    CatalogDeclarationAssetPort,
+                    mount_vertical_reference_declarations,
+                )
+
+                # 선언은 같은 카탈로그가 현재 권한 범위에서 말해 준 자료에만 한다.
+                mount_vertical_reference_declarations(
+                    app,
+                    vertical_reference_declarations,
+                    CatalogDeclarationAssetPort(
+                        SpatialAssetCatalog(
+                            reconstruction=external_reconstruction_store,
+                            work_orders=observation_work_order_store,
+                            sites=site_store,
+                            work_areas=work_area_store,
+                            inspections=external_artifact_inspection_store,
+                        )
+                    ),
+                    clock=lambda: datetime.now(UTC),
+                )
 
             from ksi_core.domains.external.ingress.site_spatial_workspace import (
                 build_site_spatial_workspace_router,
@@ -254,6 +320,28 @@ def mount_external_routes(
             reconstruction=external_reconstruction_store,
             work_orders=observation_work_order_store,
         )
+        if site_store is not None and work_area_store is not None:
+            from ksi_core.domains.external.ingress.spatial_asset_catalog import (
+                SpatialAssetCatalog as _HeightCatalog,
+            )
+            from ksi_core.domains.external.quantity.asset_height_decision import (
+                build_asset_height_decision_router,
+            )
+
+            # 단면 요청이 판정 식별자를 얻는 길: 같은 카탈로그 범위 안의 자료에만 닿는다.
+            app.include_router(
+                build_asset_height_decision_router(
+                    external_use_evaluator,
+                    _HeightCatalog(
+                        reconstruction=external_reconstruction_store,
+                        work_orders=observation_work_order_store,
+                        sites=site_store,
+                        work_areas=work_area_store,
+                        inspections=external_artifact_inspection_store,
+                    ),
+                    work_orders=observation_work_order_store,
+                )
+            )
 
     if external_artifact_inspection_store is not None:
         from ksi_core.external_artifact_inspections import mount_external_artifact_inspections

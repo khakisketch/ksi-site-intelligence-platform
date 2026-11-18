@@ -42,7 +42,16 @@ from ksi_core.composition.spatial_data_graph import (
     SpatialDataWiring,
     build_spatial_data_wiring,
 )
+from ksi_core.composition.surface_profile_graph import (
+    SurfaceProfileGraphConfig,
+    SurfaceProfileWiring,
+    build_surface_profile_wiring,
+)
+from ksi_core.domains.external.ingress.vertical_reference_declarations import (
+    VerticalReferenceDeclarationStore,
+)
 from ksi_core.domains.sites.external_report_resolver import ExternalVolumeReportResolver
+from ksi_core.domains.sites.measurement_features import MeasurementFeatureStore
 from ksi_core.domains.sites.observation_work_orders import ObservationWorkOrderStore
 from ksi_core.domains.sites.organization_work_roster import OrganizationWorkRosterStore
 from ksi_core.domains.sites.sites import (
@@ -76,9 +85,12 @@ class PlatformGraph:
     data: SpatialDataWiring | None
     coordinator: ExternalAuthorityCurrentnessCoordinator
     storage: Any
+    surface_profile: SurfaceProfileWiring | None = None
     delta: DeltaPublicationWiring | None = None
     masked: MaskedQuantitativeWiring | None = None
     spatial_tasks: Any = None
+    measurement_features: MeasurementFeatureStore | None = None
+    vertical_declarations: VerticalReferenceDeclarationStore | None = None
 
 
 def build_platform_graph(
@@ -91,6 +103,7 @@ def build_platform_graph(
     external_analysis_local_graph: ExternalAnalysisLocalGraphConfig | None = None,
     analysis_activation: AnalysisActivationV1 | None = None,
     spatial_data: SpatialDataLocalAssemblyConfig | None = None,
+    surface_profile: SurfaceProfileGraphConfig | None = None,
     delta_publications: DeltaPublicationLocalConfig | None = None,
     masked_quantitative: MaskedQuantitativeLocalConfig | None = None,
     masked_dsm_byte_reader: Any | None = None,
@@ -147,6 +160,17 @@ def build_platform_graph(
         coordinator=coordinator,
         registration_stopped=registration_stopped,
     )
+    measurement_feature_store = MeasurementFeatureStore(
+        journal("measurement-features.jsonl"),
+        work_areas=work_area_store,
+        site_visible_to=lambda site_id, organization_id: (
+            site_store.get_scoped(site_id, organization_id) is not None
+        ),
+        coordinator=coordinator,
+    )
+    vertical_declaration_store = VerticalReferenceDeclarationStore(
+        journal("vertical-reference-declarations.jsonl"), coordinator=coordinator
+    )
     external_pre_work_order = build_external_pre_work_order_graph(
         journal=journal,
         evidence_storage=evidence_storage,
@@ -156,6 +180,7 @@ def build_platform_graph(
         coordinator=coordinator,
         policy_authority_currentness=policy_authority_currentness,
         evidence_context_authority=evidence_context_authority,
+        vertical_declarations=vertical_declaration_store,
     )
     organization_work_roster_store = OrganizationWorkRosterStore(
         journal("organization-work-roster.jsonl"), coordinator=coordinator
@@ -265,6 +290,26 @@ def build_platform_graph(
             # Operator-provisioned grants/revocations are applied after the exact
             # participant wiring exists; idempotent, conflicts fail the boot.
             spatial_data.import_rights(data_lane.grants)
+    profile_lane = None
+    if surface_profile is not None:
+        if not isinstance(surface_profile, SurfaceProfileGraphConfig):
+            raise ValueError("surface profile requires an explicit sealed graph config")
+        if data_lane is None:
+            raise ValueError("surface profile requires the explicit spatial data lane")
+        if external_pre_work_order.use_evaluator is None:
+            raise ValueError("surface profile requires the actual HEIGHT use evaluator")
+        profile_lane = build_surface_profile_wiring(
+            journal=journal,
+            config=surface_profile,
+            sources=data_lane.sources,
+            authorizer=data_lane.authorizer,
+            features=measurement_feature_store,
+            decisions=external_pre_work_order.use_evaluator,
+            currentness=data_lane.currentness,
+            data_policy=data_lane.config.policy,
+            coordinator=coordinator,
+            declarations=vertical_declaration_store,
+        )
     masked_lane = None
     if masked_quantitative is not None:
         if external_analysis_wiring is None:
@@ -309,9 +354,12 @@ def build_platform_graph(
         data=data_lane,
         coordinator=coordinator,
         storage=evidence_storage,
+        surface_profile=profile_lane,
         delta=delta_lane,
         masked=masked_lane,
         spatial_tasks=spatial_task_store,
+        measurement_features=measurement_feature_store,
+        vertical_declarations=vertical_declaration_store,
     )
 
 

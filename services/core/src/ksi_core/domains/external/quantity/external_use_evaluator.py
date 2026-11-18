@@ -9,7 +9,7 @@ observation, verdict, storage key, or numeric result.
 from __future__ import annotations
 
 import hashlib
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, Literal, Protocol, cast
@@ -17,6 +17,7 @@ from typing import Any, Literal, Protocol, cast
 from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException
 from ksi_domain.canonical_json import canonical_json_bytes
 from ksi_event_contracts.external_artifact_validation import (
+    ArtifactInspectionOutcomeV1,
     ArtifactOutcome,
     DecisionVerdict,
     ExternalArtifactInspectionReportV1,
@@ -42,6 +43,7 @@ from ksi_core.domains.external.ingress.external_validation_policy import (
     ExternalValidationPolicyRegistry,
     PolicySelectionStatus,
 )
+from ksi_core.domains.external.ingress.spatial_asset_catalog import asset_ref_for_subject
 from ksi_core.domains.external.quantity.external_relative_volume_authorities import (
     DefaultClosedExternalRelativeVolumeAuthorityPort,
     ExternalRelativeVolumeAuthority,
@@ -93,6 +95,41 @@ class ExternalInspectionDecisionPort(Protocol):
     ) -> SanitizedDisplayReceiptV1 | None: ...
 
 
+class DeclaredVerticalReferencePort(Protocol):
+    """사용자가 선언한 DSM 수직 기준. 선언은 주장이며, 읽기(HEIGHT)만 이것을 근거로 삼는다.
+
+    비교·체적·준비도는 이 포트를 받지 않는다. 파일에서 관측한 수직 기준이 있으면 포트는 묻지 않는다.
+    """
+
+    def active_declaration(
+        self, *, organization_id: str, site_id: str, asset_ref: str, at: datetime | None = None
+    ) -> object | None: ...
+
+
+def declared_vertical_checker(
+    port: DeclaredVerticalReferencePort | None,
+    subject: SealedExternalSubjectV1,
+    *,
+    at: datetime | None = None,
+) -> Callable[[str], bool] | None:
+    """DSM 산출물 id → 그 시점에 유효한 선언이 있는가. 포트가 없으면 선언을 쓰지 않는다."""
+    if port is None:
+        return None
+
+    def declared(artifact_id: str) -> bool:
+        return (
+            port.active_declaration(
+                organization_id=subject.organization_id,
+                site_id=subject.site_id,
+                asset_ref=asset_ref_for_subject(subject, artifact_id),
+                at=at,
+            )
+            is not None
+        )
+
+    return declared
+
+
 class CoreExternalUseDecisionHistoryVerifier(ExternalUseDecisionHistoryVerifier):
     """Replay verifier for independently retained Core source journals.
 
@@ -110,6 +147,7 @@ class CoreExternalUseDecisionHistoryVerifier(ExternalUseDecisionHistoryVerifier)
         evidence_validations: ExternalEvidenceValidationStore,
         relative_volume_authority: ExternalRelativeVolumeAuthorityPort | None = None,
         single_volume_authority: ExternalSingleVolumeAuthorityPort | None = None,
+        declared_vertical: DeclaredVerticalReferencePort | None = None,
     ) -> None:
         self._reconstruction = reconstruction
         self._inspections = inspections
@@ -117,6 +155,7 @@ class CoreExternalUseDecisionHistoryVerifier(ExternalUseDecisionHistoryVerifier)
         self._evidence_validations = evidence_validations
         self._relative_volume_authority = relative_volume_authority
         self._single_volume_authority = single_volume_authority
+        self._declared_vertical = declared_vertical
 
     def verify(self, candidate: DecisionCandidate) -> bool:
         if isinstance(candidate, ExternalUseDecisionV1):
@@ -192,16 +231,25 @@ class CoreExternalUseDecisionHistoryVerifier(ExternalUseDecisionHistoryVerifier)
         report = self._inspections.historical_report(
             candidate.subject, report_digest=report_digest, policy_digest=policy_digest
         )
+        if revision is None or not ExternalUseEvaluator._report_binds(
+            candidate.subject, report, policy
+        ):
+            return False
+        if candidate.use == "HEIGHT":
+            # A height read binds the measured DSM's own facts and never a display receipt.
+            return (
+                candidate.sanitized_display_receipt_digest is None
+                and ExternalUseEvaluator._height_blocker(
+                    revision,
+                    report,
+                    declared=declared_vertical_checker(
+                        self._declared_vertical, candidate.subject, at=candidate.decided_at
+                    ),
+                )
+                is None
+            )
         if (
-            revision is None
-            or not ExternalUseEvaluator._report_binds(
-                candidate.subject,
-                report,
-                policy,
-            )
-            or not ExternalUseEvaluator._measured_kind(
-                revision, report, ProcessingArtifactKind.ORTHO
-            )
+            not ExternalUseEvaluator._measured_kind(revision, report, ProcessingArtifactKind.ORTHO)
             or candidate.sanitized_display_receipt_digest is None
         ):
             return False
@@ -336,6 +384,8 @@ class ExternalUseDecisionResponse(CamelModel):
 # here (contract test ``test_external_use_blockers.py``).
 PAIR_REASON_REMEDIATIONS: dict[str, str] = {
     "HEIGHT_PRODUCT_DEFINITION_UNRESOLVED": "DEFINE_HEIGHT_PRODUCT",
+    "DSM_MEASUREMENT_UNAVAILABLE": "MEASURE_DECLARED_DSM",
+    "VERTICAL_REFERENCE_UNKNOWN": "OBSERVE_VERTICAL_REFERENCE",
     "SUBJECT_NOT_SEALED": "SEAL_EXTERNAL_RECONSTRUCTION",
     "POLICY_UNAVAILABLE": "AUTHORIZE_POLICY",
     "INSPECTION_REPORT_BINDING_INVALID": "COMPLETE_CURRENT_INSPECTION",
@@ -371,6 +421,7 @@ class ExternalUseEvaluator:
         coordinator: ExternalAuthorityCurrentnessCoordinator,
         relative_volume_authority: ExternalRelativeVolumeAuthorityPort | None = None,
         single_volume_authority: ExternalSingleVolumeAuthorityPort | None = None,
+        declared_vertical: DeclaredVerticalReferencePort | None = None,
     ) -> None:
         for name, dependency in (
             ("external decision store", decisions),
@@ -397,6 +448,7 @@ class ExternalUseEvaluator:
         self._policy_registry = policy_registry
         self._evidence_validations = evidence_validations
         self._coordinator = coordinator
+        self._declared_vertical = declared_vertical
         self._relative_volume_authority = relative_volume_authority or (
             DefaultClosedExternalRelativeVolumeAuthorityPort(currentness_coordinator=coordinator)
         )
@@ -440,6 +492,11 @@ class ExternalUseEvaluator:
                 ExternalUseDecisionV1,
                 self._record(candidate, intent, principal, idempotency_key),
             )
+
+    def has_declared_vertical(self, subject: SealedExternalSubjectV1, artifact_id: str) -> bool:
+        """Does this DSM artifact have a current user declaration?  False without a ledger."""
+        checker = declared_vertical_checker(self._declared_vertical, subject)
+        return checker is not None and checker(artifact_id)
 
     def existing_single_retry(
         self,
@@ -797,6 +854,49 @@ class ExternalUseEvaluator:
         """Return a scoped historic decision without creating any new authority."""
         return self._decisions.get_scoped(decision_id, principal=principal, site_id=site_id)
 
+    def height_blocker_now(self, decision: ExternalUseDecisionV1, *, now: datetime) -> str | None:
+        """Why a recorded HEIGHT decision no longer licenses a read, or ``None`` if it still does.
+
+        A decision is history: it proves what was true when it was made.  Anything that *acts* on
+        it (a profile job) must ask this again — policy still permits HEIGHT for exactly this
+        subject, the inspection report is still the one the decision bound, and the DSM is still a
+        measured single-band float grid with an observed vertical reference.  Local retained state
+        only, so it is safe under the commit guard.
+        """
+        if (
+            decision.use != "HEIGHT"
+            or decision.verdict is not DecisionVerdict.ELIGIBLE
+            or decision.policy_digest is None
+            or decision.inspection_report_digest is None
+        ):
+            return "HEIGHT_NOT_ELIGIBLE"
+        subject = decision.subject
+        with self._coordinator.guarded_read():
+            resolved = self._policy_registry.resolve(decision.policy_digest)
+            if (
+                resolved.status is not PolicySelectionStatus.ACTIVE
+                or resolved.policy is None
+                or not self._policy_registry.locally_current_use_permitted(
+                    decision.policy_digest, use="HEIGHT", subjects=(subject,), at=now
+                )
+            ):
+                return "POLICY_UNAVAILABLE"
+            revision = self._reconstruction.resolve_sealed_subject(subject)
+            if revision is None:
+                return "SUBJECT_NOT_SEALED"
+            report = self._inspections.public_snapshot(subject).report
+            if (
+                report is None
+                or report.report_digest != decision.inspection_report_digest
+                or not self._report_binds(subject, report, resolved.policy)
+            ):
+                return "INSPECTION_REPORT_BINDING_INVALID"
+            return self._height_blocker(
+                revision,
+                report,
+                declared=declared_vertical_checker(self._declared_vertical, subject),
+            )
+
     def _single_snapshot(self, subject: SealedExternalSubjectV1, use: str) -> _SingleSnapshot:
         selected = self._policy_registry.select_for_use(use, (subject,))
         policy = selected.policy if selected.status is PolicySelectionStatus.ACTIVE else None
@@ -910,9 +1010,10 @@ class ExternalUseEvaluator:
         now: datetime,
     ) -> ExternalUseDecisionV1:
         policy, report = snapshot.policy, snapshot.inspection.report
-        reason = self._single_reason(subject, use, snapshot)
+        reason = self._single_reason(subject, use, snapshot, at=now)
         receipt = snapshot.display
-        eligible = reason is None and use == "DISPLAY"
+        eligible = reason is None
+        display = use == "DISPLAY"
         decision_id = self._decision_id(
             {
                 "intent": ExternalDecisionIntent(requested_use=use, subject=subject).payload(),
@@ -929,13 +1030,15 @@ class ExternalUseEvaluator:
             inspection_report_digest=report.report_digest if eligible and report else None,
             evidence_record_digests=(),
             sanitized_display_receipt_digest=(
-                receipt.receipt_digest if eligible and receipt is not None else None
+                receipt.receipt_digest if eligible and display and receipt is not None else None
             ),
             verdict=DecisionVerdict.ELIGIBLE if eligible else DecisionVerdict.BLOCKED,
-            reasons=("DISPLAY_ELIGIBLE",)
+            reasons=(("DISPLAY_ELIGIBLE" if display else "HEIGHT_ELIGIBLE"),)
             if eligible
-            else (reason or "HEIGHT_PRODUCT_DEFINITION_UNRESOLVED",),
-            remediations=("DISPLAY_RECEIPT_RETAINED",)
+            else (reason or "POLICY_UNAVAILABLE",),
+            remediations=(
+                ("DISPLAY_RECEIPT_RETAINED" if display else "CURRENT_DEPENDENCIES_RETAINED"),
+            )
             if eligible
             else (self._remediation(reason),),
             decided_at=now,
@@ -1019,9 +1122,9 @@ class ExternalUseEvaluator:
         subject: SealedExternalSubjectV1,
         use: str,
         snapshot: _SingleSnapshot,
+        *,
+        at: datetime,
     ) -> str | None:
-        if use == "HEIGHT":
-            return "HEIGHT_PRODUCT_DEFINITION_UNRESOLVED"
         if snapshot.revision is None:
             return "SUBJECT_NOT_SEALED"
         if snapshot.policy is None:
@@ -1029,6 +1132,15 @@ class ExternalUseEvaluator:
         report = snapshot.inspection.report
         if not self._report_binds(subject, report, snapshot.policy):
             return "INSPECTION_REPORT_BINDING_INVALID"
+        if use == "HEIGHT":
+            # 선언은 판정 시각(``at``) 기준으로 본다. 이력 검증이 같은 시각 기준으로 다시 묻기
+            # 때문에, 요청 시각을 잡은 뒤 락을 얻기 전에 기록된 선언이 판정에 들어가 재생할 수
+            # 없는 ELIGIBLE이 저널에 남는 일이 없다. 그 선언은 다음 요청(새 시각)부터 근거가 된다.
+            return self._height_blocker(
+                snapshot.revision,
+                report,
+                declared=declared_vertical_checker(self._declared_vertical, subject, at=at),
+            )
         if not self._measured_kind(snapshot.revision, report, ProcessingArtifactKind.ORTHO):
             return "ORTHO_MEASUREMENT_UNAVAILABLE"
         receipt = snapshot.display
@@ -1254,23 +1366,70 @@ class ExternalUseEvaluator:
         )
 
     @staticmethod
-    def _measured_kind(
+    def _measured_outcomes(
         revision: ExternalReconstructionRevision,
         report: ExternalArtifactInspectionReportV1 | None,
         kind: ProcessingArtifactKind,
-    ) -> bool:
+    ) -> tuple[ArtifactInspectionOutcomeV1, ...]:
+        """MEASURED outcomes whose id and sha256 are exactly a sealed manifest entry of ``kind``."""
         if report is None or revision.manifest is None:
-            return False
+            return ()
         required = {
             entry.artifact_id: "sha256:" + entry.observed_sha256
             for entry in revision.manifest.entries
             if entry.kind is kind
         }
-        return any(
-            outcome.outcome is ArtifactOutcome.MEASURED
-            and required.get(outcome.artifact_id) == outcome.observed_sha256
+        return tuple(
+            outcome
             for outcome in report.measurement_payload.outcomes
+            if outcome.outcome is ArtifactOutcome.MEASURED
+            and required.get(outcome.artifact_id) == outcome.observed_sha256
         )
+
+    @staticmethod
+    def _measured_kind(
+        revision: ExternalReconstructionRevision,
+        report: ExternalArtifactInspectionReportV1 | None,
+        kind: ProcessingArtifactKind,
+    ) -> bool:
+        return bool(ExternalUseEvaluator._measured_outcomes(revision, report, kind))
+
+    @staticmethod
+    def _height_blocker(
+        revision: ExternalReconstructionRevision,
+        report: ExternalArtifactInspectionReportV1 | None,
+        *,
+        declared: Callable[[str], bool] | None = None,
+    ) -> str | None:
+        """Why a measured DSM cannot be read for heights, or ``None``.
+
+        Reading heights from one grid needs the grid itself (a measured single-band float
+        DSM) and a vertical reference — the horizontal axis being metres says nothing about the
+        elevation unit.  The reference is the parser-observed one; only when the file carries none,
+        a user declaration (a claim, recorded apart from the observation) may stand in, and only
+        for this read.  It does not need a zone, a second epoch or a compatibility mapping: those
+        belong to quantitative comparison, not to reading, and they never see a declaration.
+        """
+        dsms = tuple(
+            outcome
+            for outcome in ExternalUseEvaluator._measured_outcomes(
+                revision, report, ProcessingArtifactKind.DSM
+            )
+            if outcome.measurements is not None
+            and outcome.measurements.band_count == 1
+            and outcome.measurements.dtype in {"float32", "float64"}
+        )
+        if not dsms:
+            return "DSM_MEASUREMENT_UNAVAILABLE"
+        if any(
+            outcome.measurements is not None
+            and outcome.measurements.observed_vertical_reference is not None
+            for outcome in dsms
+        ):
+            return None
+        if declared is not None and any(declared(outcome.artifact_id) for outcome in dsms):
+            return None
+        return "VERTICAL_REFERENCE_UNKNOWN"
 
     @staticmethod
     def _report_measures_dsm(

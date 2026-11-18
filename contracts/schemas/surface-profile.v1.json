@@ -1,0 +1,411 @@
+{
+  "$defs": {
+    "CreateSurfaceProfileV1": {
+      "additionalProperties": false,
+      "description": "One read of one exact asset along one line.  Choosing a line or a date sends nothing;\nthis request is the explicit act that asks for the read.",
+      "properties": {
+        "assetRef": {
+          "maxLength": 71,
+          "minLength": 71,
+          "pattern": "^ksa-v1-[0-9a-f]{64}$",
+          "title": "Assetref",
+          "type": "string"
+        },
+        "line": {
+          "$ref": "#/$defs/MeasurementLineV1"
+        },
+        "feature": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/MeasurementFeatureRefV1"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "sampleSpacingM": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0.0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Samplespacingm"
+        }
+      },
+      "required": [
+        "assetRef",
+        "line"
+      ],
+      "title": "CreateSurfaceProfileV1",
+      "type": "object"
+    },
+    "MeasurementFeatureRefV1": {
+      "additionalProperties": false,
+      "description": "Exact revision a request or result is bound to.",
+      "properties": {
+        "featureId": {
+          "maxLength": 35,
+          "minLength": 35,
+          "pattern": "^mf-[0-9a-f]{32}$",
+          "title": "Featureid",
+          "type": "string"
+        },
+        "revision": {
+          "maximum": 2147483647,
+          "minimum": 1,
+          "title": "Revision",
+          "type": "integer"
+        },
+        "lineDigest": {
+          "maxLength": 71,
+          "minLength": 71,
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Linedigest",
+          "type": "string"
+        }
+      },
+      "required": [
+        "featureId",
+        "revision",
+        "lineDigest"
+      ],
+      "title": "MeasurementFeatureRefV1",
+      "type": "object"
+    },
+    "MeasurementLineV1": {
+      "additionalProperties": false,
+      "description": "Vertices in the stated CRS: x,y in metres for a projected CRS, lon,lat for EPSG:4326.",
+      "properties": {
+        "crs": {
+          "pattern": "^EPSG:[1-9][0-9]{0,5}$",
+          "title": "Crs",
+          "type": "string"
+        },
+        "vertices": {
+          "items": {
+            "maxItems": 2,
+            "minItems": 2,
+            "prefixItems": [
+              {
+                "maximum": 1.7976931348623157e+308,
+                "minimum": -1.7976931348623157e+308,
+                "type": "number"
+              },
+              {
+                "maximum": 1.7976931348623157e+308,
+                "minimum": -1.7976931348623157e+308,
+                "type": "number"
+              }
+            ],
+            "type": "array"
+          },
+          "maxItems": 256,
+          "minItems": 2,
+          "title": "Vertices",
+          "type": "array"
+        }
+      },
+      "required": [
+        "crs",
+        "vertices"
+      ],
+      "title": "MeasurementLineV1",
+      "type": "object"
+    },
+    "SurfaceProfileRefusalV1": {
+      "additionalProperties": false,
+      "description": "Typed, bounded refusal — no path, exception text or partial values.",
+      "properties": {
+        "reason": {
+          "enum": [
+            "INVALID_LINE",
+            "INVALID_SAMPLING",
+            "TOO_MANY_VERTICES",
+            "TOO_MANY_SAMPLES",
+            "LINE_TOO_LONG",
+            "UNSUPPORTED_CRS",
+            "REPROJECTION_FAILED",
+            "CRS_MISMATCH",
+            "UNREADABLE_RASTER",
+            "UNSUPPORTED_RASTER",
+            "SOURCE_BLOCK_TOO_LARGE",
+            "WINDOW_TOO_LARGE",
+            "PLAN_MISMATCH"
+          ],
+          "title": "Reason",
+          "type": "string"
+        },
+        "retryable": {
+          "const": false,
+          "default": false,
+          "title": "Retryable",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "reason"
+      ],
+      "title": "SurfaceProfileRefusalV1",
+      "type": "object"
+    },
+    "SurfaceProfileResultV1": {
+      "additionalProperties": false,
+      "properties": {
+        "assetRef": {
+          "maxLength": 71,
+          "minLength": 71,
+          "pattern": "^ksa-v1-[0-9a-f]{64}$",
+          "title": "Assetref",
+          "type": "string"
+        },
+        "lineDigest": {
+          "maxLength": 71,
+          "minLength": 71,
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Linedigest",
+          "type": "string"
+        },
+        "feature": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/MeasurementFeatureRefV1"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "horizontalCrs": {
+          "pattern": "^EPSG:[1-9][0-9]{0,5}$",
+          "title": "Horizontalcrs",
+          "type": "string"
+        },
+        "lineLengthM": {
+          "exclusiveMinimum": 0.0,
+          "title": "Linelengthm",
+          "type": "number"
+        },
+        "sampleSpacingM": {
+          "exclusiveMinimum": 0.0,
+          "title": "Samplespacingm",
+          "type": "number"
+        },
+        "windowCellsRead": {
+          "maximum": 9223372036854775807,
+          "minimum": 0,
+          "title": "Windowcellsread",
+          "type": "integer"
+        },
+        "samples": {
+          "items": {
+            "$ref": "#/$defs/SurfaceProfileSampleV1"
+          },
+          "maxItems": 5000,
+          "minItems": 2,
+          "title": "Samples",
+          "type": "array"
+        },
+        "validCount": {
+          "minimum": 0,
+          "title": "Validcount",
+          "type": "integer"
+        },
+        "unknownCount": {
+          "minimum": 0,
+          "title": "Unknowncount",
+          "type": "integer"
+        },
+        "minimumM": {
+          "anyOf": [
+            {
+              "maximum": 1.7976931348623157e+308,
+              "minimum": -1.7976931348623157e+308,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Minimumm"
+        },
+        "maximumM": {
+          "anyOf": [
+            {
+              "maximum": 1.7976931348623157e+308,
+              "minimum": -1.7976931348623157e+308,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Maximumm"
+        },
+        "elevationMeaning": {
+          "const": "GRID_BILINEAR_AT_PIXEL_CENTRES",
+          "default": "GRID_BILINEAR_AT_PIXEL_CENTRES",
+          "title": "Elevationmeaning",
+          "type": "string"
+        },
+        "distanceMeaning": {
+          "const": "PLANAR_ALONG_LINE_IN_GRID_CRS",
+          "default": "PLANAR_ALONG_LINE_IN_GRID_CRS",
+          "title": "Distancemeaning",
+          "type": "string"
+        },
+        "volumeComputed": {
+          "const": false,
+          "default": false,
+          "title": "Volumecomputed",
+          "type": "boolean"
+        },
+        "accuracyAssessed": {
+          "const": false,
+          "default": false,
+          "title": "Accuracyassessed",
+          "type": "boolean"
+        },
+        "resultDigest": {
+          "anyOf": [
+            {
+              "maxLength": 71,
+              "minLength": 71,
+              "pattern": "^sha256:[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Resultdigest"
+        }
+      },
+      "required": [
+        "assetRef",
+        "lineDigest",
+        "horizontalCrs",
+        "lineLengthM",
+        "sampleSpacingM",
+        "windowCellsRead",
+        "samples",
+        "validCount",
+        "unknownCount",
+        "minimumM",
+        "maximumM"
+      ],
+      "title": "SurfaceProfileResultV1",
+      "type": "object"
+    },
+    "SurfaceProfileSampleV1": {
+      "additionalProperties": false,
+      "oneOf": [
+        {
+          "properties": {
+            "elevationM": {
+              "type": "number"
+            },
+            "invalidReason": {
+              "type": "null"
+            }
+          },
+          "required": [
+            "elevationM",
+            "invalidReason"
+          ]
+        },
+        {
+          "properties": {
+            "elevationM": {
+              "type": "null"
+            },
+            "invalidReason": {
+              "enum": [
+                "OUTSIDE_SURFACE",
+                "INSUFFICIENT_NEIGHBORS",
+                "NODATA"
+              ]
+            }
+          },
+          "required": [
+            "elevationM",
+            "invalidReason"
+          ]
+        }
+      ],
+      "properties": {
+        "index": {
+          "exclusiveMaximum": 5000,
+          "minimum": 0,
+          "title": "Index",
+          "type": "integer"
+        },
+        "distanceM": {
+          "minimum": 0.0,
+          "title": "Distancem",
+          "type": "number"
+        },
+        "x": {
+          "maximum": 1.7976931348623157e+308,
+          "minimum": -1.7976931348623157e+308,
+          "title": "X",
+          "type": "number"
+        },
+        "y": {
+          "maximum": 1.7976931348623157e+308,
+          "minimum": -1.7976931348623157e+308,
+          "title": "Y",
+          "type": "number"
+        },
+        "elevationM": {
+          "anyOf": [
+            {
+              "maximum": 1.7976931348623157e+308,
+              "minimum": -1.7976931348623157e+308,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Elevationm"
+        },
+        "invalidReason": {
+          "anyOf": [
+            {
+              "enum": [
+                "OUTSIDE_SURFACE",
+                "INSUFFICIENT_NEIGHBORS",
+                "NODATA"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Invalidreason"
+        }
+      },
+      "required": [
+        "index",
+        "distanceM",
+        "x",
+        "y",
+        "elevationM",
+        "invalidReason"
+      ],
+      "title": "SurfaceProfileSampleV1",
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema"
+}

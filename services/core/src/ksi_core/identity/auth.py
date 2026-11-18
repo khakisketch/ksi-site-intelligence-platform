@@ -717,6 +717,24 @@ _OIDC_SCOPED_OPERATOR_ROUTE_ALLOWLIST: frozenset[tuple[str, str]] = frozenset(
         ("GET", "/v1/sites"),
         ("GET", "/v1/sites/{site_id}"),
         ("GET", "/v1/sites/{site_id}/work-areas"),
+        # Saved measurement lines: the handler re-checks allowedSiteIds/allowedWorkAreaIds, the
+        # organization-visible Site and the exact WorkArea before any read or write, and writes
+        # still need SITES_WRITE. Revisions are append-only; nothing here deletes or rewrites.
+        ("GET", "/v1/sites/{site_id}/work-areas/{work_area_id}/measurement-features"),
+        ("POST", "/v1/sites/{site_id}/work-areas/{work_area_id}/measurement-features"),
+        ("GET", "/v1/sites/{site_id}/work-areas/{work_area_id}/measurement-features/{feature_id}"),
+        (
+            "GET",
+            "/v1/sites/{site_id}/work-areas/{work_area_id}/measurement-features/{feature_id}/revisions",
+        ),
+        (
+            "POST",
+            "/v1/sites/{site_id}/work-areas/{work_area_id}/measurement-features/{feature_id}/revisions",
+        ),
+        (
+            "GET",
+            "/v1/sites/{site_id}/work-areas/{work_area_id}/measurement-features/{feature_id}/revisions/{revision}",
+        ),
         # Audited mixed retained history: the handler verifies exact current and
         # baseline source WorkOrders/zone grants before rows, cursors and paging.
         # Only separately audited exact details are open; aliases/mutations stay closed.
@@ -731,6 +749,28 @@ _OIDC_SCOPED_OPERATOR_ROUTE_ALLOWLIST: frozenset[tuple[str, str]] = frozenset(
         (
             "GET",
             "/v1/sites/{site_id}/work-areas/{work_area_id}/spatial-assets/{asset_ref}",
+        ),
+        # Vertical reference declaration: the handler resolves the asset through the same scoped
+        # catalog (organization, allowedSiteIds, allowedWorkAreaIds) before any read or write, and
+        # writes need WORK_ORDERS_WRITE. Records are append-only; a declaration is a claim only.
+        (
+            "GET",
+            "/v1/sites/{site_id}/work-areas/{work_area_id}/spatial-assets/{asset_ref}/vertical-reference",
+        ),
+        (
+            "POST",
+            "/v1/sites/{site_id}/work-areas/{work_area_id}/spatial-assets/{asset_ref}/vertical-reference/declarations",
+        ),
+        (
+            "POST",
+            "/v1/sites/{site_id}/work-areas/{work_area_id}/spatial-assets/{asset_ref}/vertical-reference/withdrawals",
+        ),
+        # HEIGHT use decision by asset reference: the handler resolves the asset through the same
+        # scoped catalog (organization, allowedSiteIds, allowedWorkAreaIds) before evaluating, needs
+        # SITES_WRITE and a human operator, and only ever evaluates the existing HEIGHT rule.
+        (
+            "POST",
+            "/v1/sites/{site_id}/work-areas/{work_area_id}/spatial-assets/{asset_ref}/height-decision",
         ),
         (
             "GET",
@@ -880,6 +920,16 @@ _SPATIAL_DATA_ROUTE_ALLOWLIST: frozenset[tuple[str, str]] = frozenset(
         ("POST", _SPATIAL_DATA_BASE + "/{request_id}/cancel"),
         ("GET", _SPATIAL_DATA_BASE + "/{request_id}/file"),
         ("HEAD", _SPATIAL_DATA_BASE + "/{request_id}/file"),
+    }
+)
+_SURFACE_PROFILE_BASE = "/v1/sites/{site_id}/work-areas/{work_area_id}/surface-profile-jobs"
+_SURFACE_PROFILE_ROUTE_ALLOWLIST: frozenset[tuple[str, str]] = frozenset(
+    {
+        ("GET", _SURFACE_PROFILE_BASE),
+        ("POST", _SURFACE_PROFILE_BASE),
+        ("GET", _SURFACE_PROFILE_BASE + "/{job_id}"),
+        ("GET", _SURFACE_PROFILE_BASE + "/{job_id}/result"),
+        ("POST", _SURFACE_PROFILE_BASE + "/{job_id}/cancel"),
     }
 )
 _SPATIAL_DATA_ASSET_BASE = "/v1/sites/{site_id}/work-areas/{work_area_id}/spatial-data-assets"
@@ -1037,7 +1087,9 @@ async def _principal_request_scope(
 
     if principal.kind is PrincipalKind.SPATIAL_DATA_CLIENT:
         route_path = getattr(request.scope.get("route"), "path", None)
-        if (request.method.upper(), route_path) not in _SPATIAL_DATA_ROUTE_ALLOWLIST:
+        if (request.method.upper(), route_path) not in (
+            _SPATIAL_DATA_ROUTE_ALLOWLIST | _SURFACE_PROFILE_ROUTE_ALLOWLIST
+        ):
             raise HTTPException(status_code=403, detail="권한이 부족하다")
     elif principal.kind is PrincipalKind.SPATIAL_DATA_MCP_CLIENT:
         route_path = getattr(request.scope.get("route"), "path", None)
@@ -1058,7 +1110,11 @@ async def _principal_request_scope(
         if (
             request.method.upper(),
             route_path,
-        ) not in (_OIDC_SCOPED_OPERATOR_ROUTE_ALLOWLIST | _SPATIAL_DATA_ROUTE_ALLOWLIST) and not (
+        ) not in (
+            _OIDC_SCOPED_OPERATOR_ROUTE_ALLOWLIST
+            | _SPATIAL_DATA_ROUTE_ALLOWLIST
+            | _SURFACE_PROFILE_ROUTE_ALLOWLIST
+        ) and not (
             # F-01 D1 2안: capability 조건부 항목 — 정적 allowlist 에 넣을 수
             # 없다. SITE_BOOTSTRAP 이 없는 mapped 신원(v1 포함)은 그대로 403
             # 이고, 통과한 요청도 핸들러의 기존 SITES_WRITE 게이트를 별도로

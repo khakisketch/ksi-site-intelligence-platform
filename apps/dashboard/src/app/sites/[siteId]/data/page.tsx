@@ -17,6 +17,7 @@ import { hasAllPermissions } from "@/lib/core-api/permissions";
 import { getSite } from "@/lib/core-api/sites";
 import { listSpatialAssets } from "@/lib/core-api/spatial-assets";
 import { listSpatialDataRequests } from "@/lib/core-api/spatial-data-requests";
+import { getVerticalDeclarationState } from "@/lib/core-api/vertical-reference";
 import { listWorkAreas } from "@/lib/core-api/workAreas";
 import { assetBusinessTitle } from "@/lib/operator-language";
 import { SITE_DETAIL_DOCUMENT_TITLE } from "@/lib/site-detail-title";
@@ -115,6 +116,15 @@ export default async function SiteDataPage({
     ? assetRefRaw
     : null;
   const detail = selectedAssetRef && selectedWorkAreaId ? await readScopedAsset(site.siteId, selectedWorkAreaId, selectedAssetRef) : null;
+  // 파일에 수직 기준이 없는 검사된 DSM에만 선언 상태를 읽는다. 읽지 못하면 null이며 "선언 없음"으로 말하지 않는다.
+  const needsVerticalDeclaration = detail !== null
+    && detail.kind === "dsm"
+    && detail.inspection.outcome === "MEASURED"
+    && detail.inspection.raster !== null
+    && detail.inspection.raster.observedVerticalReference == null;
+  const verticalState = detail && selectedWorkAreaId && needsVerticalDeclaration
+    ? await getVerticalDeclarationState(site.siteId, selectedWorkAreaId, detail.assetRef).catch(() => null)
+    : null;
   const identity = detail ? await whoAmI().catch(() => null) : null;
   const history = detail && isMetadataOnly(detail) && identity?.organizationId
     ? await readAssetHistory(detail, identity.organizationId)
@@ -204,6 +214,7 @@ export default async function SiteDataPage({
         requestsHref={requestsHref}
         historyResult={history}
         requestProps={{ siteId: site.siteId, workAreaId: selectedWorkAreaId, inspectedRaster: detail.inspection.raster, canRequest }}
+        vertical={needsVerticalDeclaration ? { state: verticalState, canWrite: canCreateWorkOrder } : null}
       />
     )
     : selectedAssetRef

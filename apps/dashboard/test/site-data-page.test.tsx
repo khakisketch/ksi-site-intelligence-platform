@@ -12,6 +12,7 @@ const mocked = vi.hoisted(() => ({
   revision: vi.fn(),
   prepared: vi.fn(),
   analyses: vi.fn(),
+  vertical: vi.fn(),
 }));
 
 vi.mock("next/link", () => ({
@@ -38,6 +39,7 @@ vi.mock("@/lib/core-api/workAreas", () => ({ listWorkAreas: mocked.areas }));
 vi.mock("@/lib/core-api/spatial-assets", () => ({ listSpatialAssets: mocked.catalog, getSpatialAsset: mocked.detail }));
 vi.mock("@/lib/core-api/observation-work-orders", () => ({ listObservationWorkOrders: mocked.workOrders }));
 vi.mock("@/lib/core-api/external-reconstruction", () => ({ getExternalReconstructionSubmission: mocked.revision }));
+vi.mock("@/lib/core-api/vertical-reference", () => ({ getVerticalDeclarationState: mocked.vertical }));
 vi.mock("@/lib/core-api/spatial-data-requests", () => ({ listSpatialDataRequests: mocked.prepared }));
 vi.mock("@/components/ui/ErrorState", () => ({
   ErrorState: ({ message }: { message: string }) => createElement("div", { role: "alert" }, message),
@@ -123,6 +125,7 @@ beforeEach(() => {
     { workOrderId: "order-1", siteId: "site-1", organizationId: "org-1", name: "북측 1차 관측", workAreaIds: ["area-1"], status: "APPROVED", version: 1 },
   ]);
   mocked.revision.mockRejectedValue(new Error("revision unavailable"));
+  mocked.vertical.mockResolvedValue({ assetRef, observed: false, current: null, history: [] });
   mocked.prepared.mockResolvedValue({ siteId: "site-1", workAreaId: "area-1", items: [], nextCursor: null, hasMore: false });
 });
 
@@ -164,6 +167,62 @@ describe("자료 섹션 화면 (ADR-KSI-043)", () => {
     expect(html).toContain("파일·식별 상세");
     expect(html).toContain("이 자료 새로 준비 요청");
     expect(html).toContain("/sites/site-1/spatial-data-requests?workAreaId=area-1");
+  });
+
+  it("검사를 마친 DSM 상세에서 공간 보기와 측정 선 단면 읽기로 이어진다", async () => {
+    const html = await render({ workAreaId: "area-1", assetRef });
+    expect(html).toContain('aria-label="이어서 할 일"');
+    expect(html).toContain('href="/sites/site-1?workAreaId=area-1"');
+    expect(html).toContain('href="/sites/site-1/measurements?workAreaId=area-1"');
+  });
+
+  it("검사로 확인되지 않은 자료에는 이어서 할 일을 보이지 않는다", async () => {
+    mocked.detail.mockResolvedValue(asset(assetRef, "north-dsm.tif", "area-1", "COMPLETED", "REJECTED"));
+    const html = await render({ workAreaId: "area-1", assetRef });
+    expect(html).not.toContain("이어서 할 일");
+    expect(html).not.toContain("/measurements?workAreaId=");
+  });
+
+  it("수직 기준이 없는 검사된 DSM 상세에서 선언 상태를 읽어 선언 영역을 보인다", async () => {
+    const html = await render({ workAreaId: "area-1", assetRef });
+    expect(mocked.vertical).toHaveBeenCalledWith("site-1", "area-1", assetRef);
+    expect(html).toContain('aria-label="수직 기준 선언"');
+    expect(html).toContain("수직 기준(높이 기준)이 없어 높이·단면을 읽을 수 없습니다");
+    expect(html).toContain("선언하기");
+  });
+
+  it("파일이 수직 기준을 담고 있으면 선언 영역을 보이지 않고 원장도 읽지 않는다", async () => {
+    const withVertical = asset(assetRef);
+    (withVertical.inspection.raster as { observedVerticalReference: unknown }).observedVerticalReference = { identifier: "EPSG:5773", basis: "EGM96 height" };
+    mocked.detail.mockResolvedValue(withVertical);
+    const html = await render({ workAreaId: "area-1", assetRef });
+    expect(html).not.toContain('aria-label="수직 기준 선언"');
+    expect(mocked.vertical).not.toHaveBeenCalled();
+  });
+
+  it("정사영상이거나 검사로 확인되지 않은 자료에는 선언 영역이 없다", async () => {
+    mocked.detail.mockResolvedValue({ ...asset(assetRef), kind: "ortho" });
+    expect(await render({ workAreaId: "area-1", assetRef })).not.toContain('aria-label="수직 기준 선언"');
+    mocked.detail.mockResolvedValue(asset(assetRef, "north-dsm.tif", "area-1", "COMPLETED", "REJECTED"));
+    expect(await render({ workAreaId: "area-1", assetRef })).not.toContain('aria-label="수직 기준 선언"');
+    expect(mocked.vertical).not.toHaveBeenCalled();
+  });
+
+  it("선언 상태를 읽지 못하면 선언이 없다고 말하지 않는다", async () => {
+    mocked.vertical.mockRejectedValue(new Error("down"));
+    const html = await render({ workAreaId: "area-1", assetRef });
+    expect(html).toContain("선언 상태를 불러오지 못했습니다");
+    expect(html).toContain("선언이 없다는 뜻이 아닙니다");
+    expect(html).not.toContain("선언하기");
+  });
+
+  it("작업 등록 권한이 없으면 선언 내용만 읽고 선언 조작은 없다", async () => {
+    mocked.session.mockResolvedValue({ kind: "ready", principal: {
+      organizationId: "org-1", principalId: "operator-1", permissions: ["SITES_READ", "SPATIAL_DATA_READ"],
+    } });
+    const html = await render({ workAreaId: "area-1", assetRef });
+    expect(html).toContain("작업 등록 권한이 있는 계정이 할 수 있습니다");
+    expect(html).not.toContain("선언하기");
   });
 
   it("고르지 않았으면 안내만 두고 상세를 읽지 않는다", async () => {

@@ -52,6 +52,27 @@ _ASSET_REF_RE = re.compile(r"^ksa-v1-[0-9a-f]{64}$")
 _CURSOR_RE = re.compile(r"^[A-Za-z0-9_-]{1,1024}$")
 
 
+def build_spatial_asset_ref(submission_ref: str, revision: int, artifact_id: str) -> str:
+    """The one identity of a registered artifact. Declarations and the catalog both bind to it."""
+    identity = {
+        "version": "spatial-asset-ref.v1",
+        "submissionRef": submission_ref,
+        "revision": revision,
+        "artifactId": artifact_id,
+    }
+    return "ksa-v1-" + hashlib.sha256(canonical_json_bytes(identity)).hexdigest()
+
+
+def asset_ref_for_subject(subject: Any, artifact_id: str) -> str:
+    """Asset reference of one artifact of a sealed external subject, without any store lookup."""
+    submission_ref = build_external_reconstruction_submission_ref(
+        organization_id=subject.organization_id,
+        work_order_id=subject.work_order_id,
+        submission_id=subject.submission_id,
+    )
+    return build_spatial_asset_ref(submission_ref, subject.revision, artifact_id)
+
+
 class SpatialAssetCatalog:
     """Build catalog views only from current scoped Core stores."""
 
@@ -93,13 +114,7 @@ class SpatialAssetCatalog:
 
     @staticmethod
     def _asset_ref(submission_ref: str, revision: int, artifact_id: str) -> str:
-        identity = {
-            "version": "spatial-asset-ref.v1",
-            "submissionRef": submission_ref,
-            "revision": revision,
-            "artifactId": artifact_id,
-        }
-        return "ksa-v1-" + hashlib.sha256(canonical_json_bytes(identity)).hexdigest()
+        return build_spatial_asset_ref(submission_ref, revision, artifact_id)
 
     def _snapshot_for(self, record: ExternalReconstructionRevision) -> tuple[str, Any]:
         """Fetch the bounded current inspection snapshot for one exact revision.
@@ -397,6 +412,43 @@ class SpatialAssetCatalog:
         if record is None:
             raise HTTPException(status_code=404, detail=_NOT_FOUND)
         return item.model_copy(update={"inspection": self._inspection(record, item.artifact_id)})
+
+    def revision_for(
+        self, site_id: str, work_area_id: str, asset_ref: str, principal: Principal
+    ) -> tuple[SpatialAssetCatalogItemV1, ExternalReconstructionRevision] | None:
+        """One exact asset and the retained revision it names, inside the caller's current scope.
+
+        Scope is checked first and an out-of-scope caller gets the same 404 as every catalog read.
+        ``None`` only means the reference names nothing visible; the item carries no inspection.
+        """
+        if _ASSET_REF_RE.fullmatch(asset_ref) is None:
+            return None
+        candidate = next(
+            (
+                item
+                for item in self.items(site_id, work_area_id, principal)
+                if item.asset_ref == asset_ref
+            ),
+            None,
+        )
+        if candidate is None:
+            return None
+        submission_id = self._reconstruction.resolve_submission_ref(
+            candidate.work_order_id,
+            candidate.submission_ref,
+            organization_id=principal.organization_id,
+            site_id=candidate.site_id,
+        )
+        if submission_id is None:
+            return None
+        record = self._reconstruction.get(
+            candidate.work_order_id,
+            submission_id,
+            candidate.revision,
+            organization_id=principal.organization_id,
+            site_id=candidate.site_id,
+        )
+        return (candidate, record) if record is not None else None
 
     def describe(
         self, site_id: str, work_area_id: str, asset_ref: str, principal: Principal

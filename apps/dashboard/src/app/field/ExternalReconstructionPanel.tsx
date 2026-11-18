@@ -19,7 +19,11 @@ import { formatKoreanDateTime } from "@/lib/datetime";
 import { formatBytesKo, formatNumberKo } from "@/lib/number-format";
 import { formatRegistrationVersion, describeArtifactKinds, submissionStateLabel, describeProducerLine, describeCaptureLine, describeRetentionLine, formatPublisherCalendarDate } from "@/app/field/registration-language";
 import { ExternalHeaderRecognition, type HeaderRecognitionState } from "@/app/field/ExternalHeaderRecognition";
+import { ExternalFileDropZone } from "@/app/field/ExternalFileDropZone";
+import { assignSlots } from "@/lib/external-file-routing";
+import { loadExternalUploadDefaults, saveExternalUploadDefaults } from "@/lib/external-upload-defaults";
 import { readGeoTiffHeader, recognizeGeoTiffHeader } from "@/lib/geo/geotiff-header";
+import { preflightGeoTiff } from "@/lib/geo/geotiff-preflight";
 import {
   seoulDateTimeLocalToUtc,
   describeV3MetadataIssue,
@@ -497,9 +501,10 @@ function artifact(kind: ExternalArtifactKind, value: HashResult, crs: string): A
   return { artifactId: kind, kind, fileName: value.file.name, format: "GeoTIFF", contentType: "application/octet-stream", declaredSha256: value.sha256, declaredSizeBytes: value.size, declaredCrs, declaredVerticalReference: null, declaredGsdM: null };
 }
 
-async function recognizeHeader(file: File, signal: AbortSignal): Promise<HeaderRecognitionState> {
+async function recognizeHeader(file: File, kind: ExternalArtifactKind, signal: AbortSignal): Promise<HeaderRecognitionState> {
   try {
-    return { status: "recognized", value: recognizeGeoTiffHeader(await readGeoTiffHeader(file, signal)) };
+    const header = await readGeoTiffHeader(file, signal);
+    return { status: "recognized", value: recognizeGeoTiffHeader(header), findings: preflightGeoTiff(kind, header, file.size) };
   } catch (error) {
     if (isAbortError(error)) throw error;
     return { status: "not-geotiff" };
@@ -801,7 +806,7 @@ function ExternalReconstructionPanelState({ workOrderId, siteId = "", expectedEp
     try {
       const [result, header] = await Promise.all([
         hashFile(file, workers.current, setHashProgress, controller.signal),
-        recognizeHeader(file, controller.signal),
+        recognizeHeader(file, kind, controller.signal),
       ]);
       if (!currentScope(requestScope) || hashAbort.current !== controller) return;
       if (kind === "ortho") {
@@ -828,6 +833,15 @@ function ExternalReconstructionPanelState({ workOrderId, siteId = "", expectedEp
           setSoftwareName((current) => (current.trim() ? current : producer.name));
           if (producer.version) setSoftwareVersion((current) => (current.trim() ? current : producer.version ?? ""));
         }
+        // 파일 헤더가 알려 주지 못한 빈 칸만, 지난번 등록에서 기억한 값으로 채운다. 입력한 값은 덮지 않는다.
+        const remembered = loadExternalUploadDefaults();
+        if (remembered) {
+          // 이름과 버전은 한 쌍이다. 둘 다 비어 있을 때만 쌍으로 채워, 다른 소프트웨어의 버전이 섞이지 않게 한다.
+          if (!producer && remembered.softwareName && !softwareName.trim() && !softwareVersion.trim()) {
+            setSoftwareName(remembered.softwareName);
+            setSoftwareVersion(remembered.softwareVersion);
+          }
+        }
       }
       say(null);
     } catch (error) {
@@ -839,6 +853,32 @@ function ExternalReconstructionPanelState({ workOrderId, siteId = "", expectedEp
           setHashProgress(null);
         }
       }
+    }
+  };
+
+  // 확인된 새 등록의 제작 소프트웨어를 다음 등록의 빈 칸에 쓰도록 이 브라우저에 기억한다(이어하기·미상 신고는 제외).
+  const rememberDeclarations = () => {
+    if (resume || producerKnowledge !== "DECLARED") return;
+    saveExternalUploadDefaults({ softwareName, softwareVersion });
+  };
+
+  const [routingNotes, setRoutingNotes] = useState<string[]>([]);
+  // 여러 파일을 한 번에 받으면 헤더로 칸을 나누고, 나눈 파일은 칸별 선택과 같은 경로(select)로 넣는다.
+  const routeFiles = async (files: File[]) => {
+    if (hashing || frozenAttempt || (!newIntentAllowed && !resume)) return;
+    const probes = await Promise.all(files.map(async (file) => {
+      try {
+        const header = await readGeoTiffHeader(file);
+        return { name: file.name, hint: recognizeGeoTiffHeader(header).kindHint, readable: true };
+      } catch {
+        return { name: file.name, hint: null, readable: false };
+      }
+    }));
+    const { assigned, skipped } = assignSlots(probes);
+    setRoutingNotes(skipped.map((item) => `‘${item.name}’: ${item.reason}`));
+    for (const kind of ["ortho", "dsm"] as const) {
+      const index = assigned[kind];
+      if (index !== undefined) await select(kind, files[index]);
     }
   };
 
@@ -1097,6 +1137,7 @@ function ExternalReconstructionPanelState({ workOrderId, siteId = "", expectedEp
           if (isRevisionViewForAttempt(declared, declarationEcho, "SEALED")) {
             revision = declared;
             setSealedComplete(true);
+            rememberDeclarations();
             say("파일 등록을 확인했습니다. 파일 형식과 측정 적합성 확인은 아직 진행되지 않았습니다.");
             // 목록만 다시 읽는다. 상단 배너의 서버 상태는 별도 화면 이동·
             // 새로고침 때 갱신되며, 그때 미제출 입력·동결 시도는 사라질 수
@@ -1181,6 +1222,7 @@ function ExternalReconstructionPanelState({ workOrderId, siteId = "", expectedEp
       // 때 갱신되며, 그때 미제출 입력·동결 시도는 사라질 수 있다. 자동 route
       // refresh로 형제 초안을 잃게 하지 않는다.
       setSealedComplete(true);
+      rememberDeclarations();
       say("파일 등록을 확인했습니다. 파일 형식과 측정 적합성 확인은 아직 진행되지 않았습니다.");
       await load(requestScope);
     } catch (error) {
@@ -1321,6 +1363,8 @@ function ExternalReconstructionPanelState({ workOrderId, siteId = "", expectedEp
           <label className="mt-2 flex flex-col gap-1 font-semibold">내보내기 기록 (선택)<input className="input" aria-label="내보내기 기록" value={exportNote} disabled={busy || hashing || formIsFrozen || !newIntentAllowed} maxLength={1000} onChange={(event) => setExportNote(event.target.value)} /></label>
         </details>
         </>}
+        <ExternalFileDropZone disabled={busy || hashing || Boolean(frozenAttempt) || (!newIntentAllowed && !resume)} onFiles={(files) => void routeFiles(files)} />
+        {routingNotes.length > 0 && <ul role="status" aria-label="파일 나누기 안내" className="list-disc rounded-lg border border-line bg-sunk py-2 pl-7 pr-3 text-[12.5px] leading-5 text-ink-2">{routingNotes.map((note) => <li key={note} className="break-all">{note}</li>)}</ul>}
         <FilePickerField
           label="정사영상 (선택)"
           ariaLabel="정사영상 GeoTIFF"
@@ -1359,6 +1403,8 @@ function ExternalReconstructionPanelState({ workOrderId, siteId = "", expectedEp
         {hashing && <button className="btn w-fit" onClick={cancelHash}>파일 확인 취소</button>}
         <p className="text-ink-2">{ortho ? `정사영상 ${formatFileSize(ortho.size)} 확인 완료` : dsm ? "정사영상 미선택" : "등록할 파일(정사영상 또는 DSM)을 선택하세요."}{dsm ? ` · DSM ${formatFileSize(dsm.size)} 확인 완료` : ortho ? " · DSM 미선택" : ""}</p>
         {hasFile && !formIsFrozen && metadataIssue !== null && <p role="status" className="text-ink-2">{metadataIssue}</p>}
+        {/* 버튼이 말없이 잠기지 않게 이유를 밝힌다. 촬영 기록 식별자가 없으면 새 등록을 시작할 수 없다. */}
+        {hasFile && !formIsFrozen && !resume && newIntentAllowed && !expectedEpochId && !busy && !hashing && !sealedComplete && <p role="alert" className="text-[13px] text-high-ink">이 작업의 촬영 기록이 아직 준비되지 않아 새 등록을 시작할 수 없습니다. 화면을 새로고침해도 같으면 작업 상세의 상태를 확인하거나 관리자에게 문의하세요.</p>}
         {/* 서버 확인 계정이 없으면 새 쓰기를 보내지 않는다. 버튼 잠금과 함께
             이유를 밝혀 두되, 등록 자료·검사 상태 읽기는 그대로 둔다. */}
         {!formIsFrozen && !continuity && <p role="alert" className="text-[13px] text-high-ink">계정을 확인하지 못해 산출물 등록을 시작할 수 없습니다. 연결과 로그인 상태를 확인한 뒤 화면을 다시 여세요. 등록 자료와 검사 상태 확인은 계속할 수 있습니다.</p>}

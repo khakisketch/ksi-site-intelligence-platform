@@ -1,10 +1,11 @@
 "use client";
 
 import { slotMismatch, type ArtifactSlot, type GeoTiffRecognition } from "@/lib/geo/geotiff-header";
+import { sortFindings, type PreflightFinding, type PreflightLevel } from "@/lib/geo/geotiff-preflight";
 import { formatCountKo, formatSignificantKo } from "@/lib/number-format";
 
 export type HeaderRecognitionState =
-  | { status: "recognized"; value: GeoTiffRecognition }
+  | { status: "recognized"; value: GeoTiffRecognition; findings?: readonly PreflightFinding[] }
   | { status: "not-geotiff" };
 
 const SLOT_LABEL: Record<ArtifactSlot, string> = { ortho: "정사영상", dsm: "DSM" };
@@ -12,6 +13,30 @@ const SLOT_LABEL: Record<ArtifactSlot, string> = { ortho: "정사영상", dsm: "
 function formatPixelSize([x, y]: [number, number]): string {
   const digits = (value: number) => formatSignificantKo(value, 4);
   return x === y ? digits(x) : `${digits(x)} × ${digits(y)}`;
+}
+
+const LEVEL_TAG: Record<PreflightLevel, string> = { blocked: "검사에서 거부 예상", may: "거부될 수 있음", notice: "참고" };
+
+/**
+ * 올리기 전 점검 결과. 판정이 아니라 안내이며 등록을 막지 않는다. 파일 구조 문제가 있으면
+ * 큰 파일을 올리기 전에 알 수 있도록 맨 위에 둔다.
+ */
+function PreflightList({ label, findings }: { label: string; findings: readonly PreflightFinding[] }) {
+  const sorted = sortFindings(findings);
+  const severe = sorted.some((finding) => finding.level === "blocked");
+  return <div role={severe ? "alert" : "status"} aria-label={`${label} 올리기 전 점검`} className="flex flex-col gap-1 rounded-lg border border-line bg-surface px-3 py-2">
+    <p className={severe ? "font-semibold text-high-ink" : "font-semibold"}>
+      {severe ? `이 ${label} 파일은 올려도 검사에서 거부될 가능성이 높습니다.` : `올리기 전 확인할 점이 있습니다.`}
+    </p>
+    <ul className="flex flex-col gap-1.5">
+      {sorted.map((finding) => <li key={finding.code} className="leading-5">
+        <span className="mr-1.5 rounded border border-line px-1.5 py-px text-micro font-semibold text-ink-2">{LEVEL_TAG[finding.level]}</span>
+        {finding.title}
+        {finding.fix && <span className="block text-ink-2">→ {finding.fix}</span>}
+      </li>)}
+    </ul>
+    <p className="text-micro text-ink-muted">파일 앞부분만 읽은 안내이며, 등록 뒤 KSI 검사가 최종 확인합니다.</p>
+  </div>;
 }
 
 /**
@@ -36,6 +61,7 @@ export function ExternalHeaderRecognition({ slot, state, crs, onCrsChange, crsLo
   const value = state.value;
   const other = slot === "ortho" ? "dsm" : "ortho";
   return <div className="flex flex-col gap-2 rounded-lg border border-line bg-sunk p-3 text-caption">
+    {!resumingRegistered && state.findings && state.findings.length > 0 && <PreflightList label={label} findings={state.findings} />}
     <p className="text-ink-2">파일 헤더에서 읽은 {label} 정보입니다. 신고값이며, 등록 후 KSI 검사로 확인합니다.</p>
     {slotMismatch(slot, value.kindHint) && <p role="alert" className="text-high-ink">
       이 파일은 {SLOT_LABEL[other]}처럼 보입니다({value.kindHint === "dsm" ? "단일 실수 밴드" : "8비트 컬러 밴드"}). 올바른 칸에 넣었는지 확인하세요.

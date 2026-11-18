@@ -1,0 +1,35 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "border-accent-on-rounded",
+        "value": "*",
+        "files": [
+          "docs/design/MEASUREMENT_PROFILE_DESIGN_2026-11-17.html"
+        ],
+        "createdAt": "2026-11-17T11:55:05.891Z",
+        "reason": "agent: 승인된 시안을 설계 입력으로 보관한 정적 복사본이며 배포되지 않는다. 구현은 앱 토큰으로 별도 작성·실브라우저 검증함. 사용자가 이 항목을 개별 확인한 것은 아님"
+      },
+      {
+        "rule": "low-contrast",
+        "value": "*",
+        "files": [
+          "docs/design/MEASUREMENT_PROFILE_DESIGN_2026-11-17.html"
+        ],
+        "createdAt": "2026-11-17T11:55:05.903Z",
+        "reason": "agent: 승인된 시안을 설계 입력으로 보관한 정적 복사본이며 배포되지 않는다. 구현은 앱 토큰으로 별도 작성·실브라우저 검증함. 사용자가 이 항목을 개별 확인한 것은 아님"
+      },
+      {
+        "rule": "cramped-padding",
+        "value": "*",
+        "files": [
+          "docs/design/MEASUREMENT_PROFILE_DESIGN_2026-11-17.html"
+        ],
+        "createdAt": "2026-11-17T11:55:05.913Z",
+        "reason": "agent: 승인된 시안을 설계 입력으로 보관한 정적 복사본이며 배포되지 않는다. 구현은 앱 토큰으로 별도 작성·실브라우저 검증함. 사용자가 이 항목을 개별 확인한 것은 아님"
+      }
+    ]
+  }
+}

@@ -1,4 +1,5 @@
 import type { ExternalArtifactInspectionView } from "@/lib/core-api/external-reconstruction";
+import { describeInspectionReason } from "@/lib/external-inspection-reasons";
 
 export type ExternalInspectionPresentation = {
   title: string;
@@ -25,6 +26,8 @@ function presentOutcomeReason(reason: string): string {
     VALIDATION_INCOMPLETE: "검증을 완료할 수 없습니다.",
   };
   if (known[reason]) return known[reason];
+  const described = describeInspectionReason(reason);
+  if (described) return `${described.text} ${described.fix}`;
   return /^[A-Z][A-Z0-9_]*$/.test(reason)
     ? "추가 확인이 필요합니다. 파일·식별 상세의 사유 코드를 확인하세요."
     : reason;

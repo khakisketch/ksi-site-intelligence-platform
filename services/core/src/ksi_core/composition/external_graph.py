@@ -211,6 +211,7 @@ def build_external_pre_work_order_graph(
     coordinator: Any,
     policy_authority_currentness: Any,
     evidence_context_authority: Any,
+    vertical_declarations: Any = None,
 ) -> ExternalPreWorkOrderGraph:
     reviews = None
     proposals = None
@@ -369,6 +370,7 @@ def build_external_pre_work_order_graph(
                 evidence_validations=external_evidence_validation_store,
                 relative_volume_authority=external_volume_mapping,
                 single_volume_authority=external_single_volume_mapping,
+                declared_vertical=vertical_declarations,
             ),
         )
         if external_reconstruction_store is not None
@@ -387,6 +389,7 @@ def build_external_pre_work_order_graph(
             coordinator=coordinator,
             relative_volume_authority=external_volume_mapping,
             single_volume_authority=external_single_volume_mapping,
+            declared_vertical=vertical_declarations,
         )
         if external_use_decision_store is not None
         and external_reconstruction_store is not None

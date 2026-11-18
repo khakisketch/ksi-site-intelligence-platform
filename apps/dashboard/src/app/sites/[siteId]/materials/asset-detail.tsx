@@ -7,6 +7,10 @@ import { RegistrationHistoryFacts, RegistrationHistoryUnavailable } from "../spa
 import { Disclosure } from "@/components/ui/Disclosure";
 import { StateBadge } from "@/components/ui/StatusBadge";
 import { formatKoreanDateTime } from "@/lib/datetime";
+import { describeInspectionReason } from "@/lib/external-inspection-reasons";
+import { assetNextSteps } from "@/lib/asset-next-steps";
+import type { VerticalDeclarationState } from "@/lib/core-api/vertical-reference-types";
+import { VerticalReferenceDeclaration } from "./VerticalReferenceDeclaration";
 import { formatBytesKo, formatCountKo } from "@/lib/number-format";
 import { capturePeriodTitle, dataKindLabel, isSupportedDataKind, isSupportedLifecycleState } from "@/lib/operator-language";
 import type { validateRegistrationHistory } from "@/lib/registration-history";
@@ -155,12 +159,22 @@ function RasterFacts({ raster }: { raster: SpatialAssetInspectedRasterFacts }) {
   </>;
 }
 
+function InspectionReason({ code }: { code: string }) {
+  const described = describeInspectionReason(code);
+  if (!described) return <p className="mt-1 text-caption text-ink-2">사유: {code}</p>;
+  return <div className="mt-2 rounded-lg border border-line bg-sunk px-3 py-2 text-caption leading-5 text-ink-2">
+    <p>{described.text}</p>
+    <p className="mt-1 font-semibold">다시 내보낼 때: <span className="font-normal">{described.fix}</span></p>
+  </div>;
+}
+
 function InspectionFacts({ inspection }: { inspection: SpatialAssetInspection }) {
   return <section className="rounded-lg border border-line bg-surface p-4">
     <h3 className="text-lead font-bold">파일 검사 결과</h3>
     <p className="mt-2 text-body text-ink-2">상태: {inspectionStateLabel(inspection.state)} · 결과: {inspectionOutcomeLabel(inspection.outcome)}</p>
-    {inspection.reason && <p className="mt-1 text-caption text-ink-2">사유: {inspection.reason}</p>}
+    {inspection.reason && <InspectionReason code={inspection.reason} />}
     <Disclosure label="좌표·격자와 검사 상세" className="mt-2">
+    {inspection.reason && <p className="mt-1">사유 코드 · {inspection.reason}</p>}
     <p className="mt-1">검사 상태 코드 · {inspection.state}</p>
     {inspection.raster ? <RasterFacts raster={inspection.raster} /> : <p className="mt-2 text-caption text-ink-muted">파일에서 확인한 위치·격자 정보가 없습니다.</p>}
     {inspection.reportDigest && <p className="mt-2 break-all font-mono text-micro text-ink-muted">검사 보고서 확인값: {inspection.reportDigest}</p>}
@@ -181,7 +195,7 @@ function CompactFact({ label, value }: { label: string; value: string }) {
  * 등록 이력·제출자 입력·검사 원문은 `상세 정보` 안으로 접고, 준비 요청 폼은
  * 필요할 때만 모달로 연다. 정보 밀도가 선택 자체를 가리지 않게 하는 것이 목적이다.
  */
-export function DetailBlock({ detail, workName, areaName, headline, compareHref, retryHref, requestsHref, historyResult, requestProps }: {
+export function DetailBlock({ detail, workName, areaName, headline, compareHref, retryHref, requestsHref, historyResult, requestProps, vertical = null }: {
   detail: SpatialAssetCatalogItem;
   workName: string | null;
   areaName: string;
@@ -191,8 +205,11 @@ export function DetailBlock({ detail, workName, areaName, headline, compareHref,
   requestsHref: string;
   historyResult: ReturnType<typeof validateRegistrationHistory> | null;
   requestProps: { siteId: string; workAreaId: string; inspectedRaster: SpatialAssetCatalogItem["inspection"]["raster"]; canRequest: boolean };
+  /** 파일에 수직 기준이 없는 검사된 DSM에만 준다. `state`가 null이면 읽지 못한 것이다. */
+  vertical?: { state: VerticalDeclarationState | null; canWrite: boolean } | null;
 }) {
   const availability = availabilityStatus(detail);
+  const nextSteps = assetNextSteps(detail);
   const captureLine = capturePeriodTitle(detail.declared.captureStartedAt, detail.declared.captureEndedAt, {
     captureDate: detail.declared.captureDate ?? null,
   });
@@ -218,6 +235,10 @@ export function DetailBlock({ detail, workName, areaName, headline, compareHref,
       <CompactFact label="수직 기준" value={detail.inspection.raster?.observedVerticalReference?.identifier ?? "확인 불가"} />
       {detail.inspection.raster && <CompactFact label="파일 범위" value={`${formatCountKo(detail.inspection.raster.width)} × ${formatCountKo(detail.inspection.raster.height)} 픽셀`} />}
     </dl>
+    {vertical && <VerticalReferenceDeclaration siteId={detail.siteId} workAreaId={detail.workAreaId} assetRef={detail.assetRef} state={vertical.state} canWrite={vertical.canWrite} />}
+    {nextSteps.length > 0 && <div className="flex flex-wrap gap-2" aria-label="이어서 할 일">
+      {nextSteps.map((step) => <Link key={step.key} href={step.href} className="btn">{step.label}</Link>)}
+    </div>}
     {availability.retry && retryHref && <p className="text-caption text-high-ink">처리 실패는 <Link className="tap-target underline" href={retryHref}>구역 자료 준비</Link>에서 확인하세요.</p>}
     {requestProps.canRequest && <AssetRequestDialog triggerLabel="이 자료 새로 준비 요청">{requestAction}</AssetRequestDialog>}
     {compareHref && <p className="text-caption">분석에 사용할 자료는 <Link href={compareHref} className="tap-target underline">분석 조건에서 선택</Link>하세요.</p>}

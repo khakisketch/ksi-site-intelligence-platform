@@ -413,6 +413,8 @@ def test_platform_graph_opens_only_external_journals(tmp_path: Path) -> None:
     assert trace == [
         "sites.jsonl",
         "work-areas.jsonl",
+        "measurement-features.jsonl",
+        "vertical-reference-declarations.jsonl",
         "external-reconstruction.jsonl",
         "external-evidence.jsonl",
         "external-validation-policy.jsonl",
@@ -907,6 +909,8 @@ def test_workflow_configured_boot_shares_coordinator_and_traces_review_journals(
         assert journals == [
             "sites.jsonl",
             "work-areas.jsonl",
+            "measurement-features.jsonl",
+            "vertical-reference-declarations.jsonl",
             "external-reconstruction.jsonl",
             "external-evidence.jsonl",
             "external-validation-policy.jsonl",

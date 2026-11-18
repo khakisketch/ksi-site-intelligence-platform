@@ -1,0 +1,2844 @@
+{
+  "$defs": {
+    "ArtifactInspectionOutcomeV1": {
+      "additionalProperties": false,
+      "properties": {
+        "artifactId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Artifactid",
+          "type": "string"
+        },
+        "observedSha256": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Observedsha256",
+          "type": "string"
+        },
+        "outcome": {
+          "$ref": "#/$defs/ArtifactOutcome"
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Z][A-Z0-9_]{0,127}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Reason"
+        },
+        "measurements": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RasterMeasurementsV1"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "artifactId",
+        "observedSha256",
+        "outcome"
+      ],
+      "title": "ArtifactInspectionOutcomeV1",
+      "type": "object"
+    },
+    "ArtifactOutcome": {
+      "enum": [
+        "MEASURED",
+        "NOT_APPLICABLE",
+        "REJECTED"
+      ],
+      "title": "ArtifactOutcome",
+      "type": "string"
+    },
+    "CreateSurfaceProfileJobV1": {
+      "additionalProperties": false,
+      "description": "Public request: a saved line revision on one exact asset.  The line is *not* in the body —\nCore reads it from the saved revision, so a request cannot read a line nobody saved.",
+      "properties": {
+        "assetRef": {
+          "pattern": "^ksa-v1-[0-9a-f]{64}$",
+          "title": "Assetref",
+          "type": "string"
+        },
+        "feature": {
+          "$ref": "#/$defs/MeasurementFeatureRefV1"
+        },
+        "heightDecisionId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Heightdecisionid",
+          "type": "string"
+        },
+        "sampleSpacingM": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0.0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Samplespacingm"
+        }
+      },
+      "required": [
+        "assetRef",
+        "feature",
+        "heightDecisionId"
+      ],
+      "title": "CreateSurfaceProfileJobV1",
+      "type": "object"
+    },
+    "CreateSurfaceProfileV1": {
+      "additionalProperties": false,
+      "description": "One read of one exact asset along one line.  Choosing a line or a date sends nothing;\nthis request is the explicit act that asks for the read.",
+      "properties": {
+        "assetRef": {
+          "maxLength": 71,
+          "minLength": 71,
+          "pattern": "^ksa-v1-[0-9a-f]{64}$",
+          "title": "Assetref",
+          "type": "string"
+        },
+        "line": {
+          "$ref": "#/$defs/MeasurementLineV1"
+        },
+        "feature": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/MeasurementFeatureRefV1"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "sampleSpacingM": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0.0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Samplespacingm"
+        }
+      },
+      "required": [
+        "assetRef",
+        "line"
+      ],
+      "title": "CreateSurfaceProfileV1",
+      "type": "object"
+    },
+    "ExecutionLocus": {
+      "description": "처리 실행 위치 (ADR-KSI-010 운영 표면의 판정 대상 — INV-050이 이 값을 강제 조건으로 쓴다).",
+      "enum": [
+        "site_onprem",
+        "ksi_server_gpu",
+        "customer_workstation",
+        "vendor_cloud"
+      ],
+      "title": "ExecutionLocus",
+      "type": "string"
+    },
+    "MeasurementFeatureRefV1": {
+      "additionalProperties": false,
+      "description": "Exact revision a request or result is bound to.",
+      "properties": {
+        "featureId": {
+          "maxLength": 35,
+          "minLength": 35,
+          "pattern": "^mf-[0-9a-f]{32}$",
+          "title": "Featureid",
+          "type": "string"
+        },
+        "revision": {
+          "maximum": 2147483647,
+          "minimum": 1,
+          "title": "Revision",
+          "type": "integer"
+        },
+        "lineDigest": {
+          "maxLength": 71,
+          "minLength": 71,
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Linedigest",
+          "type": "string"
+        }
+      },
+      "required": [
+        "featureId",
+        "revision",
+        "lineDigest"
+      ],
+      "title": "MeasurementFeatureRefV1",
+      "type": "object"
+    },
+    "MeasurementFeatureRevisionV1": {
+      "additionalProperties": false,
+      "properties": {
+        "featureId": {
+          "maxLength": 35,
+          "minLength": 35,
+          "pattern": "^mf-[0-9a-f]{32}$",
+          "title": "Featureid",
+          "type": "string"
+        },
+        "siteId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Siteid",
+          "type": "string"
+        },
+        "workAreaId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Workareaid",
+          "type": "string"
+        },
+        "revision": {
+          "maximum": 2147483647,
+          "minimum": 1,
+          "title": "Revision",
+          "type": "integer"
+        },
+        "name": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "kind": {
+          "const": "LINE",
+          "default": "LINE",
+          "title": "Kind",
+          "type": "string"
+        },
+        "line": {
+          "$ref": "#/$defs/MeasurementLineV1"
+        },
+        "lineDigest": {
+          "maxLength": 71,
+          "minLength": 71,
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Linedigest",
+          "type": "string"
+        },
+        "createdAt": {
+          "format": "date-time",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?(?:Z|\\+00:00)$",
+          "title": "Createdat",
+          "type": "string"
+        },
+        "revisionDigest": {
+          "anyOf": [
+            {
+              "maxLength": 71,
+              "minLength": 71,
+              "pattern": "^sha256:[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Revisiondigest"
+        }
+      },
+      "required": [
+        "featureId",
+        "siteId",
+        "workAreaId",
+        "revision",
+        "name",
+        "line",
+        "lineDigest",
+        "createdAt"
+      ],
+      "title": "MeasurementFeatureRevisionV1",
+      "type": "object"
+    },
+    "MeasurementLineV1": {
+      "additionalProperties": false,
+      "description": "Vertices in the stated CRS: x,y in metres for a projected CRS, lon,lat for EPSG:4326.",
+      "properties": {
+        "crs": {
+          "pattern": "^EPSG:[1-9][0-9]{0,5}$",
+          "title": "Crs",
+          "type": "string"
+        },
+        "vertices": {
+          "items": {
+            "maxItems": 2,
+            "minItems": 2,
+            "prefixItems": [
+              {
+                "maximum": 1.7976931348623157e+308,
+                "minimum": -1.7976931348623157e+308,
+                "type": "number"
+              },
+              {
+                "maximum": 1.7976931348623157e+308,
+                "minimum": -1.7976931348623157e+308,
+                "type": "number"
+              }
+            ],
+            "type": "array"
+          },
+          "maxItems": 256,
+          "minItems": 2,
+          "title": "Vertices",
+          "type": "array"
+        }
+      },
+      "required": [
+        "crs",
+        "vertices"
+      ],
+      "title": "MeasurementLineV1",
+      "type": "object"
+    },
+    "NodataRepresentation": {
+      "description": "JSON-safe parser observation; NAN is a token, never a non-finite JSON value.",
+      "enum": [
+        "NONE",
+        "FINITE",
+        "NAN",
+        "MASK"
+      ],
+      "title": "NodataRepresentation",
+      "type": "string"
+    },
+    "ObservedVerticalReferenceV1": {
+      "additionalProperties": false,
+      "description": "Parser-observed vertical identifier/basis, distinct from a user declaration.",
+      "properties": {
+        "identifier": {
+          "maxLength": 4096,
+          "minLength": 1,
+          "title": "Identifier",
+          "type": "string"
+        },
+        "basis": {
+          "maxLength": 4096,
+          "minLength": 1,
+          "title": "Basis",
+          "type": "string"
+        }
+      },
+      "required": [
+        "identifier",
+        "basis"
+      ],
+      "title": "ObservedVerticalReferenceV1",
+      "type": "object"
+    },
+    "RasterMeasurementsV1": {
+      "additionalProperties": false,
+      "description": "Worker-observed raster facts, never a compatibility or accuracy assertion.",
+      "properties": {
+        "observedCrsIdentifier": {
+          "maxLength": 4096,
+          "minLength": 1,
+          "title": "Observedcrsidentifier",
+          "type": "string"
+        },
+        "observedCrsWkt": {
+          "anyOf": [
+            {
+              "maxLength": 4096,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Observedcrswkt"
+        },
+        "observedCrsDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Observedcrsdigest",
+          "type": "string"
+        },
+        "observedVerticalReference": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ObservedVerticalReferenceV1"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "transform": {
+          "maxItems": 6,
+          "minItems": 6,
+          "prefixItems": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            }
+          ],
+          "title": "Transform",
+          "type": "array"
+        },
+        "footprintWkt": {
+          "maxLength": 4096,
+          "minLength": 1,
+          "title": "Footprintwkt",
+          "type": "string"
+        },
+        "footprintDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Footprintdigest",
+          "type": "string"
+        },
+        "width": {
+          "exclusiveMinimum": 0,
+          "title": "Width",
+          "type": "integer"
+        },
+        "height": {
+          "exclusiveMinimum": 0,
+          "title": "Height",
+          "type": "integer"
+        },
+        "bandCount": {
+          "exclusiveMinimum": 0,
+          "title": "Bandcount",
+          "type": "integer"
+        },
+        "dtype": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Dtype",
+          "type": "string"
+        },
+        "layout": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Layout",
+          "type": "string"
+        },
+        "nodataRepresentation": {
+          "$ref": "#/$defs/NodataRepresentation"
+        },
+        "nodataValue": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Nodatavalue"
+        },
+        "validPixelCount": {
+          "minimum": 0,
+          "title": "Validpixelcount",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "observedCrsIdentifier",
+        "observedCrsDigest",
+        "transform",
+        "footprintWkt",
+        "footprintDigest",
+        "width",
+        "height",
+        "bandCount",
+        "dtype",
+        "layout",
+        "nodataRepresentation",
+        "validPixelCount"
+      ],
+      "title": "RasterMeasurementsV1",
+      "type": "object"
+    },
+    "ResourceEnvelopeV1": {
+      "additionalProperties": false,
+      "description": "Configured finite worker limits; values are policy data, never client input.",
+      "properties": {
+        "maxInputBytes": {
+          "exclusiveMinimum": 0,
+          "title": "Maxinputbytes",
+          "type": "integer"
+        },
+        "maxStreamedBytes": {
+          "exclusiveMinimum": 0,
+          "title": "Maxstreamedbytes",
+          "type": "integer"
+        },
+        "maxTiffDirectories": {
+          "exclusiveMinimum": 0,
+          "title": "Maxtiffdirectories",
+          "type": "integer"
+        },
+        "maxTiffEntries": {
+          "exclusiveMinimum": 0,
+          "title": "Maxtiffentries",
+          "type": "integer"
+        },
+        "maxPixels": {
+          "exclusiveMinimum": 0,
+          "title": "Maxpixels",
+          "type": "integer"
+        },
+        "maxBands": {
+          "exclusiveMinimum": 0,
+          "title": "Maxbands",
+          "type": "integer"
+        },
+        "maxBlocks": {
+          "exclusiveMinimum": 0,
+          "title": "Maxblocks",
+          "type": "integer"
+        },
+        "maxDecompressedBytes": {
+          "exclusiveMinimum": 0,
+          "title": "Maxdecompressedbytes",
+          "type": "integer"
+        },
+        "maxSampleBytes": {
+          "exclusiveMinimum": 0,
+          "title": "Maxsamplebytes",
+          "type": "integer"
+        },
+        "maxGeometryVertices": {
+          "exclusiveMinimum": 0,
+          "title": "Maxgeometryvertices",
+          "type": "integer"
+        },
+        "maxCpuSeconds": {
+          "exclusiveMinimum": 0,
+          "title": "Maxcpuseconds",
+          "type": "number"
+        },
+        "maxMemoryBytes": {
+          "exclusiveMinimum": 0,
+          "title": "Maxmemorybytes",
+          "type": "integer"
+        },
+        "maxWorkspaceBytes": {
+          "exclusiveMinimum": 0,
+          "title": "Maxworkspacebytes",
+          "type": "integer"
+        },
+        "maxOutputBytes": {
+          "exclusiveMinimum": 0,
+          "title": "Maxoutputbytes",
+          "type": "integer"
+        },
+        "maxTenantConcurrency": {
+          "exclusiveMinimum": 0,
+          "title": "Maxtenantconcurrency",
+          "type": "integer"
+        },
+        "maxQueueDepth": {
+          "exclusiveMinimum": 0,
+          "title": "Maxqueuedepth",
+          "type": "integer"
+        },
+        "maxDeadlineSeconds": {
+          "exclusiveMinimum": 0,
+          "title": "Maxdeadlineseconds",
+          "type": "number"
+        },
+        "leaseDurationSeconds": {
+          "exclusiveMinimum": 0,
+          "title": "Leasedurationseconds",
+          "type": "number"
+        },
+        "maxRetryAttempts": {
+          "exclusiveMinimum": 0,
+          "title": "Maxretryattempts",
+          "type": "integer"
+        },
+        "resourceEnvelopeDigest": {
+          "anyOf": [
+            {
+              "pattern": "^sha256:[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Resourceenvelopedigest"
+        }
+      },
+      "required": [
+        "maxInputBytes",
+        "maxStreamedBytes",
+        "maxTiffDirectories",
+        "maxTiffEntries",
+        "maxPixels",
+        "maxBands",
+        "maxBlocks",
+        "maxDecompressedBytes",
+        "maxSampleBytes",
+        "maxGeometryVertices",
+        "maxCpuSeconds",
+        "maxMemoryBytes",
+        "maxWorkspaceBytes",
+        "maxOutputBytes",
+        "maxTenantConcurrency",
+        "maxQueueDepth",
+        "maxDeadlineSeconds",
+        "leaseDurationSeconds",
+        "maxRetryAttempts"
+      ],
+      "title": "ResourceEnvelopeV1",
+      "type": "object"
+    },
+    "SealedExternalSubjectV1": {
+      "additionalProperties": false,
+      "description": "Exact external revision identity; Core later proves it is in caller scope.",
+      "properties": {
+        "organizationId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Organizationid",
+          "type": "string"
+        },
+        "siteId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Siteid",
+          "type": "string"
+        },
+        "workOrderId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Workorderid",
+          "type": "string"
+        },
+        "submissionId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Submissionid",
+          "type": "string"
+        },
+        "revision": {
+          "minimum": 1,
+          "title": "Revision",
+          "type": "integer"
+        },
+        "submissionDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Submissiondigest",
+          "type": "string"
+        },
+        "manifestDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Manifestdigest",
+          "type": "string"
+        }
+      },
+      "required": [
+        "organizationId",
+        "siteId",
+        "workOrderId",
+        "submissionId",
+        "revision",
+        "submissionDigest",
+        "manifestDigest"
+      ],
+      "title": "SealedExternalSubjectV1",
+      "type": "object"
+    },
+    "SpatialDataAvailabilityV1": {
+      "enum": [
+        "NOT_READY",
+        "AVAILABLE",
+        "ACCESS_REVOKED",
+        "ACCESS_EXPIRED",
+        "RETENTION_EXPIRED",
+        "UNAVAILABLE"
+      ],
+      "title": "SpatialDataAvailabilityV1",
+      "type": "string"
+    },
+    "SpatialDataExecutionStateV1": {
+      "enum": [
+        "QUEUED",
+        "RUNNING",
+        "COMPLETED",
+        "FAILED",
+        "CANCELED",
+        "EXPIRED"
+      ],
+      "title": "SpatialDataExecutionStateV1",
+      "type": "string"
+    },
+    "SpatialDataGrantV1": {
+      "additionalProperties": false,
+      "properties": {
+        "grantId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Grantid",
+          "type": "string"
+        },
+        "revision": {
+          "exclusiveMinimum": 0,
+          "maximum": 9223372036854775807,
+          "title": "Revision",
+          "type": "integer"
+        },
+        "organizationId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Organizationid",
+          "type": "string"
+        },
+        "beneficiaryPrincipalId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Beneficiaryprincipalid",
+          "type": "string"
+        },
+        "assetRef": {
+          "maxLength": 71,
+          "minLength": 71,
+          "pattern": "^ksa-v1-[0-9a-f]{64}$",
+          "title": "Assetref",
+          "type": "string"
+        },
+        "siteId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Siteid",
+          "type": "string"
+        },
+        "workAreaId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Workareaid",
+          "type": "string"
+        },
+        "allowedBounds": {
+          "maxItems": 4,
+          "minItems": 4,
+          "prefixItems": [
+            {
+              "maximum": 1.7976931348623157e+308,
+              "minimum": -1.7976931348623157e+308,
+              "type": "number"
+            },
+            {
+              "maximum": 1.7976931348623157e+308,
+              "minimum": -1.7976931348623157e+308,
+              "type": "number"
+            },
+            {
+              "maximum": 1.7976931348623157e+308,
+              "minimum": -1.7976931348623157e+308,
+              "type": "number"
+            },
+            {
+              "maximum": 1.7976931348623157e+308,
+              "minimum": -1.7976931348623157e+308,
+              "type": "number"
+            }
+          ],
+          "title": "Allowedbounds",
+          "type": "array"
+        },
+        "observedCrsDigest": {
+          "maxLength": 71,
+          "minLength": 71,
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Observedcrsdigest",
+          "type": "string"
+        },
+        "operations": {
+          "items": {
+            "enum": [
+              "PREPARE",
+              "READ"
+            ],
+            "type": "string"
+          },
+          "maxItems": 2,
+          "minItems": 1,
+          "title": "Operations",
+          "type": "array",
+          "uniqueItems": true
+        },
+        "purposes": {
+          "items": {
+            "enum": [
+              "GENERAL_DATA_USE",
+              "EXTERNAL_AI"
+            ],
+            "type": "string"
+          },
+          "maxItems": 2,
+          "minItems": 1,
+          "title": "Purposes",
+          "type": "array",
+          "uniqueItems": true
+        },
+        "processingLocation": {
+          "$ref": "#/$defs/ExecutionLocus"
+        },
+        "licenseProvenanceDigest": {
+          "maxLength": 71,
+          "minLength": 71,
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Licenseprovenancedigest",
+          "type": "string"
+        },
+        "attribution": {
+          "maxLength": 4096,
+          "minLength": 1,
+          "title": "Attribution",
+          "type": "string"
+        },
+        "validFrom": {
+          "format": "date-time",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?(?:Z|\\+00:00)$",
+          "title": "Validfrom",
+          "type": "string"
+        },
+        "validUntil": {
+          "format": "date-time",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?(?:Z|\\+00:00)$",
+          "title": "Validuntil",
+          "type": "string"
+        },
+        "policyDigest": {
+          "maxLength": 71,
+          "minLength": 71,
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Policydigest",
+          "type": "string"
+        },
+        "grantDigest": {
+          "anyOf": [
+            {
+              "maxLength": 71,
+              "minLength": 71,
+              "pattern": "^sha256:[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Grantdigest"
+        }
+      },
+      "required": [
+        "grantId",
+        "revision",
+        "organizationId",
+        "beneficiaryPrincipalId",
+        "assetRef",
+        "siteId",
+        "workAreaId",
+        "allowedBounds",
+        "observedCrsDigest",
+        "operations",
+        "purposes",
+        "processingLocation",
+        "licenseProvenanceDigest",
+        "attribution",
+        "validFrom",
+        "validUntil",
+        "policyDigest"
+      ],
+      "title": "SpatialDataGrantV1",
+      "type": "object"
+    },
+    "SpatialDataRequiredHeaderV1": {
+      "additionalProperties": false,
+      "description": "Allowlisted storage headers, never forwarding parent bearer/cookies/Host.",
+      "properties": {
+        "name": {
+          "enum": [
+            "Content-Type",
+            "content-type",
+            "Content-Length",
+            "content-length",
+            "x-amz-checksum-sha256",
+            "X-Amz-Checksum-Sha256",
+            "x-amz-checksum-mode",
+            "X-Amz-Checksum-Mode"
+          ],
+          "title": "Name",
+          "type": "string"
+        },
+        "value": {
+          "maxLength": 8192,
+          "minLength": 1,
+          "title": "Value",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "value"
+      ],
+      "title": "SpatialDataRequiredHeaderV1",
+      "type": "object"
+    },
+    "SpatialDataSourceCapabilityV1": {
+      "additionalProperties": false,
+      "properties": {
+        "requiredHeaders": {
+          "items": {
+            "$ref": "#/$defs/SpatialDataRequiredHeaderV1"
+          },
+          "maxItems": 16,
+          "title": "Requiredheaders",
+          "type": "array"
+        },
+        "expiresAt": {
+          "format": "date-time",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?(?:Z|\\+00:00)$",
+          "title": "Expiresat",
+          "type": "string"
+        },
+        "artifactId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Artifactid",
+          "type": "string"
+        },
+        "sourceDigest": {
+          "maxLength": 71,
+          "minLength": 71,
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Sourcedigest",
+          "type": "string"
+        },
+        "observedSha256": {
+          "maxLength": 71,
+          "minLength": 71,
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Observedsha256",
+          "type": "string"
+        },
+        "observedSizeBytes": {
+          "exclusiveMinimum": 0,
+          "maximum": 9223372036854775807,
+          "title": "Observedsizebytes",
+          "type": "integer"
+        },
+        "downloadUrl": {
+          "maxLength": 16384,
+          "minLength": 1,
+          "title": "Downloadurl",
+          "type": "string"
+        }
+      },
+      "required": [
+        "requiredHeaders",
+        "expiresAt",
+        "artifactId",
+        "sourceDigest",
+        "observedSha256",
+        "observedSizeBytes",
+        "downloadUrl"
+      ],
+      "title": "SpatialDataSourceCapabilityV1",
+      "type": "object"
+    },
+    "SpatialDataSourceV1": {
+      "additionalProperties": false,
+      "description": "Binding shape only: Core must authenticate the actual sealed inspection.",
+      "properties": {
+        "assetRef": {
+          "maxLength": 71,
+          "minLength": 71,
+          "pattern": "^ksa-v1-[0-9a-f]{64}$",
+          "title": "Assetref",
+          "type": "string"
+        },
+        "siteId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Siteid",
+          "type": "string"
+        },
+        "workAreaId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Workareaid",
+          "type": "string"
+        },
+        "workOrderId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Workorderid",
+          "type": "string"
+        },
+        "epochId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Epochid",
+          "type": "string"
+        },
+        "submissionRef": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Submissionref",
+          "type": "string"
+        },
+        "revision": {
+          "exclusiveMinimum": 0,
+          "maximum": 9223372036854775807,
+          "title": "Revision",
+          "type": "integer"
+        },
+        "artifactId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Artifactid",
+          "type": "string"
+        },
+        "artifactKind": {
+          "enum": [
+            "dsm",
+            "ortho"
+          ],
+          "title": "Artifactkind",
+          "type": "string"
+        },
+        "sealedSubject": {
+          "$ref": "#/$defs/SealedExternalSubjectV1"
+        },
+        "observedSha256": {
+          "maxLength": 71,
+          "minLength": 71,
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Observedsha256",
+          "type": "string"
+        },
+        "observedSizeBytes": {
+          "exclusiveMinimum": 0,
+          "maximum": 9223372036854775807,
+          "title": "Observedsizebytes",
+          "type": "integer"
+        },
+        "inspection": {
+          "$ref": "#/$defs/ArtifactInspectionOutcomeV1"
+        },
+        "inspectionReportDigest": {
+          "maxLength": 71,
+          "minLength": 71,
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Inspectionreportdigest",
+          "type": "string"
+        },
+        "inspectorBuildDigest": {
+          "maxLength": 71,
+          "minLength": 71,
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Inspectorbuilddigest",
+          "type": "string"
+        },
+        "workAreaBoundaryDigest": {
+          "maxLength": 71,
+          "minLength": 71,
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Workareaboundarydigest",
+          "type": "string"
+        },
+        "observedCrsUnits": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Observedcrsunits",
+          "type": "string"
+        },
+        "captureStartedAt": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?(?:Z|\\+00:00)$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Capturestartedat"
+        },
+        "captureEndedAt": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?(?:Z|\\+00:00)$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Captureendedat"
+        },
+        "producerProcessedAt": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?(?:Z|\\+00:00)$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Producerprocessedat"
+        },
+        "declarationRecordedAt": {
+          "format": "date-time",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?(?:Z|\\+00:00)$",
+          "title": "Declarationrecordedat",
+          "type": "string"
+        },
+        "sourceDigest": {
+          "anyOf": [
+            {
+              "maxLength": 71,
+              "minLength": 71,
+              "pattern": "^sha256:[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sourcedigest"
+        }
+      },
+      "required": [
+        "assetRef",
+        "siteId",
+        "workAreaId",
+        "workOrderId",
+        "epochId",
+        "submissionRef",
+        "revision",
+        "artifactId",
+        "artifactKind",
+        "sealedSubject",
+        "observedSha256",
+        "observedSizeBytes",
+        "inspection",
+        "inspectionReportDigest",
+        "inspectorBuildDigest",
+        "workAreaBoundaryDigest",
+        "observedCrsUnits",
+        "declarationRecordedAt"
+      ],
+      "title": "SpatialDataSourceV1",
+      "type": "object"
+    },
+    "SurfaceProfileActivationV1": {
+      "additionalProperties": false,
+      "description": "Operator-provisioned authority for one worker instance to run profile jobs.",
+      "properties": {
+        "activationId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Activationid",
+          "type": "string"
+        },
+        "organizationId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Organizationid",
+          "type": "string"
+        },
+        "workerPrincipalId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Workerprincipalid",
+          "type": "string"
+        },
+        "workerInstanceId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Workerinstanceid",
+          "type": "string"
+        },
+        "profile": {
+          "const": "ksi-surface-profile.v1",
+          "default": "ksi-surface-profile.v1",
+          "title": "Profile",
+          "type": "string"
+        },
+        "policyDigest": {
+          "maxLength": 71,
+          "minLength": 71,
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Policydigest",
+          "type": "string"
+        },
+        "runtimeDigest": {
+          "maxLength": 71,
+          "minLength": 71,
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Runtimedigest",
+          "type": "string"
+        },
+        "trustedEndpointOrigins": {
+          "items": {
+            "maxLength": 512,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 16,
+          "minItems": 1,
+          "title": "Trustedendpointorigins",
+          "type": "array",
+          "uniqueItems": true
+        },
+        "validFrom": {
+          "format": "date-time",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?(?:Z|\\+00:00)$",
+          "title": "Validfrom",
+          "type": "string"
+        },
+        "validUntil": {
+          "format": "date-time",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?(?:Z|\\+00:00)$",
+          "title": "Validuntil",
+          "type": "string"
+        },
+        "activationDigest": {
+          "anyOf": [
+            {
+              "maxLength": 71,
+              "minLength": 71,
+              "pattern": "^sha256:[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Activationdigest"
+        }
+      },
+      "required": [
+        "activationId",
+        "organizationId",
+        "workerPrincipalId",
+        "workerInstanceId",
+        "policyDigest",
+        "runtimeDigest",
+        "trustedEndpointOrigins",
+        "validFrom",
+        "validUntil"
+      ],
+      "title": "SurfaceProfileActivationV1",
+      "type": "object"
+    },
+    "SurfaceProfileAttemptV1": {
+      "additionalProperties": false,
+      "properties": {
+        "jobId": {
+          "maxLength": 36,
+          "minLength": 36,
+          "pattern": "^spj-[0-9a-f]{32}$",
+          "title": "Jobid",
+          "type": "string"
+        },
+        "frozenJobDigest": {
+          "maxLength": 71,
+          "minLength": 71,
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Frozenjobdigest",
+          "type": "string"
+        },
+        "attemptNumber": {
+          "exclusiveMinimum": 0,
+          "maximum": 9223372036854775807,
+          "title": "Attemptnumber",
+          "type": "integer"
+        },
+        "fence": {
+          "exclusiveMinimum": 0,
+          "maximum": 9223372036854775807,
+          "title": "Fence",
+          "type": "integer"
+        },
+        "workerPrincipalId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Workerprincipalid",
+          "type": "string"
+        },
+        "workerInstanceId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Workerinstanceid",
+          "type": "string"
+        },
+        "acquisitionKeyHash": {
+          "maxLength": 71,
+          "minLength": 71,
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Acquisitionkeyhash",
+          "type": "string"
+        },
+        "acquiredAt": {
+          "format": "date-time",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?(?:Z|\\+00:00)$",
+          "title": "Acquiredat",
+          "type": "string"
+        },
+        "leaseUntil": {
+          "format": "date-time",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?(?:Z|\\+00:00)$",
+          "title": "Leaseuntil",
+          "type": "string"
+        },
+        "attemptDigest": {
+          "anyOf": [
+            {
+              "maxLength": 71,
+              "minLength": 71,
+              "pattern": "^sha256:[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Attemptdigest"
+        }
+      },
+      "required": [
+        "jobId",
+        "frozenJobDigest",
+        "attemptNumber",
+        "fence",
+        "workerPrincipalId",
+        "workerInstanceId",
+        "acquisitionKeyHash",
+        "acquiredAt",
+        "leaseUntil"
+      ],
+      "title": "SurfaceProfileAttemptV1",
+      "type": "object"
+    },
+    "SurfaceProfileCompleteRequestV1": {
+      "additionalProperties": false,
+      "properties": {
+        "attempt": {
+          "$ref": "#/$defs/SurfaceProfileAttemptV1"
+        },
+        "result": {
+          "$ref": "#/$defs/SurfaceProfileResultV1"
+        },
+        "receipt": {
+          "$ref": "#/$defs/SurfaceProfileReceiptV1"
+        }
+      },
+      "required": [
+        "attempt",
+        "result",
+        "receipt"
+      ],
+      "title": "SurfaceProfileCompleteRequestV1",
+      "type": "object"
+    },
+    "SurfaceProfileDeclaredVerticalV1": {
+      "additionalProperties": false,
+      "description": "The user's vertical-reference claim a job was frozen on.  Never an observation.\n\nFrozen with its record digest so the job proves exactly which claim licensed the read; a\ncorrected or withdrawn declaration is a different record and no longer licenses it.",
+      "properties": {
+        "declarationId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Declarationid",
+          "type": "string"
+        },
+        "declarationDigest": {
+          "maxLength": 71,
+          "minLength": 71,
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Declarationdigest",
+          "type": "string"
+        },
+        "datum": {
+          "$ref": "#/$defs/VerticalDatum"
+        },
+        "unit": {
+          "const": "metre",
+          "default": "metre",
+          "title": "Unit",
+          "type": "string"
+        },
+        "basis": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Basis",
+          "type": "string"
+        },
+        "declaredBy": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Declaredby",
+          "type": "string"
+        },
+        "declaredAt": {
+          "format": "date-time",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?(?:Z|\\+00:00)$",
+          "title": "Declaredat",
+          "type": "string"
+        }
+      },
+      "required": [
+        "declarationId",
+        "declarationDigest",
+        "datum",
+        "basis",
+        "declaredBy",
+        "declaredAt"
+      ],
+      "title": "SurfaceProfileDeclaredVerticalV1",
+      "type": "object"
+    },
+    "SurfaceProfileErrorV1": {
+      "additionalProperties": false,
+      "properties": {
+        "reason": {
+          "enum": [
+            "PERMISSION_DENIED",
+            "NOT_FOUND",
+            "IDEMPOTENCY_CONFLICT",
+            "INVALID_REQUEST",
+            "FEATURE_UNAVAILABLE",
+            "HEIGHT_NOT_ELIGIBLE",
+            "SOURCE_NOT_MEASURED",
+            "SOURCE_MEASUREMENTS_MISMATCH",
+            "ACCESS_REVOKED",
+            "ACCESS_EXPIRED",
+            "OUTPUT_OUTSIDE_GRANT",
+            "PROCESSING_LOCATION_DENIED",
+            "POLICY_UNAVAILABLE",
+            "CURRENTNESS_UNAVAILABLE",
+            "RESOURCE_LIMIT_EXCEEDED",
+            "LINE_OUTSIDE_SURFACE",
+            "GRANT_REQUIRED",
+            "AMBIGUOUS_GRANT",
+            "SOURCE_UNAVAILABLE",
+            "NOT_READY",
+            "RETENTION_EXPIRED",
+            "FENCE_CONFLICT",
+            "LEASE_EXPIRED",
+            "DEADLINE_EXCEEDED",
+            "CANCELED_BY_REQUESTER",
+            "REPORT_CONFLICT",
+            "INTEGRITY_MISMATCH",
+            "SOURCE_BYTES_MISMATCH",
+            "STORAGE_UNAVAILABLE",
+            "WORKER_FAILED",
+            "INVALID_LINE",
+            "INVALID_SAMPLING",
+            "TOO_MANY_VERTICES",
+            "TOO_MANY_SAMPLES",
+            "LINE_TOO_LONG",
+            "UNSUPPORTED_CRS",
+            "REPROJECTION_FAILED",
+            "CRS_MISMATCH",
+            "UNREADABLE_RASTER",
+            "UNSUPPORTED_RASTER",
+            "SOURCE_BLOCK_TOO_LARGE",
+            "WINDOW_TOO_LARGE",
+            "PLAN_MISMATCH"
+          ],
+          "title": "Reason",
+          "type": "string"
+        },
+        "message": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Message",
+          "type": "string"
+        },
+        "retryable": {
+          "title": "Retryable",
+          "type": "boolean"
+        },
+        "remediation": {
+          "items": {
+            "const": "CONTACT_OPERATOR",
+            "type": "string"
+          },
+          "title": "Remediation",
+          "type": "array"
+        }
+      },
+      "required": [
+        "reason",
+        "message",
+        "retryable",
+        "remediation"
+      ],
+      "title": "SurfaceProfileErrorV1",
+      "type": "object"
+    },
+    "SurfaceProfileFailureRequestV1": {
+      "additionalProperties": false,
+      "properties": {
+        "attempt": {
+          "$ref": "#/$defs/SurfaceProfileAttemptV1"
+        },
+        "reason": {
+          "enum": [
+            "PERMISSION_DENIED",
+            "NOT_FOUND",
+            "IDEMPOTENCY_CONFLICT",
+            "INVALID_REQUEST",
+            "FEATURE_UNAVAILABLE",
+            "HEIGHT_NOT_ELIGIBLE",
+            "SOURCE_NOT_MEASURED",
+            "SOURCE_MEASUREMENTS_MISMATCH",
+            "ACCESS_REVOKED",
+            "ACCESS_EXPIRED",
+            "OUTPUT_OUTSIDE_GRANT",
+            "PROCESSING_LOCATION_DENIED",
+            "POLICY_UNAVAILABLE",
+            "CURRENTNESS_UNAVAILABLE",
+            "RESOURCE_LIMIT_EXCEEDED",
+            "LINE_OUTSIDE_SURFACE",
+            "GRANT_REQUIRED",
+            "AMBIGUOUS_GRANT",
+            "SOURCE_UNAVAILABLE",
+            "NOT_READY",
+            "RETENTION_EXPIRED",
+            "FENCE_CONFLICT",
+            "LEASE_EXPIRED",
+            "DEADLINE_EXCEEDED",
+            "CANCELED_BY_REQUESTER",
+            "REPORT_CONFLICT",
+            "INTEGRITY_MISMATCH",
+            "SOURCE_BYTES_MISMATCH",
+            "STORAGE_UNAVAILABLE",
+            "WORKER_FAILED",
+            "INVALID_LINE",
+            "INVALID_SAMPLING",
+            "TOO_MANY_VERTICES",
+            "TOO_MANY_SAMPLES",
+            "LINE_TOO_LONG",
+            "UNSUPPORTED_CRS",
+            "REPROJECTION_FAILED",
+            "CRS_MISMATCH",
+            "UNREADABLE_RASTER",
+            "UNSUPPORTED_RASTER",
+            "SOURCE_BLOCK_TOO_LARGE",
+            "WINDOW_TOO_LARGE",
+            "PLAN_MISMATCH"
+          ],
+          "title": "Reason",
+          "type": "string"
+        },
+        "retryable": {
+          "title": "Retryable",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "attempt",
+        "reason",
+        "retryable"
+      ],
+      "title": "SurfaceProfileFailureRequestV1",
+      "type": "object"
+    },
+    "SurfaceProfileFrozenJobV1": {
+      "additionalProperties": false,
+      "properties": {
+        "jobId": {
+          "maxLength": 36,
+          "minLength": 36,
+          "pattern": "^spj-[0-9a-f]{32}$",
+          "title": "Jobid",
+          "type": "string"
+        },
+        "organizationId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Organizationid",
+          "type": "string"
+        },
+        "requesterPrincipalId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Requesterprincipalid",
+          "type": "string"
+        },
+        "siteId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Siteid",
+          "type": "string"
+        },
+        "workAreaId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Workareaid",
+          "type": "string"
+        },
+        "request": {
+          "$ref": "#/$defs/CreateSurfaceProfileJobV1"
+        },
+        "feature": {
+          "$ref": "#/$defs/MeasurementFeatureRevisionV1"
+        },
+        "profileRequest": {
+          "$ref": "#/$defs/CreateSurfaceProfileV1"
+        },
+        "source": {
+          "$ref": "#/$defs/SpatialDataSourceV1"
+        },
+        "grant": {
+          "$ref": "#/$defs/SpatialDataGrantV1"
+        },
+        "dataPolicyDigest": {
+          "maxLength": 71,
+          "minLength": 71,
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Datapolicydigest",
+          "type": "string"
+        },
+        "heightDecisionDigest": {
+          "maxLength": 71,
+          "minLength": 71,
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Heightdecisiondigest",
+          "type": "string"
+        },
+        "verticalReference": {
+          "$ref": "#/$defs/SurfaceProfileVerticalReferenceV1"
+        },
+        "policy": {
+          "$ref": "#/$defs/SurfaceProfilePolicyV1"
+        },
+        "runtime": {
+          "$ref": "#/$defs/SurfaceProfileRuntimeV1"
+        },
+        "readWindow": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SurfaceProfileReadWindowV1"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "idempotencyKeyHash": {
+          "maxLength": 71,
+          "minLength": 71,
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Idempotencykeyhash",
+          "type": "string"
+        },
+        "requestFingerprint": {
+          "maxLength": 71,
+          "minLength": 71,
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Requestfingerprint",
+          "type": "string"
+        },
+        "createdAt": {
+          "format": "date-time",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?(?:Z|\\+00:00)$",
+          "title": "Createdat",
+          "type": "string"
+        },
+        "deadline": {
+          "format": "date-time",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?(?:Z|\\+00:00)$",
+          "title": "Deadline",
+          "type": "string"
+        },
+        "jobDigest": {
+          "anyOf": [
+            {
+              "maxLength": 71,
+              "minLength": 71,
+              "pattern": "^sha256:[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Jobdigest"
+        }
+      },
+      "required": [
+        "jobId",
+        "organizationId",
+        "requesterPrincipalId",
+        "siteId",
+        "workAreaId",
+        "request",
+        "feature",
+        "profileRequest",
+        "source",
+        "grant",
+        "dataPolicyDigest",
+        "heightDecisionDigest",
+        "verticalReference",
+        "policy",
+        "runtime",
+        "readWindow",
+        "idempotencyKeyHash",
+        "requestFingerprint",
+        "createdAt",
+        "deadline"
+      ],
+      "title": "SurfaceProfileFrozenJobV1",
+      "type": "object"
+    },
+    "SurfaceProfileJobPageV1": {
+      "additionalProperties": false,
+      "properties": {
+        "items": {
+          "items": {
+            "$ref": "#/$defs/SurfaceProfileJobViewV1"
+          },
+          "maxItems": 9223372036854775807,
+          "title": "Items",
+          "type": "array"
+        }
+      },
+      "required": [
+        "items"
+      ],
+      "title": "SurfaceProfileJobPageV1",
+      "type": "object"
+    },
+    "SurfaceProfileJobViewV1": {
+      "additionalProperties": false,
+      "description": "Requester-visible state.  Carries the receipt, never the numeric samples — those need a\nfresh READ proof through the result route.",
+      "properties": {
+        "jobId": {
+          "maxLength": 36,
+          "minLength": 36,
+          "pattern": "^spj-[0-9a-f]{32}$",
+          "title": "Jobid",
+          "type": "string"
+        },
+        "assetRef": {
+          "pattern": "^ksa-v1-[0-9a-f]{64}$",
+          "title": "Assetref",
+          "type": "string"
+        },
+        "siteId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Siteid",
+          "type": "string"
+        },
+        "workAreaId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Workareaid",
+          "type": "string"
+        },
+        "feature": {
+          "$ref": "#/$defs/MeasurementFeatureRefV1"
+        },
+        "createdAt": {
+          "format": "date-time",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?(?:Z|\\+00:00)$",
+          "title": "Createdat",
+          "type": "string"
+        },
+        "executionState": {
+          "$ref": "#/$defs/SpatialDataExecutionStateV1"
+        },
+        "availability": {
+          "$ref": "#/$defs/SpatialDataAvailabilityV1"
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "enum": [
+                "PERMISSION_DENIED",
+                "NOT_FOUND",
+                "IDEMPOTENCY_CONFLICT",
+                "INVALID_REQUEST",
+                "FEATURE_UNAVAILABLE",
+                "HEIGHT_NOT_ELIGIBLE",
+                "SOURCE_NOT_MEASURED",
+                "SOURCE_MEASUREMENTS_MISMATCH",
+                "ACCESS_REVOKED",
+                "ACCESS_EXPIRED",
+                "OUTPUT_OUTSIDE_GRANT",
+                "PROCESSING_LOCATION_DENIED",
+                "POLICY_UNAVAILABLE",
+                "CURRENTNESS_UNAVAILABLE",
+                "RESOURCE_LIMIT_EXCEEDED",
+                "LINE_OUTSIDE_SURFACE",
+                "GRANT_REQUIRED",
+                "AMBIGUOUS_GRANT",
+                "SOURCE_UNAVAILABLE",
+                "NOT_READY",
+                "RETENTION_EXPIRED",
+                "FENCE_CONFLICT",
+                "LEASE_EXPIRED",
+                "DEADLINE_EXCEEDED",
+                "CANCELED_BY_REQUESTER",
+                "REPORT_CONFLICT",
+                "INTEGRITY_MISMATCH",
+                "SOURCE_BYTES_MISMATCH",
+                "STORAGE_UNAVAILABLE",
+                "WORKER_FAILED",
+                "INVALID_LINE",
+                "INVALID_SAMPLING",
+                "TOO_MANY_VERTICES",
+                "TOO_MANY_SAMPLES",
+                "LINE_TOO_LONG",
+                "UNSUPPORTED_CRS",
+                "REPROJECTION_FAILED",
+                "CRS_MISMATCH",
+                "UNREADABLE_RASTER",
+                "UNSUPPORTED_RASTER",
+                "SOURCE_BLOCK_TOO_LARGE",
+                "WINDOW_TOO_LARGE",
+                "PLAN_MISMATCH"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Reason"
+        },
+        "receipt": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SurfaceProfileReceiptV1"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "jobId",
+        "assetRef",
+        "siteId",
+        "workAreaId",
+        "feature",
+        "createdAt",
+        "executionState",
+        "availability"
+      ],
+      "title": "SurfaceProfileJobViewV1",
+      "type": "object"
+    },
+    "SurfaceProfileLeaseRequestV1": {
+      "additionalProperties": false,
+      "properties": {
+        "workerInstanceId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Workerinstanceid",
+          "type": "string"
+        },
+        "acquisitionId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Acquisitionid",
+          "type": "string"
+        }
+      },
+      "required": [
+        "workerInstanceId",
+        "acquisitionId"
+      ],
+      "title": "SurfaceProfileLeaseRequestV1",
+      "type": "object"
+    },
+    "SurfaceProfileLeaseViewV1": {
+      "additionalProperties": false,
+      "properties": {
+        "jobId": {
+          "maxLength": 36,
+          "minLength": 36,
+          "pattern": "^spj-[0-9a-f]{32}$",
+          "title": "Jobid",
+          "type": "string"
+        },
+        "attempt": {
+          "$ref": "#/$defs/SurfaceProfileAttemptV1"
+        }
+      },
+      "required": [
+        "jobId",
+        "attempt"
+      ],
+      "title": "SurfaceProfileLeaseViewV1",
+      "type": "object"
+    },
+    "SurfaceProfilePolicyV1": {
+      "additionalProperties": false,
+      "description": "Finite limits Core freezes into a job.  Never client input, never defaulted.",
+      "properties": {
+        "profile": {
+          "const": "ksi-surface-profile.v1",
+          "default": "ksi-surface-profile.v1",
+          "title": "Profile",
+          "type": "string"
+        },
+        "policyId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Policyid",
+          "type": "string"
+        },
+        "revision": {
+          "exclusiveMinimum": 0,
+          "maximum": 9223372036854775807,
+          "title": "Revision",
+          "type": "integer"
+        },
+        "resourceEnvelope": {
+          "$ref": "#/$defs/ResourceEnvelopeV1"
+        },
+        "maximumVertices": {
+          "maximum": 256,
+          "minimum": 2,
+          "title": "Maximumvertices",
+          "type": "integer"
+        },
+        "maximumSamples": {
+          "maximum": 5000,
+          "minimum": 2,
+          "title": "Maximumsamples",
+          "type": "integer"
+        },
+        "maximumLineLengthM": {
+          "exclusiveMinimum": 0.0,
+          "title": "Maximumlinelengthm",
+          "type": "number"
+        },
+        "maximumWindowCells": {
+          "exclusiveMinimum": 0,
+          "maximum": 9223372036854775807,
+          "title": "Maximumwindowcells",
+          "type": "integer"
+        },
+        "maximumSourceBlockCells": {
+          "exclusiveMinimum": 0,
+          "maximum": 9223372036854775807,
+          "title": "Maximumsourceblockcells",
+          "type": "integer"
+        },
+        "maxResultBytes": {
+          "exclusiveMinimum": 0,
+          "maximum": 9223372036854775807,
+          "title": "Maxresultbytes",
+          "type": "integer"
+        },
+        "maxActiveJobsPerOrganization": {
+          "exclusiveMinimum": 0,
+          "maximum": 9223372036854775807,
+          "title": "Maxactivejobsperorganization",
+          "type": "integer"
+        },
+        "maxPendingRecords": {
+          "exclusiveMinimum": 0,
+          "maximum": 9223372036854775807,
+          "title": "Maxpendingrecords",
+          "type": "integer"
+        },
+        "maxListRecords": {
+          "exclusiveMinimum": 0,
+          "maximum": 9223372036854775807,
+          "title": "Maxlistrecords",
+          "type": "integer"
+        },
+        "maxIdempotencyKeyBytes": {
+          "exclusiveMinimum": 0,
+          "maximum": 9223372036854775807,
+          "title": "Maxidempotencykeybytes",
+          "type": "integer"
+        },
+        "leaseSeconds": {
+          "exclusiveMinimum": 0,
+          "maximum": 1.7976931348623157e+308,
+          "title": "Leaseseconds",
+          "type": "number"
+        },
+        "deadlineSeconds": {
+          "exclusiveMinimum": 0,
+          "maximum": 1.7976931348623157e+308,
+          "title": "Deadlineseconds",
+          "type": "number"
+        },
+        "maxAttempts": {
+          "exclusiveMinimum": 0,
+          "maximum": 9223372036854775807,
+          "title": "Maxattempts",
+          "type": "integer"
+        },
+        "minRetryBackoffSeconds": {
+          "exclusiveMinimum": 0,
+          "maximum": 1.7976931348623157e+308,
+          "title": "Minretrybackoffseconds",
+          "type": "number"
+        },
+        "maxRetryBackoffSeconds": {
+          "exclusiveMinimum": 0,
+          "maximum": 1.7976931348623157e+308,
+          "title": "Maxretrybackoffseconds",
+          "type": "number"
+        },
+        "retentionSeconds": {
+          "exclusiveMinimum": 0,
+          "maximum": 1.7976931348623157e+308,
+          "title": "Retentionseconds",
+          "type": "number"
+        },
+        "policyDigest": {
+          "anyOf": [
+            {
+              "maxLength": 71,
+              "minLength": 71,
+              "pattern": "^sha256:[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Policydigest"
+        }
+      },
+      "required": [
+        "policyId",
+        "revision",
+        "resourceEnvelope",
+        "maximumVertices",
+        "maximumSamples",
+        "maximumLineLengthM",
+        "maximumWindowCells",
+        "maximumSourceBlockCells",
+        "maxResultBytes",
+        "maxActiveJobsPerOrganization",
+        "maxPendingRecords",
+        "maxListRecords",
+        "maxIdempotencyKeyBytes",
+        "leaseSeconds",
+        "deadlineSeconds",
+        "maxAttempts",
+        "minRetryBackoffSeconds",
+        "maxRetryBackoffSeconds",
+        "retentionSeconds"
+      ],
+      "title": "SurfaceProfilePolicyV1",
+      "type": "object"
+    },
+    "SurfaceProfileReadWindowV1": {
+      "additionalProperties": false,
+      "description": "The one native pixel window a worker may read: sample neighbours only, never the raster.",
+      "properties": {
+        "pixelWindow": {
+          "maxItems": 4,
+          "minItems": 4,
+          "prefixItems": [
+            {
+              "maximum": 9223372036854775807,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "maximum": 9223372036854775807,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "maximum": 9223372036854775807,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "maximum": 9223372036854775807,
+              "minimum": 0,
+              "type": "integer"
+            }
+          ],
+          "title": "Pixelwindow",
+          "type": "array"
+        },
+        "actualBounds": {
+          "maxItems": 4,
+          "minItems": 4,
+          "prefixItems": [
+            {
+              "maximum": 1.7976931348623157e+308,
+              "minimum": -1.7976931348623157e+308,
+              "type": "number"
+            },
+            {
+              "maximum": 1.7976931348623157e+308,
+              "minimum": -1.7976931348623157e+308,
+              "type": "number"
+            },
+            {
+              "maximum": 1.7976931348623157e+308,
+              "minimum": -1.7976931348623157e+308,
+              "type": "number"
+            },
+            {
+              "maximum": 1.7976931348623157e+308,
+              "minimum": -1.7976931348623157e+308,
+              "type": "number"
+            }
+          ],
+          "title": "Actualbounds",
+          "type": "array"
+        }
+      },
+      "required": [
+        "pixelWindow",
+        "actualBounds"
+      ],
+      "title": "SurfaceProfileReadWindowV1",
+      "type": "object"
+    },
+    "SurfaceProfileReceiptV1": {
+      "additionalProperties": false,
+      "description": "What the worker attests it did.  Core verifies it against the frozen job; it never replaces\nthat check, and it asserts no accuracy.",
+      "properties": {
+        "jobId": {
+          "maxLength": 36,
+          "minLength": 36,
+          "pattern": "^spj-[0-9a-f]{32}$",
+          "title": "Jobid",
+          "type": "string"
+        },
+        "jobDigest": {
+          "maxLength": 71,
+          "minLength": 71,
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Jobdigest",
+          "type": "string"
+        },
+        "sourceDigest": {
+          "maxLength": 71,
+          "minLength": 71,
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Sourcedigest",
+          "type": "string"
+        },
+        "requestDigest": {
+          "maxLength": 71,
+          "minLength": 71,
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Requestdigest",
+          "type": "string"
+        },
+        "grantDigest": {
+          "maxLength": 71,
+          "minLength": 71,
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Grantdigest",
+          "type": "string"
+        },
+        "dataPolicyDigest": {
+          "maxLength": 71,
+          "minLength": 71,
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Datapolicydigest",
+          "type": "string"
+        },
+        "policyDigest": {
+          "maxLength": 71,
+          "minLength": 71,
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Policydigest",
+          "type": "string"
+        },
+        "runtimeDigest": {
+          "maxLength": 71,
+          "minLength": 71,
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Runtimedigest",
+          "type": "string"
+        },
+        "preparationProfile": {
+          "const": "ksi-surface-profile.v1",
+          "default": "ksi-surface-profile.v1",
+          "title": "Preparationprofile",
+          "type": "string"
+        },
+        "artifactId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Artifactid",
+          "type": "string"
+        },
+        "sourceSha256": {
+          "maxLength": 71,
+          "minLength": 71,
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Sourcesha256",
+          "type": "string"
+        },
+        "sourceSizeBytes": {
+          "exclusiveMinimum": 0,
+          "maximum": 9223372036854775807,
+          "title": "Sourcesizebytes",
+          "type": "integer"
+        },
+        "observedCrsIdentifier": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Observedcrsidentifier",
+          "type": "string"
+        },
+        "observedCrsDigest": {
+          "maxLength": 71,
+          "minLength": 71,
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Observedcrsdigest",
+          "type": "string"
+        },
+        "verticalReference": {
+          "$ref": "#/$defs/SurfaceProfileVerticalReferenceV1"
+        },
+        "resultDigest": {
+          "maxLength": 71,
+          "minLength": 71,
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Resultdigest",
+          "type": "string"
+        },
+        "readWindow": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SurfaceProfileReadWindowV1"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "windowCellsRead": {
+          "maximum": 9223372036854775807,
+          "minimum": 0,
+          "title": "Windowcellsread",
+          "type": "integer"
+        },
+        "accuracyAssessed": {
+          "const": false,
+          "title": "Accuracyassessed",
+          "type": "boolean"
+        },
+        "preparedAt": {
+          "format": "date-time",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?(?:Z|\\+00:00)$",
+          "title": "Preparedat",
+          "type": "string"
+        },
+        "attribution": {
+          "maxLength": 4096,
+          "minLength": 1,
+          "title": "Attribution",
+          "type": "string"
+        },
+        "limitations": {
+          "items": {
+            "maxLength": 255,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 16,
+          "title": "Limitations",
+          "type": "array"
+        },
+        "receiptDigest": {
+          "anyOf": [
+            {
+              "maxLength": 71,
+              "minLength": 71,
+              "pattern": "^sha256:[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Receiptdigest"
+        }
+      },
+      "required": [
+        "jobId",
+        "jobDigest",
+        "sourceDigest",
+        "requestDigest",
+        "grantDigest",
+        "dataPolicyDigest",
+        "policyDigest",
+        "runtimeDigest",
+        "artifactId",
+        "sourceSha256",
+        "sourceSizeBytes",
+        "observedCrsIdentifier",
+        "observedCrsDigest",
+        "verticalReference",
+        "resultDigest",
+        "readWindow",
+        "windowCellsRead",
+        "accuracyAssessed",
+        "preparedAt",
+        "attribution",
+        "limitations"
+      ],
+      "title": "SurfaceProfileReceiptV1",
+      "type": "object"
+    },
+    "SurfaceProfileRenewRequestV1": {
+      "additionalProperties": false,
+      "properties": {
+        "attempt": {
+          "$ref": "#/$defs/SurfaceProfileAttemptV1"
+        }
+      },
+      "required": [
+        "attempt"
+      ],
+      "title": "SurfaceProfileRenewRequestV1",
+      "type": "object"
+    },
+    "SurfaceProfileResultV1": {
+      "additionalProperties": false,
+      "properties": {
+        "assetRef": {
+          "maxLength": 71,
+          "minLength": 71,
+          "pattern": "^ksa-v1-[0-9a-f]{64}$",
+          "title": "Assetref",
+          "type": "string"
+        },
+        "lineDigest": {
+          "maxLength": 71,
+          "minLength": 71,
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Linedigest",
+          "type": "string"
+        },
+        "feature": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/MeasurementFeatureRefV1"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "horizontalCrs": {
+          "pattern": "^EPSG:[1-9][0-9]{0,5}$",
+          "title": "Horizontalcrs",
+          "type": "string"
+        },
+        "lineLengthM": {
+          "exclusiveMinimum": 0.0,
+          "title": "Linelengthm",
+          "type": "number"
+        },
+        "sampleSpacingM": {
+          "exclusiveMinimum": 0.0,
+          "title": "Samplespacingm",
+          "type": "number"
+        },
+        "windowCellsRead": {
+          "maximum": 9223372036854775807,
+          "minimum": 0,
+          "title": "Windowcellsread",
+          "type": "integer"
+        },
+        "samples": {
+          "items": {
+            "$ref": "#/$defs/SurfaceProfileSampleV1"
+          },
+          "maxItems": 5000,
+          "minItems": 2,
+          "title": "Samples",
+          "type": "array"
+        },
+        "validCount": {
+          "minimum": 0,
+          "title": "Validcount",
+          "type": "integer"
+        },
+        "unknownCount": {
+          "minimum": 0,
+          "title": "Unknowncount",
+          "type": "integer"
+        },
+        "minimumM": {
+          "anyOf": [
+            {
+              "maximum": 1.7976931348623157e+308,
+              "minimum": -1.7976931348623157e+308,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Minimumm"
+        },
+        "maximumM": {
+          "anyOf": [
+            {
+              "maximum": 1.7976931348623157e+308,
+              "minimum": -1.7976931348623157e+308,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Maximumm"
+        },
+        "elevationMeaning": {
+          "const": "GRID_BILINEAR_AT_PIXEL_CENTRES",
+          "default": "GRID_BILINEAR_AT_PIXEL_CENTRES",
+          "title": "Elevationmeaning",
+          "type": "string"
+        },
+        "distanceMeaning": {
+          "const": "PLANAR_ALONG_LINE_IN_GRID_CRS",
+          "default": "PLANAR_ALONG_LINE_IN_GRID_CRS",
+          "title": "Distancemeaning",
+          "type": "string"
+        },
+        "volumeComputed": {
+          "const": false,
+          "default": false,
+          "title": "Volumecomputed",
+          "type": "boolean"
+        },
+        "accuracyAssessed": {
+          "const": false,
+          "default": false,
+          "title": "Accuracyassessed",
+          "type": "boolean"
+        },
+        "resultDigest": {
+          "anyOf": [
+            {
+              "maxLength": 71,
+              "minLength": 71,
+              "pattern": "^sha256:[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Resultdigest"
+        }
+      },
+      "required": [
+        "assetRef",
+        "lineDigest",
+        "horizontalCrs",
+        "lineLengthM",
+        "sampleSpacingM",
+        "windowCellsRead",
+        "samples",
+        "validCount",
+        "unknownCount",
+        "minimumM",
+        "maximumM"
+      ],
+      "title": "SurfaceProfileResultV1",
+      "type": "object"
+    },
+    "SurfaceProfileResultViewV1": {
+      "additionalProperties": false,
+      "description": "The numbers, released only after current READ authority was proven again.",
+      "properties": {
+        "job": {
+          "$ref": "#/$defs/SurfaceProfileJobViewV1"
+        },
+        "result": {
+          "$ref": "#/$defs/SurfaceProfileResultV1"
+        }
+      },
+      "required": [
+        "job",
+        "result"
+      ],
+      "title": "SurfaceProfileResultViewV1",
+      "type": "object"
+    },
+    "SurfaceProfileRuntimeV1": {
+      "additionalProperties": false,
+      "description": "The exact build that is allowed to compute profiles.",
+      "properties": {
+        "profile": {
+          "const": "ksi-surface-profile.v1",
+          "default": "ksi-surface-profile.v1",
+          "title": "Profile",
+          "type": "string"
+        },
+        "executableDigest": {
+          "maxLength": 71,
+          "minLength": 71,
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Executabledigest",
+          "type": "string"
+        },
+        "buildDigest": {
+          "maxLength": 71,
+          "minLength": 71,
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Builddigest",
+          "type": "string"
+        },
+        "runtimeImage": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Runtimeimage",
+          "type": "string"
+        },
+        "runtimeImageVersion": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Runtimeimageversion",
+          "type": "string"
+        },
+        "runtimeImageDigest": {
+          "maxLength": 71,
+          "minLength": 71,
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Runtimeimagedigest",
+          "type": "string"
+        },
+        "dependencyLockDigest": {
+          "maxLength": 71,
+          "minLength": 71,
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Dependencylockdigest",
+          "type": "string"
+        },
+        "runtimeDigest": {
+          "anyOf": [
+            {
+              "maxLength": 71,
+              "minLength": 71,
+              "pattern": "^sha256:[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Runtimedigest"
+        }
+      },
+      "required": [
+        "executableDigest",
+        "buildDigest",
+        "runtimeImage",
+        "runtimeImageVersion",
+        "runtimeImageDigest",
+        "dependencyLockDigest"
+      ],
+      "title": "SurfaceProfileRuntimeV1",
+      "type": "object"
+    },
+    "SurfaceProfileSampleV1": {
+      "additionalProperties": false,
+      "oneOf": [
+        {
+          "properties": {
+            "elevationM": {
+              "type": "number"
+            },
+            "invalidReason": {
+              "type": "null"
+            }
+          },
+          "required": [
+            "elevationM",
+            "invalidReason"
+          ]
+        },
+        {
+          "properties": {
+            "elevationM": {
+              "type": "null"
+            },
+            "invalidReason": {
+              "enum": [
+                "OUTSIDE_SURFACE",
+                "INSUFFICIENT_NEIGHBORS",
+                "NODATA"
+              ]
+            }
+          },
+          "required": [
+            "elevationM",
+            "invalidReason"
+          ]
+        }
+      ],
+      "properties": {
+        "index": {
+          "exclusiveMaximum": 5000,
+          "minimum": 0,
+          "title": "Index",
+          "type": "integer"
+        },
+        "distanceM": {
+          "minimum": 0.0,
+          "title": "Distancem",
+          "type": "number"
+        },
+        "x": {
+          "maximum": 1.7976931348623157e+308,
+          "minimum": -1.7976931348623157e+308,
+          "title": "X",
+          "type": "number"
+        },
+        "y": {
+          "maximum": 1.7976931348623157e+308,
+          "minimum": -1.7976931348623157e+308,
+          "title": "Y",
+          "type": "number"
+        },
+        "elevationM": {
+          "anyOf": [
+            {
+              "maximum": 1.7976931348623157e+308,
+              "minimum": -1.7976931348623157e+308,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Elevationm"
+        },
+        "invalidReason": {
+          "anyOf": [
+            {
+              "enum": [
+                "OUTSIDE_SURFACE",
+                "INSUFFICIENT_NEIGHBORS",
+                "NODATA"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Invalidreason"
+        }
+      },
+      "required": [
+        "index",
+        "distanceM",
+        "x",
+        "y",
+        "elevationM",
+        "invalidReason"
+      ],
+      "title": "SurfaceProfileSampleV1",
+      "type": "object"
+    },
+    "SurfaceProfileVerticalReferenceV1": {
+      "additionalProperties": false,
+      "description": "Where the heights' vertical reference comes from: the file (observed) or a user (declared).\n\nExactly one of the two facts is present.  A declared basis is carried here, next to the\nnumbers, so no screen or export can present it as something the parser observed.",
+      "properties": {
+        "provenance": {
+          "enum": [
+            "OBSERVED",
+            "DECLARED"
+          ],
+          "title": "Provenance",
+          "type": "string"
+        },
+        "observed": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ObservedVerticalReferenceV1"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "declared": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SurfaceProfileDeclaredVerticalV1"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "provenance"
+      ],
+      "title": "SurfaceProfileVerticalReferenceV1",
+      "type": "object"
+    },
+    "SurfaceProfileWorkerInputResponseV1": {
+      "additionalProperties": false,
+      "properties": {
+        "input": {
+          "$ref": "#/$defs/SurfaceProfileWorkerInputV1"
+        }
+      },
+      "required": [
+        "input"
+      ],
+      "title": "SurfaceProfileWorkerInputResponseV1",
+      "type": "object"
+    },
+    "SurfaceProfileWorkerInputV1": {
+      "additionalProperties": false,
+      "description": "일꾼이 받는 입력: 봉인된 작업, 현재 attempt, 활성화와 짧은 수명의 원본 읽기 capability.",
+      "properties": {
+        "job": {
+          "$ref": "#/$defs/SurfaceProfileFrozenJobV1"
+        },
+        "attempt": {
+          "$ref": "#/$defs/SurfaceProfileAttemptV1"
+        },
+        "activation": {
+          "$ref": "#/$defs/SurfaceProfileActivationV1"
+        },
+        "sourceCapability": {
+          "$ref": "#/$defs/SpatialDataSourceCapabilityV1"
+        }
+      },
+      "required": [
+        "job",
+        "attempt",
+        "activation",
+        "sourceCapability"
+      ],
+      "title": "SurfaceProfileWorkerInputV1",
+      "type": "object"
+    },
+    "SurfaceProfileWorkerPendingItemV1": {
+      "additionalProperties": false,
+      "properties": {
+        "jobId": {
+          "maxLength": 36,
+          "minLength": 36,
+          "pattern": "^spj-[0-9a-f]{32}$",
+          "title": "Jobid",
+          "type": "string"
+        }
+      },
+      "required": [
+        "jobId"
+      ],
+      "title": "SurfaceProfileWorkerPendingItemV1",
+      "type": "object"
+    },
+    "SurfaceProfileWorkerPendingPageV1": {
+      "additionalProperties": false,
+      "properties": {
+        "items": {
+          "items": {
+            "$ref": "#/$defs/SurfaceProfileWorkerPendingItemV1"
+          },
+          "maxItems": 9223372036854775807,
+          "title": "Items",
+          "type": "array"
+        }
+      },
+      "required": [
+        "items"
+      ],
+      "title": "SurfaceProfileWorkerPendingPageV1",
+      "type": "object"
+    },
+    "VerticalDatum": {
+      "description": "산출물이 어느 수직기준인지 — wire 계약에 실리는 값.\n\n``ELLIPSOIDAL_NATIVE`` 는 \"재구성 엔진이 낸 타원체고를 변환 없이 그대로\n쓴다\"는 뜻이다. ``ELLIPSOIDAL`` 과 굳이 나눈 이유는, 전자가 **의도적으로\n선택한 기준**이 아니라 **변환을 하지 못해 남은 상태**임을 소비자가 구분할\n수 있어야 하기 때문이다 — 나중에 격자가 확보되면 이 값이 남아 있는\n산출물이 곧 재처리 대상 목록이 된다.\n\n두 값의 이 차이는 **호환성 판정에는 영향이 없다** — 둘 다 타원체 기준의\n높이라 서로 빼도 되는 값이다(:func:`family_of`). 재처리 대상 표시와\n비교 가능성은 다른 축이다.\n\n**정표고 멤버가 지오이드 모델 이름을 달고 있는 이유.** 정표고가 서 있는\n기준면은 하나다(KVD1964 = 인천 평균해면, EPSG:5193). 그런데 그 높이를\n타원체고와 잇는 지오이드고 N 은 **격자 모델이 준다** — 즉 모델 이름은\n\"이 높이가 어느 격자로 되돌려지는가\"다. 모델이 다르면 국내 지점 대조에서\n수 cm 가 어긋나고(KNGeoid18↔24 실측 비교 0.001~0.071m), 그 크기는 체적\n집계 문턱(``DEFAULT_VOLUME_THRESHOLD_M`` = 0.05m)과 같은 자릿수다. 그래서\n모델을 이름에 박아 두고, **우리가 실제로 격자를 가진 모델만** 타원체고와\n잇는다(:data:`_GEOID_BRIDGEABLE_ORTHOMETRIC`).",
+      "enum": [
+        "ellipsoidal",
+        "ellipsoidal_native",
+        "orthometric_kngeoid2018",
+        "orthometric_kngeoid2024"
+      ],
+      "title": "VerticalDatum",
+      "type": "string"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema"
+}

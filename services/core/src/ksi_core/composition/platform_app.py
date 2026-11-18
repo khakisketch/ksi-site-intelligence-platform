@@ -15,6 +15,7 @@ readiness surface reads.
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 from fastapi import FastAPI
@@ -72,6 +73,11 @@ def create_platform_app(
 
     mount_work_areas(app, graph.work_areas, site_store=graph.sites)
 
+    if graph.measurement_features is not None:
+        from ksi_core.domains.sites.measurement_features import mount_measurement_features
+
+        mount_measurement_features(app, graph.measurement_features, clock=lambda: datetime.now(UTC))
+
     from ksi_core.domains.sites.observation_work_orders import (
         build_observation_work_order_router,
     )
@@ -121,11 +127,13 @@ def create_platform_app(
         external_single_volume=graph.external.single_volume,
         external_use_evaluator=graph.external.use_evaluator,
         spatial_data=graph.data,
+        surface_profile=graph.surface_profile,
         external_artifact_inspection_store=graph.external.artifact_inspection_store,
         external_display_artifact_store=graph.external.display_artifact_store,
         external_analysis_wiring=graph.analysis,
         external_delta_wiring=graph.delta,
         external_masked_wiring=graph.masked,
+        vertical_reference_declarations=graph.vertical_declarations,
     )
     if graph.spatial_tasks is not None:
         from ksi_core.domains.external.spatial_tasks import build_spatial_task_router

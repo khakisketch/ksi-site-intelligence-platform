@@ -62,6 +62,7 @@ export function resolveSiteSection(
     }
     case "spatial-assets":
     case "spatial-data-requests":
+    case "measurements":
     case "work-areas": return "space";
     case "analysis":
     case "observations": return "analysis";

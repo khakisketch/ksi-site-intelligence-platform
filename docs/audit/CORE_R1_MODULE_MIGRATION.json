@@ -245,6 +245,51 @@
       "migrationStatus": "T3_NEW_MODULE"
     },
     {
+      "sourceModule": "ksi_core.domains.external.delivery.surface_profile_authority",
+      "activeCanonicalModule": "ksi_core.domains.external.delivery.surface_profile_authority",
+      "activePath": "ksi_core/domains/external/delivery/surface_profile_authority.py",
+      "plannedCanonicalModule": "ksi_core.domains.external.delivery.surface_profile_authority",
+      "plannedPath": "ksi_core/domains/external/delivery/surface_profile_authority.py",
+      "ownerBoundary": "domains/external/delivery",
+      "migrationStatus": "T3_NEW_MODULE"
+    },
+    {
+      "sourceModule": "ksi_core.domains.external.delivery.surface_profile_jobs",
+      "activeCanonicalModule": "ksi_core.domains.external.delivery.surface_profile_jobs",
+      "activePath": "ksi_core/domains/external/delivery/surface_profile_jobs.py",
+      "plannedCanonicalModule": "ksi_core.domains.external.delivery.surface_profile_jobs",
+      "plannedPath": "ksi_core/domains/external/delivery/surface_profile_jobs.py",
+      "ownerBoundary": "domains/external/delivery",
+      "migrationStatus": "T3_NEW_MODULE"
+    },
+    {
+      "sourceModule": "ksi_core.domains.external.delivery.surface_profile_api",
+      "activeCanonicalModule": "ksi_core.domains.external.delivery.surface_profile_api",
+      "activePath": "ksi_core/domains/external/delivery/surface_profile_api.py",
+      "plannedCanonicalModule": "ksi_core.domains.external.delivery.surface_profile_api",
+      "plannedPath": "ksi_core/domains/external/delivery/surface_profile_api.py",
+      "ownerBoundary": "domains/external/delivery",
+      "migrationStatus": "T3_NEW_MODULE"
+    },
+    {
+      "sourceModule": "ksi_core.domains.external.delivery.surface_profile_worker_api",
+      "activeCanonicalModule": "ksi_core.domains.external.delivery.surface_profile_worker_api",
+      "activePath": "ksi_core/domains/external/delivery/surface_profile_worker_api.py",
+      "plannedCanonicalModule": "ksi_core.domains.external.delivery.surface_profile_worker_api",
+      "plannedPath": "ksi_core/domains/external/delivery/surface_profile_worker_api.py",
+      "ownerBoundary": "domains/external/delivery",
+      "migrationStatus": "T3_NEW_MODULE"
+    },
+    {
+      "sourceModule": "ksi_core.domains.sites.measurement_features",
+      "activeCanonicalModule": "ksi_core.domains.sites.measurement_features",
+      "activePath": "ksi_core/domains/sites/measurement_features.py",
+      "plannedCanonicalModule": "ksi_core.domains.sites.measurement_features",
+      "plannedPath": "ksi_core/domains/sites/measurement_features.py",
+      "ownerBoundary": "domains/sites",
+      "migrationStatus": "T3_NEW_MODULE"
+    },
+    {
       "sourceModule": "ksi_core.artifact_manifest",
       "activeCanonicalModule": "ksi_core.domains.artifacts.artifact_manifest",
       "activePath": "ksi_core/domains/artifacts/artifact_manifest.py",
@@ -1040,6 +1085,15 @@
       "migrationStatus": "T5_NEW_MODULE"
     },
     {
+      "sourceModule": "ksi_core.composition.surface_profile_graph",
+      "activeCanonicalModule": "ksi_core.composition.surface_profile_graph",
+      "activePath": "ksi_core/composition/surface_profile_graph.py",
+      "plannedCanonicalModule": "ksi_core.composition.surface_profile_graph",
+      "plannedPath": "ksi_core/composition/surface_profile_graph.py",
+      "ownerBoundary": "composition",
+      "migrationStatus": "T5_NEW_MODULE"
+    },
+    {
       "sourceModule": "ksi_core.composition.platform_production",
       "activeCanonicalModule": "ksi_core.composition.platform_production",
       "activePath": "ksi_core/composition/platform_production.py",
@@ -1315,6 +1369,24 @@
       "activePath": "ksi_core/domains/external/ingress/spatial_asset_catalog.py",
       "plannedCanonicalModule": "ksi_core.domains.external.ingress.spatial_asset_catalog",
       "plannedPath": "ksi_core/domains/external/ingress/spatial_asset_catalog.py",
+      "ownerBoundary": "domains/external/ingress",
+      "migrationStatus": "T3_NEW_MODULE"
+    },
+    {
+      "sourceModule": "ksi_core.domains.external.quantity.asset_height_decision",
+      "activeCanonicalModule": "ksi_core.domains.external.quantity.asset_height_decision",
+      "activePath": "ksi_core/domains/external/quantity/asset_height_decision.py",
+      "plannedCanonicalModule": "ksi_core.domains.external.quantity.asset_height_decision",
+      "plannedPath": "ksi_core/domains/external/quantity/asset_height_decision.py",
+      "ownerBoundary": "domains/external/quantity",
+      "migrationStatus": "T3_NEW_MODULE"
+    },
+    {
+      "sourceModule": "ksi_core.domains.external.ingress.vertical_reference_declarations",
+      "activeCanonicalModule": "ksi_core.domains.external.ingress.vertical_reference_declarations",
+      "activePath": "ksi_core/domains/external/ingress/vertical_reference_declarations.py",
+      "plannedCanonicalModule": "ksi_core.domains.external.ingress.vertical_reference_declarations",
+      "plannedPath": "ksi_core/domains/external/ingress/vertical_reference_declarations.py",
       "ownerBoundary": "domains/external/ingress",
       "migrationStatus": "T3_NEW_MODULE"
     },
