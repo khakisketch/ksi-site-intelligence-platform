@@ -52,6 +52,8 @@ export type GeoTiffRawHeader = {
   software: string | null;
   dateTime: string | null;
   pixelSize: [number, number] | null;
+  /** 파일 좌표계 기준 [minX, minY, maxX, maxY]. 읽지 못하면 null, 필드 자체가 없으면 모름이다. */
+  boundingBox?: [number, number, number, number] | null;
   layout?: GeoTiffLayout;
 };
 
@@ -176,6 +178,13 @@ export async function readGeoTiffHeader(blob: Blob, signal?: AbortSignal): Promi
     load("ExtraSamples"), load("GDAL_NODATA"), load("GDAL_METADATA"), load("ModelTiepoint"), load("ModelPixelScale"), load("ModelTransformation"),
   ]);
   const geoKeys = image.getGeoKeys();
+  let boundingBox: [number, number, number, number] | null = null;
+  try {
+    const box = image.getBoundingBox();
+    if (box.length === 4 && box.every(Number.isFinite)) boundingBox = [box[0]!, box[1]!, box[2]!, box[3]!];
+  } catch {
+    boundingBox = null;
+  }
   const metadataText = textTag(gdalMetadata);
   const layout: GeoTiffLayout = {
     compression: numberOrNull(compression) ?? 1,
@@ -202,6 +211,7 @@ export async function readGeoTiffHeader(blob: Blob, signal?: AbortSignal): Promi
     software: textTag(software),
     dateTime: textTag(dateTime),
     pixelSize,
+    boundingBox,
     layout,
   };
 }
