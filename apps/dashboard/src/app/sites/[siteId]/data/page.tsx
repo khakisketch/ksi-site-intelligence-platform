@@ -169,7 +169,8 @@ export default async function SiteDataPage({
         </div>
         {canCreateWorkOrder && selectedArea?.status === "ACTIVE" && (
           <>
-            <Link href={`${sitePath}/observations/new?workAreaId=${encodeURIComponent(selectedArea.workAreaId)}`} className="btn btn-primary hidden lg:inline-flex">자료 등록</Link>
+            <Link href={`${sitePath}/upload?workAreaId=${encodeURIComponent(selectedArea.workAreaId)}`} className="btn btn-primary hidden lg:inline-flex">자료 올리기</Link>
+            <Link href={`${sitePath}/observations/new?workAreaId=${encodeURIComponent(selectedArea.workAreaId)}`} className="tap-target hidden text-caption text-ink-2 underline lg:inline-flex">상세 등록</Link>
             <p className="text-caption text-ink-2 lg:hidden">자료 등록은 노트북 이상의 화면에서 진행하세요.</p>
           </>
         )}

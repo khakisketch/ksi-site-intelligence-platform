@@ -241,7 +241,7 @@ export function UploadScreen({ siteId, siteName, workAreas, initialWorkAreaId, a
     <ConsolePage density="dense" className="!max-w-[1180px]">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <h2 className="console-page-title">자료 올리기 <span className="ml-2 text-body font-normal text-ink-muted">{siteName}</span></h2>
-        <Link href={returnHref} className="text-body font-semibold text-accent-text hover:underline">현장으로 돌아가기</Link>
+        <Link href={returnHref} className="text-body font-semibold text-ink-1 hover:underline">현장으로 돌아가기</Link>
       </div>
 
       {workAreas.length === 0 ? (

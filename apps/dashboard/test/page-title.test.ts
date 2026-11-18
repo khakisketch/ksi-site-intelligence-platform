@@ -29,6 +29,7 @@ describe("동적 경로", () => {
     expect(resolvePageTitle("/sites/SITE-1")).toBe("공간");
     expect(resolvePageTitle("/field/work-orders/WO-1")).toBe("작업 상세");
     expect(resolvePageTitle("/sites/SITE-1/observations/new")).toBe("관측 자료 등록");
+    expect(resolvePageTitle("/sites/SITE-1/upload")).toBe("자료 올리기");
     expect(resolvePageTitle("/sites/SITE-1/observations")).toBe("분석");
     expect(resolvePageTitle("/sites/SITE-1/observations/external-relative-volume-report-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")).toBe("외부 비교 결과");
     expect(resolvePageTitle("/sites/SITE-1/analysis")).toBe("분석");

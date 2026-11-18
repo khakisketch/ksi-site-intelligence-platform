@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  resolveProjectSection,
   resolveSiteId,
   resolveSiteSection,
   siteMark,
@@ -35,6 +36,13 @@ describe("site context path resolution", () => {
     expect(resolveSiteSection("/sites/site-1/observations/new", query())).toBe("analysis");
     expect(resolveSiteSection("/sites/site-1", new URLSearchParams("mode=results"))).toBe("analysis");
     expect(resolveSiteSection("/", query())).toBeNull();
+  });
+
+  it("keeps the upload screen in the data section like the data screen", () => {
+    expect(resolveProjectSection("/sites/site-1/data", query())).toBe("data");
+    expect(resolveProjectSection("/sites/site-1/upload", query())).toBe("data");
+    expect(resolveProjectSection("/sites/site-1/measurements", query())).toBe("space");
+    expect(resolveSiteSection("/sites/site-1/upload", query())).toBe(resolveSiteSection("/sites/site-1/data", query()));
   });
 
   it("builds only existing site routes without carrying another site's scope", () => {
