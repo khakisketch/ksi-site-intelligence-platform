@@ -153,9 +153,14 @@ describe("savedLineToEditorVertices", () => {
   it("한국 투영좌표계 선은 변환해 올린다", () => {
     expect(savedLineToEditorVertices({ crs: "EPSG:5186", vertices: [[127000, 37000], [127001, 37001]] }, identity)).toEqual({ ok: true, vertices: [[127, 37], [127.001, 37.001]], converted: true });
   });
+  it("한국 UTM(52N) 선도 변환해 올린다", () => {
+    expect(savedLineToEditorVertices({ crs: "EPSG:32652", vertices: [[127000, 37000], [127001, 37001]] }, identity)).toEqual({ ok: true, vertices: [[127, 37], [127.001, 37.001]], converted: true });
+  });
   it("모르는 좌표계는 고칠 수 없다고 답한다", () => {
-    const result = savedLineToEditorVertices({ crs: "EPSG:32652", vertices: [[1, 1], [2, 2]] }, identity);
-    expect(result.ok).toBe(false);
+    // 5174는 Bessel 구 좌표계, 32617은 한국 밖 UTM 존이다.
+    for (const crs of ["EPSG:5174", "EPSG:32617"]) {
+      expect(savedLineToEditorVertices({ crs, vertices: [[1, 1], [2, 2]] }, identity).ok).toBe(false);
+    }
   });
   it("변환 결과가 범위 밖이면 거부한다", () => {
     expect(savedLineToEditorVertices({ crs: "EPSG:5186", vertices: [[999999999, 1], [2, 2]] }, identity).ok).toBe(false);

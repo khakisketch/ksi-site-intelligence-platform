@@ -202,6 +202,8 @@ const CRS_NAME: Record<string, string> = {
   "EPSG:5186": "한국 중부원점 TM",
   "EPSG:5187": "한국 동부원점 TM",
   "EPSG:5188": "한국 동해원점 TM",
+  "EPSG:32651": "WGS84 UTM 51N",
+  "EPSG:32652": "WGS84 UTM 52N",
 };
 
 export function crsLabel(crs: string): string {

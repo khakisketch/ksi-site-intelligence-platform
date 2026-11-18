@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { isKnownProjectedCrs, wgs84UtmZoneOf } from "@/lib/geo/known-crs";
+import { ANALYSIS_CRS, isAnalysisCrs, isKnownProjectedCrs, wgs84UtmZoneOf } from "@/lib/geo/known-crs";
 
 describe("known display CRS", () => {
   it("reads WGS84 UTM zone and hemisphere from the EPSG code", () => {
@@ -24,5 +24,13 @@ describe("known display CRS", () => {
     for (const code of ["EPSG:5173", "EPSG:5174", "EPSG:5177", "EPSG:5181", "EPSG:3857", "EPSG:4326", ""]) {
       expect(isKnownProjectedCrs(code)).toBe(false);
     }
+  });
+
+  it("analysis CRS mirrors ksi_geo_spatial.crs.SUPPORTED_PROJECT_CRS exactly", () => {
+    expect([...ANALYSIS_CRS].sort()).toEqual(["EPSG:32651", "EPSG:32652", "EPSG:5179", "EPSG:5185", "EPSG:5186", "EPSG:5187", "EPSG:5188"]);
+    expect(isAnalysisCrs(" epsg:32652 ")).toBe(true);
+    // 지도에는 그리지만 분석에는 받지 않는 한국 밖 UTM 존.
+    expect(isKnownProjectedCrs("EPSG:32617")).toBe(true);
+    expect(isAnalysisCrs("EPSG:32617")).toBe(false);
   });
 });

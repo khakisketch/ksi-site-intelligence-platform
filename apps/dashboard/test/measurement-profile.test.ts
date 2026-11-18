@@ -167,8 +167,11 @@ describe("crsLabel", () => {
     expect(crsLabel("EPSG:5186")).toBe("한국 중부원점 TM · EPSG:5186");
     expect(crsLabel("EPSG:5179")).toBe("한국 통합 TM · EPSG:5179");
   });
+  it("한국 UTM 존 이름을 붙인다", () => {
+    expect(crsLabel("EPSG:32652")).toBe("WGS84 UTM 52N · EPSG:32652");
+  });
   it("모르는 좌표계는 코드만 쓴다", () => {
-    expect(crsLabel("EPSG:32652")).toBe("EPSG:32652");
+    expect(crsLabel("EPSG:32617")).toBe("EPSG:32617");
   });
 });
 

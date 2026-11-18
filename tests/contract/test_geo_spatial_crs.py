@@ -70,6 +70,47 @@ def test_bessel_era_crs_is_refused() -> None:
         assert_supported_project_crs("EPSG:5174")
 
 
+def test_korea_wgs84_utm_zones_are_analysis_crs() -> None:
+    """Pix4D·DJI Terra 기본 출력(WGS84 UTM 51N·52N)은 분석 좌표계다."""
+    assert assert_supported_project_crs("EPSG:32652") == "EPSG:32652"
+    assert assert_supported_project_crs("epsg:32651") == "EPSG:32651"
+
+
+def test_utm_northing_cannot_be_mistaken_for_korean_plane_coordinates() -> None:
+    """UTM 52N 의 북쪽 값은 수백만 m 라 한국 평면직각좌표(수십만 m)와 숫자로 구별된다.
+
+    이것이 Bessel 구 좌표계와 달리 UTM 을 받아도 되는 이유다 — 구 좌표계는 같은
+    범위의 숫자라 섞여도 눈에 띄지 않는다.
+    """
+    x, y = reproject_point(
+        _SEOUL_LON_DEG, _SEOUL_LAT_DEG, from_crs="EPSG:4326", to_crs="EPSG:32652"
+    )
+    assert 300_000.0 < x < 340_000.0
+    assert 4_100_000.0 < y < 4_200_000.0
+    lon, lat = reproject_point(x, y, from_crs="EPSG:32652", to_crs="EPSG:4326")
+    assert lon == pytest.approx(_SEOUL_LON_DEG, abs=1e-9)
+    assert lat == pytest.approx(_SEOUL_LAT_DEG, abs=1e-9)
+
+
+@pytest.mark.parametrize("crs", ["EPSG:32617", "EPSG:32610", "EPSG:32750", "EPSG:32653"])
+def test_utm_zones_outside_korea_are_refused(crs: str) -> None:
+    """[회귀 2026-08-11] 한국 밖 UTM 존은 받지 않는다.
+
+    한국 현장의 두 산출물이 나란히 EPSG:32617 로 태깅돼 "같은 좌표계" 검사를
+    통과하고 평균 90m 하강이라는 결과를 낸 적이 있다.
+    """
+    with pytest.raises(UnsupportedCrsError):
+        assert_supported_project_crs(crs)
+
+
+def test_korean_plane_and_utm_are_never_compared_directly() -> None:
+    """둘 다 분석 좌표계여도 서로 다르면 비교 입구에서 막는다(자동 변환 없음)."""
+    with pytest.raises(CrsMismatchError):
+        assert_same_crs("EPSG:5186", "EPSG:32652")
+    with pytest.raises(CrsMismatchError):
+        assert_same_crs("EPSG:32651", "EPSG:32652")
+
+
 def test_unknown_crs_string_is_refused() -> None:
     """해석 불가한 문자열을 통과시키지 않는다(fail-closed)."""
     with pytest.raises(UnsupportedCrsError):

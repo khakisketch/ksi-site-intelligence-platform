@@ -16,6 +16,21 @@ Bessel 1841 타원체 기반의 EPSG:5173~5177 계열이 쓰였다. 두 세대�
 화이트리스트로 막는다.** 구 좌표계를 다뤄야 할 일이 실제로 생기면 그때 명시적
 변환 경로를 설계해서 추가한다 — 조용히 통과시키지 않는다.
 
+## 한국을 덮는 WGS84 UTM 두 존(51N·52N)도 받는다
+
+Pix4D·DJI Terra 는 출력 좌표계를 따로 정하지 않으면 촬영 위치의 WGS84 UTM 으로
+내보낸다(2026-11-18 조사). 한국은 126°E 를 경계로 51N(EPSG:32651)·52N(EPSG:32652)
+이다. 이 두 존은 위의 혼동 위험이 없다 — 북쪽 값이 약 380만~430만m 라 한국
+평면직각좌표(수십만 m)·구 측지계 어느 쪽과도 숫자만으로 구별된다. 좌표계를
+자동으로 바꿔 주지는 않는다. 높이 격자를 다른 좌표계로 옮기면 다시 표본화돼
+값이 변하므로, 두 시점 비교는 여전히 같은 좌표계끼리만 한다(:func:`assert_same_crs`).
+
+**다른 대륙의 UTM 존은 받지 않는다.** 2026-08-11 실 종단 실행에서 한국 현장의 두
+산출물이 나란히 EPSG:32617(북미 동부)로 태깅된 채 통과해, "두 시점이 같은
+좌표계"라는 검사만으로는 막히지 않고 평균 90m 하강이라는 결과를 냈다. 존 목록을
+한국에 한정해 두는 것이 그 실패를 막는 장치다. 다른 지역 현장이 생기면 현장
+위치와 자료 위치를 대조하는 검사와 함께 존을 넓힌다.
+
 지리좌표계(EPSG:4326 등)는 입력·출력으로 자유롭게 허용한다. AOI 폴리곤이
 WGS84 로 들어오고 래스터가 투영좌표계인 것이 정상 경로이기 때문이다.
 
@@ -38,9 +53,9 @@ from pyproj.exceptions import CRSError
 # 중부원점 — 현장 대부분이 이 대역에 있어 기본값으로 둔다.
 DEFAULT_CRS = "EPSG:5186"
 
-# KGD2002(GRS80) 기반 현행 평면직각좌표계만 허용한다. Bessel 계열(5173~5177)은
-# 의도적으로 제외 — 모듈 docstring 참조.
-SUPPORTED_PROJECT_CRS = frozenset(
+# KGD2002(GRS80) 기반 현행 평면직각좌표계. Bessel 계열(5173~5177)은 의도적으로
+# 제외 — 모듈 docstring 참조. 역사 재구성의 기준점 성과는 이 목록만 받는다.
+KOREA_PLANE_CRS = frozenset(
     {
         "EPSG:5185",  # 서부원점
         "EPSG:5186",  # 중부원점
@@ -49,6 +64,18 @@ SUPPORTED_PROJECT_CRS = frozenset(
         "EPSG:5179",  # UTM-K (전국 단일)
     }
 )
+
+# 한국을 덮는 WGS84 UTM 두 존 — 사진측량 소프트웨어의 기본 출력. 다른 대륙의
+# 존은 일부러 넣지 않는다(모듈 docstring 의 2026-08-11 실패).
+KOREA_WGS84_UTM_CRS = frozenset(
+    {
+        "EPSG:32651",  # WGS 84 / UTM zone 51N (126°E 서쪽 — 서해 도서)
+        "EPSG:32652",  # WGS 84 / UTM zone 52N (126°E~132°E — 본토 대부분)
+    }
+)
+
+# 분석이 받는 투영좌표계. 두 시점 비교는 이 안에서도 같은 좌표계끼리만 한다.
+SUPPORTED_PROJECT_CRS = KOREA_PLANE_CRS | KOREA_WGS84_UTM_CRS
 
 
 class UnsupportedCrsError(ValueError):
@@ -106,7 +133,8 @@ def assert_supported_project_crs(crs: str) -> str:
         raise UnsupportedCrsError(
             f"{normalised} 은 지원 투영좌표계가 아니다 — 허용: "
             f"{sorted(SUPPORTED_PROJECT_CRS)}. 구 측지계(Bessel, EPSG:5173~5177)를 "
-            "현행 KGD2002 와 섞으면 수백 미터 오차가 조용히 들어온다"
+            "현행 KGD2002 와 섞으면 수백 미터 오차가 조용히 들어오고, 한국 밖 UTM 존은 "
+            "현장과 다른 위치로 태깅된 자료일 수 있다"
         )
     return normalised
 
@@ -225,6 +253,8 @@ def reproject_geometry(
 
 __all__ = [
     "DEFAULT_CRS",
+    "KOREA_PLANE_CRS",
+    "KOREA_WGS84_UTM_CRS",
     "SUPPORTED_PROJECT_CRS",
     "CrsMismatchError",
     "ReprojectionFailedError",

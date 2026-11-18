@@ -36,3 +36,14 @@ export function isKnownProjectedCrs(crs: string): boolean {
   const code = crs.trim().toUpperCase();
   return code in KOREA_2000_TM_DEFS || wgs84UtmZoneOf(code) !== null;
 }
+
+/**
+ * 분석(높이·단면·체적)이 받는 투영좌표계 — `ksi_geo_spatial.crs.SUPPORTED_PROJECT_CRS` 의 대응값이다.
+ * 한국 다섯에 한국을 덮는 UTM 두 존(51N·52N)만 더한다. 다른 대륙의 UTM 존은 지도에는 그리지만
+ * 분석에는 받지 않는다 — 현장과 다른 위치로 태깅된 자료가 "같은 좌표계"라는 이유로 비교된 실패가 있었다.
+ */
+export const ANALYSIS_CRS: ReadonlySet<string> = new Set([...Object.keys(KOREA_2000_TM_DEFS), "EPSG:32651", "EPSG:32652"]);
+
+export function isAnalysisCrs(crs: string): boolean {
+  return ANALYSIS_CRS.has(crs.trim().toUpperCase());
+}
