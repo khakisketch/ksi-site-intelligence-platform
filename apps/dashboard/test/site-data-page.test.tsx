@@ -298,11 +298,17 @@ describe("자료 섹션 화면 (ADR-KSI-043)", () => {
   });
 
   it("자료 등록은 작업 생성 권한이 있고 활성 구역일 때만 둔다", async () => {
-    expect(await render({ workAreaId: "area-1" })).toContain("/sites/site-1/observations/new?workAreaId=area-1");
+    const allowed = await render({ workAreaId: "area-1" });
+    expect(allowed).toContain("/sites/site-1/upload?workAreaId=area-1");
+    expect(allowed).toContain("/sites/site-1/observations/new?workAreaId=area-1");
     mocked.session.mockResolvedValue({ kind: "ready", principal: { organizationId: "org-1", principalId: "v", permissions: ["SITES_READ", "SPATIAL_DATA_READ"] } });
-    expect(await render({ workAreaId: "area-1" })).not.toContain("observations/new");
+    const readOnly = await render({ workAreaId: "area-1" });
+    expect(readOnly).not.toContain("observations/new");
+    expect(readOnly).not.toContain("/upload");
     mocked.session.mockResolvedValue({ kind: "ready", principal: { organizationId: "org-1", principalId: "o", permissions: ["SITES_READ", "WORK_ORDERS_WRITE"] } });
-    expect(await render({ workAreaId: "area-3" })).not.toContain("observations/new");
+    const archived = await render({ workAreaId: "area-3" });
+    expect(archived).not.toContain("observations/new");
+    expect(archived).not.toContain("/upload");
   });
 
   it("준비 기록 읽기를 못 해도 목록은 그리고, 읽을 권한이 없으면 읽지 않는다", async () => {

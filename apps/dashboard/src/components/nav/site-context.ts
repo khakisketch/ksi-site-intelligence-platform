@@ -102,7 +102,7 @@ export function resolveProjectSection(
   search: QueryReader | null | undefined,
 ): ProjectSection | null {
   const route = SITE_PATH.exec(pathname)?.[2]?.split("/")[1] ?? "";
-  if (route === "data" && resolveSiteId(pathname)) return "data";
+  if ((route === "data" || route === "upload") && resolveSiteId(pathname)) return "data";
   const section = resolveSiteSection(pathname, search);
   if (section === "analysis") return "analysis";
   if (section !== "space") return null;

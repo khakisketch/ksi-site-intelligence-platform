@@ -22,6 +22,10 @@ describe("readGeoTiffHeader", () => {
     expect(header).toMatchObject({ width: 4, height: 3, samplesPerPixel: 1, bitsPerSample: 32, sampleFormat: 3 });
     expect(recognizeGeoTiffHeader(header)).toMatchObject({ declaredCrs: "EPSG:5186", kindHint: "dsm" });
     expect(header.pixelSize?.[0]).toBeCloseTo(0.05);
+    expect(header.boundingBox?.[0]).toBeCloseTo(200000);
+    expect(header.boundingBox?.[2]).toBeCloseTo(200000.2);
+    expect(header.boundingBox?.[1]).toBeCloseTo(549999.85);
+    expect(header.boundingBox?.[3]).toBeCloseTo(550000);
   });
 
   it("rejects bytes that are not a TIFF", async () => {
