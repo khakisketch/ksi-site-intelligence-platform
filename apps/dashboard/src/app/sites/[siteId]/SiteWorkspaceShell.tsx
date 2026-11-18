@@ -1,3 +1,4 @@
+import { siteUploadHref } from "@/components/nav/site-context";
 import Link from "next/link";
 import type { ReactNode } from "react";
 
@@ -161,7 +162,7 @@ function SiteWorkspaceEntryPanel({
           : "외부 관측 등록은 담당자와 확인하세요."}
       </p>
       {canCreateWorkOrder && workAreaId && (
-        <p className="mt-2"><Link href={`${sitePath}/observations/new?workAreaId=${encodeURIComponent(workAreaId)}`} className="btn">관측 자료 등록</Link></p>
+        <p className="mt-2"><Link href={siteUploadHref(sitePath, workAreaId)} className="btn">자료 올리기</Link></p>
       )}
     </section>;
   }
@@ -926,7 +927,7 @@ export function SiteWorkspaceShell({
       </nav>
     </div>
     {canCreateWorkOrder && selected?.status === "ACTIVE" && !exploreIsEmpty && (
-      <Link href={`${sitePath}/observations/new?workAreaId=${encodeURIComponent(selected.workAreaId)}`} className={`btn hidden lg:inline-flex ${mode === "compare" ? "" : "btn-primary"}`}>자료 등록</Link>
+      <Link href={siteUploadHref(sitePath, selected.workAreaId)} className={`btn hidden lg:inline-flex ${mode === "compare" ? "" : "btn-primary"}`}>자료 올리기</Link>
     )}
   </>);
 

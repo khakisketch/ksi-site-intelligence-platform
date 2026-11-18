@@ -1,3 +1,4 @@
+import { siteUploadHref } from "@/components/nav/site-context";
 import { ActionMenu } from "@/components/ui/ActionMenu";
 import { Disclosure } from "@/components/ui/Disclosure";
 import Link from "next/link";
@@ -552,8 +553,8 @@ export function SiteWorkspaceCompare({
         </p>
         <p className="mt-1.5 flex flex-wrap gap-2 text-caption">
           {canCreateWorkOrderHere && (
-            <Link href={`${sitePath}/observations/new?workAreaId=${encodeURIComponent(selected.workAreaId)}`} className="btn w-fit">
-              촬영 시각이 있는 관측 등록
+            <Link href={siteUploadHref(sitePath, selected.workAreaId)} className="btn w-fit">
+              촬영 시각이 있는 자료 올리기
             </Link>
           )}
           {canCreateAnalysis && (

@@ -243,8 +243,8 @@ describe("explore declutter: primary action stays in the toolbar", () => {
     expect(screen.queryByText("자료·범위 상세")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "정보" }));
     const toolbar = document.querySelector("[data-workbench-context-bar]") as HTMLElement;
-    expect(within(toolbar).getByRole("link", { name: "자료 등록" }).className).toContain("btn-primary");
-    expect(within(screen.getByRole("region", { name: "자료 정보" })).queryByRole("link", { name: "자료 등록" })).toBeNull();
+    expect(within(toolbar).getByRole("link", { name: "자료 올리기" }).className).toContain("btn-primary");
+    expect(within(screen.getByRole("region", { name: "자료 정보" })).queryByRole("link", { name: "자료 올리기" })).toBeNull();
   });
 });
 

@@ -8,6 +8,7 @@ import {
   siteSectionHref,
   siteShortName,
   siteSwitchHref,
+  siteUploadHref,
 } from "@/components/nav/site-context";
 
 const query = (section?: string) => new URLSearchParams(section ? { section } : {});
@@ -63,5 +64,13 @@ describe("site context path resolution", () => {
     expect(siteShortName("Floreat public sample (CC BY 4.0)")).toBe("Floreat public sample");
     expect(siteShortName("Product Sample Field (SYNTHETIC)")).toBe("Product Sample Field");
     expect(siteShortName("  ")).toBe("현장");
+  });
+});
+
+describe("site upload href", () => {
+  it("opens the one-screen upload, scoped to the work area when it is known", () => {
+    expect(siteUploadHref("/sites/site-1")).toBe("/sites/site-1/upload");
+    expect(siteUploadHref("/sites/site-1", null)).toBe("/sites/site-1/upload");
+    expect(siteUploadHref("/sites/site-1", "area 1/가")).toBe("/sites/site-1/upload?workAreaId=area%201%2F%EA%B0%80");
   });
 });

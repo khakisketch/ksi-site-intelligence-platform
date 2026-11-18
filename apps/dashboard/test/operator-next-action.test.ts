@@ -24,7 +24,7 @@ describe("site operator next action", () => {
     expect(resolveSiteOperatorNextAction(site("UNMAPPED", null), {
       canEditSite: true,
       canCreateWorkOrder: true,
-    }, { includeRoutineSurvey: true })).toMatchObject({ href: "/sites/site-1/observations/new", label: "관측 자료 등록" });
+    }, { includeRoutineSurvey: true })).toMatchObject({ href: "/sites/site-1/upload", label: "자료 올리기" });
   });
 
   it("offers actual WorkArea management rather than a dead AOI anchor for an editor", () => {
@@ -56,7 +56,7 @@ describe("site operator next action", () => {
       canCreateWorkOrder: true,
     }, { includeRoutineSurvey: true })).toMatchObject({
       kind: "CREATE_OBSERVATION",
-      href: "/sites/site-1/observations/new",
+      href: "/sites/site-1/upload",
       responsiveAction: "WORK_ORDERS_WRITE",
     });
   });
