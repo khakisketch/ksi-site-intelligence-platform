@@ -1123,6 +1123,48 @@ def test_sealed_review_and_proposal_wires_validate_published_contract_schemas(
     )
 
 
+def test_relative_volume_reviews_preserve_both_existing_decision_encodings(tmp_path: Path) -> None:
+    harness = _harness(tmp_path)
+    review = harness.reviews.get_for_report(harness.source.report_ref, organization_id="org-a")
+    assert isinstance(review, ExternalResultReviewReceiptV1)
+    wire = external_result_review_receipt_wire_dict(review)
+    nullable_profile_fields = (
+        "baselineArtifactId",
+        "baselineSourceSha256",
+        "currentArtifactId",
+        "currentSourceSha256",
+        "profileComparisonBindingDigest",
+    )
+    assert set(nullable_profile_fields).isdisjoint(wire["decision"])
+    assert "profileWorkAreaId" not in wire["decision"]
+    assert review.model_dump(by_alias=True, mode="json") == wire
+    assert (
+        external_result_review_receipt_wire_dict(ExternalResultReviewReceiptV1.model_validate(wire))
+        == wire
+    )
+
+    intermediate = dict(
+        wire, decision={**wire["decision"], **dict.fromkeys(nullable_profile_fields)}
+    )
+    del intermediate["reviewDigest"]
+    intermediate["reviewDigest"] = (
+        "sha256:" + hashlib.sha256(canonical_json_bytes(intermediate)).hexdigest()
+    )
+    assert intermediate["reviewDigest"] != wire["reviewDigest"]
+    recovered = ExternalResultReviewReceiptV1.model_validate(intermediate)
+    assert external_result_review_receipt_wire_dict(recovered) == intermediate
+    assert recovered.model_dump(by_alias=True, mode="json") == intermediate
+    published = ExternalResultReviewReceiptV1.model_json_schema(mode="serialization", by_alias=True)
+    assert published["properties"]["decision"]["$ref"].endswith("/ExternalPairUseDecisionV1")
+    schema = json.loads(
+        (
+            Path(__file__).resolve().parents[2]
+            / "contracts/schemas/external-result-review-receipt.v1.json"
+        ).read_text()
+    )
+    Draft202012Validator(schema).validate(intermediate)
+
+
 def test_proposal_replay_rejects_a_tampered_event_digest(tmp_path: Path) -> None:
     harness = _harness(tmp_path)
     harness.service.create(

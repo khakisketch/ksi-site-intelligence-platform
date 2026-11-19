@@ -49,6 +49,8 @@ ksi-external-measurement-daemon = "ksi_processing_controller.external_measuremen
 ksi-external-validation-worker = "ksi_processing_controller.external_validation_worker:main"
 ksi-external-analysis-worker = "ksi_processing_controller.external_analysis_runner:main"
 ksi-spatial-data-worker = "ksi_processing_controller.spatial_data_runner:main"
+ksi-surface-profile-worker = "ksi_processing_controller.surface_profile_service:main"
+ksi-surface-profile = "ksi_processing_controller.surface_profile_cli:main"
 
 [tool.uv.sources]
 ksi-change-detection = { workspace = true }

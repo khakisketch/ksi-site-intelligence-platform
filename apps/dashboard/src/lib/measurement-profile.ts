@@ -36,9 +36,9 @@ export function countUnknown(samples: readonly ProfileSample[]): UnknownCounts {
 }
 
 /** 값이 있는 지점이 이어진 묶음. 모르는 지점이 끼면 묶음이 갈라진다. */
-export function knownRuns(samples: readonly ProfileSample[]): ProfileSample[][] {
-  const runs: ProfileSample[][] = [];
-  let current: ProfileSample[] = [];
+export function knownRuns<T extends { elevationM: number | null }>(samples: readonly T[]): T[][] {
+  const runs: T[][] = [];
+  let current: T[] = [];
   for (const row of samples) {
     if (row.elevationM === null) {
       if (current.length > 0) runs.push(current);
@@ -52,7 +52,7 @@ export function knownRuns(samples: readonly ProfileSample[]): ProfileSample[][] 
 }
 
 /** 거리에 가장 가까운 지점. 거리가 오름차순인 계약(0에서 시작해 엄격히 증가)에 기댄 이분 탐색이다. */
-export function nearestSample(samples: readonly ProfileSample[], distanceM: number): ProfileSample | null {
+export function nearestSample<T extends { distanceM: number }>(samples: readonly T[], distanceM: number): T | null {
   if (samples.length === 0) return null;
   let low = 0;
   let high = samples.length - 1;
@@ -127,12 +127,13 @@ function ticksFor(lo: number, hi: number, step: number): number[] {
  * 세로 범위. "fit"은 유효 값을 여유와 함께 덮고, "true"는 가로 1 m와 세로 1 m가 같은 화면 길이가
  * 되도록 잡는다(실제 기울기가 얼마나 완만한지 그대로 보인다).
  */
-export function verticalScale(
-  runs: readonly (readonly ProfileSample[])[],
+export function verticalScale<T extends { distanceM: number; elevationM: number | null }>(
+  runs: readonly (readonly T[])[],
   mode: "fit" | "true",
   plotWidthPx: number,
   plotHeightPx: number,
   lengthM: number,
+  includeZero = false,
 ): VerticalScale | null {
   let min = Infinity;
   let max = -Infinity;
@@ -144,6 +145,10 @@ export function verticalScale(
     }
   }
   if (!Number.isFinite(min) || !Number.isFinite(max)) return null;
+  if (includeZero) {
+    min = Math.min(min, 0);
+    max = Math.max(max, 0);
+  }
   let lo: number;
   let hi: number;
   if (mode === "true") {

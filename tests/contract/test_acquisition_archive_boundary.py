@@ -13,7 +13,7 @@ and no acquisition package:
   (``ksi_mission_contracts`` is installed, so blocking it proves the hook
   fires rather than the package being missing) follows
   ``tests/contract/test_historical_managed_readers.py``.
-* The package's ``[project.scripts]`` still registers exactly the seven
+* The package's ``[project.scripts]`` still registers exactly the nine
   platform entrypoints — ``ksi-processing-worker`` is gone with the managed
   daemon and no surviving entrypoint was renamed or repointed.
 """
@@ -62,6 +62,8 @@ _SURVIVING_ENTRYPOINT_MODULES = (
     "ksi_processing_controller.external_validation_worker",
     "ksi_processing_controller.external_analysis_runner",
     "ksi_processing_controller.spatial_data_runner",
+    "ksi_processing_controller.surface_profile_service",
+    "ksi_processing_controller.surface_profile_cli",
 )
 _SURVIVING_SCRIPTS = (
     "ksi-external-inspector-daemon",
@@ -71,6 +73,8 @@ _SURVIVING_SCRIPTS = (
     "ksi-external-validation-worker",
     "ksi-external-analysis-worker",
     "ksi-spatial-data-worker",
+    "ksi-surface-profile-worker",
+    "ksi-surface-profile",
 )
 
 # Shared lane modules the platform lanes build on (kept per evidence).
@@ -110,7 +114,7 @@ def test_managed_modules_are_absent_from_the_platform_tree() -> None:
 
 
 def test_surviving_entrypoints_keep_exact_script_registrations() -> None:
-    """``[project.scripts]`` keeps exactly the seven platform entrypoints."""
+    """``[project.scripts]`` keeps exactly the nine platform entrypoints."""
     scripts = tomllib.loads(_PC_PYPROJECT.read_text(encoding="utf-8"))["project"]["scripts"]
     assert sorted(scripts) == sorted(_SURVIVING_SCRIPTS), sorted(scripts)
     assert "ksi-processing-worker" not in scripts

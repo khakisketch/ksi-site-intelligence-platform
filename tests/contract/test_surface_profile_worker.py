@@ -5,6 +5,10 @@
 
 from __future__ import annotations
 
+import json
+import os
+import subprocess
+import sys
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -32,6 +36,80 @@ POLICY = SurfaceProfilePolicy(
     maximum_window_cells=1_000_000,
     maximum_source_block_cells=4_000_000,
 )
+
+
+@pytest.mark.skipif(sys.platform != "linux", reason="requires Linux process limits")
+def test_linux_child_reads_the_analytic_surface_with_the_signed_resource_limits(
+    tmp_path: Path,
+) -> None:
+    """Exercise the production calculation and kernel limits together on a generated DSM."""
+    from surface_profile_job_fixture import profile_policy, write_raster
+    from test_surface_profile_runner import issue, lane, object_server
+
+    raster = write_raster(tmp_path / "source.tif")
+    limits = (
+        profile_policy()
+        .resource_envelope.model_copy(
+            update={
+                "max_input_bytes": 1_000_000,
+                "max_memory_bytes": 2**30,
+                "max_cpu_seconds": 15.0,
+                "resource_envelope_digest": None,
+            }
+        )
+        .sealed()
+    )
+    with object_server({"bytes": raster.read_bytes()}) as origin:
+        graph = lane(tmp_path, origin, raster, policy_overrides={"resource_envelope": limits})
+        with graph.core as core:
+            job_id = issue(graph)
+            attempt = core.lease(job_id=job_id, acquisition_id="resource-limited-child")
+            job = core.input(attempt=attempt).job
+
+    script = """
+import json, resource, sys
+from pathlib import Path
+from ksi_event_contracts.surface_profile_job import SurfaceProfileFrozenJobV1
+from ksi_processing_controller.spatial_data_sandbox import apply_spatial_data_rlimits
+from ksi_processing_controller.surface_profile_worker import compute_verified_surface_profile
+job = SurfaceProfileFrozenJobV1.model_validate_json(sys.stdin.buffer.read())
+apply_spatial_data_rlimits(
+    job.policy.resource_envelope, max_output_bytes=job.policy.max_result_bytes
+)
+result = compute_verified_surface_profile(job, Path(sys.argv[1]))
+names = ("AS", "CPU", "FSIZE", "NOFILE", "NPROC", "CORE")
+limits = {name: resource.getrlimit(getattr(resource, "RLIMIT_" + name)) for name in names}
+print(json.dumps({"limits": limits, "result": result.model_dump(mode="json", by_alias=True)}))
+"""
+    child = subprocess.run(
+        [sys.executable, "-c", script, str(raster)],
+        input=job.model_dump_json(by_alias=True),
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=True,
+        env={
+            "PYTHONPATH": os.environ.get("PYTHONPATH", ""),
+            "PYTHONDONTWRITEBYTECODE": "1",
+            "OPENBLAS_NUM_THREADS": "1",
+            "OMP_NUM_THREADS": "1",
+            "PROJ_NETWORK": "OFF",
+        },
+    )
+    observed = json.loads(child.stdout)
+    assert observed["limits"] == {
+        "AS": [2**30, 2**30],
+        "CPU": [15, 15],
+        "FSIZE": [1_000_000, 1_000_000],
+        "NOFILE": [64, 64],
+        "NPROC": [1, 1],
+        "CORE": [0, 0],
+    }
+    result = SurfaceProfileResultV1.model_validate(observed["result"])
+    assert result.result_digest and result.valid_count == len(result.samples) == 17
+    for sample in result.samples:
+        col, row = sample.x - ORIGIN_X - 0.5, ORIGIN_Y - sample.y - 0.5
+        assert sample.elevation_m == 100.0 + 0.5 * col + 0.25 * row
 
 
 def _write(path: Path, values: np.ndarray, *, cell: float = 1.0) -> Path:

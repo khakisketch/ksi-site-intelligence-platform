@@ -19,10 +19,13 @@ from ksi_domain.canonical_json import canonical_json_bytes
 from pydantic import (
     ConfigDict,
     Field,
+    PrivateAttr,
+    SerializerFunctionWrapHandler,  # noqa: F401 -- used by the serializer type comment
     StrictBool,
     StrictFloat,
     StrictInt,
     StringConstraints,
+    field_serializer,
     field_validator,
     model_validator,
 )
@@ -196,6 +199,29 @@ class ExternalResultReviewReceiptV1(_FrozenResultReviewModel):
     factual_limitations: tuple[_BoundedText, ...] = Field(min_length=3, max_length=3)
     reviewed_at: datetime
     review_digest: Digest | None = None
+    _retain_profile_nulls: bool = PrivateAttr(default=False)
+
+    # A runtime return annotation would replace the published decision schema
+    # with a generic dictionary in FastAPI's serialization schema.
+    @field_serializer("decision", mode="wrap", when_used="json")
+    def _serialize_volume_decision(self, decision, handler):
+        # type: (ExternalPairUseDecisionV1, SerializerFunctionWrapHandler) -> dict[str, Any]
+        wire: dict[str, Any] = handler(decision)
+        omit = ["profile_work_area_id"]
+        if not self._retain_profile_nulls:
+            omit.extend(
+                (
+                    "baseline_artifact_id",
+                    "baseline_source_sha256",
+                    "current_artifact_id",
+                    "current_source_sha256",
+                    "profile_comparison_binding_digest",
+                )
+            )
+        for name in omit:
+            wire.pop(name, None)
+            wire.pop(ExternalPairUseDecisionV1.model_fields[name].alias or name, None)
+        return wire
 
     @field_validator("reviewed_at", mode="before")
     @classmethod
@@ -278,7 +304,19 @@ class ExternalResultReviewReceiptV1(_FrozenResultReviewModel):
                 "review factual limitations must be the deterministic product limitations"
             )
         if self.review_digest is not None and self.review_digest != self.canonical_digest():
-            raise ValueError("reviewDigest does not match canonical review receipt")
+            # An intermediate writer included five null profile keys. Retain them
+            # only when the receipt was actually sealed over that representation.
+            intermediate = self.model_dump(
+                by_alias=True, mode="json", exclude={"review_digest", "decision"}
+            )
+            intermediate["decision"] = decision.model_dump(
+                by_alias=True,
+                mode="json",
+                exclude={"profile_work_area_id"},
+            )
+            if _digest(intermediate) != self.review_digest:
+                raise ValueError("reviewDigest does not match canonical review receipt")
+            self._retain_profile_nulls = True
         return self
 
     def canonical_payload(self) -> dict[str, Any]:

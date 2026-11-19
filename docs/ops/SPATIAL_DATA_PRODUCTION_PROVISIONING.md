@@ -198,3 +198,65 @@ grant/revocation·job/receipt/audit·원본은 보존되며 삭제되지 않는�
    **이전**에 완료한다 — 호스트 ns의 bind mount가 holder의 공유 마운트 peer group으로 전파되어
    고정한 mountinfo sha를 바꾼다. CA 오버레이는 스테이징된 venv의 certifi에도 적용해야 한다
    (아니면 워커가 `CORE_UNAVAILABLE`). 마운트 변경이 생기면 holder 재시작·proof 재발급.
+
+### 9.2 저장 단면 워커 기동
+
+정식 Core에 §2의 공간데이터 구성을 먼저 공급하고 `KSI_CORE_SURFACE_PROFILE_CONFIG_FILE`을 소유자 전용 `0600` 절대 경로로 지정한다. 이 변수를 생략하면 단면 경로와 전용 원장을 열지 않는다. 파일 버전은 `surface-profile-core-config.v1`이다.
+
+| Core 설정 | 내용 |
+|---|---|
+| `policy`, `runtime`, `activation` | 각각 봉인된 단면 정책·런타임·활성화. 활성화에는 같은 조직의 등록된 워커 주체와 그 인스턴스를 지정한다. |
+| `trustedPublicKey`, `activationSignature` | 운영자가 고정한 Ed25519 공개키와 `ksi-surface-profile-activation.v1` 도메인의 분리 서명. 두 값은 표준 Base64로 인코딩한다. |
+| `revokedActivationDigests` | 철회한 활성화 다이제스트의 정렬된 목록. 같은 파일에서 활성화를 철회하거나 다른 세대로 교체하면 기존 워커의 다음 요청에서 다시 검증한다. 새 세대는 Core를 재기동해 장착한다. |
+| `httpLimits` | `requestMaxBytes`, `completeMaxBytes`, `timeoutSeconds`를 명시한다. 완료 요청에는 결과와 영수증이 함께 들어가므로 `completeMaxBytes`는 정책의 `maxResultBytes`보다 커야 한다. |
+
+워커에는 Core와 같은 단면 정책·런타임·활성화를 담은 별도 `surface-profile-worker-config.v1`을 공급한다. 워커는 Linux procfs가 필요하다. `workspaceRoot`는 워커 소유의 모드 `0700` 디렉터리이며 한 워커만 점유한다. Core 토큰은 워커 소유의 별도 보호 파일로 공급한다.
+
+설정의 `sandbox`에는 `launcherPath`, `launcherSha256`, `containmentProofPath`, `containmentProofSha256`를 지정한다. 두 경로는 절대 경로다. 증명에는 **단면** 정책과 런타임 다이제스트, 해당 자원 한도와 `maxResultBytes`를 넣는다. 운영자 실행기는 고정 인자 `--operation surface-profile`를 같은 세션의 자식 진입점에 전달하고 해당 작업의 `source.tif`를 읽기 전용으로 제공해야 한다. §9의 네임스페이스와 마운트 검증은 단면에도 적용한다.
+
+```sh
+ksi-surface-profile-worker --config /secure/surface-profile-worker.json \
+  --core-token-file /secure/profile-worker.token --once
+```
+
+`--once`는 대기를 한 번 조회한다. 작업 성공 여부는 해당 작업의 상태와 영수증으로 확인한다. 상시 실행은 이 인자를 생략한다. 이전 v1 설정은 읽을 수 있다. `sandbox`가 비어 있으면 `CONTAINMENT_REQUIRED`를 반환하고 작업을 가져오기 전에 종료한다. 중단할 때는 워커에 SIGTERM을 보내고 종료를 확인한다. 같은 작업 디렉터리를 쓰는 두 번째 프로세스는 `WORKSPACE_IN_USE`를 반환한다.
+
+## 10. 저장 단면 및 두 시점 비교 재조회 CLI
+
+Processing Controller의 `ksi-surface-profile` 명령은 Core에 이미 저장된 한 작업의 단면 또는
+저장된 비교 판정을 다시 읽는다. 새 작업·비교를 만들지 않으며, 매 요청에서 Core가 현재 로그인
+주체, 현장·작업구역 읽기 권한, 보관 기간과 비교 승인 유효성을 재검증한다.
+
+먼저 Console의 **측정** 화면에서 현장과 작업구역을 선택한다. 저장 단면 두 개를 열어 비교를
+만들면 Console이 결과 링크에 다음 값을 보존한다. 링크에서 `siteId`는 `/sites/<siteId>/` 경로,
+`workAreaId`는 구역 선택값, `ref`는 기준 작업 ID, `cur`는 현재 작업 ID, `comparison`은 저장된
+판정 ID다. `feature`는 두 작업에 저장된 측정 선 식별값이다. 단면 하나만 조회할 때도 `ref` 또는
+`cur` 값에서 해당 작업 ID를 가져온다. ID를 추측하거나 다른 현장·구역의 값과 조합하지 않는다.
+
+권한 있는 사용자 인증 절차가 준비한 bearer는 보호된 로컬 경로의 owner-private `0600` 파일로
+제공한다. 토큰을 명령행 인자나 환경변수에 넣지 않는다. 인증 파일은 사용자 소유, 단일 링크,
+무단 쓰기가 불가능한 부모 디렉터리 사슬인지 확인하고 읽기만 한다. CLI의 응답 본문 상한은 2 MB다.
+Core 차단 사유는 안전한 사유 코드로 표시하며 응답 원문은 출력하지 않는다. HTTP 401/403은
+인증·현재 읽기 권한, 404는 현재 범위에서 찾을 수 없는 작업, 409는 결과나 비교 판정의 현재성이
+바뀜, 410은 결과 보관 기간 만료를 뜻한다. 비교 재조회가 409로 거부되면 숫자를 출력하지 않는다.
+
+단면 작업을 다시 읽는다.
+
+```sh
+ksi-surface-profile --core-origin https://core.example.org --token-file /secure/operator.token \
+  profile --site-id site-123 --work-area-id wa-456 --job-id spj-0123456789abcdef0123456789abcdef
+```
+
+Console 비교 링크의 `ref`, `cur`, `comparison` 값을 순서대로 다시 읽는다.
+
+```sh
+ksi-surface-profile --core-origin https://core.example.org --token-file /secure/operator.token \
+  comparison --site-id site-123 --work-area-id wa-456 \
+  --baseline-job-id spj-0123456789abcdef0123456789abcdef \
+  --current-job-id spj-fedcba9876543210fedcba9876543210 \
+  --decision-id external-use-decision-0123456789abcdef0123456789abcdef
+```
+
+정량 결과는 등록된 격자를 저장 선에서 읽은 값이며, 측량 성과나 정확도 평가·현장 수락을 뜻하지
+않는다. 작업·영수증·결과 및 비교 다이제스트를 함께 확인하고, `null`/무효 지점은 0으로 채우지
+않는다. 권한 회수·만료·판정 변경 뒤에는 Core의 현재 응답을 따른다.

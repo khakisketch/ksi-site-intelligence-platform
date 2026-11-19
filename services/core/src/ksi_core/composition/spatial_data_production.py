@@ -214,6 +214,28 @@ def _sealed(snapshot: Any) -> None:
         raise ValueError("sealed authority snapshot required")
 
 
+def _verify_detached_signature(
+    *,
+    public_key_b64: str,
+    signature_b64: str,
+    signing_bytes: bytes,
+) -> None:
+    """Verify the canonical base64 Ed25519 signature owned by an activation model."""
+    key = base64.b64decode(public_key_b64, validate=True)
+    signature = base64.b64decode(signature_b64, validate=True)
+    if (
+        len(key) != 32
+        or len(signature) != 64
+        or base64.b64encode(key).decode("ascii") != public_key_b64
+        or base64.b64encode(signature).decode("ascii") != signature_b64
+    ):
+        raise ValueError("canonical detached signature required")
+    try:
+        Ed25519PublicKey.from_public_bytes(key).verify(signature, signing_bytes)
+    except InvalidSignature as exc:
+        raise ValueError("activation signature is invalid") from exc
+
+
 def _bounded_positive_seconds(value: float) -> float:
     if type(value) not in (int, float) or not math.isfinite(float(value)) or value <= 0:
         raise ValueError("explicit positive finite seconds required")
@@ -269,21 +291,11 @@ class SpatialDataCoreConfigV1(SpatialDataModel):
             raise ValueError("operation timeout exceeds the data policy deadlines")
         _path(self.spool_root)
         _path(self.grants_file)
-        key = base64.b64decode(self.trusted_public_key, validate=True)
-        signature = base64.b64decode(self.activation_signature, validate=True)
-        if (
-            len(key) != 32
-            or len(signature) != 64
-            or base64.b64encode(key).decode("ascii") != self.trusted_public_key
-            or base64.b64encode(signature).decode("ascii") != self.activation_signature
-        ):
-            raise ValueError("canonical detached signature required")
-        try:
-            Ed25519PublicKey.from_public_bytes(key).verify(
-                signature, self.activation.signing_bytes()
-            )
-        except InvalidSignature as exc:
-            raise ValueError("activation signature is invalid") from exc
+        _verify_detached_signature(
+            public_key_b64=self.trusted_public_key,
+            signature_b64=self.activation_signature,
+            signing_bytes=self.activation.signing_bytes(),
+        )
         return self
 
 
@@ -391,9 +403,12 @@ def load_spatial_data_rights_file(
                 or grant.observed_crs_digest == ""
             ):
                 raise ValueError("grant does not bind the configured data authority")
-            if _resolvable_beneficiary(
-                grant, opaque=opaque, oidc_subject_registry=oidc_subject_registry
-            ) is None:
+            if (
+                _resolvable_beneficiary(
+                    grant, opaque=opaque, oidc_subject_registry=oidc_subject_registry
+                )
+                is None
+            ):
                 raise ValueError("grant beneficiary is not a resolvable current principal")
         return rights
     except (ValueError, TypeError, RecursionError) as exc:

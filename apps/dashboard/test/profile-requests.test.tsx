@@ -40,6 +40,19 @@ describe("날짜별 단면 요청", () => {
     expect(init.headers["Idempotency-Key"]).toMatch(/^console-/);
   });
 
+  it("GRANT_REQUIRED는 담당자 확인으로 안내하고 구체 권한 영역은 추측하지 않는다", async () => {
+    fetchMock
+      .mockResolvedValueOnce(reply(403, { code: "GRANT_REQUIRED" }))
+      .mockResolvedValueOnce(reply(403, { code: "AMBIGUOUS_GRANT" }));
+    show([row()]);
+    fireEvent.click(screen.getByRole("button", { name: "단면 요청" }));
+    expect(await screen.findByText("선택한 자료에서 선 주변의 높이를 읽을 수 있는 범위를 담당자에게 확인해 주세요.")).toBeTruthy();
+    expect(screen.queryByText(/권한 범위를 자동으로/)).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "단면 요청" }));
+    expect(await screen.findByText("단면을 요청할 권한이 없습니다.")).toBeTruthy();
+  });
+
   it("결과를 모르는 실패(네트워크·5xx)는 같은 키로 다시 보내고, 4xx로 답한 뒤에는 새 키를 쓴다", async () => {
     fetchMock
       .mockRejectedValueOnce(new Error("net"))

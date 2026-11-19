@@ -44,6 +44,7 @@ _PERMITTED_USES = frozenset(
         "HEIGHT",
         "VISUAL_COMPARISON",
         "RELATIVE_VOLUME",
+        "PROFILE_DIFFERENCE",
         "SINGLE_VOLUME",
     }
 )

@@ -6,6 +6,9 @@ the completion check is exercised against a result a real worker would produce.
 
 from __future__ import annotations
 
+import hashlib
+from collections.abc import Callable
+from contextlib import nullcontext
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -26,6 +29,7 @@ from ksi_event_contracts.external_artifact_validation import (
     ObservedVerticalReferenceV1,
 )
 from ksi_event_contracts.measurement_feature import MeasurementFeatureRevisionV1, MeasurementLineV1
+from ksi_event_contracts.processing_artifact import ProcessingArtifactKind
 from ksi_event_contracts.surface_profile import CreateSurfaceProfileV1, SurfaceProfileResultV1
 from ksi_event_contracts.surface_profile_job import (
     CreateSurfaceProfileJobV1,
@@ -43,7 +47,14 @@ from ksi_geo_spatial.surface_profile import (
     neighbour_window,
     plan_surface_profile,
 )
-from ksi_processing_controller.surface_profile_worker import read_surface_profile
+from ksi_processing_controller.external_geotiff_inspector import (
+    inspect_synthetic_sealed_geotiff,
+)
+from ksi_processing_controller.surface_profile_worker import (
+    SurfaceProfileWorkerError,
+    compute_verified_surface_profile,
+    read_surface_profile,
+)
 from rasterio.transform import from_origin
 from spatial_data_fixture import (
     ASSET,
@@ -79,22 +90,44 @@ def plane() -> np.ndarray:
     return 100.0 + 0.5 * col_index + 0.25 * row_index
 
 
-def write_raster(path: Path, values: np.ndarray | None = None) -> Path:
+def write_raster(
+    path: Path,
+    values: np.ndarray | None = None,
+    *,
+    observed_vertical: bool = True,
+    internal_mask: bool = False,
+    tiled: bool = False,
+) -> Path:
     data = plane() if values is None else values
-    with rasterio.open(
-        path,
-        "w",
+    profile: dict[str, Any] = dict(
         driver="GTiff",
         height=HEIGHT,
         width=WIDTH,
         count=1,
         dtype="float32",
-        crs="EPSG:5186",
-        nodata=-9999.0,
+        crs="EPSG:5186+5773" if observed_vertical else "EPSG:5186",
+        nodata=None if internal_mask else -9999.0,
         transform=from_origin(ORIGIN_X, ORIGIN_Y, 1.0, 1.0),
-    ) as dataset:
+    )
+    if tiled:
+        profile.update(tiled=True, blockxsize=16, blockysize=16)
+    mask_env = rasterio.Env(GDAL_TIFF_INTERNAL_MASK="YES") if internal_mask else nullcontext()
+    with mask_env, rasterio.open(path, "w", **profile) as dataset:
         dataset.write(data.astype("float32"), 1)
+        if internal_mask:
+            mask = np.full((HEIGHT, WIDTH), 255, dtype="uint8")
+            mask[3, 2] = 0
+            dataset.write_mask(mask)
     return path
+
+
+def compute_generated_profile(
+    *, job: SurfaceProfileFrozenJobV1, source_path: Path, is_current: Callable[[], bool]
+) -> SurfaceProfileResultV1:
+    """Direct calculation for generated contract fixtures, with no host containment claim."""
+    if not is_current():
+        raise SurfaceProfileWorkerError("CURRENTNESS_UNAVAILABLE")
+    return compute_verified_surface_profile(job, source_path)
 
 
 def profile_policy(**overrides: Any) -> SurfaceProfilePolicyV1:
@@ -129,6 +162,32 @@ def profile_policy(**overrides: Any) -> SurfaceProfilePolicyV1:
     )
     payload.update(overrides)
     return SurfaceProfilePolicyV1(**payload).sealed()
+
+
+def inspect_generated_profile_raster(path: Path) -> Any:
+    """Measure the exact synthetic TIFF that the runner will later stage and open."""
+    data = path.read_bytes()
+    sha256 = "sha256:" + hashlib.sha256(data).hexdigest()
+    envelope = make_envelope(
+        max_input_bytes=1_000_000,
+        max_streamed_bytes=1_000_000,
+        max_pixels=100_000,
+        max_decompressed_bytes=1_000_000,
+        max_sample_bytes=1_000_000,
+        max_workspace_bytes=4_000_000,
+    )
+    outcome = inspect_synthetic_sealed_geotiff(
+        path,
+        artifact_id="artifact-local",
+        observed_sha256=sha256,
+        artifact_kind=ProcessingArtifactKind.DSM,
+        envelope=envelope,
+    )
+    if outcome.outcome is not ArtifactOutcome.MEASURED or outcome.measurements is None:
+        raise AssertionError(
+            f"generated TIFF did not pass its synthetic inspector: {outcome.reason}"
+        )
+    return outcome.measurements
 
 
 def profile_runtime() -> SurfaceProfileRuntimeV1:

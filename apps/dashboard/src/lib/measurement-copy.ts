@@ -69,6 +69,7 @@ export function saveLineErrorText(status: number, code: string | undefined): str
 }
 
 const REQUEST_REFUSALS: Record<string, string> = {
+  GRANT_REQUIRED: "선택한 자료에서 선 주변의 높이를 읽을 수 있는 범위를 담당자에게 확인해 주세요.",
   NOT_A_DSM: "높이 단면은 지표면 높이 자료(DSM)에서만 읽을 수 있습니다.",
   EXTERNAL_RECONSTRUCTION_NOT_SEALED: "이 자료는 아직 등록이 끝나지 않았습니다.",
   EXTERNAL_WORKFLOW_CLOSED: "이 작업이 닫혀 있어 새 단면을 요청할 수 없습니다.",

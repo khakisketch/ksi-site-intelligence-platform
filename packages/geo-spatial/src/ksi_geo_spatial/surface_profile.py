@@ -27,9 +27,11 @@ from __future__ import annotations
 import math
 from bisect import bisect_right
 from collections.abc import Sequence
+from contextlib import AbstractContextManager, nullcontext
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
+from typing import Protocol
 
 import numpy as np
 import rasterio
@@ -49,6 +51,7 @@ from ksi_geo_spatial.crs import (
     normalise_crs,
     reproject_point,
 )
+from ksi_geo_spatial.external_native_window_geometry import NativeWindowGeometryV1
 
 _WGS84 = "EPSG:4326"
 #: 부동소수 오차로 격자 중심 표본이 "거의 중심"이 되어 이웃을 요구하지 않게 하는 허용치(픽셀 단위).
@@ -163,6 +166,23 @@ class ProfileSample:
     y: float
     elevation_m: float | None
     invalid_reason: SampleInvalidReason | None
+
+
+class _ProfileSampleLike(Protocol):
+    @property
+    def index(self) -> int: ...
+
+    @property
+    def distance_m(self) -> float: ...
+
+    @property
+    def x(self) -> float: ...
+
+    @property
+    def y(self) -> float: ...
+
+    @property
+    def elevation_m(self) -> float | None: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -501,6 +521,30 @@ def neighbour_window(
     )
 
 
+def profile_window_geometry(
+    measurements: RasterMeasurementsV1, plan: SurfaceProfilePlan
+) -> NativeWindowGeometryV1 | None:
+    """Exact native cells and bounds used to authorize the sampler's read."""
+    a, _, c, _, e, f = measurements.transform
+    located = locate_profile_samples(
+        plan,
+        left=c,
+        top=f,
+        cell_size_x=a,
+        cell_size_y=-e,
+        width=measurements.width,
+        height=measurements.height,
+    )
+    span = neighbour_window(located)
+    if span is None:
+        return None
+    col0, col1, row0, row1 = span
+    left, top = c + a * col0, f + e * row0
+    return NativeWindowGeometryV1(
+        span, (left, f + e * row1, c + a * col1, top), (a, 0.0, left, 0.0, e, top)
+    )
+
+
 def profile_support_blocker(
     measurements: RasterMeasurementsV1, *, vertical_declared: bool = False
 ) -> SurfaceProfileErrorReason | None:
@@ -527,10 +571,19 @@ def profile_support_blocker(
     return None
 
 
-def inspect_profile_source(raster_path: Path) -> ProfileSourceFacts:
+def open_profile_raster(
+    source: Path | rasterio.DatasetReader,
+) -> AbstractContextManager[rasterio.DatasetReader]:
+    """Reuse an open, caller-owned dataset or open a GeoTIFF for one scoped read."""
+    if isinstance(source, rasterio.DatasetReader):
+        return nullcontext(source)
+    return rasterio.open(source, "r", driver="GTiff")
+
+
+def inspect_profile_source(raster_path: Path | rasterio.DatasetReader) -> ProfileSourceFacts:
     """표본 간격·좌표계 결정에 필요한 래스터 사실만 읽는다(픽셀은 읽지 않는다)."""
     try:
-        with rasterio.open(raster_path) as dataset:
+        with open_profile_raster(raster_path) as dataset:
             return _facts(dataset)
     except RasterioIOError as exc:
         raise _fail(
@@ -539,7 +592,7 @@ def inspect_profile_source(raster_path: Path) -> ProfileSourceFacts:
 
 
 def sample_surface_profile(
-    raster_path: Path,
+    raster_path: Path | rasterio.DatasetReader,
     plan: SurfaceProfilePlan,
     *,
     policy: SurfaceProfilePolicy,
@@ -550,7 +603,7 @@ def sample_surface_profile(
     블록이 한도를 넘으면 읽기 전에 거부한다.
     """
     try:
-        with rasterio.open(raster_path) as dataset:
+        with open_profile_raster(raster_path) as dataset:
             facts = _facts(dataset)
             try:
                 assert_same_crs(plan.horizontal_crs, facts.horizontal_crs)
@@ -649,9 +702,38 @@ def compare_surface_profiles(
             "두 단면은 같은 선·같은 표본 위치 계획으로 읽어야 한다",
         )
 
+    rows = compare_profile_samples(baseline.samples, current.samples)
+    differences = [row.difference_m for row in rows if row.difference_m is not None]
+    return SurfaceProfileComparison(
+        plan=baseline.plan,
+        samples=rows,
+        valid_count=len(differences),
+        largest_rise_m=max((d for d in differences if d > 0.0), default=None),
+        largest_drop_m=min((d for d in differences if d < 0.0), default=None),
+    )
+
+
+def compare_profile_samples(
+    baseline: Sequence[_ProfileSampleLike], current: Sequence[_ProfileSampleLike]
+) -> tuple[ComparisonSample, ...]:
+    """Compare exact-position profile samples after their Core compatibility gate."""
+    if not baseline or len(baseline) != len(current):
+        raise _fail(
+            SurfaceProfileErrorReason.PLAN_MISMATCH,
+            "두 단면은 같은 개수의 표본 위치에서 읽어야 한다",
+        )
     rows: list[ComparisonSample] = []
-    differences: list[float] = []
-    for before, after in zip(baseline.samples, current.samples, strict=True):
+    for before, after in zip(baseline, current, strict=True):
+        if (
+            before.index != after.index
+            or before.distance_m != after.distance_m
+            or before.x != after.x
+            or before.y != after.y
+        ):
+            raise _fail(
+                SurfaceProfileErrorReason.PLAN_MISMATCH,
+                "두 단면은 같은 선·같은 표본 위치 계획으로 읽어야 한다",
+            )
         before_value, after_value = before.elevation_m, after.elevation_m
         if before_value is None and after_value is None:
             reason: ComparisonInvalidReason | None = ComparisonInvalidReason.BOTH_UNAVAILABLE
@@ -662,8 +744,6 @@ def compare_surface_profiles(
         else:
             reason = None
         difference = None if reason is not None else after_value - before_value  # type: ignore[operator]
-        if difference is not None:
-            differences.append(difference)
         rows.append(
             ComparisonSample(
                 index=before.index,
@@ -676,13 +756,7 @@ def compare_surface_profiles(
                 invalid_reason=reason,
             )
         )
-    return SurfaceProfileComparison(
-        plan=baseline.plan,
-        samples=tuple(rows),
-        valid_count=len(differences),
-        largest_rise_m=max((d for d in differences if d > 0.0), default=None),
-        largest_drop_m=min((d for d in differences if d < 0.0), default=None),
-    )
+    return tuple(rows)
 
 
 __all__ = [
@@ -698,10 +772,13 @@ __all__ = [
     "SurfaceProfilePlan",
     "SurfaceProfilePolicy",
     "compare_surface_profiles",
+    "compare_profile_samples",
     "SampleLocation",
     "inspect_profile_source",
     "locate_profile_samples",
     "neighbour_window",
+    "open_profile_raster",
+    "profile_window_geometry",
     "plan_surface_profile",
     "profile_support_blocker",
     "sample_surface_profile",

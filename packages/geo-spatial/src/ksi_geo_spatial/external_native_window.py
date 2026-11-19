@@ -518,6 +518,7 @@ def _verify_source_measurements(
         epsg = horizontal.to_epsg()
         if epsg is None:
             raise ValueError("horizontal CRS has no EPSG identity")
+        horizontal_identifier = f"EPSG:{epsg}"
         canonical_wkt = CRS.from_epsg(epsg).to_wkt(
             version="WKT2_2019", pretty=False, output_axis_rule=True
         )
@@ -544,6 +545,10 @@ def _verify_source_measurements(
         raise NativeWindowError(
             "SOURCE_MEASUREMENTS_MISMATCH", "raster CRS cannot be verified"
         ) from exc
+    if horizontal_identifier != measurements.observed_crs_identifier:
+        raise NativeWindowError(
+            "SOURCE_MEASUREMENTS_MISMATCH", "horizontal CRS identifier differs from inspection"
+        )
     crs_digest = "sha256:" + hashlib.sha256(canonical_wkt.encode("utf-8")).hexdigest()
     if crs_digest != requested_crs_digest or crs_digest != measurements.observed_crs_digest:
         raise NativeWindowError(
@@ -629,6 +634,25 @@ def _verify_source_measurements(
         raise NativeWindowError(
             "VERTICAL_REFERENCE_MISMATCH", "vertical reference differs from the request"
         )
+
+
+def verify_external_surface_profile_source(
+    dataset: rasterio.io.DatasetReader,
+    *,
+    measurements: RasterMeasurementsV1,
+) -> None:
+    """Verify that an open DSM still has the exact facts recorded by inspection.
+
+    Surface-profile reads use the same native-file checks as a native-window request.
+    A declared height reference is kept separate from the file's observed CRS here.
+    """
+    _verify_source_measurements(
+        dataset,
+        measurements=measurements,
+        artifact_kind=ProcessingArtifactKind.DSM,
+        requested_crs_digest=measurements.observed_crs_digest,
+        expected_vertical_reference_digest=None,
+    )
 
 
 def _native_window(
@@ -969,4 +993,5 @@ __all__ = [
     "NativeWindowPreparationV1",
     "NativeWindowReceiptV1",
     "prepare_external_native_window",
+    "verify_external_surface_profile_source",
 ]

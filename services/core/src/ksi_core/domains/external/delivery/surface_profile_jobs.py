@@ -78,7 +78,9 @@ from ksi_core.foundation.durable_journal import DurableJournal, JournalSealedErr
 from ksi_core.identity.auth import Permission, Principal, PrincipalKind, principal_permissions
 
 _FEATURE_ID_RE = re.compile(r"^mf-[0-9a-f]{32}$")
+_ASSET_REF_RE = re.compile(r"^ksa-v1-[0-9a-f]{64}$")
 ACTIVE_STATES = frozenset({"QUEUED", "RUNNING"})
+_EXECUTION_GROUP_STATES = {"ACTIVE": ACTIVE_STATES, "COMPLETED": frozenset({"COMPLETED"})}
 _REASON: TypeAdapter[SurfaceProfileJobReasonV1] = TypeAdapter(SurfaceProfileJobReasonV1)
 
 
@@ -206,6 +208,15 @@ class JobRecord:
     completed_at: datetime | None = None
     result: SurfaceProfileResultV1 | None = None
     receipt: SurfaceProfileReceiptV1 | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class SurfaceProfileComparisonInput:
+    """Immutable completed input released after a fresh scoped READ proof."""
+
+    job: SurfaceProfileFrozenJobV1
+    result: SurfaceProfileResultV1
+    receipt: SurfaceProfileReceiptV1
 
 
 def _same_acquisition(a: SurfaceProfileAttemptV1, b: SurfaceProfileAttemptV1) -> bool:
@@ -636,9 +647,11 @@ class SurfaceProfileJobStore:
         limit: int,
         now: datetime,
         feature_id: str | None = None,
+        asset_ref: str | None = None,
+        feature_revision: int | None = None,
+        execution_group: str | None = None,
     ) -> tuple[SurfaceProfileJobViewV1, ...]:
-        """Newest first.  ``feature_id`` narrows to one saved line *before* the limit applies, so a
-        busy work area cannot push one line's older jobs out of a bounded page."""
+        """Return this requester's newest matching jobs, applying all filters before the limit."""
         self._require_requester(principal, Permission.SPATIAL_DATA_READ)
         self._authority.require_scope(site_id, work_area_id, principal)
         if type(limit) is not int or not 1 <= limit <= self._policy.max_list_records:
@@ -647,19 +660,42 @@ class SurfaceProfileJobStore:
             type(feature_id) is not str or _FEATURE_ID_RE.fullmatch(feature_id) is None
         ):
             raise SurfaceProfileDomainError("INVALID_REQUEST", 422)
+        if asset_ref is not None and (
+            type(asset_ref) is not str or _ASSET_REF_RE.fullmatch(asset_ref) is None
+        ):
+            raise SurfaceProfileDomainError("INVALID_REQUEST", 422)
+        if feature_revision is not None and (
+            type(feature_revision) is not int or not 1 <= feature_revision <= 2**31 - 1
+        ):
+            raise SurfaceProfileDomainError("INVALID_REQUEST", 422)
+        if feature_revision is not None and feature_id is None:
+            raise SurfaceProfileDomainError("INVALID_REQUEST", 422)
+        states = None
+        if execution_group is not None:
+            if type(execution_group) is not str or execution_group not in _EXECUTION_GROUP_STATES:
+                raise SurfaceProfileDomainError("INVALID_REQUEST", 422)
+            states = _EXECUTION_GROUP_STATES[execution_group]
         with self._guard(now):
             ids = self._by_scope.get((principal.organization_id, site_id, work_area_id), [])
-            mine = [
-                self._records[job_id]
-                for job_id in ids
-                if self._records[job_id].job.requester_principal_id == principal.principal_id
-                and (
-                    feature_id is None or self._records[job_id].job.feature.feature_id == feature_id
-                )
-            ]
-            return tuple(
-                self._view(self._fresh(record, now), now) for record in mine[-limit:][::-1]
-            )
+            matching = []
+            for job_id in reversed(ids):
+                record = self._records[job_id]
+                job = record.job
+                if (
+                    job.requester_principal_id != principal.principal_id
+                    or (feature_id is not None and job.feature.feature_id != feature_id)
+                    or (asset_ref is not None and job.request.asset_ref != asset_ref)
+                    or (feature_revision is not None and job.feature.revision != feature_revision)
+                    or (states is not None and record.state not in states)
+                ):
+                    continue
+                current = self._fresh(record, now)
+                if states is not None and current.state not in states:
+                    continue
+                matching.append(self._view(current, now))
+                if len(matching) == limit:
+                    break
+            return tuple(matching)
 
     def result(
         self,
@@ -682,6 +718,90 @@ class SurfaceProfileJobStore:
                 raise SurfaceProfileDomainError("RETENTION_EXPIRED", 410)
             self._authority.reprove(record.job, operation="READ", now=now)
             return SurfaceProfileResultViewV1(job=self._view(record, now), result=record.result)
+
+    def comparison_input(
+        self,
+        *,
+        job_id: str,
+        principal: Principal,
+        now: datetime,
+        expected_scope: tuple[str, str],
+    ) -> SurfaceProfileComparisonInput:
+        """Release one frozen job, result and receipt under the existing READ boundary."""
+        self._require_requester(principal, Permission.SPATIAL_DATA_READ)
+        with self._guard(now):
+            return self._comparison_input_locked(
+                job_id=job_id,
+                principal=principal,
+                now=now,
+                expected_scope=expected_scope,
+            )
+
+    @contextmanager
+    def comparison_release(
+        self,
+        *,
+        baseline_job_id: str,
+        current_job_id: str,
+        principal: Principal,
+        now: datetime,
+        expected_scope: tuple[str, str],
+    ) -> Iterator[tuple[SurfaceProfileComparisonInput, SurfaceProfileComparisonInput]]:
+        """Hold both READ proofs and the shared authority coordinator through numeric release."""
+        self._require_requester(principal, Permission.SPATIAL_DATA_READ)
+        with self._guard(now):
+            baseline = self._comparison_input_locked(
+                job_id=baseline_job_id,
+                principal=principal,
+                now=now,
+                expected_scope=expected_scope,
+            )
+            current = self._comparison_input_locked(
+                job_id=current_job_id,
+                principal=principal,
+                now=now,
+                expected_scope=expected_scope,
+            )
+            yield baseline, current
+
+    def _comparison_input_locked(
+        self,
+        *,
+        job_id: str,
+        principal: Principal,
+        now: datetime,
+        expected_scope: tuple[str, str],
+    ) -> SurfaceProfileComparisonInput:
+        record = self._requester_record(job_id, principal, expected_scope)
+        self._authority.require_scope(record.job.site_id, record.job.work_area_id, principal)
+        record = self._fresh(record, now)
+        if record.state != "COMPLETED" or record.result is None or record.receipt is None:
+            raise SurfaceProfileDomainError("NOT_READY", 409)
+        assert record.completed_at is not None
+        if now >= record.completed_at + timedelta(seconds=record.job.policy.retention_seconds):
+            raise SurfaceProfileDomainError("RETENTION_EXPIRED", 410)
+        self._authority.reprove(record.job, operation="READ", now=now)
+        result, receipt, job = record.result, record.receipt, record.job
+        measurements = job.source.inspection.measurements
+        if (
+            result.result_digest is None
+            or result.result_digest != result.canonical_digest()
+            or receipt.receipt_digest is None
+            or receipt.receipt_digest != receipt.canonical_digest()
+            or receipt.result_digest != result.result_digest
+            or receipt.job_id != job.job_id
+            or receipt.job_digest != job.job_digest
+            or receipt.artifact_id != job.source.artifact_id
+            or receipt.source_digest != job.source.source_digest
+            or receipt.source_sha256 != job.source.observed_sha256
+            or receipt.source_size_bytes != job.source.observed_size_bytes
+            or measurements is None
+            or receipt.observed_crs_identifier != measurements.observed_crs_identifier
+            or receipt.observed_crs_digest != measurements.observed_crs_digest
+            or receipt.vertical_reference != job.vertical_reference
+        ):
+            raise SurfaceProfileDomainError("INTEGRITY_MISMATCH", 409)
+        return SurfaceProfileComparisonInput(job=job, result=result, receipt=receipt)
 
     def cancel(
         self,

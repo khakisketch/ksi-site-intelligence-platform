@@ -109,9 +109,19 @@ def _spatial_data_config_path_env() -> Path | None:
         return None
     path = Path(raw)
     if not raw or not path.is_absolute() or ".." in path.parts:
-        raise RuntimeError(
-            "KSI_CORE_SPATIAL_DATA_CONFIG_FILE은 정규화된 절대 경로여야 한다"
-        )
+        raise RuntimeError("KSI_CORE_SPATIAL_DATA_CONFIG_FILE은 정규화된 절대 경로여야 한다")
+    return path
+
+
+def _surface_profile_config_path_env() -> Path | None:
+    """단면 Core 설정 경로. 부재는 단면 lane 미장착을 뜻한다."""
+    name = "KSI_CORE_SURFACE_PROFILE_CONFIG_FILE"
+    raw = os.environ.get(name)
+    if raw is None:
+        return None
+    path = Path(raw)
+    if not raw or not path.is_absolute() or ".." in path.parts:
+        raise RuntimeError(f"{name}은 정규화된 절대 경로여야 한다")
     return path
 
 

@@ -21,12 +21,24 @@ beforeEach(() => vi.resetAllMocks());
 
 describe("측정 선 쓰기(Core 호출)", () => {
   it("저장은 구역 경로에 키와 토큰을 싣고 개정을 돌려준다", async () => {
-    mocked.fetchWithToken.mockResolvedValue({ verdict: "CREATED", revision });
-    await expect(createMeasurementFeatureWithToken("site 1", "area/1", body, "key-1", "token")).resolves.toEqual(revision);
+    const entered = { ...body, workAreaId: "area/1" };
+    const saved = { ...revision, siteId: "site 1", workAreaId: entered.workAreaId };
+    mocked.fetchWithToken.mockResolvedValue({ verdict: "CREATED", revision: saved });
+    await expect(createMeasurementFeatureWithToken("site 1", "area/1", entered, "key-1", "token")).resolves.toEqual(saved);
     expect(mocked.fetchWithToken).toHaveBeenCalledWith(
       "/v1/sites/site%201/work-areas/area%2F1/measurement-features", "token",
-      { method: "POST", body, headers: { "Idempotency-Key": "key-1" } },
+      { method: "POST", body: entered, headers: { "Idempotency-Key": "key-1" } },
     );
+  });
+
+  it("저장 응답에서 다른 구역이나 다른 선 개정은 수락하지 않는다", async () => {
+    mocked.fetchWithToken.mockResolvedValue({ revision: { ...revision, workAreaId: "old-area" } });
+    await expect(createMeasurementFeatureWithToken("site-1", "area-1", body, "k", "t")).rejects.toMatchObject({ status: 502 });
+    const edit = { expectedRevision: 1, name: "북쪽", line: body.line };
+    for (const wrong of [revision, { ...revision, revision: 2, featureId: `mf-${"3".repeat(32)}` }]) {
+      mocked.fetchWithToken.mockResolvedValue({ revision: wrong });
+      await expect(reviseMeasurementFeatureWithToken("site-1", "area-1", FEATURE_ID, edit, "k", "t")).rejects.toMatchObject({ status: 502 });
+    }
   });
 
   it("고치기는 선 식별자 아래 개정 경로로 보낸다", async () => {
@@ -66,7 +78,7 @@ describe("단면 요청(Core 호출)", () => {
 
   it("작업 발급은 구역 경로에 본문과 키를 싣고 작업을 돌려준다", async () => {
     mocked.fetchWithToken.mockResolvedValue(JOB);
-    const request = { assetRef: JOB.assetRef, feature: JOB.feature, heightDecisionId: "d" };
+    const request = { assetRef: JOB.assetRef, feature: JOB.feature, heightDecisionId: "d", sampleSpacingM: 2.5 };
     await expect(issueSurfaceProfileJobWithToken("site-1", "area-1", request, "k:job", "token")).resolves.toEqual(JOB);
     expect(mocked.fetchWithToken).toHaveBeenCalledWith("/v1/sites/site-1/work-areas/area-1/surface-profile-jobs", "token", { method: "POST", body: request, headers: { "Idempotency-Key": "k:job" } });
   });
@@ -97,5 +109,41 @@ describe("단면 작업 목록", () => {
     expect(mocked.fetch).toHaveBeenLastCalledWith("/v1/sites/site-1/work-areas/area-1/surface-profile-jobs", { query: { limit: 8, feature_id: FEATURE_ID } });
     await listSurfaceProfileJobs("site-1", "area-1", { limit: 8 });
     expect(mocked.fetch).toHaveBeenLastCalledWith("/v1/sites/site-1/work-areas/area-1/surface-profile-jobs", { query: { limit: 8, feature_id: undefined } });
+  });
+
+  it("자료·선 개정의 완료 작업만 골라 현재 필터에 맞는 응답인지 확인한다", async () => {
+    mocked.fetch.mockResolvedValue({ items: [JOB] });
+    await expect(listSurfaceProfileJobs("site-1", "area-1", {
+      limit: 12, featureId: FEATURE_ID, featureRevision: 2, assetRef: JOB.assetRef, executionGroup: "COMPLETED",
+    })).rejects.toMatchObject({ status: 502 });
+    expect(mocked.fetch).toHaveBeenCalledWith("/v1/sites/site-1/work-areas/area-1/surface-profile-jobs", {
+      query: {
+        limit: 12,
+        feature_id: FEATURE_ID,
+        asset_ref: JOB.assetRef,
+        feature_revision: 2,
+        execution_group: "COMPLETED",
+      },
+    });
+
+    mocked.fetch.mockResolvedValue({ items: [{
+      ...JOB,
+      executionState: "COMPLETED",
+      feature: { ...JOB.feature, revision: 2 },
+    }] });
+    await expect(listSurfaceProfileJobs("site-1", "area-1", {
+      limit: 12, featureId: FEATURE_ID, featureRevision: 2, assetRef: JOB.assetRef, executionGroup: "COMPLETED",
+    })).resolves.toMatchObject({ items: [{ executionState: "COMPLETED", feature: { revision: 2 } }] });
+
+    mocked.fetch.mockResolvedValue({ items: [{ ...JOB, assetRef: `ksa-v1-${"b".repeat(64)}` }] });
+    await expect(listSurfaceProfileJobs("site-1", "area-1", {
+      limit: 12, featureId: FEATURE_ID, assetRef: JOB.assetRef,
+    })).rejects.toMatchObject({ status: 502 });
+
+    mocked.fetch.mockResolvedValue({ items: [{ ...JOB, siteId: "another-site" }] });
+    await expect(listSurfaceProfileJobs("site-1", "area-1", { limit: 12 })).rejects.toMatchObject({ status: 502 });
+
+    mocked.fetch.mockResolvedValue({ items: [{ ...JOB, workAreaId: "another-area" }] });
+    await expect(listSurfaceProfileJobs("site-1", "area-1", { limit: 12 })).rejects.toMatchObject({ status: 502 });
   });
 });

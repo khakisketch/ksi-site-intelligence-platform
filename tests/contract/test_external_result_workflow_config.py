@@ -237,6 +237,9 @@ def test_loader_builds_workflow_only_from_an_exact_approved_catalog(tmp_path: Pa
 
     assert callable(workflow.build_mapping)
     assert callable(workflow.build_runtime)
+    assert callable(workflow.build_profile_difference_authority)
+    with pytest.raises(ValueError, match="requires its exact mapping catalog"):
+        workflow.build_profile_difference_authority(ExternalAuthorityCurrentnessCoordinator())
 
 
 def test_loader_accepts_deferred_real_storage_issuer(tmp_path: Path) -> None:

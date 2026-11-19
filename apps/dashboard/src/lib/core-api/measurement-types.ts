@@ -114,6 +114,7 @@ export interface SurfaceProfileJobPage {
 }
 
 export interface SurfaceProfileResult {
+  resultDigest?: string | null;
   assetRef: string;
   lineDigest: string;
   feature: MeasurementFeatureRef | null;
@@ -130,6 +131,38 @@ export interface SurfaceProfileResult {
 export interface SurfaceProfileResultView {
   job: SurfaceProfileJobView;
   result: SurfaceProfileResult;
+}
+
+export type ComparisonInvalidReason = "BASELINE_UNAVAILABLE" | "CURRENT_UNAVAILABLE" | "BOTH_UNAVAILABLE";
+
+export interface SurfaceProfileComparisonSample {
+  distanceM: number;
+  baselineM: number | null;
+  currentM: number | null;
+  differenceM: number | null;
+  invalidReason: ComparisonInvalidReason | null;
+}
+
+export interface SurfaceProfileComparisonResult {
+  comparisonDigest: string;
+  baselineResultDigest: string;
+  currentResultDigest: string;
+  samples: SurfaceProfileComparisonSample[];
+  validCount: number;
+  largestRiseM: number | null;
+  largestDropM: number | null;
+}
+
+export interface SurfaceProfileComparison {
+  contractVersion: "surface-profile-comparison.v1";
+  baselineJobId: string;
+  currentJobId: string;
+  decisionId: string;
+  decisionDigest: string;
+  verdict: "BLOCKED" | "ELIGIBLE";
+  reasons: string[];
+  remediations: string[];
+  result: SurfaceProfileComparisonResult | null;
 }
 
 export const JOB_ID_PATTERN = /^spj-[0-9a-f]{32}$/;
@@ -240,6 +273,8 @@ function isSample(value: unknown): value is ProfileSample {
 
 export function isProfileResult(value: unknown): value is SurfaceProfileResult {
   if (!isRecord(value)) return false;
+  if (value.resultDigest != null
+    && (typeof value.resultDigest !== "string" || !DIGEST_PATTERN.test(value.resultDigest))) return false;
   if (typeof value.assetRef !== "string" || !ASSET_REF_PATTERN.test(value.assetRef)) return false;
   if (typeof value.lineDigest !== "string" || !DIGEST_PATTERN.test(value.lineDigest)) return false;
   if (value.feature !== null && value.feature !== undefined && !isFeatureRef(value.feature)) return false;
@@ -262,4 +297,50 @@ export function isProfileResult(value: unknown): value is SurfaceProfileResult {
 
 export function isProfileResultView(value: unknown): value is SurfaceProfileResultView {
   return isRecord(value) && isJobView(value.job) && isProfileResult(value.result);
+}
+
+export function isSurfaceProfileComparison(value: unknown): value is SurfaceProfileComparison {
+  if (!isRecord(value) || value.contractVersion !== "surface-profile-comparison.v1"
+    || typeof value.baselineJobId !== "string" || !JOB_ID_PATTERN.test(value.baselineJobId)
+    || typeof value.currentJobId !== "string" || !JOB_ID_PATTERN.test(value.currentJobId)
+    || typeof value.decisionId !== "string" || value.decisionId.length === 0 || value.decisionId.length > 255
+    || typeof value.decisionDigest !== "string" || !DIGEST_PATTERN.test(value.decisionDigest)
+    || (value.verdict !== "BLOCKED" && value.verdict !== "ELIGIBLE")
+    || !Array.isArray(value.reasons) || value.reasons.length < 1 || value.reasons.length > 32
+    || !value.reasons.every((reason) => typeof reason === "string" && /^[A-Z][A-Z0-9_]{1,63}$/.test(reason))
+    || !Array.isArray(value.remediations) || value.remediations.length < 1 || value.remediations.length > 32
+    || !value.remediations.every((remediation) => typeof remediation === "string" && /^[A-Z][A-Z0-9_]{1,63}$/.test(remediation))) return false;
+  if (value.verdict === "BLOCKED") return value.result === null && value.reasons.length > 0;
+  if (!isRecord(value.result)) return false;
+  const result = value.result;
+  const validCount = result.validCount;
+  if (typeof result.comparisonDigest !== "string" || !DIGEST_PATTERN.test(result.comparisonDigest)
+    || typeof result.baselineResultDigest !== "string" || !DIGEST_PATTERN.test(result.baselineResultDigest)
+    || typeof result.currentResultDigest !== "string" || !DIGEST_PATTERN.test(result.currentResultDigest)
+    || !Array.isArray(result.samples) || result.samples.length < 2 || result.samples.length > 5000
+    || !Number.isSafeInteger(validCount) || (validCount as number) < 0 || (validCount as number) > result.samples.length
+    || !(result.largestRiseM === null || (isFiniteNumber(result.largestRiseM) && result.largestRiseM > 0))
+    || !(result.largestDropM === null || (isFiniteNumber(result.largestDropM) && result.largestDropM < 0))) return false;
+  let previous = -1;
+  let known = 0;
+  for (const raw of result.samples) {
+    if (!isRecord(raw) || !isFiniteNumber(raw.distanceM) || raw.distanceM < 0 || raw.distanceM <= previous) return false;
+    previous = raw.distanceM;
+    const base = raw.baselineM;
+    const current = raw.currentM;
+    const difference = raw.differenceM;
+    if (!(base === null || isFiniteNumber(base)) || !(current === null || isFiniteNumber(current))
+      || !(difference === null || isFiniteNumber(difference))) return false;
+    const reason = raw.invalidReason;
+    if (reason === null) {
+      if (base === null || current === null || difference === null) return false;
+      known += 1;
+    } else {
+      if (difference !== null || !["BASELINE_UNAVAILABLE", "CURRENT_UNAVAILABLE", "BOTH_UNAVAILABLE"].includes(String(reason))) return false;
+      if (reason === "BASELINE_UNAVAILABLE" && (base !== null || current === null)) return false;
+      if (reason === "CURRENT_UNAVAILABLE" && (current !== null || base === null)) return false;
+      if (reason === "BOTH_UNAVAILABLE" && (base !== null || current !== null)) return false;
+    }
+  }
+  return known === validCount;
 }

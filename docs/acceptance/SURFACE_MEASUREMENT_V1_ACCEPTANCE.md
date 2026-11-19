@@ -5,8 +5,10 @@
   단면 작업의 Core 요청자/일꾼 HTTP·명시적 opt-in 조립이 구현되어 있다.
   단면 일꾼 실행기(`run_once`: 원본 capability로 받은 바이트 대조, 파일 사실 재대조, 한도 있는 계산, receipt 보고)가 있다.
   서명된 설정으로 폴링하는 상시 실행 진입점(`surface_profile_service`)이 있다.
-  Console에는 읽기 전용 단면 화면(`/sites/{id}/measurements`)이 있다. 선 그리기·저장, 단면 요청, 두 시점 차이,
-  OS 수준 격리·Core 운영 활성화·CLI·MCP 단면 도구는 아직 없다.
+  Console의 측정 선 화면(`/sites/{id}/measurements`)에서 선을 그려 저장하고 날짜별 단면을 요청해 그래프와 CSV를 열 수 있다.
+  같은 개정의 선에서 두 날짜의 높이차를 요청할 수 있다. Core는 각 DSM의 독립 검증 근거와 두 시점의 승인된 호환성을 확인한다. 선 저장과 작업 요청은 1024px 이상에서 제공한다.
+  운영자 CLI는 Console에서 사용한 작업과 판정을 다시 읽는다. 단면 워커는 고정된 Linux 격리 실행기에 계산을 맡긴다. 운영 호스트에서 단면 작업 전체를 실행하는 검증, 운영 활성화와 호환성 승인 자료, MCP 단면 접근은 남아 있다.
+  로컬 Linux에서 배포용 Core 이미지를 서명된 시험 설정과 기본 기동 명령으로 실행했다. 읽기 전용 파일시스템에서 비특권 사용자로 기동했고 권한 공급자의 준비 응답(HTTP 200)과 두 시점 비교 생성·조회 경로를 확인했다.
   이 상태는 EXT-VAL-01..08이나 P-AC-01..06을 변경하지 않는다.
 - Authority: PRODUCT_CONSTITUTION; MASTER_PRD v3.0 (external technology adoption boundary);
   DOMAIN_INVARIANTS; `docs/superpowers/product-state.md`.
@@ -54,24 +56,26 @@ CLI and MCP return the same result with the same limits.
 
 | ID | Criterion | Evidence needed | Current status |
 |---|---|---|---|
-| SM-AC-01 | Heights and distances match analytical ground truth on synthetic surfaces; reprojection from WGS84 agrees with the projected line | local synthetic contract tests; later an independent reference (GDAL/QGIS) on the same samples | primitive: local synthetic pass |
-| SM-AC-02 | Unknown stays unknown: outside, edge band, NoData sentinel, NaN, and one-sided unknown in a comparison never become a number or `0` | contract tests | primitive: local synthetic pass |
-| SM-AC-03 | Reads are bounded by policy: single read window, source storage-block size, vertices, samples, line length; over-limit input is refused, never coarsened silently | contract tests; worker-level time, memory, cancellation and concurrency limits | 순수 계산의 창·블록·정점·표본·길이 및 HTTP 본문 한도 통과; C3 워커 시간·메모리·취소·동시성 한도는 미구현 |
-| SM-AC-04 | A request is bound to exact asset ID, submission, revision and digest; comparison runs only after the existing Core preflight (INV-053: processing profile, CRS, vertical reference, lineage) and returns typed blockers otherwise | Core route and replay tests | 단일 DSM의 job/input/receipt 정확한 결속·Core HTTP·완료 재생 통과; 두 시점 차이 경로는 미구현 |
-| SM-AC-05 | Saved line geometry is revisioned; editing creates a new revision, old results stay bound to the old one; the same line is reusable for the next observation with a new request and result | contract and persistence tests including restart and duplicate request | 저장 선·결과의 exact revision 결속, 편집 뒤 과거 결과 유지, 멱등·작업 재생 통과; 두 시점 비교 흐름은 별도 |
-| SM-AC-06 | Rights and egress: no read, CSV or agent response widens the caller's current site/work-area permission or AI-egress consent; exports carry no credentials or signed URLs | permission, revocation and egress tests | Core HTTP의 현재 grant·HEIGHT 정책 철회와 자격 재확인 통과; MCP 단면 접근은 거부, CSV·AI-egress 경로는 미구현 |
-| SM-AC-07 | Console, API, CLI and MCP return the same input revision, result ID, values and unknown reasons | cross-surface contract test | not implemented |
-| SM-AC-08 | A field user completes draw → read graph → change date → export in the real browser at 390/768/1280/1440px and 200% zoom, with keyboard and touch, stale values withdrawn on input change, and no write request from selection alone | real-browser test; later unaided task test with field staff | draw (map, laptop only), request per date, read graph, change date, CSV export, keyboard: implemented in the Console; checked at 390 and 1440 px against a stand-in Core, and the request → real worker → graph path at 1440 px against the real Core owners and worker; the real-Core page was also loaded at 390, 768, 1280 px and at a 200 % zoom equivalent (720 CSS px, device scale 2): no horizontal overflow, the date selector present, and the request buttons hidden below 1024 px and shown at 1280 px (layout checked from screenshots at 768 px); the request panel's keyboard operation (Tab order, Space/Enter to request and cancel, visible focus, the blocked-reason alert) was checked in a real browser against a stand-in Core and its status text is an `aria-live` region (no screen reader was run); touch, a real 200 % browser zoom and the unaided field test not done |
+| SM-AC-01 | Heights and distances match analytical ground truth on synthetic surfaces; reprojection from WGS84 agrees with the projected line | local synthetic contract tests and an independent reference on the same samples | 합성 DSM 두 장에서 실제 워커가 읽은 45개 지점을 해석식과 대조했다. 같은 픽셀 중심을 GDAL 3.11.4로 독립 조회했다. 경계 처리 차이는 아래에 기록했다. |
+| SM-AC-02 | Unknown stays unknown: outside, edge band, NoData sentinel, NaN, and one-sided unknown in a comparison never become a number or `0` | contract tests | 바깥·가장자리·NaN·NoData에 대한 계산 시험과 두 DSM의 HTTP 통합 시험을 통과했다. 한쪽에만 값이 없는 4곳은 누락 사유와 함께 차이가 비었다. |
+| SM-AC-03 | Reads are bounded by policy: single read window, source storage-block size, vertices, samples, line length; over-limit input is refused, never coarsened silently | contract tests; worker-level time, memory, cancellation and concurrency limits | 워커는 읽기 전에 원본 해시·좌표계·격자 범위·결측 표현과 허가된 창을 대조한다. 타일·스트립 전체의 압축 해제량, 독립 마스크 블록, 반환하는 마스크와 결과 크기를 한도에 포함한다. 계산 중 권한·기한을 재확인하고 작업 디렉터리는 한 프로세스만 점유한다. 자원 한도가 적용된 Linux 자식에서 합성 표고 17개를 해석식과 대조했다. 운영 호스트의 작업별 네임스페이스 검증은 남아 있다. |
+| SM-AC-04 | A request is bound to exact asset ID, submission, revision and digest; comparison runs only after the existing Core preflight (INV-053: processing profile, CRS, vertical reference, lineage) and returns typed blockers otherwise | Core route and replay tests | 두 완료 작업·결과·영수증과 저장 선 개정을 결속한다. 각 DSM의 검사·독립 근거·촬영 순서·호환성 승인을 재확인한다. 승인이 없으면 사유와 빈 결과를 반환한다. |
+| SM-AC-05 | Saved line geometry is revisioned; editing creates a new revision, old results stay bound to the old one; the same line is reusable for the next observation with a new request and result | contract and persistence tests including restart and duplicate request | 편집 전 결과는 원래 개정에 남는다. 두 시점 비교는 같은 선 개정과 표본 위치에 결속하며 동일한 요청 키로 다시 요청하면 최초 판정을 읽는다. |
+| SM-AC-06 | Rights and egress: no read, CSV or agent response widens the caller's current site/work-area permission or AI-egress consent; exports carry no credentials or signed URLs | permission, revocation and egress tests | 날짜별 CSV는 선택한 모든 작업을 현재 권한으로 다시 읽고 수직 기준 출처를 기록한다. 높이차 CSV는 두 원본과 비교 승인을 다시 확인한다. 한쪽 자료의 읽기 권한이나 비교 승인이 철회되면 높이차가 닫힌다. MCP 단면 접근은 거부되며 에이전트 외부 전송은 미구현이다. |
+| SM-AC-07 | Console, API, CLI and MCP return the same input revision, result ID, values and unknown reasons | cross-surface contract test | Console CSV와 같은 로컬 Core를 조회한 운영자 CLI에서 두 결과와 비교 다이제스트, 45개 지점의 값과 결측 사유가 일치했다. 비교 승인 철회 후 CLI는 HTTP 409와 사유를 반환하고 표준 출력은 비어 있었다. MCP 단면 접근은 미구현이다. |
+| SM-AC-08 | A field user completes draw → read graph → change date → export in the real browser at 390/768/1280/1440px and 200% zoom, with keyboard and touch, stale values withdrawn on input change, and no write request from selection alone | real-browser test; later unaided task test with field staff | draw (map, laptop only), request per date, read graph, change date, CSV export, keyboard: implemented in the Console; checked at 390 and 1440 px against a stand-in Core, and the request → real worker → graph path at 1440 px against the real Core owners and worker; the real-Core page was also loaded at 390, 768, 1280 px and at a 200 % zoom equivalent (720 CSS px, device scale 2): no horizontal overflow, the date selector present, and the request buttons hidden below 1024 px and shown at 1280 px (layout checked from screenshots at 768 px); the request panel's keyboard operation (Tab order, Space/Enter to request and cancel, visible focus, the blocked-reason alert) was checked in a real browser against a stand-in Core and its status text is an `aria-live` region (no screen reader was run); the two-date comparison and CSV were also checked in Chromium at 390/768/1280/1440 px, with keyboard and an emulated touch tap linked to the saved-line map; physical touch hardware, real 200 % browser zoom and the unaided field test remain open |
 | SM-AC-09 | Real customer data: the P-AC customer sample (same work area, t0/t1/t2 DSM, intended lines, CRS/vertical/quality evidence, usage rights) read with an independent reference comparison | customer-approved data and independent review | not evaluated |
 
 ## Decision: two-epoch difference gate (2026-11-17, user)
 
 The difference between two dates' profiles is opened under the **same standard as RELATIVE_VOLUME**:
 a new pair use (`PROFILE_DIFFERENCE`, no zone) that needs per-epoch independently attested evidence
-for the measured DSM and a Core compatibility authority (INV-053). It is not derived from inspection
-reports alone. Consequence to state plainly: the production compatibility authority port is
-default-closed today, so the difference stays BLOCKED (per-date height profiles still shown) until a
-mapping source and independent evidence are approved, exactly as for relative volume.
+for the measured DSM and a Core compatibility authority (INV-053). The signed catalog supports a
+separate approval for the exact pair and WorkArea. It checks the active profile policy, both
+inspection reports, ordered capture intervals and each DSM's independent evidence before it admits
+the mapping. Removing profile approval withdraws numerical access on the next read. A missing
+approval leaves the comparison blocked, with the two per-date profiles available under their own
+permissions. [Operator provisioning](../ops/DEV_EXTERNAL_RUNBOOK.md#3b-approving-a-saved-line-profile-comparison)
 
 **HEIGHT (single subject) is open as of 2026-11-17.** Core now issues an ELIGIBLE `HEIGHT` decision
 when the current policy permits it, the inspection report binds the exact subject/policy, and a MEASURED
@@ -80,7 +84,9 @@ profile, missing vertical reference, absent policy or withdrawn inspection is a 
 guessed from the horizontal axis. HEIGHT binds no display receipt, evidence, zone or compatibility mapping
 and is **not** a quantitative, comparability, accuracy or customer-acceptance claim. Decisions made before
 this change keep their retained `HEIGHT_PRODUCT_DEFINITION_UNRESOLVED` blocker and are never rewritten.
-단일 subject 판정으로 유지된다. C2c는 이 판정을 재확인하는 작업 HTTP와 완료 검증을 제공하지만, 실제 파일을 읽는 C3 워커와 운영 활성화는 아직 제공하지 않는다.
+작업 HTTP가 단일 subject 판정을 다시 확인하고, C3 일꾼은 봉인된 파일의 바이트와 공간 정보를 대조한 뒤 단면을 계산한다. 이 경로는 로컬에서 검증했고 운영 활성화는 남아 있다.
+
+부모 워커는 원본을 전송받고, 격리된 자식은 같은 파일의 길이와 SHA-256을 다시 확인한다. 열린 파일에서 가로·세로 크기, 자료형, 원점과 해상도를 포함한 격자 변환, 수평·수직 기준을 대조한다. 읽기 창이 승인된 픽셀 또는 실제 지상 범위와 다르면 계산을 거부한다. 같은 Linux 자식에 주소 공간 1 GiB·CPU 시간 15초를 적용한 로컬 시험에서 합성면의 17개 높이가 해석값과 일치했다. 이 시험의 자식은 컨테이너 네임스페이스를 상속했다. 운영자 자재와 기동 조건은 [공간데이터 운영 지침](../ops/SPATIAL_DATA_PRODUCTION_PROVISIONING.md)에 있다.
 
 **Declared vertical reference (decided 2026-11-17; ledger, HEIGHT, profile consumers and Console
 screens implemented 2026-11-18).** Most DSM exports carry no
@@ -108,6 +114,28 @@ with its reasons); a BLOCKED date is explained and points at the declaration ins
 absent: the declared read on a production stack (the surface lane is not activated there), an independent
 check that a declaration is right (Core never verifies it), and any use of a declaration beyond height and
 profile.
+
+## 두 시점 비교의 수치 확인
+
+**경주 봉길리 공개 DSM.** 2020년 5월 22일과 10월 20일 UAV 관측의 원본은 EPSG:32652, 포항 기본수준면 기준의 1 m 격자 중심 CSV다. 각 행을 공통 1 m 격자의 가장 가까운 셀에 한 번씩 배치했다. 원본 좌표와 셀 중심의 최대 평면 거리는 0.142 m 미만이었다. 누락 셀은 내부 마스크로 보존했다. 원래 높이를 보존한 파일과 연구자가 명시한 `H = z − 0.357 m`를 적용한 국가수직기준 파생본을 각각 만들었다. 로컬 Console에서 국가수직기준 파생본 두 장을 등록하고 Linux 검사기가 파일의 수직 기준 EPSG:5193을 확인했다. Core의 날짜별 높이 판정은 두 건 모두 `HEIGHT_ELIGIBLE`이었다. [공개 원본 및 저자 설명, Figshare v2](https://doi.org/10.6084/m9.figshare.33971680.v2)
+
+같은 30 m 동서 측정 선에서 두 날짜의 작업을 완료했다. 운영자 CLI에서 다시 읽은 각 31개 높이와 Chromium의 날짜별 CSV 62행을 원본 CSV에서 독립적으로 환산한 값에 대조했다. 각 날짜에서 제품이 읽은 높이와 해당 날짜의 원본 환산값 사이의 최대 절대차는 0 m였다. 두 날짜 사이의 높이차 요청은 `POLICY_UNAVAILABLE`로 판정되어 결과가 비어 있었다. 이 자료에 대한 현장 정확도와 고객 수락은 별도 검증 대상이다.
+
+봉길리 5월 DSM의 자료 상세에서 새 측정 선을 열고 약 20 m 선을 경위도로 저장했다. 10월 자료도 등록돼 있었으며 선 저장과 편집 뒤에는 5월 파일과 해당 선 개정이 선택되어 있었다. 별도로 요청하기 전 단면 작업은 0건이었다. 첫 개정은 보간에 필요한 격자가 읽기 허가의 북쪽 경계를 0.5 m 넘어 `GRANT_REQUIRED`로 거절됐다. 같은 허가 범위 안으로 옮긴 두 번째 개정은 Console 요청과 로컬 Linux 워커 처리를 거쳐 1 m 간격 및 끝점의 5월 높이 22개를 반환했다. Chromium에서 내보낸 22행의 촬영일, 수직 기준, 좌표, 거리, 높이가 결과 기록과 일치했다. 같은 저장선으로 10월 DSM을 Core API에서 요청해 같은 위치 22곳의 높이를 읽었다. 두 날짜 각각의 원본 CSV에서 이웃 셀로 독립 계산한 높이와 제품 높이의 최대 절대차는 모두 0.00000001 m 미만이었다. 이 선의 두 시점 높이차도 승인 매핑이 없어 보류됐다.
+
+이 판정을 Console에서 복사하면 사유, 담당자와 조치, 두 날짜와 자료 참조, 저장 주소가 함께 담긴다. 봉길리 자료의 판정을 1440 px Chromium에서 복사하고 같은 요청자 계정으로 768 px와 390 px에서 다시 열었다. 두 화면 모두 새 비교 요청 없이 같은 판정을 표시했다. 클립보드 쓰기를 거절한 390 px 화면에서는 키보드로 직접 복사할 수 있도록 판정 전문이 선택됐다.
+
+Console의 높이차 그래프와 표는 승인된 지점별 결과를 함께 사용한다. 그래프는 0 m를 표시하고 한쪽 값이 없는 구간을 끊는다. 그래프에서 거리를 선택하면 측정 선 위에 같은 지점을 표시한다. Console은 수집 날짜를 선택해도 계산을 시작하지 않는다. 두 단면의 표본 간격이 다르면 사용자가 공통 간격을 확인한 뒤 필요한 날짜만 다시 읽을 수 있다. 완료된 결과에서 같은 선과 두 날짜를 이어서 비교한다. 비교 고유 주소를 열면 두 작업과 기존 판정을 현재 권한으로 조회한다. Chromium의 390 px 새 세션에서 같은 사용자가 고유 주소로 표를 읽고 CSV를 받았다. 선을 편집한 뒤에도 고유 주소는 원래 개정을 열고, 현재 개정으로 돌아가는 링크를 제공한다.
+
+로컬 통합 시험은 같은 44 m 선에서 1 m 간격으로 두 합성 DSM의 픽셀 중심 45곳을 읽는다. 두 값이 모두 있는 41곳의 차이는 해석식과 일치한다. 상승·변화 없음·하강과 서로 다른 네 곳의 NoData를 포함한다. [HTTP 통합 시험](../../tests/contract/test_surface_profile_comparison_http.py)
+
+같은 합성 표면에 시험용 서명 카탈로그를 적용해 승인 전후를 검증했다. 두 DSM의 별도 체크포인트 검증과 단면 작업을 마쳐도 매핑 등록 전에는 높이차가 보류됐다. 등록 후 저장된 HTTP 주소에서 41개 차이와 4개 결측 사유를 읽었다. 철회 후 같은 주소는 HTTP 409를 반환했고, Core를 다시 조립한 뒤에도 원래 판정과 매핑 다이제스트는 이력에서 확인됐다. [서명·단면 워커·HTTP·재생 통합 시험](../../tests/contract/test_external_profile_difference_signed_core_lifecycle.py)
+
+GDAL 3.11.4의 `gdallocationinfo`로 같은 원본에서 픽셀 중심을 직접 읽으면 45곳의 높이와 NoData가 시점별로 일치한다. GDAL의 bilinear 옵션은 NoData 바로 앞의 중심 1곳씩도 NoData로 반환했다. KSI의 단면 보간은 가중치가 0인 이웃을 제외하므로 이 두 위치에서는 중심 셀의 유효한 높이를 반환한다. 양쪽 구현이 값을 반환한 위치의 차이는 0 m였다.
+
+**국내 공개 자료.** Kim, Jo, Choi가 공개한 신시도 하부 갯벌의 2019년 8월·10월 드론 표고 파일 두 장과 연구진의 같은 기간 차이 지도(DoD)를 확보하고 배포처 SHA-256과 대조했다. 두 표고 파일을 로컬 Console에서 등록·봉인했다. Linux 검사기가 두 파일에서 같은 638 × 458 격자와 EPSG:32652를 확인했다. 공개본에서 확인되는 촬영 월과 Pix4D 4.0.25는 출처와 함께 저장했고, 정확한 촬영일은 미상으로 두었다. 재조회에서도 출처·월·파일 해시가 유지됐다. 두 원본 모두 파일에서 읽을 수 있는 수직 기준이 없어 Core의 높이 판정은 `VERTICAL_REFERENCE_UNKNOWN`이었다. 연구진의 차이 지도는 외부 참고 자료로 보관했다. 공개 원본과 라이선스는 [Kim, Jo, Choi (2021), Mendeley Data V1, Figure 13, CC BY 4.0](https://data.mendeley.com/datasets/f66r4hvrdg/1)에 있다.
+
+**독립 검증점이 있는 해외 후보.** USGS의 Town Neck Beach 배포 목록에서 2023년 12월 19일과 2024년 4월 15일의 25 cm 라이다 DSM과 각 시점의 별도 GPS 검증점 파일을 확인했다. 두 조사 설명을 확보했다. 파일 배포 서버가 HTTP 403을 반환해 두 격자의 중첩 범위와 DSM 높이의 검증점 잔차는 확인하지 못했다. 두 DSM의 좌표계와 높이 기준(NAD83(2011) / UTM 19N, NAVD88)은 현재 국내 분석 지원 범위 밖이다. [2023년 USGS 자료 설명](https://cmgds.marine.usgs.gov/catalog/whcmsc/SB_data_release/DR_P1UBZZFA/2023028FA_TNB_metadata.html) · [2024년 USGS 자료 설명](https://cmgds.marine.usgs.gov/catalog/whcmsc/SB_data_release/DR_P1UBZZFA/2024-018-FA_TNB_Apr_meta.html)
 
 ## Boundaries
 

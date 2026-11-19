@@ -8,10 +8,10 @@ import hashlib
 import json
 import os
 import stat
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import cast
+from typing import Any, cast
 
 from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives import serialization
@@ -469,6 +469,8 @@ def _administration_actions(
         "SUPERSEDE_POLICY": 0,
         "ADMIT_MAPPING": 1,
         "REVOKE_MAPPING": 1,
+        "ADMIT_PROFILE_MAPPING": 1,
+        "REVOKE_PROFILE_MAPPING": 1,
         "ADMIT_SINGLE_MAPPING": 1,
         "REVOKE_SINGLE_MAPPING": 1,
     }
@@ -486,7 +488,11 @@ def _administration_actions(
             required.update(
                 {"policyId", "policyVersion", "successorPolicyId", "successorPolicyVersion"}
             )
-        elif kind in {"ADMIT_MAPPING", "ADMIT_SINGLE_MAPPING"}:
+        elif kind in {
+            "ADMIT_MAPPING",
+            "ADMIT_PROFILE_MAPPING",
+            "ADMIT_SINGLE_MAPPING",
+        }:
             required.add("mapping")
         else:
             required.add("mappingDigest")
@@ -517,13 +523,26 @@ def _administration_actions(
                     action["successorPolicyVersion"], bool
                 ):
                     raise ValueError("successorPolicyVersion must be an integer")
-        elif kind in {"REVOKE_MAPPING", "REVOKE_SINGLE_MAPPING"} and (
+        elif kind in {
+            "REVOKE_MAPPING",
+            "REVOKE_PROFILE_MAPPING",
+            "REVOKE_SINGLE_MAPPING",
+        } and (
             not isinstance(action["mappingDigest"], str)
             or _DIGEST.fullmatch(action["mappingDigest"]) is None
         ):
             raise ValueError("mappingDigest must be a sha256 digest")
         elif kind == "ADMIT_MAPPING":
             ExternalQuantitativeCompatibilityRecord.from_event_payload(action["mapping"])
+        elif kind == "ADMIT_PROFILE_MAPPING":
+            mapping = ExternalQuantitativeCompatibilityRecord.from_event_payload(action["mapping"])
+            canonical_mapping = {
+                "mappingRecordDigest": mapping.mapping_digest,
+                **mapping.canonical_payload(),
+            }
+            raw_mapping = cast(Mapping[str, Any], action["mapping"])
+            if canonical_json_bytes(raw_mapping) != canonical_json_bytes(canonical_mapping):
+                raise ValueError("profile mapping action must carry the canonical record payload")
         elif kind == "ADMIT_SINGLE_MAPPING":
             ExternalSingleVolumeCompatibilityRecord.from_event_payload(action["mapping"])
         seen_ids.add(action_id)

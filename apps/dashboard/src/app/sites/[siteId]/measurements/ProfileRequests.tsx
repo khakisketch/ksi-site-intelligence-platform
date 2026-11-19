@@ -22,6 +22,7 @@ export interface RequestFeature {
 export interface RequestableAsset extends RequestRow {
   /** 자료 상세로 가는 주소. 수직 기준 선언처럼 자료에서 풀 일이 있을 때 쓴다. */
   assetHref: string;
+  requestNotice?: string | null;
 }
 
 type Blocked = { reasons: string[]; remediations: string[] };
@@ -161,15 +162,16 @@ export function ProfileRequests({
                 <div className="min-w-0">
                   <p className="tabular text-body font-semibold text-ink-1">{row.label}</p>
                   <p className="text-caption text-ink-2" data-request-state={row.state} aria-live="polite">
-                    {row.state === "none" && "아직 요청하지 않았습니다."}
+                    {row.state === "none" && !row.requestNotice && "아직 요청하지 않았습니다."}
                     {row.state === "active" && "단면을 읽는 중입니다. 끝나면 이 화면에 나타납니다."}
                     {row.state === "done" && "단면을 읽었습니다."}
                     {row.state === "unavailable" && "읽은 결과가 있지만 지금은 표시할 수 없습니다."}
                     {row.state === "failed" && `읽지 못했습니다. ${failureText(row.reason)}`}
                     {row.state === "canceled" && "요청을 취소했습니다."}
                   </p>
+                  {row.requestNotice && <p className="text-caption leading-5 text-ink-2">{row.requestNotice} <Link className="underline" href={row.assetHref}>자료 상세 열기</Link></p>}
                 </div>
-                {canRequest && (row.state === "none" || row.state === "failed" || row.state === "canceled") && (
+                {canRequest && !row.requestNotice && (row.state === "none" || row.state === "failed" || row.state === "canceled") && (
                   <ResponsiveActionBoundary action="WORK_ORDERS_WRITE" inlineNotice={false}>
                     <button type="button" className="btn" disabled={busy !== null} onClick={() => void request(row.assetRef)}>
                       {working ? "요청하는 중" : row.state === "none" ? "단면 요청" : "다시 요청"}

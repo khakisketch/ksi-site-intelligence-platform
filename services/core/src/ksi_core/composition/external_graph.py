@@ -359,6 +359,19 @@ def build_external_pre_work_order_graph(
         ):
             raise ValueError("external result workflow mapping must share the Core coordinator")
     external_single_volume_mapping = getattr(external_volume_mapping, "single_mapping_port", None)
+    profile_difference_authority = None
+    if (
+        external_result_workflow is not None
+        and external_result_workflow.build_profile_difference_authority is not None
+    ):
+        profile_difference_authority = external_result_workflow.build_profile_difference_authority(
+            coordinator
+        )
+        if (
+            profile_difference_authority is None
+            or profile_difference_authority.currentness_coordinator is not coordinator
+        ):
+            raise ValueError("profile difference authority must share the Core coordinator")
     external_use_decision_store = (
         ExternalUseDecisionStore(
             journal("external-use-decisions.jsonl"),
@@ -369,6 +382,7 @@ def build_external_pre_work_order_graph(
                 policy_registry=external_validation_policy_registry,
                 evidence_validations=external_evidence_validation_store,
                 relative_volume_authority=external_volume_mapping,
+                profile_difference_authority=profile_difference_authority,
                 single_volume_authority=external_single_volume_mapping,
                 declared_vertical=vertical_declarations,
             ),
@@ -388,6 +402,7 @@ def build_external_pre_work_order_graph(
             evidence_validations=external_evidence_validation_store,
             coordinator=coordinator,
             relative_volume_authority=external_volume_mapping,
+            profile_difference_authority=profile_difference_authority,
             single_volume_authority=external_single_volume_mapping,
             declared_vertical=vertical_declarations,
         )

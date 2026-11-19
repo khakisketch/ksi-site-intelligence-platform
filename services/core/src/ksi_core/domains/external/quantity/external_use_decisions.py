@@ -74,6 +74,11 @@ class ExternalDecisionIntent:
     current_subject: SealedExternalSubjectV1 | None = None
     zone: SealedZoneReferenceV1 | None = None
     requested_zone_id: str | None = None
+    baseline_artifact_id: str | None = None
+    baseline_source_sha256: str | None = None
+    current_artifact_id: str | None = None
+    current_source_sha256: str | None = None
+    profile_comparison_binding_digest: str | None = None
 
     @classmethod
     def from_candidate(cls, candidate: DecisionCandidate) -> ExternalDecisionIntent:
@@ -92,6 +97,11 @@ class ExternalDecisionIntent:
             current_subject=candidate.current_subject,
             zone=candidate.zone,
             requested_zone_id=candidate.zone.zone_id if candidate.zone is not None else None,
+            baseline_artifact_id=candidate.baseline_artifact_id,
+            baseline_source_sha256=candidate.baseline_source_sha256,
+            current_artifact_id=candidate.current_artifact_id,
+            current_source_sha256=candidate.current_source_sha256,
+            profile_comparison_binding_digest=candidate.profile_comparison_binding_digest,
         )
 
     def payload(self) -> dict[str, object]:
@@ -127,12 +137,50 @@ class ExternalDecisionIntent:
             }
         if self.baseline_subject is None or self.current_subject is None:
             raise ValueError("pair decision intent requires ordered subjects")
-        if self.requested_use not in {"VISUAL_COMPARISON", "RELATIVE_VOLUME"}:
+        if self.requested_use not in {"VISUAL_COMPARISON", "RELATIVE_VOLUME", "PROFILE_DIFFERENCE"}:
             raise ValueError("pair decision intent is invalid")
         if self.requested_use == "VISUAL_COMPARISON" and (
             self.zone is not None or self.requested_zone_id is not None
         ):
             raise ValueError("visual comparison intent cannot select a volume zone")
+        if self.requested_use == "PROFILE_DIFFERENCE" and (
+            self.zone is not None or self.requested_zone_id is not None
+        ):
+            raise ValueError("profile difference intent is zone-free")
+        if self.requested_use == "PROFILE_DIFFERENCE":
+            if not all(
+                (
+                    self.baseline_artifact_id,
+                    self.baseline_source_sha256,
+                    self.current_artifact_id,
+                    self.current_source_sha256,
+                    self.profile_comparison_binding_digest,
+                )
+            ):
+                raise ValueError(
+                    "profile difference intent requires exact DSM and profile-pair identities"
+                )
+            _require_text(self.baseline_artifact_id, field="baseline DSM artifact", maximum=255)
+            _require_text(self.current_artifact_id, field="current DSM artifact", maximum=255)
+            if any(
+                not isinstance(digest, str) or _SHA256_DIGEST.fullmatch(digest) is None
+                for digest in (
+                    self.baseline_source_sha256,
+                    self.current_source_sha256,
+                    self.profile_comparison_binding_digest,
+                )
+            ):
+                raise ValueError("profile difference DSM source identities must be sha256 digests")
+            return {
+                "requestedUse": self.requested_use,
+                "baselineSubject": self.baseline_subject.canonical_payload(),
+                "currentSubject": self.current_subject.canonical_payload(),
+                "baselineArtifactId": self.baseline_artifact_id,
+                "baselineSourceSha256": self.baseline_source_sha256,
+                "currentArtifactId": self.current_artifact_id,
+                "currentSourceSha256": self.current_source_sha256,
+                "profileComparisonBindingDigest": self.profile_comparison_binding_digest,
+            }
         if self.requested_use == "RELATIVE_VOLUME" and (
             self.requested_zone_id is None
             or not self.requested_zone_id.strip()
@@ -191,6 +239,38 @@ def _intent_from_payload(raw: object) -> ExternalDecisionIntent:
             current_subject=SealedExternalSubjectV1.model_validate(raw["currentSubject"]),
             zone=SealedZoneReferenceV1.model_validate(zone_raw) if zone_raw is not None else None,
             requested_zone_id=requested_zone_id,
+        )
+    if set(raw) == {
+        "requestedUse",
+        "baselineSubject",
+        "currentSubject",
+        "baselineArtifactId",
+        "baselineSourceSha256",
+        "currentArtifactId",
+        "currentSourceSha256",
+        "profileComparisonBindingDigest",
+    }:
+        if raw["requestedUse"] != "PROFILE_DIFFERENCE":
+            raise ValueError("exact DSM selectors are only valid for PROFILE_DIFFERENCE")
+        return ExternalDecisionIntent(
+            requested_use=raw["requestedUse"],
+            baseline_subject=SealedExternalSubjectV1.model_validate(raw["baselineSubject"]),
+            current_subject=SealedExternalSubjectV1.model_validate(raw["currentSubject"]),
+            baseline_artifact_id=_require_text(
+                raw["baselineArtifactId"], field="baseline DSM artifact", maximum=255
+            ),
+            baseline_source_sha256=_require_digest(
+                raw["baselineSourceSha256"], field="baseline DSM source sha256"
+            ),
+            current_artifact_id=_require_text(
+                raw["currentArtifactId"], field="current DSM artifact", maximum=255
+            ),
+            current_source_sha256=_require_digest(
+                raw["currentSourceSha256"], field="current DSM source sha256"
+            ),
+            profile_comparison_binding_digest=_require_digest(
+                raw["profileComparisonBindingDigest"], field="profile comparison binding digest"
+            ),
         )
     raise ValueError("intent fields are not exact")
 
@@ -270,6 +350,12 @@ def _require_text(value: object, *, field: str, maximum: int = 255) -> str:
     if not normalized or normalized != value or len(normalized) > maximum:
         raise ValueError(f"{field} is invalid")
     return normalized
+
+
+def _require_digest(value: object, *, field: str) -> str:
+    if not isinstance(value, str) or _SHA256_DIGEST.fullmatch(value) is None:
+        raise ValueError(f"{field} must be a sha256 digest")
+    return value
 
 
 def _candidate_wire(candidate: DecisionCandidate) -> dict[str, Any]:
@@ -406,6 +492,25 @@ def _validate_intent(candidate: DecisionCandidate, intent: ExternalDecisionInten
             or (candidate.zone is not None and intent.requested_zone_id != candidate.zone.zone_id)
         ):
             raise ValueError("decision intent does not match evaluator candidate")
+        return
+    if isinstance(candidate, ExternalPairUseDecisionV1) and candidate.use == "PROFILE_DIFFERENCE":
+        if (
+            intent.requested_use != expected.requested_use
+            or intent.baseline_subject != expected.baseline_subject
+            or intent.current_subject != expected.current_subject
+            or intent.requested_zone_id is not None
+            or intent.zone is not None
+            or candidate.zone is not None
+            or intent.baseline_artifact_id != candidate.baseline_artifact_id
+            or intent.baseline_source_sha256 != candidate.baseline_source_sha256
+            or intent.current_artifact_id != candidate.current_artifact_id
+            or intent.current_source_sha256 != candidate.current_source_sha256
+            or intent.profile_comparison_binding_digest
+            != candidate.profile_comparison_binding_digest
+        ):
+            raise ValueError(
+                "profile difference decision intent does not match zone-free ordered pair"
+            )
         return
     if intent.payload() != expected.payload():
         raise ValueError("decision intent does not match evaluator candidate")

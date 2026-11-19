@@ -152,7 +152,9 @@ def _height_decision_id(client: Any, order: Any, subject: Any, *, key: str) -> s
     return response.json()["decision"]["decisionId"]
 
 
-def _provision_surface_grant(ctx: _PlatformFlowContext, area_id: str, current_revision: Any) -> str:
+def _provision_surface_grant(
+    ctx: _PlatformFlowContext, area_id: str, current_revision: Any, *, extent_m: float = 1.0
+) -> str:
     from ksi_core.auth import Principal, PrincipalKind, Role
     from ksi_core.domains.external.ingress.spatial_asset_catalog import SpatialAssetCatalog
     from spatial_data_fixture import make_grant
@@ -167,6 +169,11 @@ def _provision_surface_grant(ctx: _PlatformFlowContext, area_id: str, current_re
         organization_id="org-a",
     )
     entry = current_revision.manifest.entries[0]
+    submission_ref = build_external_reconstruction_submission_ref(
+        organization_id=reader.organization_id,
+        work_order_id=current_revision.work_order_id,
+        submission_id=current_revision.submission.submission_id,
+    )
     items = SpatialAssetCatalog(
         reconstruction=ctx.app.state.external_reconstruction_store,
         work_orders=ctx.app.state.observation_work_order_store,
@@ -174,9 +181,14 @@ def _provision_surface_grant(ctx: _PlatformFlowContext, area_id: str, current_re
         work_areas=ctx.app.state.work_area_store,
         inspections=ctx.app.state.external_artifact_inspection_store,
     ).items(ctx.site_id, area_id, reader)
-    current_items = [item for item in items if item.artifact_id == entry.artifact_id]
-    assert current_items, "sealed current DSM must be discoverable as a profile source"
-    candidate = current_items[0]
+    [candidate] = [
+        item
+        for item in items
+        if item.work_order_id == current_revision.work_order_id
+        and item.submission_ref == submission_ref
+        and item.revision == current_revision.submission.revision
+        and item.artifact_id == entry.artifact_id
+    ]
     source = lane.sources.resolve(
         site_id=ctx.site_id,
         work_area_id=area_id,
@@ -187,7 +199,7 @@ def _provision_surface_grant(ctx: _PlatformFlowContext, area_id: str, current_re
     assert measurements is not None
     lane.grants.provision(
         make_grant(
-            grant_id="platform-surface-grant-1",
+            grant_id="surface-grant-" + candidate.asset_ref,
             organization_id="org-a",
             beneficiary_principal_id="platform-data-reader",
             asset_ref=candidate.asset_ref,
@@ -195,8 +207,8 @@ def _provision_surface_grant(ctx: _PlatformFlowContext, area_id: str, current_re
             work_area_id=area_id,
             allowed_bounds=(
                 float(_ORIGIN_X) - 1.0,
-                float(_ORIGIN_Y) - 1.0,
-                float(_ORIGIN_X) + 1.0,
+                float(_ORIGIN_Y) - extent_m,
+                float(_ORIGIN_X) + extent_m,
                 float(_ORIGIN_Y) + 1.0,
             ),
             observed_crs_digest=measurements.observed_crs_digest,
@@ -231,7 +243,7 @@ def _genuine_completion(
     )
 
 
-def _retain_real_parser_report(flow: Any) -> None:
+def _retain_real_parser_report(flow: Any, subject: Any = None, revision: Any = None) -> None:
     """실제 parser와 검사 소유자를 쓰되 외부 프로세스 실행 경계는 분리한다."""
     import hashlib
     from io import BytesIO
@@ -261,7 +273,9 @@ def _retain_real_parser_report(flow: Any) -> None:
     )
     from test_external_inspector_container_entrypoint import _decode_output
 
-    ctx, subject, revision = flow.ctx, flow.current_subject, flow.current_revision
+    ctx = flow.ctx
+    if subject is None and revision is None:
+        subject, revision = flow.current_subject, flow.current_revision
     store = ctx.app.state.external_artifact_inspection_store
     policy, manifest = flow.view._inspection_policy, flow.view._inspector_manifest
     now = ctx.now
@@ -296,7 +310,7 @@ def _retain_real_parser_report(flow: Any) -> None:
         policy=policy,
         attempt_nonce="surface-fixture-actual-parser",
     )
-    root = flow.tmp_path / "surface-fixture-inspection"
+    root = flow.tmp_path / ("surface-fixture-inspection-" + subject.canonical_digest()[7:])
     root.mkdir(mode=0o700)
     artifact, workspace = root / "sealed-dsm.tif", root / "workspace"
     artifact.write_bytes(raw)
@@ -360,25 +374,32 @@ def _retain_real_parser_report(flow: Any) -> None:
 
 
 class _ReadyFlow:
-    def __init__(self, tmp_path: Path, *, activation_seconds: float = 3600.0) -> None:
+    def __init__(
+        self,
+        tmp_path: Path,
+        *,
+        activation_seconds: float = 3600.0,
+        build_profile_difference_authority: Any = None,
+    ) -> None:
         import threading
         from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
         self.now_box: list[datetime] = [datetime.now(UTC).replace(microsecond=0)]
-        # 봉인된 DSM 바이트를 /source로 내려주는 실제 loopback 객체 서버. 바이트는 봉인 뒤 채운다.
-        self.source_bytes: dict[str, bytes] = {"payload": b""}
+        # Pending jobs fetch their own immutable source through the worker capability.
+        self.source_bytes: dict[str, bytes] = {}
         source_bytes = self.source_bytes
 
         class Handler(BaseHTTPRequestHandler):
             def do_GET(self) -> None:  # noqa: N802
-                if self.path != "/source" or not source_bytes["payload"]:
+                payload = source_bytes.get(self.path.removeprefix("/source/"))
+                if not self.path.startswith("/source/") or payload is None:
                     self.send_error(404)
                     return
                 self.send_response(200)
                 self.send_header("Content-Type", "image/tiff")
-                self.send_header("Content-Length", str(len(source_bytes["payload"])))
+                self.send_header("Content-Length", str(len(payload)))
                 self.end_headers()
-                self.wfile.write(source_bytes["payload"])
+                self.wfile.write(payload)
 
             def log_message(self, *_: object) -> None:
                 return
@@ -397,6 +418,7 @@ class _ReadyFlow:
                     origin=self.object_origin,
                 ),
                 spatial_object_origin=self.object_origin,
+                build_profile_difference_authority=build_profile_difference_authority,
             )
         except BaseException:
             self.object_server.shutdown()
@@ -450,8 +472,8 @@ class _ReadyFlow:
         self.servers = _CoreAndObjectServers(self.view)
         self.servers.__enter__()
         _retain_real_parser_report(self)
-        self.source_bytes["payload"] = self.ctx.storage.object_bytes(
-            _sealed_object_key(self.ctx, self.current_revision)
+        self.source_bytes["sha256:" + self.current_revision.manifest.entries[0].observed_sha256] = (
+            self.ctx.storage.object_bytes(_sealed_object_key(self.ctx, self.current_revision))
         )
         self.http = httpx.Client(base_url=self.servers.core_origin, trust_env=False)
         self.asset_ref = _provision_surface_grant(self.ctx, self.area_id, self.current_revision)
@@ -587,6 +609,34 @@ def test_issue_list_lease_renew_complete_result_over_loopback_http(tmp_path: Pat
         assert payload["job"]["executionState"] == "COMPLETED"
         assert payload["result"]["resultDigest"] == receipt_json["resultDigest"]
         assert payload["result"]["lineDigest"] == flow.feature["lineDigest"]
+
+        exact_history = http.get(
+            flow.requester_base,
+            headers=_reader_headers(),
+            params={
+                "limit": 1,
+                "feature_id": flow.feature["featureId"],
+                "feature_revision": flow.feature["revision"],
+                "asset_ref": flow.asset_ref,
+                "execution_group": "COMPLETED",
+            },
+        )
+        assert exact_history.status_code == 200, exact_history.text
+        assert [item["jobId"] for item in exact_history.json()["items"]] == [job_id]
+        assert exact_history.json()["items"][0]["executionState"] == "COMPLETED"
+
+        missing_feature = http.get(
+            flow.requester_base,
+            headers=_reader_headers(),
+            params={"limit": 1, "feature_revision": 1},
+        )
+        assert missing_feature.status_code == 422, missing_feature.text
+        malformed_asset = http.get(
+            flow.requester_base,
+            headers=_reader_headers(),
+            params={"limit": 1, "asset_ref": "not-an-asset"},
+        )
+        assert malformed_asset.status_code == 422, malformed_asset.text
     finally:
         flow.close()
 
@@ -992,6 +1042,7 @@ def _run_surface_worker(flow: _ReadyFlow, core_origin: str) -> bool:
     )
     from ksi_processing_controller.surface_profile_core_client import SurfaceProfileCoreClient
     from ksi_processing_controller.surface_profile_runner import run_once
+    from surface_profile_job_fixture import compute_generated_profile
 
     wiring = flow.ctx.app.state.surface_profile
     workspace = flow.tmp_path / "surface-worker"
@@ -1037,6 +1088,7 @@ def _run_surface_worker(flow: _ReadyFlow, core_origin: str) -> bool:
                 clock=lambda: flow.now_box[0],
                 workspace_root=workspace,
                 heartbeat_millis=50,
+                compute=compute_generated_profile,
             )
 
 
@@ -1069,7 +1121,9 @@ def test_actual_worker_reads_sealed_dsm_bytes_through_real_core_and_owners(tmp_p
         samples = released.json()["result"]["samples"]
 
         # 독립 기준: 봉인된 바이트를 rasterio로 직접 읽어 화소 중심 사이를 이중선형으로 보간한다.
-        raw = flow.source_bytes["payload"]
+        raw = flow.source_bytes[
+            "sha256:" + flow.current_revision.manifest.entries[0].observed_sha256
+        ]
         with rasterio.MemoryFile(raw) as memory, memory.open() as dataset:
             grid = dataset.read(1)
             left, top = dataset.transform.c, dataset.transform.f

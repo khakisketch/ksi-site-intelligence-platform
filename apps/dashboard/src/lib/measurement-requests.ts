@@ -67,6 +67,8 @@ export function hasActiveRequest(rows: readonly RequestRow[]): boolean {
 export interface ProfileRequestBody {
   assetRef: string;
   feature: MeasurementFeatureRef;
+  /** Re-read at an explicitly chosen existing plan spacing; omitted for the default plan. */
+  sampleSpacingM?: number;
 }
 
 const ASSET_REF = /^ksa-v1-[0-9a-f]{64}$/;
@@ -77,7 +79,7 @@ const DIGEST = /^sha256:[0-9a-f]{64}$/;
 export function parseProfileRequestBody(value: unknown): ProfileRequestBody | null {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
   const body = value as Record<string, unknown>;
-  if (Object.keys(body).some((key) => key !== "assetRef" && key !== "feature")) return null;
+  if (Object.keys(body).some((key) => key !== "assetRef" && key !== "feature" && key !== "sampleSpacingM")) return null;
   if (typeof body.assetRef !== "string" || !ASSET_REF.test(body.assetRef)) return null;
   const feature = body.feature;
   if (typeof feature !== "object" || feature === null || Array.isArray(feature)) return null;
@@ -86,5 +88,10 @@ export function parseProfileRequestBody(value: unknown): ProfileRequestBody | nu
   if (typeof ref.featureId !== "string" || !FEATURE_ID.test(ref.featureId)) return null;
   if (!Number.isSafeInteger(ref.revision) || (ref.revision as number) < 1 || (ref.revision as number) > 100) return null;
   if (typeof ref.lineDigest !== "string" || !DIGEST.test(ref.lineDigest)) return null;
-  return { assetRef: body.assetRef, feature: { featureId: ref.featureId, revision: ref.revision as number, lineDigest: ref.lineDigest } };
+  if (body.sampleSpacingM !== undefined && (typeof body.sampleSpacingM !== "number" || !Number.isFinite(body.sampleSpacingM) || body.sampleSpacingM <= 0)) return null;
+  return {
+    assetRef: body.assetRef,
+    feature: { featureId: ref.featureId, revision: ref.revision as number, lineDigest: ref.lineDigest },
+    ...(typeof body.sampleSpacingM === "number" ? { sampleSpacingM: body.sampleSpacingM } : {}),
+  };
 }

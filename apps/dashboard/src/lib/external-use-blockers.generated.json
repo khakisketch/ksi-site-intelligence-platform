@@ -13,9 +13,13 @@
     "COMPATIBILITY_MAPPING_MISSING": {"title": "호환성 매핑이 등록되지 않았습니다", "explanation": "이 시점 쌍에 대한 호환성 매핑 기록이 없습니다.", "owner": "ADMIN", "target": "MAPPING"},
     "VOLUME_ZONE_BINDING_INVALID": {"title": "체적 구역 선택이 올바르지 않습니다", "explanation": "선택한 구역이 활성 구역이 아니거나 매핑에 묶인 구역 정의와 다릅니다.", "owner": "OPERATOR", "target": "ZONE"},
     "EVIDENCE_RECORD_BINDING_INVALID": {"title": "검증된 체크포인트 증거가 없습니다", "explanation": "두 시점 각각에 대해 Core가 검증한 체크포인트 증거 기록이 현재 기준으로 존재해야 합니다.", "owner": "CUSTOMER", "target": "EVIDENCE"},
-    "EVIDENCE_INDEPENDENCE_UNATTESTED": {"title": "체크포인트 증거에 독립성 확인이 없습니다", "explanation": "증거는 검증됐지만, 재구성과 독립적으로 측정했다는 별도 확인이 증거 컨텍스트에 없습니다. 상대 체적 판정은 시점마다 이 확인을 요구합니다.", "owner": "ADMIN", "target": "EVIDENCE"},
+    "EVIDENCE_INDEPENDENCE_UNATTESTED": {"title": "체크포인트 증거에 독립성 확인이 없습니다", "explanation": "증거는 검증됐지만, 재구성과 독립적으로 측정했다는 별도 확인이 증거 컨텍스트에 없습니다. 두 시점 체적 또는 단면 높이차를 정량 비교하려면 시점마다 이 확인이 필요합니다.", "owner": "ADMIN", "target": "EVIDENCE"},
     "PAIR_SUBJECTS_NOT_DISTINCT": {"title": "같은 산출물끼리는 비교할 수 없습니다", "explanation": "기준 시점과 현재 시점으로 같은 산출물 개정을 선택했습니다.", "owner": "OPERATOR", "target": "SUBJECT"},
-    "SINGLE_VOLUME_MAPPING_UNAVAILABLE": {"title": "단일 시점 체적 매핑이 없습니다", "explanation": "이 산출물과 구역을 단일 시점 체적으로 측정해도 된다는 호환성 매핑이 등록되어 있지 않거나 만료되었습니다.", "owner": "ADMIN", "target": "MAPPING"}
+    "SINGLE_VOLUME_MAPPING_UNAVAILABLE": {"title": "단일 시점 체적 매핑이 없습니다", "explanation": "이 산출물과 구역을 단일 시점 체적으로 측정해도 된다는 호환성 매핑이 등록되어 있지 않거나 만료되었습니다.", "owner": "ADMIN", "target": "MAPPING"},
+    "PROFILE_DIFFERENCE_CRS_MISMATCH": {"title": "두 단면의 수평 좌표계가 다릅니다", "explanation": "파일에 기록된 수평 좌표계가 시점별로 달라 단면의 높이 차이를 같은 기준으로 비교할 수 없습니다.", "owner": "CUSTOMER", "target": "INSPECTION"},
+    "PROFILE_DIFFERENCE_VERTICAL_REFERENCE_MISMATCH": {"title": "두 단면의 수직 기준이 다릅니다", "explanation": "파일에 기록된 수직 기준이 시점별로 달라 단면의 높이 차이를 정량 비교할 수 없습니다.", "owner": "CUSTOMER", "target": "INSPECTION"},
+    "PROFILE_DIFFERENCE_RECEIPT_REFERENCE_MISMATCH": {"title": "단면의 좌표 정보가 파일 관찰값과 다릅니다", "explanation": "프로파일 결과의 좌표계 또는 수직 기준이 두 DSM 파일에서 Core가 직접 관찰한 값과 일치하지 않습니다.", "owner": "OPERATOR", "target": "INSPECTION"},
+    "PROFILE_DIFFERENCE_CAPTURE_ORDER_INVALID": {"title": "촬영 기간의 시점 순서를 확인할 수 없습니다", "explanation": "봉인된 촬영 기간이 없거나 기준 시점의 촬영이 현재 시점보다 먼저 끝나지 않아 순서 있는 단면 높이차 비교를 막았습니다.", "owner": "CUSTOMER", "target": "SUBJECT"}
   },
   "remediations": {
     "DEFINE_HEIGHT_PRODUCT": {"step": "이전 판정입니다. 높이 확인을 다시 요청하세요.", "owner": "OPERATOR", "target": "HEIGHT"},
@@ -33,6 +37,10 @@
     "ATTEST_INDEPENDENT_EVIDENCE": {"step": "관리자에게 독립 측량 확인이 담긴 증거 컨텍스트 등록을 요청한 뒤 증거 검증과 매핑을 다시 진행하세요.", "owner": "ADMIN", "target": "EVIDENCE"},
     "SELECT_DISTINCT_EPOCHS": {"step": "서로 다른 관측 시점의 산출물을 기준과 현재로 선택하세요.", "owner": "OPERATOR", "target": "SUBJECT"},
     "AUTHORIZE_SINGLE_VOLUME_MAPPING": {"step": "관리자에게 이 산출물과 구역에 대한 단일 시점 체적 매핑 등록을 요청하세요.", "owner": "ADMIN", "target": "MAPPING"},
+    "SELECT_MATCHING_OBSERVED_CRS": {"step": "파일에 같은 수평 좌표계가 기록된 기준·현재 DSM을 선택하세요.", "owner": "CUSTOMER", "target": "INSPECTION"},
+    "SELECT_MATCHING_OBSERVED_VERTICAL_REFERENCE": {"step": "파일에 같은 수직 기준이 기록된 기준·현재 DSM을 선택하세요.", "owner": "CUSTOMER", "target": "INSPECTION"},
+    "REGENERATE_PROFILE_RECEIPTS_FROM_OBSERVED_REFERENCES": {"step": "두 DSM 파일의 좌표 관찰값과 일치하는 단면 결과를 다시 생성하세요.", "owner": "OPERATOR", "target": "INSPECTION"},
+    "SELECT_STRICTLY_ORDERED_CAPTURE_EPOCHS": {"step": "촬영 기간이 확인되고 기준 시점 촬영이 현재 시점보다 먼저 끝나는 두 시점을 선택하세요.", "owner": "CUSTOMER", "target": "SUBJECT"},
     "RESOLVE_EXTERNAL_USE_BLOCKER": {"step": "전문가 정보의 사유 코드를 확인하고 운영자에게 문의하세요.", "owner": "OPERATOR", "target": "GENERAL"}
   }
 }

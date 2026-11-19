@@ -53,7 +53,7 @@ def mounted_profile(
         )
         .sealed()
     )
-    lane = Lane(path, resource_envelope=envelope, **(policy_overrides or {}))
+    lane = Lane(path, **({"resource_envelope": envelope} | (policy_overrides or {})))
     graph = SimpleNamespace(lane=lane, now=NOW)
     reader = requester()
     if scoped or requester_kind is not PrincipalKind.OPERATOR:

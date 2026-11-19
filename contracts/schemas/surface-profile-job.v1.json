@@ -61,6 +61,32 @@
       "title": "ArtifactOutcome",
       "type": "string"
     },
+    "CreateSurfaceProfileComparisonV1": {
+      "additionalProperties": false,
+      "description": "Explicitly request the same saved-line profile from two ordered epochs.",
+      "properties": {
+        "baselineJobId": {
+          "maxLength": 36,
+          "minLength": 36,
+          "pattern": "^spj-[0-9a-f]{32}$",
+          "title": "Baselinejobid",
+          "type": "string"
+        },
+        "currentJobId": {
+          "maxLength": 36,
+          "minLength": 36,
+          "pattern": "^spj-[0-9a-f]{32}$",
+          "title": "Currentjobid",
+          "type": "string"
+        }
+      },
+      "required": [
+        "baselineJobId",
+        "currentJobId"
+      ],
+      "title": "CreateSurfaceProfileComparisonV1",
+      "type": "object"
+    },
     "CreateSurfaceProfileJobV1": {
       "additionalProperties": false,
       "description": "Public request: a saved line revision on one exact asset.  The line is *not* in the body —\nCore reads it from the saved revision, so a request cannot read a line nobody saved.",
@@ -1372,6 +1398,245 @@
       "title": "SurfaceProfileAttemptV1",
       "type": "object"
     },
+    "SurfaceProfileComparisonResultV1": {
+      "additionalProperties": false,
+      "description": "Numeric output bound to both exact immutable single-surface results.",
+      "properties": {
+        "baselineResultDigest": {
+          "maxLength": 71,
+          "minLength": 71,
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Baselineresultdigest",
+          "type": "string"
+        },
+        "currentResultDigest": {
+          "maxLength": 71,
+          "minLength": 71,
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Currentresultdigest",
+          "type": "string"
+        },
+        "samples": {
+          "items": {
+            "$ref": "#/$defs/SurfaceProfileComparisonSampleV1"
+          },
+          "maxItems": 5000,
+          "minItems": 2,
+          "title": "Samples",
+          "type": "array"
+        },
+        "validCount": {
+          "minimum": 0,
+          "title": "Validcount",
+          "type": "integer"
+        },
+        "largestRiseM": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Largestrisem"
+        },
+        "largestDropM": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Largestdropm"
+        },
+        "comparisonDigest": {
+          "anyOf": [
+            {
+              "maxLength": 71,
+              "minLength": 71,
+              "pattern": "^sha256:[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Comparisondigest"
+        }
+      },
+      "required": [
+        "baselineResultDigest",
+        "currentResultDigest",
+        "samples",
+        "validCount",
+        "largestRiseM",
+        "largestDropM"
+      ],
+      "title": "SurfaceProfileComparisonResultV1",
+      "type": "object"
+    },
+    "SurfaceProfileComparisonSampleV1": {
+      "additionalProperties": false,
+      "properties": {
+        "distanceM": {
+          "minimum": 0,
+          "title": "Distancem",
+          "type": "number"
+        },
+        "baselineM": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Baselinem"
+        },
+        "currentM": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Currentm"
+        },
+        "differenceM": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Differencem"
+        },
+        "invalidReason": {
+          "anyOf": [
+            {
+              "enum": [
+                "BASELINE_UNAVAILABLE",
+                "CURRENT_UNAVAILABLE",
+                "BOTH_UNAVAILABLE"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Invalidreason"
+        }
+      },
+      "required": [
+        "distanceM",
+        "baselineM",
+        "currentM",
+        "differenceM",
+        "invalidReason"
+      ],
+      "title": "SurfaceProfileComparisonSampleV1",
+      "type": "object"
+    },
+    "SurfaceProfileComparisonV1": {
+      "additionalProperties": false,
+      "properties": {
+        "contractVersion": {
+          "const": "surface-profile-comparison.v1",
+          "default": "surface-profile-comparison.v1",
+          "title": "Contractversion",
+          "type": "string"
+        },
+        "baselineJobId": {
+          "maxLength": 36,
+          "minLength": 36,
+          "pattern": "^spj-[0-9a-f]{32}$",
+          "title": "Baselinejobid",
+          "type": "string"
+        },
+        "currentJobId": {
+          "maxLength": 36,
+          "minLength": 36,
+          "pattern": "^spj-[0-9a-f]{32}$",
+          "title": "Currentjobid",
+          "type": "string"
+        },
+        "decisionId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Decisionid",
+          "type": "string"
+        },
+        "decisionDigest": {
+          "maxLength": 71,
+          "minLength": 71,
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Decisiondigest",
+          "type": "string"
+        },
+        "verdict": {
+          "enum": [
+            "BLOCKED",
+            "ELIGIBLE"
+          ],
+          "title": "Verdict",
+          "type": "string"
+        },
+        "reasons": {
+          "items": {
+            "maxLength": 255,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 32,
+          "minItems": 1,
+          "title": "Reasons",
+          "type": "array"
+        },
+        "remediations": {
+          "items": {
+            "maxLength": 255,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 32,
+          "minItems": 1,
+          "title": "Remediations",
+          "type": "array"
+        },
+        "result": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SurfaceProfileComparisonResultV1"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "baselineJobId",
+        "currentJobId",
+        "decisionId",
+        "decisionDigest",
+        "verdict",
+        "reasons",
+        "remediations"
+      ],
+      "title": "SurfaceProfileComparisonV1",
+      "type": "object"
+    },
     "SurfaceProfileCompleteRequestV1": {
       "additionalProperties": false,
       "properties": {
@@ -1468,6 +1733,7 @@
             "PROCESSING_LOCATION_DENIED",
             "POLICY_UNAVAILABLE",
             "CURRENTNESS_UNAVAILABLE",
+            "PROFILE_COMPARISON_NO_LONGER_ELIGIBLE",
             "RESOURCE_LIMIT_EXCEEDED",
             "LINE_OUTSIDE_SURFACE",
             "GRANT_REQUIRED",
@@ -1513,7 +1779,11 @@
         },
         "remediation": {
           "items": {
-            "const": "CONTACT_OPERATOR",
+            "enum": [
+              "CONTACT_OPERATOR",
+              "RECHECK_CURRENT_PAIR",
+              "CREATE_NEW_COMPARISON"
+            ],
             "type": "string"
           },
           "title": "Remediation",
@@ -1551,6 +1821,7 @@
             "PROCESSING_LOCATION_DENIED",
             "POLICY_UNAVAILABLE",
             "CURRENTNESS_UNAVAILABLE",
+            "PROFILE_COMPARISON_NO_LONGER_ELIGIBLE",
             "RESOURCE_LIMIT_EXCEEDED",
             "LINE_OUTSIDE_SURFACE",
             "GRANT_REQUIRED",
@@ -1825,6 +2096,7 @@
                 "PROCESSING_LOCATION_DENIED",
                 "POLICY_UNAVAILABLE",
                 "CURRENTNESS_UNAVAILABLE",
+                "PROFILE_COMPARISON_NO_LONGER_ELIGIBLE",
                 "RESOURCE_LIMIT_EXCEEDED",
                 "LINE_OUTSIDE_SURFACE",
                 "GRANT_REQUIRED",

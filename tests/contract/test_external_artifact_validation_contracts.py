@@ -355,12 +355,13 @@ def _single_decision() -> ExternalUseDecisionV1:
 
 def _pair_decision(
     *,
-    use: Literal["VISUAL_COMPARISON", "RELATIVE_VOLUME"] = "RELATIVE_VOLUME",
+    use: Literal["VISUAL_COMPARISON", "RELATIVE_VOLUME", "PROFILE_DIFFERENCE"] = "RELATIVE_VOLUME",
     verdict: DecisionVerdict = DecisionVerdict.BLOCKED,
 ) -> ExternalPairUseDecisionV1:
     baseline = _subject(revision=1, marker="a")
     current = _subject(revision=2, marker="c")
     details: dict[str, Any] = {}
+    evidence_digests: tuple[str, ...] = (_sealed_digest(_evidence_record().evidence_record_digest),)
     if use == "RELATIVE_VOLUME":
         details["zone"] = SealedZoneReferenceV1(
             zone_id="zone-1",
@@ -371,6 +372,23 @@ def _pair_decision(
         )
         if verdict is not DecisionVerdict.BLOCKED:
             details["compatibility_mapping_digest"] = _digest("9")
+    elif use == "PROFILE_DIFFERENCE":
+        details.update(
+            {
+                "baseline_artifact_id": "baseline-dsm",
+                "baseline_source_sha256": _digest("d"),
+                "current_artifact_id": "current-dsm",
+                "current_source_sha256": _digest("e"),
+                "profile_comparison_binding_digest": _digest("f"),
+                "zone": None,
+            }
+        )
+        if verdict is not DecisionVerdict.BLOCKED:
+            details["compatibility_mapping_digest"] = _digest("9")
+            evidence_digests = (
+                _sealed_digest(_evidence_record().evidence_record_digest),
+                _digest("8"),
+            )
     elif verdict is not DecisionVerdict.BLOCKED:
         details["baseline_sanitized_display_receipt_digest"] = _digest("7")
         details["current_sanitized_display_receipt_digest"] = _digest("8")
@@ -384,7 +402,7 @@ def _pair_decision(
         policy_digest=_sealed_digest(_policy().policy_digest),
         baseline_inspection_report_digest=_sealed_digest(_report().sealed().report_digest),
         current_inspection_report_digest=_digest("6"),
-        evidence_record_digests=(_sealed_digest(_evidence_record().evidence_record_digest),),
+        evidence_record_digests=evidence_digests,
         verdict=verdict,
         reasons=("SYNTHETIC_TEST_ONLY",),
         remediations=("AUTHORIZED_POLICY_PROCESS",),
@@ -689,6 +707,52 @@ def test_pair_decision_schema_requires_mapping_digest_for_nonblocked_volume() ->
         Draft202012Validator(_schema("external-pair-use-decision.v1.json")).validate(raw)
 
 
+def test_profile_difference_schema_binds_exact_receipt_pair_and_stays_zone_free() -> None:
+    """The new quantitative pair carries exact DSM/profile identities without a zone."""
+    wire = external_pair_use_decision_wire_dict(
+        _pair_decision(use="PROFILE_DIFFERENCE", verdict=DecisionVerdict.ELIGIBLE)
+    )
+    assert wire["zone"] is None
+    assert wire["profileComparisonBindingDigest"] == _digest("f")
+    assert len(wire["evidenceRecordDigests"]) == 2
+    Draft202012Validator(_schema("external-pair-use-decision.v1.json")).validate(wire)
+
+    wire.pop("decisionDigest")
+    wire["profileComparisonBindingDigest"] = None
+    with pytest.raises(ValidationError, match="profile binding"):
+        ExternalPairUseDecisionV1.model_validate(wire)
+
+
+def test_signed_profile_work_area_is_sealed_without_changing_legacy_pair_bytes() -> None:
+    validator = Draft202012Validator(_schema("external-pair-use-decision.v1.json"))
+    original = _pair_decision(use="PROFILE_DIFFERENCE", verdict=DecisionVerdict.ELIGIBLE).sealed()
+    legacy = external_pair_use_decision_wire_dict(original)
+    assert "profileWorkAreaId" not in legacy
+    assert (
+        ExternalPairUseDecisionV1.model_validate(legacy).canonical_digest()
+        == original.decision_digest
+    )
+    selected = dict(legacy, profileWorkAreaId="area-17", decisionDigest=None)
+    signed = ExternalPairUseDecisionV1.model_validate(selected).sealed()
+    signed_wire = external_pair_use_decision_wire_dict(signed)
+    validator.validate(signed_wire)
+    assert signed_wire["profileWorkAreaId"] == "area-17"
+    assert signed.decision_digest != original.decision_digest
+    with pytest.raises(ValidationError, match="decisionDigest"):
+        ExternalPairUseDecisionV1.model_validate(dict(signed_wire, profileWorkAreaId="area-18"))
+    for decision in (
+        _pair_decision(use="VISUAL_COMPARISON", verdict=DecisionVerdict.ELIGIBLE),
+        _pair_decision(use="RELATIVE_VOLUME", verdict=DecisionVerdict.ELIGIBLE),
+        _pair_decision(use="PROFILE_DIFFERENCE", verdict=DecisionVerdict.BLOCKED),
+    ):
+        unapproved = external_pair_use_decision_wire_dict(decision)
+        unapproved.update(profileWorkAreaId="area-17", decisionDigest=None)
+        with pytest.raises(ValidationError):
+            ExternalPairUseDecisionV1.model_validate(unapproved)
+        with pytest.raises(JsonSchemaValidationError):
+            validator.validate(unapproved)
+
+
 def test_observed_vertical_reference_has_an_exact_content_digest() -> None:
     """The digest identifies parser-observed content; it makes no datum-truth assertion."""
     reference = ObservedVerticalReferenceV1(identifier="EPSG:3855", basis="synthetic geoid")
@@ -712,9 +776,7 @@ def test_legacy_visual_pair_digest_replays_without_a_null_mapping_field() -> Non
     )
 
 
-@pytest.mark.parametrize(
-    "verdict", (DecisionVerdict.ELIGIBLE, DecisionVerdict.RESTRICTED)
-)
+@pytest.mark.parametrize("verdict", (DecisionVerdict.ELIGIBLE, DecisionVerdict.RESTRICTED))
 def test_nonblocked_visual_pair_binds_two_named_display_receipts(
     verdict: DecisionVerdict,
 ) -> None:

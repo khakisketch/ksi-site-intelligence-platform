@@ -15,6 +15,10 @@ export interface LineEditorMapProps {
   vertices: LineVertex[];
   /** 작업구역 바깥 경계([경도, 위도]). 모르면 null이며 구역을 그리지 않는다. */
   ring: LineVertex[] | null;
+  /** 검사 보고서에 포함된 래스터 footprint. 작업구역과 별도 레이어로 그린다. */
+  sourceRing?: LineVertex[] | null;
+  /** 첫 표시 시 맞출 범위. 비어 있으면 구역 경계를 사용한다. */
+  focusRing?: LineVertex[] | null;
   disabled: boolean;
   onAdd: (vertex: LineVertex) => void;
   onMove: (index: number, vertex: LineVertex) => void;
