@@ -19,6 +19,7 @@ from ksi_core.domains.external.delivery.surface_profile_jobs import (
 )
 from ksi_core.durable_journal import DurableJournal
 from ksi_core.foundation.currentness import ExternalAuthorityCurrentnessCoordinator
+from ksi_event_contracts._spatial_data import WORKER_CLOCK_SKEW
 from ksi_event_contracts.surface_profile import SurfaceProfileResultV1
 from ksi_event_contracts.surface_profile_job import SurfaceProfileLeaseRequestV1
 from spatial_data_fixture import NOW
@@ -39,6 +40,8 @@ from surface_profile_job_fixture import (
     worker,
     write_raster,
 )
+
+SKEW_SECONDS = WORKER_CLOCK_SKEW.total_seconds()
 
 
 class Lane:
@@ -636,7 +639,8 @@ def test_a_number_where_geometry_says_outside_is_refused(tmp_path: Path) -> None
         dict(read_window=None),
         dict(accuracy_assessed=True),
         dict(prepared_at=NOW + later(500)),
-        dict(prepared_at=NOW),
+        # Acquired at NOW + 1 s: ten seconds earlier is far outside the skew bound.
+        dict(prepared_at=NOW - later(10)),
     ],
 )
 def test_a_receipt_that_does_not_attest_this_job_is_refused(
@@ -647,6 +651,29 @@ def test_a_receipt_that_does_not_attest_this_job_is_refused(
     bad = receipt_for(job, result, NOW + later(2), **change)
     error = _refusal(lambda: lane.complete(job_id, attempt, result, bad))
     assert error.reason in {"INTEGRITY_MISMATCH", "INVALID_REQUEST"} or error.status_code == 409
+
+
+@pytest.mark.parametrize(
+    ("prepared_at_offset", "accepted"),
+    [
+        # Attempt acquired at NOW + 1 s and checked by the Core at NOW + 2 s.
+        (1.0 - SKEW_SECONDS, True),
+        (1.0 - SKEW_SECONDS - 0.001, False),
+        (2.0 + SKEW_SECONDS, True),
+        (2.0 + SKEW_SECONDS + 0.001, False),
+        (2.0, True),
+    ],
+)
+def test_receipt_time_tolerates_worker_clock_skew_only_within_the_bound(
+    lane: Lane, prepared_at_offset: float, accepted: bool
+) -> None:
+    job_id, attempt, job = lane.running()
+    result, receipt = lane.answer(job, at=prepared_at_offset)
+    if accepted:
+        assert lane.complete(job_id, attempt, result, receipt).execution_state.value == "COMPLETED"
+    else:
+        error = _refusal(lambda: lane.complete(job_id, attempt, result, receipt))
+        assert error.reason in {"INTEGRITY_MISMATCH", "INVALID_REQUEST"} or error.status_code == 409
 
 
 def test_a_wider_read_window_or_oversize_result_is_refused(tmp_path: Path) -> None:

@@ -9,6 +9,7 @@ from urllib.parse import urlsplit
 from pydantic import AfterValidator, Field, StrictBool, StringConstraints, model_validator
 
 from ksi_event_contracts._spatial_data import (
+    WORKER_CLOCK_SKEW,
     Digest,
     PositiveInt,
     SpatialDataDigestModel,
@@ -235,7 +236,11 @@ class SpatialDataUploadDeclarationV1(SpatialDataDigestModel):
             raise ValueError("upload receipt must bind exact job/attempt")
         if self.sha256 != receipt.output_sha256 or self.size_bytes != receipt.output_size_bytes:
             raise ValueError("upload must bind exact output bytes")
-        if not attempt.acquired_at <= receipt.prepared_at < attempt.lease_until:
+        if not (
+            attempt.acquired_at - WORKER_CLOCK_SKEW
+            <= receipt.prepared_at
+            < attempt.lease_until + WORKER_CLOCK_SKEW
+        ):
             raise ValueError("preparation must be within active attempt interval")
         return self
 

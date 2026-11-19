@@ -10,6 +10,7 @@ from typing import Any, get_args
 import pytest
 from ksi_core.domains.external.delivery.errors import SpatialDataDomainError
 from ksi_core.identity.auth import Role
+from ksi_event_contracts._spatial_data import WORKER_CLOCK_SKEW
 from ksi_event_contracts.spatial_data import SpatialDataReasonV1
 from ksi_event_contracts.spatial_data_authority import SpatialDataRevocationV1
 from spatial_data_job_fixture import (
@@ -439,6 +440,85 @@ def test_reserved_orphan_is_owned_before_signing_and_waits_for_expiry(tmp_path: 
     replayed = job_store(graph)
     pending = replayed.cleanup_pending(limit=8, now=target.expires_at)
     assert len(pending) == 1 and pending[0].target == target and pending[0].observation is None
+
+
+def _prepared_at(receipt: Any, when: Any) -> Any:
+    return receipt.model_copy(update={"prepared_at": when, "receipt_digest": None}).sealed()
+
+
+@pytest.mark.parametrize(
+    ("offset", "accepted"),
+    [
+        (-WORKER_CLOCK_SKEW, True),
+        (-WORKER_CLOCK_SKEW - timedelta(milliseconds=1), False),
+        (WORKER_CLOCK_SKEW, True),
+        (WORKER_CLOCK_SKEW + timedelta(milliseconds=1), False),
+        (timedelta(0), True),
+    ],
+)
+def test_output_reservation_tolerates_worker_clock_skew_only_within_the_bound(
+    tmp_path: Path, offset: timedelta, accepted: bool
+) -> None:
+    """The worker stamps prepared_at with its own clock; the Core stamps the attempt and now."""
+    graph = job_graph(tmp_path)
+    store = job_store(graph)
+    job = issue(store, graph)
+    attempt = lease(store, graph, job)  # acquired_at == NOW
+    receipt = _prepared_at(receipt_for(store, graph, job, attempt), NOW + offset)
+
+    def reserve() -> Any:
+        return store.reserve_output(
+            job_id=job.job_id,
+            worker=graph.worker,
+            attempt=attempt,
+            receipt=receipt,
+            expires_at=NOW + timedelta(seconds=1),
+            now=NOW,
+        )
+
+    if accepted:
+        assert reserve().expires_at == NOW + timedelta(seconds=1)
+    else:
+        with pytest.raises(SpatialDataDomainError) as refused:
+            reserve()
+        assert refused.value.reason == "REPORT_CONFLICT"
+
+
+@pytest.mark.parametrize(
+    ("relative_to", "offset", "accepted"),
+    [
+        ("acquired", -WORKER_CLOCK_SKEW, True),
+        ("acquired", -WORKER_CLOCK_SKEW - timedelta(milliseconds=1), False),
+        ("lease_until", WORKER_CLOCK_SKEW - timedelta(milliseconds=1), True),
+        ("lease_until", WORKER_CLOCK_SKEW, False),
+    ],
+)
+def test_upload_declaration_interval_tolerates_worker_clock_skew(
+    tmp_path: Path, relative_to: str, offset: timedelta, accepted: bool
+) -> None:
+    from ksi_event_contracts.spatial_data_worker import SpatialDataUploadDeclarationV1
+
+    graph = job_graph(tmp_path)
+    store = job_store(graph)
+    job = issue(store, graph)
+    attempt = lease(store, graph, job)
+    base = attempt.acquired_at if relative_to == "acquired" else attempt.lease_until
+    receipt = _prepared_at(receipt_for(store, graph, job, attempt), base + offset)
+
+    def declare() -> Any:
+        return SpatialDataUploadDeclarationV1(
+            attempt=attempt,
+            receipt=receipt,
+            sha256=receipt.output_sha256,
+            size_bytes=receipt.output_size_bytes,
+            content_type="image/tiff",
+        )
+
+    if accepted:
+        assert declare().receipt == receipt
+    else:
+        with pytest.raises(ValueError, match="active attempt interval"):
+            declare()
 
 
 def test_live_accepted_output_cannot_become_cleanup_candidate_before_retention(

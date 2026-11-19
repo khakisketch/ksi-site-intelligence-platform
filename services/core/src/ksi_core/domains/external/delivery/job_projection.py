@@ -6,6 +6,7 @@ from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta
 from urllib.parse import quote
 
+from ksi_event_contracts._spatial_data import WORKER_CLOCK_SKEW
 from ksi_event_contracts.spatial_data import (
     SpatialDataAttemptV1,
     SpatialDataFrozenJobV1,
@@ -168,7 +169,9 @@ def validate_receipt(
     if (
         receipt.receipt_digest != receipt.canonical_digest()
         or any(getattr(receipt, key) != value for key, value in expected.items())
-        or not attempt.acquired_at <= receipt.prepared_at <= now
+        or not attempt.acquired_at - WORKER_CLOCK_SKEW
+        <= receipt.prepared_at
+        <= now + WORKER_CLOCK_SKEW
         or receipt.output_size_bytes > job.policy.max_output_bytes
         or receipt.width * receipt.height > job.policy.max_output_pixels
         or receipt.valid_pixel_count > measured.valid_pixel_count
