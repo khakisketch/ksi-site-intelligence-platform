@@ -200,7 +200,8 @@ export default async function SiteDataPage({
           action={{ label: "조건 초기화", href: siteDataHref(site.siteId, { workAreaId: selectedWorkAreaId, cursor }) }} />
       )}
       {page && selectedWorkAreaId && filtered.length > 0 && (
-        <DataTable siteId={site.siteId} workAreaId={selectedWorkAreaId} items={filtered} selectedAssetRef={selectedAssetRef} scope={scope} jobs={jobs} canRead={canRead} />
+        <DataTable siteId={site.siteId} workAreaId={selectedWorkAreaId} items={filtered} selectedAssetRef={selectedAssetRef} scope={scope} jobs={jobs} canRead={canRead}
+          summaryItems={page?.assets} partial={Boolean(cursor) || Boolean(page?.hasMore)} />
       )}
       {page && (cursor || (page.hasMore && page.nextCursor)) && (
         <div className="flex flex-wrap gap-2">
