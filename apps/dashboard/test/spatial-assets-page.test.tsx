@@ -492,8 +492,7 @@ describe("materials panel in the canonical space", () => {
         availability: "RETENTION_EXPIRED", createdAt: "2026-09-30T02:00:00Z", receipt: null }],
     });
     const html = renderToStaticMarkup(await callPage({ workAreaId: "area-1", assetRef }));
-    expect(html).toContain(">준비 요청</a>");
-    expect(html).toContain(`assetRef=${assetRef}&amp;info=1`);
+    expect(html).toMatch(new RegExp(`<a href="/sites/site-1/data\\?workAreaId=area-1&amp;assetRef=${assetRef}#section-inspector"[^>]*>준비 요청</a>`));
     expect(html).toContain("등록 범위 · 실제 픽셀 아님");
   });
 

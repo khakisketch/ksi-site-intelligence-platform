@@ -55,6 +55,7 @@ class ByteCore:
         self.failures: list[str] = []
         self.renewals = 0
         self.declaration: SpatialDataUploadDeclarationV1 | None = None
+        self.output_upload_error: str | None = None
 
     def pending(self, *, limit: int) -> Any:
         return (self.job,)
@@ -95,6 +96,12 @@ class ByteCore:
         )
 
     def output_upload(self, *, declaration: Any) -> Any:
+        if self.output_upload_error is not None:
+            from ksi_processing_controller.spatial_data_core_client import (
+                SpatialDataCoreClientError,
+            )
+
+            raise SpatialDataCoreClientError(self.output_upload_error)
         assert self.current and declaration.attempt == self.attempt
         self.declaration = declaration
         headers = {

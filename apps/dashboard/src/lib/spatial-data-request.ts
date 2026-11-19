@@ -25,7 +25,7 @@ export function nativeBoundsFromInspection(raster: InspectedRasterGrid): Spatial
   const maxx = c + a * raster.width;
   const maxy = f;
   const miny = f + e * raster.height;
-  if (!(minx < maxx) || !(miny < maxy)) return null;
+  if (!Number.isFinite(maxx) || !Number.isFinite(miny) || !(minx < maxx) || !(miny < maxy)) return null;
   return [minx, miny, maxx, maxy];
 }
 

@@ -59,6 +59,7 @@ function renderPreview(bytes: Uint8Array | null, overrides: Record<string, unkno
       receipt={receipt}
       fileHref={fileHref}
       gestureControls={overrides.gestureControls === true}
+      presentation={overrides.presentation === "canvas" ? "canvas" : "default"}
     />,
   );
   return { fetchMock, fileHref };
@@ -106,6 +107,18 @@ function stubGeotiffSingleBand() {
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); fromArrayBufferMock.mockReset(); });
 
 describe("spatial data receipt preview", () => {
+  it("restores the exact inclusive row and column labels of a verified workspace crop", async () => {
+    stubCanvas();
+    stubGeotiffRgb();
+    renderPreview(new Uint8Array([1, 2, 3, 4]), {
+      gestureControls: true, presentation: "canvas", receipt: { pixelWindow: [20, 22, 30, 32] },
+    });
+    expect(screen.queryByText(/파일 안 위치/)).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "미리보기 불러오기" }));
+    await screen.findByText("파일 안 위치 · 열 20–21, 행 30–31 (0부터)");
+    expect(screen.getByText("실제 출력 경계 · EPSG:7850 · [500010, 7100010, 500990, 7100990]")).toBeTruthy();
+  });
+
   it("fits the whole prepared crop before local zoom and keeps one reset control in the frame", async () => {
     const bytes = new Uint8Array([7, 7, 7, 7]);
     const paint = stubCanvas();

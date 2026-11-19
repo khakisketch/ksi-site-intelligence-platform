@@ -57,6 +57,10 @@ describe("spatial data request action", () => {
     renderAction();
     // 기본 가운데 512×512 창과 유도된 요청 범위를 그대로 보여준다.
     expect(screen.getByText(/원점 256, 256/)).toBeTruthy();
+    const historyLink = screen.getByRole("link", { name: "구역 자료 준비에서 확인" });
+    expect(historyLink.getAttribute("href"))
+      .toBe("/sites/site-1/spatial-data-requests?workAreaId=area-1");
+    expect(historyLink.closest(".hidden")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "받기 요청 만들기" }));
     await screen.findByText(/받기 요청을 만들었습니다/);
 
@@ -68,8 +72,8 @@ describe("spatial data request action", () => {
     expect(key).toMatch(/^sdreq-[0-9a-f-]{36}$/);
     // 같은 요청을 다시 만들지 않는다 — 성공 뒤 버튼은 잠긴다.
     expect(screen.getByRole("button", { name: "요청 만듦" }).hasAttribute("disabled")).toBe(true);
-    expect(screen.getByRole("link", { name: "구역 자료 준비에서 확인" }).getAttribute("href"))
-      .toBe("/sites/site-1/spatial-data-requests?workAreaId=area-1");
+    expect(screen.getByRole("link", { name: "이 요청의 준비 상태 보기" }).getAttribute("href"))
+      .toBe("/sites/site-1/spatial-data-requests?workAreaId=area-1&requestId=sdj-v1-00000000-0000-0000-0000-000000000001");
   });
 
   it("sends the edited window, not the full inspected bounds", async () => {
@@ -127,6 +131,44 @@ describe("spatial data request action", () => {
     renderAction({ inspectedRaster: { transform: [1, 0, 0, 0, -1, 2000], width: 100, height: 2000 } });
     expect(screen.getByText(/너비 100 × 높이 512/)).toBeTruthy();
     expect(screen.getByRole("button", { name: "전체 격자 사용" }).hasAttribute("disabled")).toBe(true);
+  });
+
+  it("moves the same-sized native window by click, clamps it, and does not write until explicit submit", async () => {
+    const calls: Array<{ url: string; init: RequestInit }> = [];
+    vi.stubGlobal("fetch", vi.fn(async (url: string, init: RequestInit) => {
+      calls.push({ url, init });
+      return queuedResponse("sdj-v1-00000000-0000-0000-0000-000000000005");
+    }));
+
+    renderAction({ inspectedRaster: { transform: [2, 0, 100, 0, -1, 1000], width: 1200, height: 600 } });
+    fireEvent.change(screen.getByLabelText(/너비/), { target: { value: "200" } });
+    fireEvent.change(screen.getByLabelText(/높이/), { target: { value: "100" } });
+    const picker = screen.getByRole("button", { name: /검사한 파일 격자에서 현재 요청 창을 옮깁니다/ });
+    expect(picker.style.aspectRatio).toBe("2400 / 600");
+    Object.defineProperty(picker, "getBoundingClientRect", {
+      value: () => ({ left: 10, top: 20, width: 800, height: 200, right: 810, bottom: 220, x: 10, y: 20, toJSON: () => ({}) }),
+    });
+    fireEvent.click(picker, { detail: 1, clientX: 410, clientY: 120 });
+
+    expect((screen.getByLabelText(/원점 열/) as HTMLInputElement).value).toBe("500");
+    expect((screen.getByLabelText(/원점 행/) as HTMLInputElement).value).toBe("250");
+    expect(calls).toHaveLength(0);
+
+    fireEvent.click(picker, { detail: 1, clientX: 810, clientY: 220 });
+    expect((screen.getByLabelText(/원점 열/) as HTMLInputElement).value).toBe("1000");
+    expect((screen.getByLabelText(/원점 행/) as HTMLInputElement).value).toBe("500");
+    expect(calls).toHaveLength(0);
+
+    fireEvent.click(screen.getByRole("button", { name: "받기 요청 만들기" }));
+    await screen.findByText(/받기 요청을 만들었습니다/);
+    const body = JSON.parse(calls[0].init.body as string) as Record<string, unknown>;
+    expect(body.requestedBounds).toEqual([2100, 400, 2500, 500]);
+  });
+
+  it("keeps the native picker unavailable when the inspected transform cannot resolve a window", () => {
+    renderAction({ inspectedRaster: { transform: [1, 0.2, 200000, 0.2, -1, 550000], width: 1024, height: 1024 } });
+    expect(screen.queryByRole("button", { name: /검사한 파일 격자에서 현재 요청 창을 옮깁니다/ })).toBeNull();
+    expect(screen.getByText(/유효한 네이티브 창을 만들 수 없어 그림 선택을 사용할 수 없습니다/)).toBeTruthy();
   });
 
   it("blocks an oversized width with a truthful message and no request", async () => {
@@ -190,6 +232,35 @@ describe("spatial data request action", () => {
     expect(keys[0]).toBe(keys[1]);
   });
 
+  it("gives a changed crop a different request identity and preserves the first crop's retry identity", async () => {
+    const attempts: Array<{ key: string; body: string }> = [];
+    vi.stubGlobal("fetch", vi.fn(async (_url: string, init: RequestInit) => {
+      attempts.push({
+        key: (init.headers as Record<string, string>)["Idempotency-Key"],
+        body: init.body as string,
+      });
+      throw new Error("response lost");
+    }));
+
+    renderAction();
+    fireEvent.click(screen.getByRole("button", { name: "받기 요청 만들기" }));
+    await screen.findByText(/Core 응답을 받지 못했습니다/);
+    const firstKey = attempts[0].key;
+    const firstBody = attempts[0].body;
+
+    fireEvent.change(screen.getByLabelText(/원점 열/), { target: { value: "400" } });
+    fireEvent.click(screen.getByRole("button", { name: "받기 요청 만들기" }));
+    await waitFor(() => expect(attempts).toHaveLength(2));
+    expect(attempts[1].key).not.toBe(firstKey);
+    expect(attempts[1].body).not.toBe(firstBody);
+
+    fireEvent.change(screen.getByLabelText(/원점 열/), { target: { value: "256" } });
+    fireEvent.click(screen.getByRole("button", { name: "받기 요청 만들기" }));
+    await waitFor(() => expect(attempts).toHaveLength(3));
+    expect(attempts[2].key).toBe(firstKey);
+    expect(attempts[2].body).toBe(firstBody);
+  });
+
   it("explains the permission requirement in a popover instead of a dead control", () => {
     renderAction({ canRequest: false });
     const trigger = screen.getByRole("button", { name: "자료 받기 요청" });
@@ -206,6 +277,7 @@ describe("spatial data request action", () => {
     renderAction();
     const section = screen.getByText("이 자료 받기 요청").closest("section")!;
     expect(within(section).getByText(/요청 범위\(네이티브 좌표\)/)).toBeTruthy();
+    expect(within(section).getByText(/관측 수평 좌표계 EPSG:7850/)).toBeTruthy();
     expect(within(section).getByText(/실제 출력 범위는 준비가 끝난 뒤/)).toBeTruthy();
   });
 });

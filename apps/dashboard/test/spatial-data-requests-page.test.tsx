@@ -242,7 +242,7 @@ describe("spatial data request Console surface", () => {
 
   it("labels rows with request time, source file and work-area context from one bounded catalog read", async () => {
     const html = renderToStaticMarkup(await callPage({ workAreaId: "area-1" }));
-    expect(mocked.catalog).toHaveBeenCalledWith("site-1", "area-1", { limit: 50, cursor: undefined });
+    expect(mocked.catalog).toHaveBeenCalledWith("site-1", "area-1", { limit: 50, order: "capture-desc" });
     expect(mocked.catalog).toHaveBeenCalledTimes(1);
     expect(html).not.toContain("이 요청 열기");
     expect(html).toContain("북측 작업구역");
@@ -285,6 +285,16 @@ describe("spatial data request Console surface", () => {
     expect(html).toContain("지표면 높이 자료(DSM) · 2026. 10. 9. 14:00–14:30 촬영 · 북측 작업구역");
     expect(html).toContain(`원본 assetRef · ksa-v1-${"a".repeat(64)}`);
     expect(html).toContain("요청 범위(파일 좌표 순서)");
+  });
+
+  it("shows DATE_ONLY capture as calendar date without inferring a time", async () => {
+    mocked.catalog.mockResolvedValueOnce({
+      siteId: "site-1", workAreaId: "area-1", scopePolicy: "SINGLE_WORK_AREA_WORK_ORDERS_ONLY", scopeNote: "scope",
+      assets: [{ assetRef: `ksa-v1-${"a".repeat(64)}`, declared: { fileName: "north-dsm.tif", captureStartedAt: null, captureEndedAt: null, captureDate: "2026-10-09" }, kind: "dsm" }],
+      nextCursor: null, hasMore: false,
+    });
+    const html = renderToStaticMarkup(await callPage({ workAreaId: "area-1", requestId }));
+    expect(html).toContain("지표면 높이 자료(DSM) · 2026. 10. 9. (날짜만 확인 · 시각 미상) · 북측 작업구역");
   });
 
   it("exposes the full request ID when two rows share the same creation time", async () => {

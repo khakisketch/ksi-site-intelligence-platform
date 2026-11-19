@@ -475,6 +475,9 @@ def run_once(
             reason = "SOURCE_UNAVAILABLE" if phase == "source" else "STORAGE_UNAVAILABLE"
         elif isinstance(exc, ProtocolViolation):
             reason = "INTEGRITY_MISMATCH"
+        elif isinstance(exc, SpatialDataCoreClientError):
+            canonical_reasons = get_args(SpatialDataReasonV1)
+            reason = exc.reason if exc.reason in canonical_reasons else "UNAVAILABLE"
         else:
             reason = "RASTER_PREPARATION_FAILED"
         if guard.check(force=True):

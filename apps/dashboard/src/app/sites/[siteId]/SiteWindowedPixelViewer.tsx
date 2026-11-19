@@ -65,6 +65,8 @@ import {
 } from "@/lib/site-windowed-pixel-viewer";
 import { REASON_COPY as SPATIAL_DATA_REQUEST_REASON_COPY } from "@/app/sites/[siteId]/spatial-assets/SpatialDataRequestAction";
 import { SiteMosaicViewport } from "@/app/sites/[siteId]/SiteMosaicViewport";
+import { SiteMosaicAbsentCanvas } from "./SiteMosaicAbsentCanvas";
+import { inspectedDisplayExtent } from "./site-spatial";
 import { SpatialDataReceiptPreview } from "./spatial-data-requests/SpatialDataReceiptPreview";
 
 /**
@@ -858,6 +860,10 @@ export function SiteWindowedPixelViewer({
 
   // 무대용 간결 상태 — 사유 한 줄과 하나의 1차 회복만 둔다. 진입·읽기 흐름은
   // 그대로이며, 명시적 준비 요청(쓰기)은 아래 접힌 상세에만 둔다.
+  const inspectedExtent = canvasMode && showAbsentExtentCanvas && jobsState === "unavailable" && canRead
+    && layer?.inspectionOutcome === "MEASURED" && grid
+    ? inspectedDisplayExtent(grid, layer.observedCrsIdentifier, workAreaRing, workAreaCrs)
+    : null;
   const canvasMedia = !layer ? (
     <WorkbenchMediaState
       headline="이 관측에서 화면에 둘 정사영상·DSM 층을 확인하지 못했습니다."
@@ -868,6 +874,24 @@ export function SiteWindowedPixelViewer({
       headline="준비 기록을 조회할 권한이 없습니다."
       hint="담당자에게 조회 권한을 요청하세요. 권한이 없어 빈 목록으로 단정하지 않습니다."
     />
+  ) : jobsState === "unavailable" && inspectedExtent?.fileRing && grid ? (
+    <div className="flex min-h-0 w-full min-w-0 flex-1 flex-col gap-1.5">
+      <SiteMosaicAbsentCanvas
+        fileRing={inspectedExtent.fileRing}
+        workAreaRing={workAreaRing}
+        overlaid={inspectedExtent.overlaid}
+        crsLabel={inspectedExtent.crsLabel}
+        planeUnit={inspectedExtent.planeUnit}
+        filePixelSize={{ width: grid.width, height: grid.height }}
+      />
+      <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
+        <p className="min-w-0 text-caption leading-5 text-ink-2" role="status">
+          준비 기록을 불러오지 못했습니다. 현재는 검사된 파일 범위만 표시합니다.
+        </p>
+        <WorkbenchRefreshButton />
+      </div>
+      {inspectedExtent.overlayNote && <p className="text-caption leading-5 text-ink-muted">{inspectedExtent.overlayNote}</p>}
+    </div>
   ) : jobsState === "unavailable" ? (
     <WorkbenchMediaState
       headline="준비 기록을 불러오지 못했습니다."

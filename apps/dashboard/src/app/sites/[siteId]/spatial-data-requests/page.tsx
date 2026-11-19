@@ -239,7 +239,7 @@ function RequestDetail({
     <section aria-label="원본 자료" className="rounded-lg border border-line bg-sunk/50 px-3 py-2">
       <h3 className="text-body font-bold">원본 자료</h3>
       {assetInfo
-        ? <p className="mt-1 break-words text-body leading-5 text-ink-2">{dataKindLabel(assetInfo.kind)} · {capturePeriodTitle(assetInfo.captureStartedAt ?? null, assetInfo.captureEndedAt ?? null)} · {workAreaName}</p>
+        ? <p className="mt-1 break-words text-body leading-5 text-ink-2">{dataKindLabel(assetInfo.kind)} · {capturePeriodTitle(assetInfo.captureStartedAt ?? null, assetInfo.captureEndedAt ?? null, { captureDate: assetInfo.captureDate ?? null })} · {workAreaName}</p>
         : <p className="mt-1 text-caption leading-5 text-ink-2">원본 정보를 확인하지 못했습니다. 현재 조회한 카탈로그에서 확인되지 않아 표시만 생략합니다. 원본이 삭제됐다는 뜻이 아닙니다.</p>}
       <Disclosure label="원본 처리 상세" className="mt-1 text-caption text-ink-2">
         {assetInfo && <p className="mt-1 break-words border-l-2 border-line pl-2">원본 파일명 · {assetInfo.fileName}</p>}
@@ -502,7 +502,7 @@ export default async function SpatialDataRequestsPage({
   let catalogInfo: Record<string, CatalogAssetInfo> | null = null;
   if (workAreaId && !pageError) {
     try {
-      const catalog = await listSpatialAssets(siteId, workAreaId, { limit: 50 });
+      const catalog = await listSpatialAssets(siteId, workAreaId, { limit: 50, order: "capture-desc" });
       if (catalog.siteId === siteId && catalog.workAreaId === workAreaId) {
         const map: Record<string, CatalogAssetInfo> = {};
         for (const asset of catalog.assets) {
@@ -511,6 +511,7 @@ export default async function SpatialDataRequestsPage({
             kind: asset.kind,
             captureStartedAt: asset.declared.captureStartedAt,
             captureEndedAt: asset.declared.captureEndedAt,
+            captureDate: asset.declared.captureDate ?? null,
           };
         }
         catalogInfo = map;

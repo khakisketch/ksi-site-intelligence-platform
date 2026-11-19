@@ -1,4 +1,4 @@
-import { siteUploadHref } from "@/components/nav/site-context";
+import { siteDataHref, siteUploadHref } from "@/components/nav/site-context";
 import Link from "next/link";
 import type { ReactNode } from "react";
 
@@ -526,6 +526,7 @@ export function SiteWorkspaceShell({
     : exploreFact
       ? visualLayersForExactSubmission(viewableAssets, exploreFact)
       : exploreEpochId ? viewerLayersForEpoch(viewableAssets, exploreEpochId) : [];
+  const displayedAssetRef = exploreLayers.find((layer) => layer.assetRef === selectedAssetRef)?.assetRef ?? exploreLayers[0]?.assetRef;
   const exploreHeading = exploreFact
     ? viewerHeadingFor(exploreFact)
     : browseAsset ? assetBusinessTitle(browseAsset)
@@ -1115,7 +1116,7 @@ export function SiteWorkspaceShell({
               layerSelectionHref={`${sitePath}?workAreaId=${encodeURIComponent(selected.workAreaId)}`}
               presentation="canvas"
               hidePrepareActions
-              prepareHref={selectedAssetRef ? materialsHref(facts.siteId, selectedWorkAreaId, { ...selectedScope, info: "1" }) : undefined}
+              prepareHref={displayedAssetRef ? `${siteDataHref(facts.siteId, { ...materialsScope, workAreaId: selectedWorkAreaId, assetRef: displayedAssetRef })}#section-inspector` : undefined}
               showAbsentExtentCanvas
               detailsTargetId="workspace-inspector-details"
             />

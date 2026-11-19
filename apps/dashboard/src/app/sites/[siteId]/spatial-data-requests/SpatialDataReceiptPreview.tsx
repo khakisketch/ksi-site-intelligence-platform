@@ -4,6 +4,7 @@ import { Disclosure } from "@/components/ui/Disclosure";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import type { SpatialDataReceipt } from "@/lib/core-api/spatial-data-types";
+import { formatNativeWindowExtent } from "@/lib/site-windowed-pixel-viewer";
 import {
   decodeReceiptPreview,
   fetchVerifiedReceiptBytes,
@@ -129,8 +130,15 @@ export function SpatialDataReceiptPreview({
     .map((line) => line.trim())
     .filter((line) => line.length > 0)
     .join(" ");
+  const [firstCol, endCol, firstRow, endRow] = receipt.pixelWindow ?? [];
+  const hasWindowPosition = [firstCol, endCol, firstRow, endRow].every(Number.isSafeInteger)
+    && firstCol >= 0 && firstRow >= 0 && endCol - firstCol === receipt.width && endRow - firstRow === receipt.height;
   const receiptNotice = (
     <>
+      {hasWindowPosition && <p className="leading-5">파일 안 위치 · 열 {firstCol}–{endCol - 1}, 행 {firstRow}–{endRow - 1} (0부터)</p>}
+      {receipt.observedCrsIdentifier && receipt.actualBounds?.length === 4 && receipt.actualBounds.every(Number.isFinite) && (
+        <p className="break-words leading-5">실제 출력 경계 · {formatNativeWindowExtent(receipt.actualBounds, receipt.observedCrsIdentifier)}</p>
+      )}
       {attributionLine && <p className="break-words leading-5">출처 · {attributionLine}</p>}
       {limitationLine && <p className="break-words leading-5 text-ink-muted">제한 · {limitationLine}</p>}
     </>

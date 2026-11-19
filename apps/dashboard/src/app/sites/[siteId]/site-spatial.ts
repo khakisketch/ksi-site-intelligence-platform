@@ -6,6 +6,7 @@ import type {
   SpatialAssetCatalogPage,
 } from "@/lib/core-api/spatial-assets";
 import type { WorkArea } from "@/lib/core-api/types";
+import { nativeBoundsFromInspection, type InspectedRasterGrid } from "@/lib/spatial-data-request";
 import { isKnownProjectedCrs } from "@/lib/geo/known-crs";
 import { assetBusinessTitle, assetLifecycleLabel, capturePeriodTitle } from "@/lib/operator-language";
 
@@ -89,6 +90,40 @@ export function planeUnitForCrs(crs: string): PlaneUnit {
 /** 좌표계 표기가 같은 평면(같은 단위계)인지 — 다르면 겹쳐 그리지 않는다. */
 export function sameDisplayPlane(a: string, b: string): boolean {
   return normalizeCrs(a) === normalizeCrs(b);
+}
+
+/** 검사한 파일의 외곽과 같은 좌표 평면에서 확인된 작업구역만 그린다. */
+export function inspectedDisplayExtent(
+  grid: InspectedRasterGrid,
+  observedCrs: string | null,
+  workAreaRing: Array<[number, number]> | null,
+  workAreaCrs: string | null,
+) {
+  const bounds = nativeBoundsFromInspection(grid);
+  const fileRing: Array<[number, number]> | null = bounds
+    ? [[bounds[0], bounds[1]], [bounds[2], bounds[1]], [bounds[2], bounds[3]], [bounds[0], bounds[3]]]
+    : null;
+  const hasArea = workAreaRing !== null && workAreaRing.length >= 3;
+  const overlaid = Boolean(hasArea && observedCrs?.trim() && workAreaCrs?.trim() && sameDisplayPlane(workAreaCrs, observedCrs));
+  const overlayNote = !hasArea
+    ? "작업구역 경계를 확인하지 못해 파일 범위만 단독으로 둡니다."
+    : !observedCrs?.trim() || !workAreaCrs?.trim()
+      ? "위치 기준을 확인하지 못해 작업구역 경계를 겹쳐 표시하지 않았습니다. 파일 범위만 단독으로 둡니다."
+      : !overlaid
+        ? "위치 기준이 달라 작업구역 경계를 겹쳐 표시하지 않았습니다. 파일 범위만 단독으로 둡니다."
+        : null;
+  return { fileRing, overlaid, overlayNote, crsLabel: observedCrs?.trim() || "확인 불가", planeUnit: planeUnitForCrs(observedCrs ?? "") };
+}
+
+/** 막대 길이를 1·2·5 계열의 읽기 좋은 값으로 고른다(표시용 어림, 원본은 그대로). */
+export function nativeScaleBarLength(span: number): number {
+  const target = span / 4;
+  if (!Number.isFinite(target) || target <= 0) return 0;
+  const magnitude = 10 ** Math.floor(Math.log10(target));
+  for (const factor of [5, 2, 1]) {
+    if (magnitude * factor <= target) return magnitude * factor;
+  }
+  return magnitude / 10;
 }
 
 /**

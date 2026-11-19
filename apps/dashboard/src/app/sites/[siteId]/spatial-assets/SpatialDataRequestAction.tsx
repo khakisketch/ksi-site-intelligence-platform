@@ -1,9 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useRef, useState } from "react";
 
 import { ResponsiveActionBoundary } from "@/components/responsive/ResponsiveActionBoundary";
+import { Disclosure } from "@/components/ui/Disclosure";
 import { ActionUnavailable } from "@/components/ui/ActionUnavailable";
 import { isSpatialDataExecutionState, type SpatialDataBounds } from "@/lib/core-api/spatial-data-types";
 import {
@@ -14,6 +15,7 @@ import {
   resolveBoundedPixelWindow,
   type InspectedRasterGrid,
 } from "@/lib/spatial-data-request";
+import { SpatialNativeWindowPicker } from "./SpatialNativeWindowPicker";
 
 const STATE_LABEL: Record<string, string> = {
   QUEUED: "대기",
@@ -107,11 +109,16 @@ export function SpatialDataRequestAction({
   const [heightText, setHeightText] = useState(initial ? String(initial.height) : "0");
   const [colText, setColText] = useState(initial ? String(initial.col) : "0");
   const [rowText, setRowText] = useState(initial ? String(initial.row) : "0");
-  const [attemptKey] = useState(() => `sdreq-${crypto.randomUUID()}`);
+  // Bind each immutable requested payload to one idempotency key. If the user
+  // changes the crop after an uncertain failure, its retry cannot reuse a key
+  // that may already identify a different request body.
+  const attemptKeysByFingerprint = useRef(new Map<string, string>());
   const [busy, setBusy] = useState(false);
   const [accepted, setAccepted] = useState<{ jobId: string; state: string } | null>(null);
   const [message, setMessage] = useState<string | null>(null);
-  const requestsHref = `/sites/${encodeURIComponent(siteId)}/spatial-data-requests?workAreaId=${encodeURIComponent(workAreaId)}`;
+  const requestQuery = new URLSearchParams({ workAreaId });
+  if (accepted) requestQuery.set("requestId", accepted.jobId);
+  const requestsHref = `/sites/${encodeURIComponent(siteId)}/spatial-data-requests?${requestQuery.toString()}`;
 
   const width = parseNonNegativeInt(widthText);
   const height = parseNonNegativeInt(heightText);
@@ -131,8 +138,14 @@ export function SpatialDataRequestAction({
     && !busy
     && accepted === null;
 
+  const requestFingerprint = resolution.ok && typeof observedCrsDigest === "string" && observedCrsDigest.length > 0
+    ? JSON.stringify([siteId, workAreaId, assetRef, observedCrsDigest, resolution.value.requestedBounds, "NATIVE", "GENERAL_DATA_USE"])
+    : null;
+
   const request = async () => {
-    if (!resolution.ok || typeof observedCrsDigest !== "string" || observedCrsDigest.length === 0) return;
+    if (!resolution.ok || !requestFingerprint || typeof observedCrsDigest !== "string" || observedCrsDigest.length === 0) return;
+    const attemptKey = attemptKeysByFingerprint.current.get(requestFingerprint) ?? `sdreq-${crypto.randomUUID()}`;
+    attemptKeysByFingerprint.current.set(requestFingerprint, attemptKey);
     setBusy(true);
     setMessage(null);
     try {
@@ -188,14 +201,8 @@ export function SpatialDataRequestAction({
     </section>;
   }
 
-  return <section className="rounded-lg border border-line bg-surface px-4 py-3">
-    <h3 className="text-body font-semibold">이 자료 받기 요청</h3>
-    <p className="mt-1 text-caption leading-5 text-ink-2">
-      검사된 격자에서 고른 유한 픽셀 창 그대로 준비를 요청합니다. Core가 현재 명시된 사용 권리와 범위를 확인한 뒤에만 작업을 만듭니다.
-    </p>
-    <p className="mt-1 text-caption leading-5 text-ink-muted">
-      준비 완료는 정확도나 분석 사용 가능 여부를 보증하지 않습니다. AI 반출 용도는 별도 동의 절차가 필요합니다.
-    </p>
+  return <section className="min-w-0">
+    <h3 className="sr-only">이 자료 받기 요청</h3>
     {inspectedRaster
       ? <p className="mt-2 text-caption leading-5 text-ink-2">
         검사 격자 · {inspectedRaster.width} × {inspectedRaster.height} 네이티브 픽셀
@@ -204,92 +211,118 @@ export function SpatialDataRequestAction({
       : <p className="mt-2 rounded-md border border-line bg-sunk px-3 py-2 text-caption leading-5 text-ink-2" role="status">
         {PIXEL_WINDOW_BLOCKER_COPY.NO_INSPECTION}
       </p>}
-    <fieldset className="mt-3 rounded-md border border-line bg-sunk/50 px-3 py-2">
+    <fieldset className="mt-3 min-w-0 rounded-lg border border-line px-3 py-3">
       <legend className="px-1 text-caption font-semibold">픽셀 창 설정</legend>
-      <div className="flex flex-wrap items-end gap-3">
-        <label className="flex min-w-28 flex-col gap-1 text-caption font-semibold" htmlFor="spatial-pixel-window-width">
-          너비 (1–{inspectedRaster ? Math.min(inspectedRaster.width, MAX_SPATIAL_DATA_PIXEL_WINDOW_DIM) : MAX_SPATIAL_DATA_PIXEL_WINDOW_DIM})
-          <input
-            id="spatial-pixel-window-width"
-            className="input min-h-11"
-            inputMode="numeric"
-            min={1}
-            max={inspectedRaster ? Math.min(inspectedRaster.width, MAX_SPATIAL_DATA_PIXEL_WINDOW_DIM) : MAX_SPATIAL_DATA_PIXEL_WINDOW_DIM}
-            value={widthText}
-            onChange={(event) => setWidthText(event.target.value)}
-            disabled={busy || accepted !== null || inspectedRaster === null}
+      <p className="mb-2 text-caption leading-5 text-ink-2">볼 위치를 그림에서 선택하거나 열·행을 입력하세요. 너비와 높이는 각각 최대 512픽셀입니다.</p>
+      <div className="grid min-w-0 items-start gap-4 sm:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)]">
+        {inspectedRaster && resolution.ok
+          ? <SpatialNativeWindowPicker
+            raster={inspectedRaster}
+            selection={{
+              width: resolution.value.width,
+              height: resolution.value.height,
+              col: resolution.value.window[0],
+              row: resolution.value.window[1],
+            }}
+            disabled={busy || accepted !== null}
+            onPick={({ col: nextCol, row: nextRow }) => {
+              setColText(String(nextCol));
+              setRowText(String(nextRow));
+            }}
           />
-        </label>
-        <label className="flex min-w-28 flex-col gap-1 text-caption font-semibold" htmlFor="spatial-pixel-window-height">
-          높이 (1–{inspectedRaster ? Math.min(inspectedRaster.height, MAX_SPATIAL_DATA_PIXEL_WINDOW_DIM) : MAX_SPATIAL_DATA_PIXEL_WINDOW_DIM})
-          <input
-            id="spatial-pixel-window-height"
-            className="input min-h-11"
-            inputMode="numeric"
-            min={1}
-            max={inspectedRaster ? Math.min(inspectedRaster.height, MAX_SPATIAL_DATA_PIXEL_WINDOW_DIM) : MAX_SPATIAL_DATA_PIXEL_WINDOW_DIM}
-            value={heightText}
-            onChange={(event) => setHeightText(event.target.value)}
-            disabled={busy || accepted !== null || inspectedRaster === null}
-          />
-        </label>
-        <label className="flex min-w-28 flex-col gap-1 text-caption font-semibold" htmlFor="spatial-pixel-window-col">
-          원점 열 (0부터)
-          <input
-            id="spatial-pixel-window-col"
-            className="input min-h-11"
-            inputMode="numeric"
-            value={colText}
-            onChange={(event) => setColText(event.target.value)}
-            disabled={busy || accepted !== null || inspectedRaster === null}
-          />
-        </label>
-        <label className="flex min-w-28 flex-col gap-1 text-caption font-semibold" htmlFor="spatial-pixel-window-row">
-          원점 행 (0부터)
-          <input
-            id="spatial-pixel-window-row"
-            className="input min-h-11"
-            inputMode="numeric"
-            value={rowText}
-            onChange={(event) => setRowText(event.target.value)}
-            disabled={busy || accepted !== null || inspectedRaster === null}
-          />
-        </label>
-        <button
-          type="button"
-          className="btn min-h-11"
-          disabled={!wholeGridAllowed || busy || accepted !== null}
-          onClick={() => {
-            if (!inspectedRaster) return;
-            setWidthText(String(inspectedRaster.width));
-            setHeightText(String(inspectedRaster.height));
-            setColText("0");
-            setRowText("0");
-          }}
-        >
-          전체 격자 사용
-        </button>
+          : <p className="mt-3 rounded-md border border-line bg-surface px-3 py-2 text-caption leading-5 text-ink-muted" role="status">
+            현재 검사 격자와 입력값으로 유효한 네이티브 창을 만들 수 없어 그림 선택을 사용할 수 없습니다. 아래 차단 사유를 확인하세요.
+          </p>}
+        <div className="grid min-w-0 grid-cols-2 content-start items-end gap-2">
+          <label className="flex min-w-0 flex-col gap-1 text-caption font-semibold" htmlFor="spatial-pixel-window-width">
+            너비 (1–{inspectedRaster ? Math.min(inspectedRaster.width, MAX_SPATIAL_DATA_PIXEL_WINDOW_DIM) : MAX_SPATIAL_DATA_PIXEL_WINDOW_DIM})
+            <input
+              id="spatial-pixel-window-width"
+              className="input min-h-11 w-full min-w-0"
+              inputMode="numeric"
+              min={1}
+              max={inspectedRaster ? Math.min(inspectedRaster.width, MAX_SPATIAL_DATA_PIXEL_WINDOW_DIM) : MAX_SPATIAL_DATA_PIXEL_WINDOW_DIM}
+              value={widthText}
+              onChange={(event) => setWidthText(event.target.value)}
+              disabled={busy || accepted !== null || inspectedRaster === null}
+            />
+          </label>
+          <label className="flex min-w-0 flex-col gap-1 text-caption font-semibold" htmlFor="spatial-pixel-window-height">
+            높이 (1–{inspectedRaster ? Math.min(inspectedRaster.height, MAX_SPATIAL_DATA_PIXEL_WINDOW_DIM) : MAX_SPATIAL_DATA_PIXEL_WINDOW_DIM})
+            <input
+              id="spatial-pixel-window-height"
+              className="input min-h-11 w-full min-w-0"
+              inputMode="numeric"
+              min={1}
+              max={inspectedRaster ? Math.min(inspectedRaster.height, MAX_SPATIAL_DATA_PIXEL_WINDOW_DIM) : MAX_SPATIAL_DATA_PIXEL_WINDOW_DIM}
+              value={heightText}
+              onChange={(event) => setHeightText(event.target.value)}
+              disabled={busy || accepted !== null || inspectedRaster === null}
+            />
+          </label>
+          <label className="flex min-w-0 flex-col gap-1 text-caption font-semibold" htmlFor="spatial-pixel-window-col">
+            원점 열 (0부터)
+            <input
+              id="spatial-pixel-window-col"
+              className="input min-h-11 w-full min-w-0"
+              inputMode="numeric"
+              value={colText}
+              onChange={(event) => setColText(event.target.value)}
+              disabled={busy || accepted !== null || inspectedRaster === null}
+            />
+          </label>
+          <label className="flex min-w-0 flex-col gap-1 text-caption font-semibold" htmlFor="spatial-pixel-window-row">
+            원점 행 (0부터)
+            <input
+              id="spatial-pixel-window-row"
+              className="input min-h-11 w-full min-w-0"
+              inputMode="numeric"
+              value={rowText}
+              onChange={(event) => setRowText(event.target.value)}
+              disabled={busy || accepted !== null || inspectedRaster === null}
+            />
+          </label>
+          <button
+            type="button"
+            className="btn col-span-2 min-h-11 w-fit"
+            disabled={!wholeGridAllowed || busy || accepted !== null}
+            onClick={() => {
+              if (!inspectedRaster) return;
+              setWidthText(String(inspectedRaster.width));
+              setHeightText(String(inspectedRaster.height));
+              setColText("0");
+              setRowText("0");
+            }}
+          >
+            전체 격자 사용
+          </button>
+        </div>
       </div>
-      {inspectedRaster && (resolution.ok
-        ? <div className="mt-2 text-caption leading-5 text-ink-2">
+      {inspectedRaster && !resolution.ok && <p className="mt-2 text-caption leading-5 text-high-ink" role="status">{PIXEL_WINDOW_BLOCKER_COPY[resolution.reason]}</p>}
+    </fieldset>
+    <Disclosure label="좌표와 자료 사용 조건" className="mt-2 text-caption leading-5 text-ink-2">
+      {inspectedRaster && resolution.ok && (
+        <div className="mt-2 text-caption leading-5 text-ink-2">
           <p>픽셀 창 · 열 {resolution.value.window[0]}–{resolution.value.window[0] + resolution.value.width - 1},
             행 {resolution.value.window[1]}–{resolution.value.window[1] + resolution.value.height - 1}
             (원점 {resolution.value.window[0]}, {resolution.value.window[1]} · 너비 {resolution.value.width} × 높이 {resolution.value.height} 네이티브 픽셀)</p>
-          <p className="mt-0.5 break-all">요청 범위(네이티브 좌표) · {formatBounds(resolution.value.requestedBounds)}</p>
+          <p className="mt-0.5 break-all">요청 범위(네이티브 좌표) · 관측 수평 좌표계 {observedCrsIdentifier ?? "식별자 미확인"} · {formatBounds(resolution.value.requestedBounds)}</p>
           <p className="mt-0.5 text-caption text-ink-muted">
             실제 출력 범위는 준비가 끝난 뒤 구역 자료 준비의 출력 정보(실제 범위)에서 확인하세요.
           </p>
         </div>
-        : <p className="mt-2 text-caption leading-5 text-high-ink" role="status">{PIXEL_WINDOW_BLOCKER_COPY[resolution.reason]}</p>)}
-    </fieldset>
-    <ResponsiveActionBoundary action="SPATIAL_DATA_REQUEST" reason="자료 받기 요청은 노트북 이상의 화면에서 진행하세요. 준비 상태는 모바일에서도 확인할 수 있습니다.">
-      <div className="mt-3 flex flex-wrap items-center gap-2">
+      )}
+      <p className="mt-1">요청 경계는 선택한 창의 수평 좌표입니다. 높이 기준은 자료 정보에서 확인하세요.</p>
+      <p className="mt-1">준비할 때 사용 권리와 범위를 확인합니다. 준비 완료는 정확도나 분석 사용 가능 여부를 보증하지 않습니다. AI 반출 용도는 별도 동의 절차가 필요합니다.</p>
+    </Disclosure>
+    <div className="mt-3 flex flex-wrap items-center gap-2">
+      <ResponsiveActionBoundary action="SPATIAL_DATA_REQUEST" reason="자료 받기 요청은 노트북 이상의 화면에서 진행하세요. 준비 상태는 모바일에서도 확인할 수 있습니다.">
         <button type="button" className="btn btn-primary min-h-11" disabled={!canSubmit} onClick={() => void request()}>
           {busy ? "요청 만드는 중…" : accepted ? "요청 만듦" : "받기 요청 만들기"}
         </button>
-        <Link href={requestsHref} className="btn min-h-11">구역 자료 준비에서 확인</Link>
-      </div>
-    </ResponsiveActionBoundary>
+      </ResponsiveActionBoundary>
+      <Link href={requestsHref} className="btn min-h-11">{accepted ? "이 요청의 준비 상태 보기" : "구역 자료 준비에서 확인"}</Link>
+    </div>
     {message && <p role="status" aria-live="polite" className="mt-3 rounded-md border border-line bg-sunk px-3 py-2 text-caption leading-5 text-ink-2">{message}</p>}
   </section>;
 }

@@ -1,5 +1,5 @@
 import { Disclosure } from "@/components/ui/Disclosure";
-import { computePlaneBounds, formatPlaneValue, type PlaneUnit } from "./site-spatial";
+import { computePlaneBounds, formatPlaneValue, nativeScaleBarLength, type PlaneUnit } from "./site-spatial";
 
 /**
  * 원본 좌표 평면 SVG — 실제 꼭짓점을 그대로 옮긴 벡터 범위 미리보기.
@@ -34,17 +34,6 @@ function project(
   return [offsetX + (x - bounds.minX) * scale, VIEW_HEIGHT - offsetY - (y - bounds.minY) * scale];
 }
 
-/** 막대 길이를 1·2·5 계열의 읽기 좋은 값으로 고른다(표시용 어림, 원본은 그대로). */
-function niceBarLength(span: number): number {
-  if (!Number.isFinite(span) || span <= 0) return 0;
-  const target = span / 4;
-  const magnitude = 10 ** Math.floor(Math.log10(target));
-  for (const factor of [5, 2, 1]) {
-    if (magnitude * factor <= target) return magnitude * factor;
-  }
-  return magnitude / 10;
-}
-
 export function SiteNativeExtentSvg({
   boundary,
   footprint,
@@ -69,7 +58,7 @@ export function SiteNativeExtentSvg({
   const width = viewWidth(bounds);
   const toPoints = (points: Array<[number, number]>) =>
     points.map(([x, y]) => project(x, y, bounds, width).join(",")).join(" ");
-  const barLength = planeUnit === "meters" ? niceBarLength(bounds.maxX - bounds.minX) : 0;
+  const barLength = planeUnit === "meters" ? nativeScaleBarLength(bounds.maxX - bounds.minX) : 0;
   const unitNote = planeUnit === "meters" ? "단위 m" : planeUnit === "degrees" ? "단위 °" : "단위 미확인";
 
   return <figure className="overflow-hidden rounded-lg border border-line bg-surface">

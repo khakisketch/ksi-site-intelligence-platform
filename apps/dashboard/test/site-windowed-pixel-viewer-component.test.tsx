@@ -376,6 +376,48 @@ describe("site windowed pixel viewer", () => {
     expect(screen.getByText(/불러오지 못했습니다. 잠시 후 다시 확인하세요/)).toBeTruthy();
   });
 
+  it("opens the selected asset for a first crop only when the prepared list is known to be empty", () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    const prepareHref = `/sites/site-1/data?workAreaId=area-1&assetRef=${assetRef}#section-inspector`;
+    const props = propsFor({ jobs: [], presentation: "canvas", hidePrepareActions: true, showAbsentExtentCanvas: true, prepareHref });
+    const view = render(<SiteWindowedPixelViewer {...props} />);
+    expect(screen.getByRole("link", { name: "미리보기 범위 선택" }).getAttribute("href")).toBe(prepareHref);
+    view.rerender(<SiteWindowedPixelViewer {...props} jobsState="unavailable" />);
+    expect(screen.queryByRole("link", { name: "미리보기 범위 선택" })).toBeNull();
+    view.rerender(<SiteWindowedPixelViewer {...props} canRequest={false} />);
+    expect(screen.queryByRole("link", { name: "미리보기 범위 선택" })).toBeNull();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("keeps only the selected inspected geometry visible while the prepared list is unavailable", () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    const props = propsFor({ jobsState: "unavailable", presentation: "canvas", showAbsentExtentCanvas: true });
+    const view = render(<SiteWindowedPixelViewer {...props} />);
+    const outline = screen.getByRole("img", { name: /등록 범위 도식.*실선은 작업구역 경계/ });
+    expect(outline.textContent).toContain("1022 × 915 px");
+    expect(outline.textContent).toContain("EPSG:7850");
+    expect(screen.getByRole("button", { name: "준비 상태 다시 확인" })).toBeTruthy();
+    expect(view.container.querySelector("canvas")).toBeNull();
+
+    const other = layer({ inspectedRaster: { width: 6000, height: 4000, transform: [500, 0, 200000, 0, -500, 6500000] }, observedCrsIdentifier: "EPSG:32634" });
+    view.rerender(<SiteWindowedPixelViewer {...props} layers={[other]} />);
+    const changed = screen.getByRole("img", { name: /작업구역 경계는 같은 평면으로 확인되지 않아/ });
+    expect(changed.textContent).toContain("EPSG:32634");
+    expect(changed.textContent).toContain("6000 × 4000 px");
+    expect(changed.querySelectorAll("line").length).toBeGreaterThan(0);
+    expect(changed.querySelectorAll("line").length).toBeLessThanOrEqual(128);
+    expect(changed.textContent).not.toContain("EPSG:7850");
+
+    for (const limits of [{ jobsState: "denied" as const }, { canRead: false }, { layers: [layer({ inspectionOutcome: "REJECTED" })] }, { layers: [layer({ inspectedRaster: null })] }]) {
+      view.rerender(<SiteWindowedPixelViewer {...props} {...limits} />);
+      expect(screen.queryByRole("img", { name: /등록 범위 도식/ })).toBeNull();
+      expect(view.container.querySelector("canvas")).toBeNull();
+    }
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it("renders blocked canvas states on a dark stage with one recovery, not a disclosure wall", () => {
     vi.stubGlobal("fetch", vi.fn(async () => new Response(new Uint8Array([7, 7, 7, 7]), { status: 200 })));
     const { unmount } = render(<SiteWindowedPixelViewer {...propsFor({ jobsState: "denied", presentation: "canvas" })} />);
