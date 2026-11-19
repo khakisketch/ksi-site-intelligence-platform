@@ -34,6 +34,7 @@ from typing import Annotated, Literal, Protocol, Self
 
 from ksi_domain.canonical_json import canonical_json_bytes
 from ksi_event_contracts._spatial_data import (
+    WORKER_CLOCK_SKEW,
     PositiveInt,
     SpatialDataModel,
     UtcTimestamp,
@@ -1101,7 +1102,9 @@ class SurfaceProfileJobStore:
             or receipt.result_digest != result.result_digest
             or receipt.window_cells_read != result.window_cells_read
             or receipt.accuracy_assessed is not False
-            or not attempt.acquired_at <= receipt.prepared_at <= now
+            or not attempt.acquired_at - WORKER_CLOCK_SKEW
+            <= receipt.prepared_at
+            <= now + WORKER_CLOCK_SKEW
         ):
             raise refuse()
         if len(canonical_json_bytes(result.model_dump(by_alias=True, mode="json"))) > (

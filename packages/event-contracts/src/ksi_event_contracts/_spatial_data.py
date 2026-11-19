@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import re
 import sys
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Annotated, Any, ClassVar, Self
 from urllib.parse import urlsplit
 
@@ -22,6 +22,15 @@ from pydantic import (
 )
 
 from ksi_event_contracts._base import _CamelModel
+
+# A worker stamps a receipt's ``prepared_at`` with its own clock while the attempt
+# window (``acquired_at``, ``lease_until``) and the receipt check time are stamped
+# by the Core clock. Hosts that are only NTP-synchronised differ by milliseconds
+# (13 ms was observed), so a strict comparison across the two clocks refuses valid
+# work. The tolerance is symmetric, far below the lease length, and only widens what
+# is accepted: the Core still refuses any event past its own lease/deadline/grant
+# bounds, and replay of earlier accepted events is unaffected.
+WORKER_CLOCK_SKEW = timedelta(seconds=2)
 
 
 def _utf8(value: str) -> str:
