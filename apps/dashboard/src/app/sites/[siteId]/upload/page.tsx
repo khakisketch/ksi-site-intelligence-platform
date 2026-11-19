@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 
 import { EmptyState } from "@/components/ui/EmptyState";
 import { ErrorState } from "@/components/ui/ErrorState";
+import { loadAreaDsmCrs } from "@/lib/core-api/area-dsm-crs";
 import { whoAmI } from "@/lib/core-api/auth";
 import { CoreApiError } from "@/lib/core-api/client";
 import { humanizeApiError } from "@/lib/core-api/labels";
@@ -27,10 +28,14 @@ async function load(siteId: string) {
     const fingerprint = continuityFingerprint(identity);
     const permissions = identity?.permissions;
     const verified = Array.isArray(permissions) && permissions.every((permission) => typeof permission === "string");
+    const activeAreas = areas.workAreas.filter((area) => area.status === "ACTIVE");
+    // 읽기 권한이 없거나 목록을 못 읽은 구역은 null — 대조 블록만 빠지고 올리기는 그대로 된다.
+    const areaDsmCrs = await loadAreaDsmCrs(site.siteId, activeAreas.map((area) => area.workAreaId));
     return {
       kind: "ready" as const,
       site,
-      areas: areas.workAreas.filter((area) => area.status === "ACTIVE"),
+      areas: activeAreas,
+      areaDsmCrs,
       canWrite: verified && permissions.includes("WORK_ORDERS_WRITE"),
       accountIdentity: fingerprint && verified ? { fingerprint } : null,
     };
@@ -67,6 +72,7 @@ export default async function SiteUploadPage({ params, searchParams }: { params:
         polygon: toDisplayPolygonWgs84(area.polygon, area.crs),
       }))}
       initialWorkAreaId={first(query.workAreaId) ?? null}
+      areaDsmCrs={result.areaDsmCrs}
       accountIdentity={result.accountIdentity}
     />
   );

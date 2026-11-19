@@ -6,12 +6,14 @@ const mocked = vi.hoisted(() => ({
   site: vi.fn(),
   areas: vi.fn(),
   identity: vi.fn(),
+  assets: vi.fn(),
   screenProps: null as Record<string, unknown> | null,
 }));
 
 vi.mock("@/lib/core-api/sites", () => ({ getSite: mocked.site }));
 vi.mock("@/lib/core-api/workAreas", () => ({ listWorkAreas: mocked.areas }));
 vi.mock("@/lib/core-api/auth", () => ({ whoAmI: mocked.identity }));
+vi.mock("@/lib/core-api/spatial-assets", () => ({ listSpatialAssets: mocked.assets }));
 vi.mock("@/components/nav/ConsolePage", () => ({
   ConsolePage: ({ children }: { children: React.ReactNode }) => createElement("main", null, children),
 }));
@@ -36,6 +38,8 @@ import SiteUploadPage from "@/app/sites/[siteId]/upload/page";
 describe("SiteUploadPage", () => {
   beforeEach(() => {
     mocked.screenProps = null;
+    mocked.assets.mockReset();
+    mocked.assets.mockResolvedValue({ assets: [], hasMore: false });
     mocked.site.mockResolvedValue({ siteId: "site-1", name: "Sunflower" });
     mocked.areas.mockResolvedValue({
       workAreas: [{
@@ -97,5 +101,57 @@ describe("SiteUploadPage", () => {
     expect(props.initialWorkAreaId).toBe("area-unknown");
     expect(props.workAreas[0]!.workAreaId).toBe("area-unknown");
     expect(props.workAreas[0]!.polygon).toBeNull();
+  });
+
+  const dsm = (crs: string, captureDate: string) => ({
+    kind: "dsm", lifecycleState: "SEALED", declared: { captureDate, captureStartedAt: null },
+    inspection: { outcome: "MEASURED", raster: { observedCrsIdentifier: crs } },
+  });
+  const twoAreas = () => mocked.areas.mockResolvedValue({
+    workAreas: [
+      { workAreaId: "area-a", name: "1차", status: "ACTIVE", crs: "EPSG:4326", polygon: null },
+      { workAreaId: "area-b", name: "2차", status: "ACTIVE", crs: "EPSG:4326", polygon: null },
+      { workAreaId: "area-old", name: "옛 구역", status: "ARCHIVED", crs: "EPSG:4326", polygon: null },
+    ],
+  });
+  const open = () => SiteUploadPage({ params: Promise.resolve({ siteId: "site-1" }), searchParams: Promise.resolve({}) });
+
+  it("hands each active work area the CRS summary of the DSMs already uploaded there", async () => {
+    twoAreas();
+    mocked.assets.mockImplementation(async (_site: string, workAreaId: string) => workAreaId === "area-a"
+      ? { assets: [dsm("EPSG:5186", "2026-10-02"), dsm("EPSG:5186", "2026-11-04"), dsm("EPSG:32652", "2026-11-18")], hasMore: false }
+      : { assets: [], hasMore: true });
+    renderToStaticMarkup(await open());
+
+    const props = mocked.screenProps as { areaDsmCrs: Record<string, unknown> };
+    expect(Object.keys(props.areaDsmCrs).sort()).toEqual(["area-a", "area-b"]);
+    expect(props.areaDsmCrs["area-a"]).toEqual({
+      groups: [
+        { crs: "EPSG:5186", count: 2, firstDate: "2026-10-02", lastDate: "2026-11-04" },
+        { crs: "EPSG:32652", count: 1, firstDate: "2026-11-18", lastDate: "2026-11-18" },
+      ],
+      total: 3,
+      truncated: false,
+    });
+    expect(props.areaDsmCrs["area-b"]).toEqual({ groups: [], total: 0, truncated: true });
+    // 보관된 구역은 올릴 수 없으니 읽지 않는다. 한 구역당 목록 읽기 한 번, 첫 페이지만.
+    expect(mocked.assets.mock.calls.map(([, workAreaId, options]) => [workAreaId, options])).toEqual([
+      ["area-a", { limit: 50, order: "capture-desc" }],
+      ["area-b", { limit: 50, order: "capture-desc" }],
+    ]);
+  });
+
+  it("still opens the upload screen when one area's files cannot be read", async () => {
+    twoAreas();
+    mocked.assets.mockImplementation(async (_site: string, workAreaId: string) => {
+      if (workAreaId === "area-b") throw new Error("denied");
+      return { assets: [dsm("EPSG:5186", "2026-10-02")], hasMore: false };
+    });
+    renderToStaticMarkup(await open());
+
+    const props = mocked.screenProps as { areaDsmCrs: Record<string, { total: number } | null>; workAreas: unknown[] };
+    expect(props.workAreas).toHaveLength(2);
+    expect(props.areaDsmCrs["area-a"]?.total).toBe(1);
+    expect(props.areaDsmCrs["area-b"]).toBeNull();
   });
 });

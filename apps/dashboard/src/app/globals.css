@@ -302,6 +302,14 @@
   --idle-bg: #eff2f3;
   --idle-ink: #3f484d;
 
+  /* 좌표계처럼 상태가 아닌 범주를 구분하는 색. 상태색(safe·high·crit·mid·idle)과 겹치지 않게
+     청록·남색·자주·황토·회청으로 잡았고, 색만으로 읽히지 않도록 화면은 항상 이름을 함께 쓴다. */
+  --crs-1: #2a7f7a;
+  --crs-2: #4a5fb0;
+  --crs-3: #8a4f8f;
+  --crs-4: #9a6b1c;
+  --crs-5: #5f6b75;
+
   /* 하위 호환 — 기존 코드가 참조하는 이름 */
   --background: var(--page);
   --foreground: var(--ink-1);
@@ -365,6 +373,12 @@
     --idle: #8d979d;
     --idle-bg: #212528;
     --idle-ink: #c3cace;
+
+    --crs-1: #5fc2bb;
+    --crs-2: #8ea2e6;
+    --crs-3: #c996cf;
+    --crs-4: #d9a95a;
+    --crs-5: #98a3ad;
 }
 
 @theme inline {
