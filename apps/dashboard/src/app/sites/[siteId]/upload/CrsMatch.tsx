@@ -80,8 +80,9 @@ const EXPORT_GUIDE: ReadonlyArray<{ program: string; where: string }> = [
 
 export function CrsMatch({ match }: { match: CrsMatchView }) {
   const band = bandOf(match);
-  const swatches = assignCrsSwatches([...match.groups.map((group) => group.crs), match.fileCrs]);
-  const fileSwatch = match.verdict === "not-analysis" ? null : (swatches.get(match.fileCrs) ?? null);
+  // 범주 색은 분석에 쓰는 좌표계에만 준다. 비교할 수 없는 좌표계는 회색이다(자료 표와 같은 규칙).
+  const swatches = assignCrsSwatches([...match.groups.map((group) => group.crs), match.fileCrs].filter(isAnalysisCrs));
+  const fileSwatch = swatches.get(match.fileCrs) ?? null;
   const target = match.groups[0] && isAnalysisCrs(match.groups[0].crs) ? match.groups[0].crs : "EPSG:5186";
   const targetName = crsName(target);
   const needsGuide = match.verdict === "different" || match.verdict === "mixed" || match.verdict === "not-analysis";

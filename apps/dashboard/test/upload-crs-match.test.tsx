@@ -107,6 +107,19 @@ describe("upload screen · coordinate system match", () => {
     expect(block().textContent).toContain("EPSG:5179·5185~5188");
   });
 
+  it("colors only the CRS the analysis accepts and leaves the rest gray", async () => {
+    // 이 파일(5186)은 분석 좌표계라 색이 있고, 구역의 기존 DSM(32634)은 분석 밖이라 회색이다.
+    await open({ "wa-1": area([["EPSG:32634", 2]]) }, ["korea.tif"]);
+    const tiles = within(block()).getAllByText(/EPSG:/).map((node) => node.closest("div.rounded-lg")!);
+    const swatchOf = (tile: Element) => (tile.querySelector("span[aria-hidden=true]") as HTMLElement).style.background;
+    expect(swatchOf(tiles[0]!)).toBe("var(--crs-1)");
+    expect(swatchOf(tiles[1]!)).toBe("var(--idle)");
+    cleanup();
+    await open({ "wa-1": area([["EPSG:5186", 3]]) }, ["bessel.tif"]);
+    const file = within(block()).getAllByText(/EPSG:/).map((node) => node.closest("div.rounded-lg")!)[0]!;
+    expect(swatchOf(file)).toBe("var(--idle)");
+  });
+
   it("notes that only recent files were checked when the area has more than one page", async () => {
     await open({ "wa-1": area([["EPSG:5186", 50]], true) }, ["korea.tif"]);
     expect(block().textContent).toContain("최근 50건 기준입니다");
