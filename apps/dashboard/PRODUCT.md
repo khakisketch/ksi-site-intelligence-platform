@@ -27,8 +27,9 @@ See Constitution §제품 정체성 and PRD §1.1–1.1.2 for the authoritative 
 
 Desktop web for registration and mutation; mobile web for reading and review within the existing
 below-1024px action restrictions. Console uses Core records; it does not create independent
-measurement or authority. Global Home/Sites/Work and the site's five-area workspace remain
-the incumbent structure, subject to accepted ADR-KSI-025/026 and ADR-KSI-039 boundaries.
+measurement or authority. Global Home/Sites/Work and the site's three-section workspace
+(space, data, analysis; ADR-KSI-043) remain the incumbent structure, subject to accepted
+ADR-KSI-025/026 and ADR-KSI-039 boundaries.
 
 ## Capabilities and Constraints
 
