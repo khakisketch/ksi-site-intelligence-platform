@@ -211,6 +211,11 @@ const CRS_NAME: Record<string, string> = {
   "EPSG:32652": "WGS84 UTM 52N",
 };
 
+/** 이름을 아는 좌표계의 한국어 이름. 모르면 null(호출부는 코드만 보인다). */
+export function crsName(crs: string): string | null {
+  return CRS_NAME[crs] ?? null;
+}
+
 export function crsLabel(crs: string): string {
   const name = CRS_NAME[crs];
   return name ? `${name} · ${crs}` : crs;

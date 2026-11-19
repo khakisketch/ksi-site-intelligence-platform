@@ -11,6 +11,7 @@ import type { ExternalArtifactInspectionView } from "@/lib/core-api/external-rec
 import { isExternalArtifactInspectionView } from "@/lib/external-submission-echo";
 import type { ExternalArtifactKind } from "@/lib/external-reconstruction-submission";
 import { hashFile, type HashResult } from "@/lib/file-sha256";
+import { matchFileToArea, type AreaDsmCrs } from "@/lib/crs-match";
 import { areaRingOf, coverageOfArea } from "@/lib/geo/geotiff-footprint";
 import { koreanCalendarDate } from "@/lib/observation-default-name";
 import { formatBytesKo } from "@/lib/number-format";
@@ -20,6 +21,7 @@ import { assignCandidates, chipsOf, inspectCandidate, type ChipTone, type Upload
 import { UploadFlowError, UploadSession, type UploadFlowEvent, type UploadFlowInput, type UploadFlowResult, type UploadFlowStage } from "@/lib/site-upload-flow";
 
 import { UploadCompletion } from "./UploadCompletion";
+import { CrsMatch } from "./CrsMatch";
 import { UploadMap, type MapFootprint } from "./UploadMap";
 
 export type UploadWorkArea = { workAreaId: string; name: string; polygon: Record<string, unknown> | null };
@@ -68,12 +70,14 @@ function Chip({ tone, label, detail, open, onToggle }: { tone: ChipTone; label: 
   return <button type="button" className={`${base} cursor-pointer`} aria-expanded={open} onClick={onToggle}>{label}</button>;
 }
 
-export function UploadScreen({ siteId, siteName, workAreas, initialWorkAreaId, accountIdentity, deps = defaultDeps }: {
+export function UploadScreen({ siteId, siteName, workAreas, initialWorkAreaId, accountIdentity, areaDsmCrs, deps = defaultDeps }: {
   siteId: string;
   siteName: string;
   workAreas: readonly UploadWorkArea[];
   initialWorkAreaId: string | null;
   accountIdentity: { fingerprint: string } | null;
+  /** 구역별로 이미 올린 DSM의 좌표계 요약. 구역을 읽지 못했으면 null, 주지 않으면 대조를 생략한다. */
+  areaDsmCrs?: Readonly<Record<string, AreaDsmCrs | null>>;
   deps?: UploadScreenDeps;
 }) {
   const [areaId, setAreaId] = useState(() => workAreas.find((area) => area.workAreaId === initialWorkAreaId)?.workAreaId ?? workAreas[0]?.workAreaId ?? "");
@@ -331,7 +335,10 @@ export function UploadScreen({ siteId, siteName, workAreas, initialWorkAreaId, a
               {slots.map(([kind, candidate]) => {
                 const hash = candidate ? hashes[candidate.id] : undefined;
                 const hashPending = Boolean(hash && !hash.result && !hash.failed);
-                const chips = candidate ? chipsOf(candidate) : [];
+                // 대조 블록이 좌표계를 이미 크게 보이므로, 정상 상태의 좌표계 칩은 같은 말을 되풀이하지 않게 뺀다.
+                // 경고·거부 칩(투영 좌표계 필요, 분석 좌표계 아님)은 설명(detail)이 있어 그대로 둔다.
+                const crsMatch = kind === "dsm" && candidate ? matchFileToArea(candidate.recognition?.declaredCrs, areaDsmCrs?.[areaId]) : null;
+                const chips = (candidate ? chipsOf(candidate) : []).filter((chip) => !(crsMatch && chip.key === "crs" && chip.tone === "ok"));
                 return (
                   <section key={kind} aria-label={KIND_LABEL[kind]} className={`rounded-xl border bg-surface p-3 ${candidate ? "border-line" : "border-dashed border-line"}`}>
                     <div className="flex items-start justify-between gap-2">
@@ -349,6 +356,7 @@ export function UploadScreen({ siteId, siteName, workAreas, initialWorkAreaId, a
                           {phase === "uploading" && <Chip tone={doneKinds.includes(kind) ? "ok" : "warn"} label={doneKinds.includes(kind) ? "전송 완료" : transferringKind === kind ? "전송 중" : "전송 대기"} detail={null} open={false} onToggle={() => undefined} />}
                         </div>
                         {chips.map((chip) => openChip === `${candidate.id}:${chip.key}` && chip.detail ? <p key={chip.key} className="mt-2 whitespace-pre-line rounded-lg bg-sunk px-3 py-2 text-caption text-ink-2">{chip.detail}</p> : null)}
+                        {crsMatch && <CrsMatch match={crsMatch} />}
                         {hash && !hash.result && !hash.failed && <div className="mt-2" role="progressbar" aria-label={`${KIND_LABEL[kind]} 확인 중`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(hash.progress * 100)}><div className="h-1.5 overflow-hidden rounded-full bg-sunk"><div className="h-full bg-ink-1" style={{ width: `${Math.round(hash.progress * 100)}%` }} /></div><p className="mt-1 text-caption text-ink-muted">파일 확인 중 {Math.round(hash.progress * 100)}%</p></div>}
                         {hash?.failed && <p role="alert" className="mt-2 text-caption text-high-ink">파일을 읽지 못했습니다. 다시 놓아 주세요.</p>}
                       </>
