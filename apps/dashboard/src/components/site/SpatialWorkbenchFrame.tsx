@@ -459,7 +459,7 @@ export function SpatialWorkbenchFrame({
               style={{ top: drawerTop }}
               data-mobile-sheet="catalog"
               onClickCapture={dismissCatalogForSelection}
-              className="fixed inset-x-2 bottom-[calc(var(--mobile-bottom-nav-clearance)+8px)] z-50 flex w-auto flex-col gap-2 overflow-y-auto overscroll-contain rounded-2xl border border-line bg-surface p-3 shadow-xl sm:left-2 sm:right-auto sm:w-[min(380px,calc(100%-16px))] lg:absolute lg:bottom-2 lg:z-30 lg:w-[min(320px,88%)] lg:rounded-lg lg:p-2"
+              className="fixed inset-x-2 bottom-[calc(var(--mobile-bottom-nav-clearance)+8px)] z-50 flex w-auto flex-col gap-2 overflow-y-auto overscroll-contain rounded-2xl border border-line bg-surface p-3 shadow-xl sm:left-2 sm:right-auto sm:w-[min(380px,calc(100%-16px))] md:z-[60] lg:absolute lg:bottom-2 lg:z-30 lg:w-[min(320px,88%)] lg:rounded-lg lg:p-2"
             >
               <div className="sticky -top-3 z-10 -mx-3 -mt-3 flex min-w-0 shrink-0 items-center justify-between gap-2 border-b border-line bg-surface px-3 py-3 sm:-top-3 sm:-mx-3 sm:-mt-3 lg:-top-2 lg:-mx-2 lg:-mt-2 lg:px-2 lg:py-2">
                 <div className="min-w-0">
@@ -504,7 +504,7 @@ export function SpatialWorkbenchFrame({
           onKeyDown={onInspectorKeyDown}
           style={{ top: drawerTop, display: showInspectorPanel ? undefined : "none" }}
           data-mobile-sheet="inspector"
-          className={`fixed inset-x-2 bottom-[calc(var(--mobile-bottom-nav-clearance)+8px)] z-50 w-auto flex-col gap-3 overflow-y-auto overscroll-contain rounded-2xl border border-line bg-surface p-4 text-caption leading-5 text-ink-2 shadow-xl sm:left-auto sm:right-2 sm:w-[min(380px,92%)] lg:absolute lg:bottom-2 lg:z-30 xl:static xl:right-auto xl:bottom-auto xl:z-auto xl:max-h-none xl:w-[320px] xl:flex-none xl:self-stretch xl:rounded-xl xl:p-3 xl:shadow-none ${showInspector ? "flex" : "hidden xl:flex"}`}
+          className={`fixed inset-x-2 bottom-[calc(var(--mobile-bottom-nav-clearance)+8px)] z-50 w-auto flex-col gap-3 overflow-y-auto overscroll-contain rounded-2xl border border-line bg-surface p-4 text-caption leading-5 text-ink-2 shadow-xl sm:left-auto sm:right-2 sm:w-[min(380px,92%)] md:z-[60] lg:absolute lg:bottom-2 lg:z-30 xl:static xl:right-auto xl:bottom-auto xl:z-auto xl:max-h-none xl:w-[320px] xl:flex-none xl:self-stretch xl:rounded-xl xl:p-3 xl:shadow-none ${showInspector ? "flex" : "hidden xl:flex"}`}
         >
           {showInspectorPanel ? inspector : null}
           {detailsHostId ? <div id={detailsHostId} className="flex min-w-0 flex-col gap-3" /> : null}

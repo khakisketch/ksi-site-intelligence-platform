@@ -39,8 +39,7 @@ import {
 } from "@/lib/spatial-display-mosaic";
 import { VIEWPORT_RESOLVE_COPY } from "@/lib/spatial-display-viewport";
 import type { DisplayViewportBounds } from "@/lib/spatial-display-viewport";
-import { nativeBoundsFromInspection } from "@/lib/spatial-data-request";
-import { planeUnitForCrs, sameDisplayPlane } from "./site-spatial";
+import { inspectedDisplayExtent } from "./site-spatial";
 import { SiteMosaicAbsentCanvas } from "./SiteMosaicAbsentCanvas";
 import { SiteMosaicAbsentDiagram } from "./SiteMosaicAbsentDiagram";
 import {
@@ -598,29 +597,7 @@ export function SiteMosaicViewport({
   // 픽셀이 없을 때의 범위 도식 사실 — Core 검사 격자에서 유도한 파일 전체
   // 사각형과 같은 평면의 작업구역 링만 둔다. 재투영·유효 픽셀 단정을 하지
   // 않으며, 사각형은 파일 끝을 잰 값일 뿐 빈틈 없는 범위가 아니다.
-  const absentFileBounds = nativeBoundsFromInspection(grid);
-  const absentFileRing: Array<[number, number]> | null = absentFileBounds
-    ? [
-        [absentFileBounds[0], absentFileBounds[1]],
-        [absentFileBounds[2], absentFileBounds[1]],
-        [absentFileBounds[2], absentFileBounds[3]],
-        [absentFileBounds[0], absentFileBounds[3]],
-      ]
-    : null;
-  const absentOverlaid =
-    workAreaRing !== null &&
-    workAreaRing.length >= 3 &&
-    observedCrsIdentifier !== null &&
-    workAreaCrs !== null &&
-    sameDisplayPlane(workAreaCrs, observedCrsIdentifier);
-  const absentOverlayNote = !workAreaRing || workAreaRing.length < 3
-    ? "작업구역 경계를 확인하지 못해 파일 범위만 단독으로 둡니다."
-    : !observedCrsIdentifier || !workAreaCrs
-      ? "위치 기준을 확인하지 못해 작업구역 경계를 겹쳐 표시하지 않았습니다. 파일 범위만 단독으로 둡니다."
-      : !absentOverlaid
-        ? "위치 기준이 달라 작업구역 경계를 겹쳐 표시하지 않았습니다. 파일 범위만 단독으로 둡니다."
-        : null;
-  const absentCrsLabel = observedCrsIdentifier ?? "확인 불가";
+  const extent = inspectedDisplayExtent(grid, observedCrsIdentifier, workAreaRing, workAreaCrs);
 
   // 같은 관측(같은 assetRef)의 현재 작업 기록에서만 상태를 말한다. 한 층의
   // 만료로 다른 층까지 만료되었다고 말하지 않는다.
@@ -661,6 +638,7 @@ export function SiteMosaicViewport({
             : hasDeadlineExpired ? "deadline"
           : hasUnknownOutput ? "unavailable"
             : "empty";
+  const canChooseRange = canvasMode && showAbsentExtentCanvas && hidePrepareActions && canRequest && Boolean(prepareHref);
   const absentCopy: { headline: string; recovery: string } =
     absentKind === "expired"
       ? {
@@ -696,11 +674,13 @@ export function SiteMosaicViewport({
               }
             : {
                 headline: "준비된 표시 자료가 없습니다.",
-                 recovery: canRequest
-                   ? hidePrepareActions
-                     ? "구역 자료 준비에서 미리보기 준비 상태와 요청 이력을 확인하세요."
-                     : "아래에서 미리보기를 준비할 수 있습니다."
-                  : "표시 준비는 권한 있는 담당자에게 요청하세요.",
+                recovery: canChooseRange
+                  ? "자료 정보에서 보고 싶은 범위를 선택하세요."
+                  : canRequest
+                    ? hidePrepareActions
+                      ? "구역 자료 준비에서 미리보기 준비 상태와 요청 이력을 확인하세요."
+                      : "아래에서 미리보기를 준비할 수 있습니다."
+                    : "표시 준비는 권한 있는 담당자에게 요청하세요.",
               };
 
   // 큰 화면은 실제로 디코딩된 바이트가 있을 때만 둔다. 준비 기록·작업
@@ -826,6 +806,8 @@ export function SiteMosaicViewport({
   ) : absentKind === "rights" ? null
     : absentKind === "expired" ? (
       canvasExpiredAction
+    ) : absentKind === "empty" && canChooseRange ? (
+      <a href={prepareHref} className="btn btn-primary min-h-11">미리보기 범위 선택</a>
     ) : absentKind === "failed" || absentKind === "canceled" || absentKind === "deadline" ? (
       canvasRequestsLink
     ) : (
@@ -864,17 +846,17 @@ export function SiteMosaicViewport({
           <p className="text-caption leading-5 text-ink-muted lg:hidden">창 준비 요청은 노트북에서 할 수 있습니다.</p>
         </div>
       )}
-      {absentFileRing && (
+      {extent.fileRing && (
         <section aria-label="자료 범위">
           <p className="font-bold">자료 범위</p>
           <div className="mt-1">
             <SiteMosaicAbsentDiagram
-              fileRing={absentFileRing}
+              fileRing={extent.fileRing}
               workAreaRing={workAreaRing}
-              overlaid={absentOverlaid}
-              overlayNote={absentOverlayNote}
-              crsLabel={absentCrsLabel}
-              planeUnit={observedCrsIdentifier ? planeUnitForCrs(observedCrsIdentifier) : "unknown"}
+              overlaid={extent.overlaid}
+              overlayNote={extent.overlayNote}
+              crsLabel={extent.crsLabel}
+              planeUnit={extent.planeUnit}
               filePixelSize={{ width: grid.width, height: grid.height }}
               fileExtentLabel={observedCrsIdentifier ? `${observedCrsIdentifier} 네이티브 평면 ${grid.width} × ${grid.height} 픽셀` : null}
             />
@@ -919,23 +901,18 @@ export function SiteMosaicViewport({
       )}
 
       {cover.ok && geometry && !showCanvas && (canvasMode ? (
-        showAbsentExtentCanvas && absentFileRing && (compactKind === "absent" || compactKind === "readFailure") ? (
+        showAbsentExtentCanvas && extent.fileRing && (compactKind === "absent" || compactKind === "readFailure") ? (
           <div className="flex min-h-0 w-full min-w-0 flex-1 flex-col gap-1.5">
-            <div className="relative min-h-[240px] flex-1 overflow-hidden rounded-lg border border-line bg-sidebar sm:min-h-[340px]">
-              <SiteMosaicAbsentCanvas
-                fileRing={absentFileRing}
-                workAreaRing={workAreaRing}
-                overlaid={absentOverlaid}
-                crsLabel={absentCrsLabel}
-                planeUnit={observedCrsIdentifier ? planeUnitForCrs(observedCrsIdentifier) : "unknown"}
-                filePixelSize={{ width: grid.width, height: grid.height }}
-                preparedRing={preparedRing}
-                preparedLabel={preparedLabel}
-              />
-              <span className="absolute left-3 top-3 rounded border border-white/15 bg-black/55 px-2 py-1 font-mono text-micro text-sidebar-text backdrop-blur-sm">
-                등록 범위 · 실제 픽셀 아님
-              </span>
-            </div>
+            <SiteMosaicAbsentCanvas
+              fileRing={extent.fileRing}
+              workAreaRing={workAreaRing}
+              overlaid={extent.overlaid}
+              crsLabel={extent.crsLabel}
+              planeUnit={extent.planeUnit}
+              filePixelSize={{ width: grid.width, height: grid.height }}
+              preparedRing={preparedRing}
+              preparedLabel={preparedLabel}
+            />
             <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
               <p className="min-w-0 text-caption leading-5 text-ink-2">
                 <span className="font-semibold text-ink-1">{compactCopy.headline}</span>
@@ -946,7 +923,7 @@ export function SiteMosaicViewport({
               ) : canvasMediaAction}
             </div>
             {canvasMediaHint && <p className="text-caption leading-5 text-ink-muted">{canvasMediaHint}</p>}
-            {absentOverlayNote && <p className="text-caption leading-5 text-ink-muted">{absentOverlayNote}</p>}
+            {extent.overlayNote && <p className="text-caption leading-5 text-ink-muted">{extent.overlayNote}</p>}
             {detailsTargetId ? (
               <DetailsPortal targetId={detailsTargetId}>
                 <ActionMenu label="보기 도구" className="rounded-lg border border-line bg-surface px-3 py-2 text-caption text-ink-2" panelClassName="w-[min(34rem,calc(100vw-2rem))] max-h-[65vh]">
@@ -1029,16 +1006,16 @@ export function SiteMosaicViewport({
               {supportCopy}
             </p>
           )}
-          {absentFileRing && (
+          {extent.fileRing && (
             <Disclosure label="자료 범위 상세" className="rounded-lg border border-line bg-sunk/40 px-3 py-2 text-caption text-ink-2">
               <div className="mt-2">
                 <SiteMosaicAbsentDiagram
-                  fileRing={absentFileRing}
+                  fileRing={extent.fileRing}
                   workAreaRing={workAreaRing}
-                  overlaid={absentOverlaid}
-                  overlayNote={absentOverlayNote}
-                  crsLabel={absentCrsLabel}
-                  planeUnit={observedCrsIdentifier ? planeUnitForCrs(observedCrsIdentifier) : "unknown"}
+                  overlaid={extent.overlaid}
+                  overlayNote={extent.overlayNote}
+                  crsLabel={extent.crsLabel}
+                  planeUnit={extent.planeUnit}
                   filePixelSize={{ width: grid.width, height: grid.height }}
                   fileExtentLabel={observedCrsIdentifier ? `${observedCrsIdentifier} 네이티브 평면 ${grid.width} × ${grid.height} 픽셀` : null}
                 />

@@ -256,6 +256,31 @@ async function renderOverview(searchParams: Record<string, string> = {}) {
 }
 
 describe("workspace shell structure", () => {
+  it("keeps the exact page cursor while applying and clearing material filters", async () => {
+    const cursor = Buffer.from(JSON.stringify({ version: 2, after: "x" })).toString("base64url");
+    mocked.assets.mockResolvedValue({
+      ...EMPTY_CATALOG,
+      assets: [rasterAsset("page-two", { fileName: "page-two-dsm.tif" })],
+      nextCursor: null,
+      hasMore: false,
+    });
+    await renderOverview({ panel: "materials", workAreaId: "tiny-1", cursor, q: "old", kind: "dsm", state: "inspected" });
+    const form = screen.getByRole("region", { name: "자료 목록" }).querySelector("form")!;
+    expect(within(form).getByDisplayValue("old").getAttribute("name")).toBe("q");
+    const inputs = [...form.querySelectorAll<HTMLInputElement>('input[type="hidden"]')];
+    expect(inputs.find((input) => input.name === "cursor")?.value).toBe(cursor);
+    const reset = within(form).getByRole("link", { name: "필터 초기화" });
+    expect(reset.getAttribute("href")).toContain(`cursor=${encodeURIComponent(cursor)}`);
+    expect(screen.getByText("현재 페이지 1개 자료에서 검색합니다.")).toBeTruthy();
+    expect(screen.queryByText("이 페이지의 자료 1개에서 검색합니다.")).toBeNull();
+    expect(mocked.assets).toHaveBeenCalledWith("site-1", "tiny-1", { limit: 50, cursor, order: "capture-desc" });
+  });
+
+  it("requests capture order for the material rail and keeps the selected work area", async () => {
+    await renderOverview({ panel: "materials", workAreaId: "tiny-1" });
+    expect(mocked.assets).toHaveBeenCalledWith("site-1", "tiny-1", { limit: 50, order: "capture-desc" });
+  });
+
   it("passes a verified empty list and SITES_WRITE to the first action without requesting a projection", async () => {
     mocked.areas.mockResolvedValue({ workAreas: [] });
     mocked.permissions.mockImplementation(async (permission: string) => permission === "SITES_WRITE");

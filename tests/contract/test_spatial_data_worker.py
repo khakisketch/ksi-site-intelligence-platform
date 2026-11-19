@@ -369,6 +369,29 @@ def test_worker_malformed_upload_response_is_terminal_integrity_not_transient_st
     assert list(tmp_path.iterdir()) == []
 
 
+def test_worker_reports_opaque_core_upload_refusal_without_claiming_raster_failure(
+    tmp_path: Path,
+) -> None:
+    from ksi_processing_controller.spatial_data_worker import run_once
+    from spatial_data_worker_fixture import byte_lane
+
+    with byte_lane() as (core, sandbox, policy, uploads, _):
+        core.output_upload_error = "CORE_REQUEST_DENIED"
+        assert run_once(
+            core=core,
+            sandbox=sandbox,
+            transport_policy=policy,
+            worker_instance_id="instance-local",
+            clock=lambda: BYTE_NOW,
+            workspace_root=tmp_path,
+            heartbeat_interval_millis=100,
+        )
+        assert sandbox.calls == 1
+        assert core.completed_reports == [] and uploads == []
+        assert core.failures == ["UNAVAILABLE"]
+    assert list(tmp_path.iterdir()) == []
+
+
 def test_core_client_refreshes_separate_bearer_and_current_authority_each_request(
     tmp_path: Path,
 ) -> None:
