@@ -5,9 +5,10 @@ What this pair is
 Two public digital-surface-model GeoTIFFs of Floreat (Perth, Western Australia),
 published by Cambridge Coastcare and obtained via DataWA, used here under
 CC BY 4.0 with attribution: Cambridge Coastcare, Floreat-f3, 17 Aug 2021 and
-24 Aug 2022.  Epoch A (2021, 10 cm grid) and epoch B (2022, 5 cm grid) form the
-public two-epoch DSM pair behind the "long-term contract / development order"
-decision baseline.
+24 Aug 2022.  DataWA identifies the 2021 Flight-3 sector as Floreat dog
+beach and the 2022 Flight-3 sector as the pipeline dunes. These fixtures
+exercise inspection and admission refusal. For another capture of the dog
+beach, DataWA identifies Flight-4 on 24 Aug 2022.
 
 Evidence boundary
 -----------------
@@ -40,7 +41,7 @@ changes no product rule.
 from __future__ import annotations
 
 import hashlib
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -81,7 +82,18 @@ _EPOCH_B: dict[str, Any] = {
     "width": 5202,
     "height": 8703,
 }
+_EPOCH_F4: dict[str, Any] = {
+    "name": "floreat-f4_2022_dsm.tif",
+    "size_bytes": 181_498_053,
+    "sha256": "28eb3bea0e0ef58db7fa9f00b383bf7b50e6348103d80767a5ad362c0c37a7e2",
+    "width": 5150,
+    "height": 8808,
+}
 _EPOCHS: tuple[dict[str, Any], ...] = (_EPOCH_A, _EPOCH_B)
+_F4_DIR = (
+    Path(__file__).resolve().parents[2]
+    / ".dev-data/public-geotiff/floreat-f4-2022-08-24"
+)
 
 _EXPECTED_CRS = "EPSG:7850"
 _EXPECTED_DTYPE = "float32"
@@ -123,6 +135,16 @@ def _require_pair_dir() -> Path:
     return _PAIR_DIR
 
 
+def _require_f4_fixture() -> Path:
+    if not _F4_DIR.is_dir() or not (_F4_DIR / str(_EPOCH_F4["name"])).is_file():
+        pytest.skip(
+            "optional same-sector public fixture absent: "
+            ".dev-data/public-geotiff/floreat-f4-2022-08-24/ "
+            "(never downloaded by tests)"
+        )
+    return _F4_DIR
+
+
 def _sha256_of(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as handle:
@@ -155,7 +177,12 @@ def test_public_floreat_pair_inspects_measured_without_vertical_reference(
     spec: dict[str, Any],
 ) -> None:
     """Both public files MEASURE with EPSG:7850 and no observed vertical reference."""
-    pair_dir = _require_pair_dir()
+    _assert_measured_without_vertical_reference(spec, _require_pair_dir())
+
+
+def _assert_measured_without_vertical_reference(
+    spec: dict[str, Any], pair_dir: Path
+) -> ArtifactInspectionOutcomeV1:
     outcome = _inspect_public_epoch(spec, pair_dir)
     assert outcome.outcome is ArtifactOutcome.MEASURED
     assert outcome.reason is None
@@ -168,10 +195,13 @@ def test_public_floreat_pair_inspects_measured_without_vertical_reference(
     assert measurements.dtype == _EXPECTED_DTYPE
     assert measurements.nodata_value == _EXPECTED_NODATA
     assert measurements.valid_pixel_count > 0
+    return outcome
 
 
 def _stub_analysis_store(
     outcomes: dict[str, ArtifactInspectionOutcomeV1],
+    *,
+    current_spec: dict[str, Any] = _EPOCH_B,
 ) -> Any:
     """Bind stub sealed-store lookups around the REAL admission gate code.
 
@@ -186,17 +216,7 @@ def _stub_analysis_store(
     site_id = "site-floreat"
     revisions: dict[str, Any] = {}
     snapshots: dict[str, Any] = {}
-    capture_windows = {
-        "baseline": (
-            datetime(2021, 8, 17, 0, 0, 0, tzinfo=UTC),
-            datetime(2021, 8, 17, 1, 0, 0, tzinfo=UTC),
-        ),
-        "current": (
-            datetime(2022, 8, 24, 0, 0, 0, tzinfo=UTC),
-            datetime(2022, 8, 24, 1, 0, 0, tzinfo=UTC),
-        ),
-    }
-    for epoch, spec in (("baseline", _EPOCH_A), ("current", _EPOCH_B)):
+    for epoch, spec in (("baseline", _EPOCH_A), ("current", current_spec)):
         outcome = outcomes[str(spec["name"])]
         assert outcome.measurements is not None
         subject = SimpleNamespace(organization_id=organization_id, site_id=site_id)
@@ -206,14 +226,16 @@ def _stub_analysis_store(
             observed_sha256=outcome.observed_sha256.removeprefix("sha256:"),
             observed_size_bytes=spec["size_bytes"],
         )
-        started_at, ended_at = capture_windows[epoch]
+        capture_date = date(2021, 8, 17) if epoch == "baseline" else date(2022, 8, 24)
         revisions[epoch] = SimpleNamespace(
             subject=subject,
             manifest=SimpleNamespace(entries=[entry]),
             submission=SimpleNamespace(
                 input_declaration=SimpleNamespace(
-                    capture_started_at=started_at,
-                    capture_ended_at=ended_at,
+                    capture_basis="DATE_ONLY",
+                    capture_date=capture_date,
+                    capture_started_at=None,
+                    capture_ended_at=None,
                 )
             ),
         )
@@ -242,17 +264,44 @@ def _stub_analysis_store(
 
 
 def test_public_floreat_epochs_refuse_relative_volume_resolution() -> None:
-    """MEASURED-but-vertical-less public epochs are unusable: ESSENTIAL_INPUT_UNAVAILABLE.
+    """Date-only, vertical-less public epochs are unusable for relative volume.
 
-    Drives the real product path -- ``_resolve_epoch`` returns None for both
-    real public outcomes (the ``observed_vertical_reference is None`` gate),
-    and the real ``_prepare_resolved`` maps that to the typed blocker.  No
-    numeric result exists for these bytes, and that refusal is the pinned
-    behaviour (a passing numeric result would be the defect, not the goal).
+    The real Core resolver requires an exact capture interval before it checks
+    inspected height references. Keep the catalog's DATE_ONLY declaration
+    intact, and verify the real preparation path returns its typed blocker.
     """
     pair_dir = _require_pair_dir()
-    outcomes = {str(spec["name"]): _inspect_public_epoch(spec, pair_dir) for spec in _EPOCHS}
-    store = _stub_analysis_store(outcomes)
+    outcomes = {
+        str(spec["name"]): _assert_measured_without_vertical_reference(spec, pair_dir)
+        for spec in _EPOCHS
+    }
+    _assert_relative_volume_refused(outcomes, current_spec=_EPOCH_B)
+
+
+def test_public_floreat_same_sector_f3_f4_refuses_relative_volume_resolution() -> None:
+    """Inspect same-sector 2021 F3 and 2022 F4 while preserving date-only declarations."""
+    baseline_dir = _require_pair_dir()
+    current_dir = _require_f4_fixture()
+    outcomes = {
+        str(_EPOCH_A["name"]): _assert_measured_without_vertical_reference(
+            _EPOCH_A, baseline_dir
+        ),
+        str(_EPOCH_F4["name"]): _assert_measured_without_vertical_reference(
+            _EPOCH_F4, current_dir
+        ),
+    }
+    _assert_relative_volume_refused(outcomes, current_spec=_EPOCH_F4)
+
+    assert _sha256_of(baseline_dir / str(_EPOCH_A["name"])) == _EPOCH_A["sha256"]
+    assert _sha256_of(current_dir / str(_EPOCH_F4["name"])) == _EPOCH_F4["sha256"]
+
+
+def _assert_relative_volume_refused(
+    outcomes: dict[str, ArtifactInspectionOutcomeV1],
+    *,
+    current_spec: dict[str, Any],
+) -> None:
+    store = _stub_analysis_store(outcomes, current_spec=current_spec)
     now = datetime.now(UTC)
     selections = {
         epoch: SimpleNamespace(
@@ -265,9 +314,15 @@ def test_public_floreat_epochs_refuse_relative_volume_resolution() -> None:
         for epoch in ("baseline", "current")
     }
     for epoch, selection in selections.items():
-        assert store._resolve_epoch(selection, now=now, epoch=epoch) is None, (
-            f"{epoch}: public epoch without a vertical reference must not resolve"
-        )
+        assert store._resolve_epoch(selection, now=now, epoch=epoch) is None
+        revision = store._reconstruction.resolve_sealed_subject(selection.subject)
+        capture = revision.submission.input_declaration
+        assert capture.capture_basis == "DATE_ONLY"
+        expected_capture_date = date(2021, 8, 17) if epoch == "baseline" else date(2022, 8, 24)
+        assert capture.capture_date == expected_capture_date
+        assert capture.capture_started_at is None
+        assert capture.capture_ended_at is None
+
     request = SimpleNamespace(
         request_id="req-floreat-public",
         work_area_id="wa-floreat",

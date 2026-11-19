@@ -1287,6 +1287,20 @@ class ExternalArtifactInspectionStore:
                 now + timedelta(seconds=policy.resource_envelope.lease_duration_seconds),
                 self._deadline(record, policy),
             )
+            lease = record.lease
+            if (
+                lease is not None
+                and lease.fence == fence
+                and lease.expires_at == expires_at
+                and self._journal.sealed_reason is None
+            ):
+                return InspectionLeaseResult(
+                    InspectionVerdict.LEASED,
+                    record.request,
+                    expires_at,
+                    self._phase_for_record(record),
+                    fence,
+                )
             event: dict[str, object] = {
                 "kind": "external-artifact-inspection-heartbeat",
                 "version": _EVENT_VERSION,

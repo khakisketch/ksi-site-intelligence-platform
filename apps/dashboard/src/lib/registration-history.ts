@@ -91,6 +91,12 @@ function timestampMicros(value: string): bigint {
   return BigInt(Date.parse(value)) * BigInt(1000) + BigInt(remainder);
 }
 
+/** Compare Core's serialized instants without losing the final three microsecond digits. */
+export function registrationInstantMicros(value: unknown): bigint | null {
+  const timestamp = awareTimestamp(value);
+  return timestamp === null ? null : timestampMicros(timestamp);
+}
+
 function hex64(value: unknown): string | null {
   return typeof value === "string" && /^[0-9a-f]{64}$/.test(value) ? value : null;
 }

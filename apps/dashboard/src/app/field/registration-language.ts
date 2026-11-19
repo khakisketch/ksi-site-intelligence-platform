@@ -48,6 +48,10 @@ export function submissionStateLabel(state: "REGISTERED" | "SEALED"): string {
   return state === "SEALED" ? "파일 제출 완료" : "파일 제출 준비 중";
 }
 
+export function externalRevisionAnchor(submissionRef: string, revision: number): string {
+  return `external-submission-${submissionRef}-revision-${revision}`;
+}
+
 /**
  * 구역 스냅샷의 버전. 제출 revision('등록 버전')과 다른 계열이므로
  * '등록 버전'으로 부르지 않는다. 결과·근거 버전도 같은 이유로 별도 이름을 쓴다.

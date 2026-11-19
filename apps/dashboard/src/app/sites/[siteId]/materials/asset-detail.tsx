@@ -1,14 +1,16 @@
 import Link from "next/link";
 
+import { SelectedAssetHeading } from "./SelectedAssetHeading";
 import { AssetRequestDialog } from "../spatial-assets/AssetRequestDialog";
 import { AssetProvenanceNote } from "../spatial-assets/AssetProvenanceNote";
 import { SpatialDataRequestAction } from "../spatial-assets/SpatialDataRequestAction";
 import { RegistrationHistoryFacts, RegistrationHistoryUnavailable } from "../spatial-assets/RegistrationHistoryFacts";
 import { Disclosure } from "@/components/ui/Disclosure";
 import { StateBadge } from "@/components/ui/StatusBadge";
+import { externalRevisionAnchor } from "@/app/field/registration-language";
 import { formatKoreanDateTime } from "@/lib/datetime";
 import { describeInspectionReason } from "@/lib/external-inspection-reasons";
-import { assetNextSteps } from "@/lib/asset-next-steps";
+import { assetNextSteps, isMeasuredAsset, profileInputNotice } from "@/lib/asset-next-steps";
 import type { VerticalDeclarationState } from "@/lib/core-api/vertical-reference-types";
 import { VerticalReferenceDeclaration } from "./VerticalReferenceDeclaration";
 import { formatBytesKo, formatCountKo } from "@/lib/number-format";
@@ -51,11 +53,18 @@ export function inspectionStateLabel(state: string): string {
   return INSPECTION_STATE_LABEL[state] ?? "검사 상태 확인 필요";
 }
 
-function inspectionOutcomeLabel(outcome: SpatialAssetInspection["outcome"]): string {
-  if (outcome === "MEASURED") return "파일 정보 확인됨";
-  if (outcome === "REJECTED") return "거부됨";
-  if (outcome === "NOT_APPLICABLE") return "적용 대상 아님";
-  return "아직 확인되지 않음";
+export function inspectionDisplayLabel(inspection: SpatialAssetInspection): string {
+  if (inspection.outcome === "REJECTED") return "검사에서 거부됨";
+  if (inspection.outcome === "MEASURED") return "파일 정보 확인됨";
+  if (inspection.outcome === "NOT_APPLICABLE") return "검사 대상 아님";
+  if (inspection.state === "INSPECTION_REPORTED" || inspection.state === "COMPLETED") return "검사 결과 확인 필요";
+  if (inspection.state === "FAILED") return "검사 처리 실패";
+  return inspectionStateLabel(inspection.state);
+}
+
+export function inspectionTone(inspection: SpatialAssetInspection): "positive" | "warning" | "neutral" {
+  if (inspection.outcome === "REJECTED" || inspection.state === "FAILED" || inspection.state === "INSPECTION_FAILED_INCOMPLETE") return "warning";
+  return inspection.outcome === "MEASURED" ? "positive" : "neutral";
 }
 
 function kindLabel(kind: SpatialAssetCatalogItem["kind"]): string {
@@ -71,6 +80,7 @@ function exactByteCount(value: number): string {
 interface AvailabilityStatus {
   label: string;
   retry: boolean;
+  rejected: boolean;
 }
 
 /**
@@ -78,26 +88,26 @@ interface AvailabilityStatus {
  * 분석 적합성은 이 목록에서 평가하지 않으므로 '적합' 상태는 두지 않는다.
  */
 function availabilityStatus(item: SpatialAssetCatalogItem): AvailabilityStatus {
-  if (item.inspection.outcome === "REJECTED" || item.inspection.state === "FAILED") {
+  if (item.inspection.outcome === "REJECTED") {
+    return { label: inspectionDisplayLabel(item.inspection), retry: false, rejected: true };
+  }
+  if (item.inspection.state === "FAILED") {
     return {
-      label: "처리 실패",
+      label: "검사 처리 실패",
       retry: true,
+      rejected: false,
     };
   }
   if (item.lifecycleState === "UNSEALED") {
-    return { label: "파일 제출 미완료", retry: false };
+    return { label: "파일 제출 미완료", retry: false, rejected: false };
   }
   if (item.lifecycleState === "SUPERSEDED") {
-    return { label: "이전 등록 자료", retry: false };
+    return { label: "이전 등록 자료", retry: false, rejected: false };
   }
-  const inspected = item.inspection.outcome === "MEASURED"
-    ? "파일 정보 확인됨"
-    : item.inspection.outcome === "NOT_APPLICABLE"
-      ? "적용 대상 아님"
-      : "검사 결과 확인 전";
   return {
-    label: inspected,
+    label: inspectionDisplayLabel(item.inspection),
     retry: false,
+    rejected: false,
   };
 }
 
@@ -114,7 +124,7 @@ function DeclaredFacts({ item }: { item: SpatialAssetCatalogItem }) {
       <Fact label="신고 해상도" value={declared.gsdM === null ? "미기재" : `${declared.gsdM} m/pixel`} />
       <Fact label="제출 시각" value={formatKoreanDateTime(declared.submittedAt, { dateStyle: "medium", timeStyle: "short" })} />
       <Fact label="처리 완료 신고 시각" value={declared.producerCompletedAt ? formatKoreanDateTime(declared.producerCompletedAt, { dateStyle: "medium", timeStyle: "short" }) : "미기재"} />
-      <Fact label="촬영 구간" value={declared.captureStartedAt && declared.captureEndedAt ? `${formatKoreanDateTime(declared.captureStartedAt, { dateStyle: "medium", timeStyle: "short" })} – ${formatKoreanDateTime(declared.captureEndedAt, { dateStyle: "medium", timeStyle: "short" })}` : "완전한 구간 미기재"} />
+      <Fact label="촬영 시점" value={capturePeriodTitle(declared.captureStartedAt, declared.captureEndedAt, { seconds: true, captureDate: declared.captureDate })} />
       <Fact label="신고 수직 기준" value={declared.verticalReference ? `${declared.verticalReference.datum} · ${declared.verticalReference.basis}` : "미기재"} />
     </dl>
     <p className="mt-3 text-micro leading-5 text-ink-muted">이 항목은 고객이 신고한 값이며 파일에서 확인한 사실이나 정확도 보증을 뜻하지 않습니다.</p>
@@ -171,7 +181,7 @@ function InspectionReason({ code }: { code: string }) {
 function InspectionFacts({ inspection }: { inspection: SpatialAssetInspection }) {
   return <section className="rounded-lg border border-line bg-surface p-4">
     <h3 className="text-lead font-bold">파일 검사 결과</h3>
-    <p className="mt-2 text-body text-ink-2">상태: {inspectionStateLabel(inspection.state)} · 결과: {inspectionOutcomeLabel(inspection.outcome)}</p>
+    <p className="mt-2 text-body text-ink-2">파일 검사: {inspectionDisplayLabel(inspection)} · 검사 보고서: {inspectionStateLabel(inspection.state)}</p>
     {inspection.reason && <InspectionReason code={inspection.reason} />}
     <Disclosure label="좌표·격자와 검사 상세" className="mt-2">
     {inspection.reason && <p className="mt-1">사유 코드 · {inspection.reason}</p>}
@@ -210,11 +220,11 @@ export function DetailBlock({ detail, workName, areaName, headline, compareHref,
 }) {
   const availability = availabilityStatus(detail);
   const nextSteps = assetNextSteps(detail);
+  const profileNotice = detail.kind === "dsm" && isMeasuredAsset(detail) ? profileInputNotice(detail.inspection) : null;
+  const registrationHref = `/field/work-orders/${encodeURIComponent(detail.workOrderId)}#${externalRevisionAnchor(detail.submissionRef, detail.revision)}`;
   const captureLine = capturePeriodTitle(detail.declared.captureStartedAt, detail.declared.captureEndedAt, {
     captureDate: detail.declared.captureDate ?? null,
   });
-  const tone: "neutral" | "positive" | "warning" =
-    availability.retry ? "warning" : detail.inspection.outcome === "MEASURED" ? "positive" : "neutral";
   const requestAction = <SpatialDataRequestAction
     siteId={requestProps.siteId}
     workAreaId={requestProps.workAreaId}
@@ -224,25 +234,37 @@ export function DetailBlock({ detail, workName, areaName, headline, compareHref,
     observedCrsDigest={requestProps.inspectedRaster?.observedCrsDigest ?? null}
     canRequest={requestProps.canRequest}
   />;
+  const datumDeclaration = !availability.rejected && vertical && <VerticalReferenceDeclaration siteId={detail.siteId} workAreaId={detail.workAreaId} assetRef={detail.assetRef} observedCrs={detail.inspection.raster?.observedCrsIdentifier ?? null} state={vertical.state} canWrite={vertical.canWrite} />;
   return <section aria-label="관측 자료 상세" id={`asset-${detail.assetRef}`} className="flex min-w-0 scroll-mt-4 flex-col gap-3">
-    <h3 className="break-words text-lead font-bold text-ink-1">{headline}</h3>
-    <div><StateBadge label={availability.label} tone={tone} /></div>
+    <SelectedAssetHeading assetRef={detail.assetRef} title={headline} />
+    <div><StateBadge label={availability.label} tone={inspectionTone(detail.inspection)} /></div>
+    {detail.lifecycleState === "SUPERSEDED" && <p className="text-caption text-ink-2">같은 제출에 새 등록 버전이 있습니다. 현재 보고 있는 자료는 등록 버전 {detail.revision}입니다.</p>}
+    {availability.rejected && <div className="rounded-lg border border-high bg-high-bg p-3 text-caption leading-5 text-high-ink" role="status" aria-label="파일 검사 거부 사유">
+      <p>이 파일은 검사에서 거부되어 측정용 자료로 사용할 수 없습니다.</p>
+      {detail.inspection.reason && <InspectionReason code={detail.inspection.reason} />}
+      <p className="mt-2"><Link className="tap-target font-semibold underline" href={registrationHref}>원래 등록 작업 열기</Link></p>
+    </div>}
+    {!availability.rejected && (detail.revision > 1 || detail.lifecycleState === "SUPERSEDED") && <Link className="tap-target w-fit text-caption font-semibold underline" href={registrationHref}>등록 버전 {detail.revision}의 작업 기록 열기</Link>}
     <dl className="grid grid-cols-2 gap-x-3 gap-y-2">
       <CompactFact label="자료 구성" value={`${dataKindLabel(detail.kind)} · ${detail.declared.format}`} />
       <CompactFact label="관측 시점" value={captureLine} />
-      <CompactFact label="파일 검사" value={inspectionStateLabel(detail.inspection.state)} />
+      <CompactFact label="파일 검사" value={inspectionDisplayLabel(detail.inspection)} />
       <CompactFact label="좌표 기준" value={detail.inspection.raster?.observedCrsIdentifier ?? "확인 불가"} />
       <CompactFact label="수직 기준" value={detail.inspection.raster?.observedVerticalReference?.identifier ?? "확인 불가"} />
       {detail.inspection.raster && <CompactFact label="파일 범위" value={`${formatCountKo(detail.inspection.raster.width)} × ${formatCountKo(detail.inspection.raster.height)} 픽셀`} />}
     </dl>
-    {vertical && <VerticalReferenceDeclaration siteId={detail.siteId} workAreaId={detail.workAreaId} assetRef={detail.assetRef} state={vertical.state} canWrite={vertical.canWrite} />}
+    {profileNotice && <p className="text-caption leading-5 text-ink-2">{profileNotice}</p>}
     {nextSteps.length > 0 && <div className="flex flex-wrap gap-2" aria-label="이어서 할 일">
       {nextSteps.map((step) => <Link key={step.key} href={step.href} className="btn">{step.label}</Link>)}
     </div>}
-    {availability.retry && retryHref && <p className="text-caption text-high-ink">처리 실패는 <Link className="tap-target underline" href={retryHref}>구역 자료 준비</Link>에서 확인하세요.</p>}
-    {requestProps.canRequest && <AssetRequestDialog triggerLabel="이 자료 새로 준비 요청">{requestAction}</AssetRequestDialog>}
-    {compareHref && <p className="text-caption">분석에 사용할 자료는 <Link href={compareHref} className="tap-target underline">분석 조건에서 선택</Link>하세요.</p>}
-    <p className="text-caption">요청한 창은 <Link href={requestsHref} className="tap-target underline">준비 기록</Link>에서 확인하세요.</p>
+    {datumDeclaration && (profileNotice
+      ? <Disclosure label="수직 기준 신고·이력" className="border-t border-line">{datumDeclaration}</Disclosure>
+      : datumDeclaration)}
+    {!availability.rejected && availability.retry && retryHref && <p className="text-caption text-high-ink">검사 처리 실패는 <Link className="tap-target underline" href={retryHref}>구역 자료 준비</Link>에서 확인하세요.</p>}
+    {detail.inspection.state === "INSPECTION_FAILED_INCOMPLETE" && <Link className="btn w-fit" prefetch={false} href={`/field/work-orders/${encodeURIComponent(detail.workOrderId)}`}>등록 작업에서 검사 상태 확인</Link>}
+    {!availability.rejected && requestProps.canRequest && <AssetRequestDialog key={detail.assetRef} triggerLabel="이 자료 새로 준비 요청">{requestAction}</AssetRequestDialog>}
+    {!availability.rejected && compareHref && <p className="text-caption">분석에 사용할 자료는 <Link href={compareHref} className="tap-target underline">분석 조건에서 선택</Link>하세요.</p>}
+    {!availability.rejected && <p className="text-caption">요청한 창은 <Link href={requestsHref} className="tap-target underline">준비 기록</Link>에서 확인하세요.</p>}
     <AssetProvenanceNote siteId={detail.siteId} workAreaId={detail.workAreaId} assetRef={detail.assetRef} />
     <Disclosure label="파일·식별 상세" className="border-t border-line">
       <div className="flex min-w-0 flex-col gap-2">

@@ -18,8 +18,10 @@ export async function GET(
   if (target) {
     try {
       const found = await locateUploadedAsset(siteId, target, (cursor) =>
-        listSpatialAssets(siteId, target.workAreaId, cursor ? { limit: 50, cursor } : { limit: 50 }));
-      if (found) href = siteDataHref(siteId, { workAreaId: target.workAreaId, assetRef: found.assetRef, cursor: found.cursor });
+        listSpatialAssets(siteId, target.workAreaId, cursor
+          ? { limit: 50, cursor, order: "capture-desc" }
+          : { limit: 50, order: "capture-desc" }));
+      if (found) href = `${siteDataHref(siteId, { workAreaId: target.workAreaId, assetRef: found.assetRef, cursor: found.cursor })}#section-inspector`;
     } catch {
       // 목록으로 보낸다. 자료 화면이 권한·장애를 다시 판단해 보여 준다.
     }

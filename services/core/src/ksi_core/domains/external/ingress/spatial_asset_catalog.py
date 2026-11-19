@@ -7,7 +7,8 @@ import hashlib
 import json
 import re
 from collections.abc import Iterator
-from typing import Any
+from datetime import UTC, datetime, time
+from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from ksi_domain.canonical_json import canonical_json_bytes
@@ -50,6 +51,8 @@ _MAX_INSPECTION_RECORDS_PER_SUBJECT = 128
 _MAX_RETAINED_POLICIES_PER_INSPECTION = 64
 _ASSET_REF_RE = re.compile(r"^ksa-v1-[0-9a-f]{64}$")
 _CURSOR_RE = re.compile(r"^[A-Za-z0-9_-]{1,1024}$")
+_CATALOG_ORDER_ASSET_REF = "asset-ref"
+_CATALOG_ORDER_CAPTURE_DESC = "capture-desc"
 
 
 def build_spatial_asset_ref(submission_ref: str, revision: int, artifact_id: str) -> str:
@@ -497,14 +500,62 @@ class SpatialAssetCatalog:
         return build_spatial_asset_description(item=item, record=record, snapshot=snapshot)
 
 
-def _encode_cursor(*, site_id: str, work_area_id: str, after: str) -> str:
-    payload = canonical_json_bytes(
-        {"version": 1, "siteId": site_id, "workAreaId": work_area_id, "after": after}
-    )
+def _capture_sort_value(item: SpatialAssetCatalogItemV1) -> int | None:
+    """UTC microseconds for declared capture start, or date-only capture basis."""
+    capture_started_at = item.declared.capture_started_at
+    capture_date = item.declared.capture_date
+    if capture_started_at is not None:
+        value = capture_started_at
+    elif capture_date is not None:
+        value = datetime.combine(capture_date, time.min, tzinfo=UTC)
+    else:
+        return None
+
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=UTC)
+    delta = value.astimezone(UTC) - datetime(1970, 1, 1, tzinfo=UTC)
+    return delta.days * 86_400_000_000 + delta.seconds * 1_000_000 + delta.microseconds
+
+
+def _capture_order_key(value: int | None, asset_ref: str) -> tuple[bool, int, str]:
+    if value is None:
+        return (True, 0, asset_ref)
+    return (False, -value, asset_ref)
+
+
+def _capture_sort_key(item: SpatialAssetCatalogItemV1) -> tuple[bool, int, str]:
+    return _capture_order_key(_capture_sort_value(item), item.asset_ref)
+
+
+def _encode_cursor(
+    *,
+    site_id: str,
+    work_area_id: str,
+    after: str,
+    order: str = _CATALOG_ORDER_ASSET_REF,
+    after_capture: int | None = None,
+) -> str:
+    if order == _CATALOG_ORDER_CAPTURE_DESC:
+        payload = canonical_json_bytes(
+            {
+                "version": 2,
+                "siteId": site_id,
+                "workAreaId": work_area_id,
+                "order": order,
+                "after": after,
+                "afterCapture": after_capture,
+            }
+        )
+    else:
+        # Keep existing cursors and links byte-for-byte compatible for consumers
+        # that still use stable asset-reference order.
+        payload = canonical_json_bytes(
+            {"version": 1, "siteId": site_id, "workAreaId": work_area_id, "after": after}
+        )
     return base64.urlsafe_b64encode(payload).decode("ascii").rstrip("=")
 
 
-def _decode_cursor(cursor: str, *, site_id: str, work_area_id: str) -> str:
+def _decode_cursor(cursor: str, *, site_id: str, work_area_id: str) -> tuple[str, str, int | None]:
     if _CURSOR_RE.fullmatch(cursor) is None:
         raise HTTPException(status_code=400, detail="INVALID_SPATIAL_ASSET_CURSOR")
     try:
@@ -512,19 +563,58 @@ def _decode_cursor(cursor: str, *, site_id: str, work_area_id: str) -> str:
         payload = json.loads(raw)
     except (ValueError, json.JSONDecodeError) as exc:
         raise HTTPException(status_code=400, detail="INVALID_SPATIAL_ASSET_CURSOR") from exc
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="INVALID_SPATIAL_ASSET_CURSOR")
+    version = payload.get("version")
+    if version == 1:
+        if (
+            set(payload) != {"version", "siteId", "workAreaId", "after"}
+            or payload.get("siteId") != site_id
+            or payload.get("workAreaId") != work_area_id
+            or not isinstance(payload.get("after"), str)
+            or _ASSET_REF_RE.fullmatch(payload["after"]) is None
+            or _encode_cursor(
+                site_id=site_id,
+                work_area_id=work_area_id,
+                after=payload["after"],
+            )
+            != cursor
+        ):
+            raise HTTPException(status_code=400, detail="INVALID_SPATIAL_ASSET_CURSOR")
+        # V1 cursors continue in their original reference ordering, including
+        # old saved URLs used by the Dashboard data table.
+        return payload["after"], _CATALOG_ORDER_ASSET_REF, None
+
+    after_capture = payload.get("afterCapture")
     if (
-        not isinstance(payload, dict)
-        or set(payload) != {"version", "siteId", "workAreaId", "after"}
-        or payload.get("version") != 1
+        payload.get("version") != 2
+        or set(payload) != {"version", "siteId", "workAreaId", "order", "after", "afterCapture"}
         or payload.get("siteId") != site_id
         or payload.get("workAreaId") != work_area_id
+        or payload.get("order") != _CATALOG_ORDER_CAPTURE_DESC
         or not isinstance(payload.get("after"), str)
         or _ASSET_REF_RE.fullmatch(payload["after"]) is None
-        or _encode_cursor(site_id=site_id, work_area_id=work_area_id, after=payload["after"])
+        or (after_capture is not None and type(after_capture) is not int)
+        or _encode_cursor(
+            site_id=site_id,
+            work_area_id=work_area_id,
+            order=_CATALOG_ORDER_CAPTURE_DESC,
+            after=payload["after"],
+            after_capture=after_capture,
+        )
         != cursor
     ):
         raise HTTPException(status_code=400, detail="INVALID_SPATIAL_ASSET_CURSOR")
-    return payload["after"]
+    return payload["after"], _CATALOG_ORDER_CAPTURE_DESC, after_capture
+
+
+def _is_after_capture_cursor(
+    item: SpatialAssetCatalogItemV1,
+    *,
+    after: str,
+    after_capture: int | None,
+) -> bool:
+    return _capture_sort_key(item) > _capture_order_key(after_capture, after)
 
 
 def _page_wire(page: SpatialAssetCatalogPageV1) -> dict[str, Any]:
@@ -558,16 +648,33 @@ def build_spatial_asset_catalog_router(
         work_area_id: str,
         limit: int = Query(default=20, ge=1, le=50),
         cursor: str | None = Query(default=None, max_length=1024),
+        order: Literal["asset-ref", "capture-desc"] = Query(default="asset-ref"),
         principal: Principal = Depends(read),  # noqa: B008
     ) -> SpatialAssetCatalogPageV1:
         catalog._require_scope(site_id, work_area_id, principal)
-        after = (
-            _decode_cursor(cursor, site_id=site_id, work_area_id=work_area_id)
-            if cursor is not None
-            else None
-        )
+        after: str | None = None
+        after_capture: int | None = None
+        effective_order: str = order
+        if cursor is not None:
+            after, cursor_order, after_capture = _decode_cursor(
+                cursor, site_id=site_id, work_area_id=work_area_id
+            )
+            if cursor_order == _CATALOG_ORDER_CAPTURE_DESC and order != cursor_order:
+                raise HTTPException(status_code=400, detail="INVALID_SPATIAL_ASSET_CURSOR")
+            effective_order = cursor_order
         items = catalog.items(site_id, work_area_id, principal)
-        candidates = tuple(item for item in items if after is None or item.asset_ref > after)
+        if effective_order == _CATALOG_ORDER_CAPTURE_DESC:
+            candidates = tuple(
+                item
+                for item in sorted(
+                    items,
+                    key=_capture_sort_key,
+                )
+                if after is None
+                or _is_after_capture_cursor(item, after=after, after_capture=after_capture)
+            )
+        else:
+            candidates = tuple(item for item in items if after is None or item.asset_ref > after)
         page_items: list[SpatialAssetCatalogItemV1] = []
         has_more = False
         for index, candidate in enumerate(candidates[:limit]):
@@ -582,6 +689,12 @@ def build_spatial_asset_catalog_router(
                         site_id=site_id,
                         work_area_id=work_area_id,
                         after=item.asset_ref,
+                        order=effective_order,
+                        after_capture=(
+                            _capture_sort_value(item)
+                            if effective_order == _CATALOG_ORDER_CAPTURE_DESC
+                            else None
+                        ),
                     )
                     if tentative_has_more
                     else None
@@ -599,7 +712,15 @@ def build_spatial_asset_catalog_router(
         has_more = has_more or len(page_items) < len(candidates)
         next_cursor = (
             _encode_cursor(
-                site_id=site_id, work_area_id=work_area_id, after=page_items[-1].asset_ref
+                site_id=site_id,
+                work_area_id=work_area_id,
+                after=page_items[-1].asset_ref,
+                order=effective_order,
+                after_capture=(
+                    _capture_sort_value(page_items[-1])
+                    if effective_order == _CATALOG_ORDER_CAPTURE_DESC
+                    else None
+                ),
             )
             if has_more and page_items
             else None

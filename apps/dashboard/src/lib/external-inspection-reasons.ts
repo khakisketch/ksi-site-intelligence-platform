@@ -18,11 +18,11 @@ const REASONS: Record<string, InspectionReasonText> = {
   },
   UNSUPPORTED_RASTER: {
     text: "압축 방식, 색 방식, 밴드 구성 중 지원하지 않는 설정이 있습니다. 예를 들어 알파가 있는 JPEG 정사영상, NoData 가 지정된 정사영상, 배율이 지정된 DSM이 그렇습니다.",
-    fix: "LZW나 Deflate 압축으로 다시 내보내세요. 정사영상은 NoData 지정 없이, 투명도는 0 또는 255 두 값으로 내보내세요.",
+    fix: "압축은 LZW나 Deflate를 사용할 수 있습니다. 정사영상은 결측 경계를 투명도 0·255로 그대로 보존할 수 있을 때만 NoData 지정 없이 내보내세요. 반투명 영역이 있는 원본은 보존하세요.",
   },
   AMBIGUOUS_GEOREFERENCE: {
     text: "좌표계를 하나로 확정할 수 없습니다. 좌표 정보가 없거나, EPSG 번호가 없거나, DSM이 위·경도 또는 미터가 아닌 단위이거나, 수직 기준이 EPSG가 아닌 경우입니다.",
-    fix: "EPSG 번호가 있는 투영 좌표계(예: UTM, 중부원점)로 내보내세요. 별도 좌표 파일(.tfw, .prj)은 읽지 않습니다.",
+    fix: "원본 좌표계를 확인한 뒤 촬영 위치에 맞는 미터 단위 좌표계로 재투영하세요. EPSG 번호가 있는 투영 좌표계와 변환된 격자를 GeoTIFF 안에 함께 저장하세요.",
   },
   UNMASKED_NONFINITE_SAMPLE: {
     text: "DSM에 NoData 로 표시되지 않은 NaN 또는 무한대 값이 있습니다.",

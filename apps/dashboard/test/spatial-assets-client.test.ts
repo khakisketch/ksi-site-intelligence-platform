@@ -13,7 +13,16 @@ describe("spatial asset Core client", () => {
     await listSpatialAssets("site/one", "area one", { limit: 50, cursor: "signed cursor" });
     expect(mocked.coreFetch).toHaveBeenCalledWith(
       "/v1/sites/site%2Fone/work-areas/area%20one/spatial-assets",
-      { query: { limit: 50, cursor: "signed cursor" } },
+      { query: { limit: 50, cursor: "signed cursor", order: undefined } },
+    );
+  });
+
+  it("requests Core's globally ordered capture pages when the product view needs them", async () => {
+    mocked.coreFetch.mockResolvedValue({ assets: [], nextCursor: null, hasMore: false });
+    await listSpatialAssets("site-1", "area-1", { limit: 50, order: "capture-desc" });
+    expect(mocked.coreFetch).toHaveBeenCalledWith(
+      "/v1/sites/site-1/work-areas/area-1/spatial-assets",
+      { query: { limit: 50, cursor: undefined, order: "capture-desc" } },
     );
   });
 

@@ -22,7 +22,7 @@ function input(files = [ortho, dsm]): UploadFlowInput {
 type Call = { method: string; url: string; headers: Record<string, string>; body: unknown };
 
 /** 요청을 기록하고, 등록·봉인 응답은 받은 신고서를 그대로 돌려주는 가짜 서버. 실패는 단계별로 주입한다. */
-function fakeServer() {
+function fakeServer(now: () => number = () => Date.now()) {
   const calls: Call[] = [];
   const failures = new Map<string, Array<(() => Response | Promise<Response>) | "network">>();
   let declared: Record<string, unknown> | null = null;
@@ -69,7 +69,8 @@ function fakeServer() {
     if (step === "register") { declared = body as Record<string, unknown>; return json(201, view("REGISTERED")); }
     if (step === "grants") {
       const ids = (declared!.artifacts as { artifactId: string }[]).map((item) => item.artifactId);
-      return json(200, { grants: ids.map((id) => ({ artifactId: id, uploadUrl: `https://objects.test/${id}`, requiredHeaders: { "content-type": "application/octet-stream" } })) });
+      const expiresAt = now() + 15 * 60 * 1000;
+      return json(200, { grants: ids.map((id) => ({ artifactId: id, uploadUrl: `https://objects.test/${id}?expires=${expiresAt}`, requiredHeaders: { "content-type": "application/octet-stream" } })) });
     }
     if (step === "seal") return json(200, view("SEALED"));
     return json(404, {});
@@ -77,13 +78,15 @@ function fakeServer() {
   return { calls, handler, setDeclared: (body: Record<string, unknown>) => { declared = body; }, failNext: (step: string, what: (() => Response) | "network") => { failures.set(step, [...(failures.get(step) ?? []), what]); }, json, view: () => view };
 }
 
-function deps(server: ReturnType<typeof fakeServer>, puts: string[] = [], putFailures: string[] = []): UploadFlowDeps {
+function deps(server: ReturnType<typeof fakeServer>, puts: string[] = [], putFailures: string[] = [], now: () => number = () => Date.now()): UploadFlowDeps {
   let counter = 0;
   return {
     fetch: ((url: string, init?: RequestInit) => server.handler(url, init)) as unknown as typeof fetch,
     put: async (grant, file, _signal, onBytes) => {
       onBytes(0);
       if (putFailures.includes(grant.artifactId)) { putFailures.splice(putFailures.indexOf(grant.artifactId), 1); throw new Error("PUT failed"); }
+      const expiry = Number(new URL(grant.uploadUrl).searchParams.get("expires"));
+      if (Number.isFinite(expiry) && now() >= expiry) throw new Error("expired upload grant");
       puts.push(`${grant.artifactId}:${file.name}`);
       onBytes(file.size);
     },
@@ -105,6 +108,7 @@ describe("UploadSession happy path", () => {
       "POST observation-work-orders",
       "GET observation-work-orders/wo-1/external-reconstruction-context",
       "POST observation-work-orders/wo-1/external-reconstruction-submissions-v3",
+      `POST observation-work-orders/wo-1/external-reconstruction-submissions/${REF}/revisions/1/upload-grants`,
       `POST observation-work-orders/wo-1/external-reconstruction-submissions/${REF}/revisions/1/upload-grants`,
       `POST observation-work-orders/wo-1/external-reconstruction-submissions/${REF}/revisions/1/seal`,
     ]);
@@ -128,6 +132,29 @@ describe("UploadSession happy path", () => {
     await run(new UploadSession(input([dsm]), deps(server, puts)));
     expect(puts).toEqual(["dsm:dsm.tif"]);
     expect((server.calls[2]!.body as { artifacts: unknown[] }).artifacts).toHaveLength(1);
+  });
+
+  it("fetches fresh complete grants after an earlier file consumes more than the grant lifetime", async () => {
+    let currentTime = Date.parse("2026-11-18T01:30:00.000Z");
+    const server = fakeServer(() => currentTime);
+    const puts: string[] = [];
+    const timingDeps = deps(server, puts, [], () => currentTime);
+    const session = new UploadSession(input(), {
+      ...timingDeps,
+      put: async (grant, file, signal, onBytes) => {
+        await timingDeps.put(grant, file, signal, onBytes);
+        if (grant.artifactId === "ortho") currentTime += 16 * 60 * 1000;
+      },
+    });
+
+    const result = await run(session);
+
+    expect(result).toMatchObject({ workOrderId: "wo-1", submissionRef: REF, revision: 1 });
+    expect(puts).toEqual(["ortho:ortho.tif", "dsm:dsm.tif"]);
+    const grants = server.calls.filter((call) => call.url.endsWith("/upload-grants"));
+    expect(grants).toHaveLength(2);
+    expect(grants[0]!.url).toBe(grants[1]!.url);
+    expect(grants[0]!.body).toBeNull();
   });
 });
 
@@ -160,6 +187,23 @@ describe("UploadSession retry safety", () => {
     expect(creates[1]!.headers["Idempotency-Key"]).toBe(creates[0]!.headers["Idempotency-Key"]);
   });
 
+  it("reuses the exact work-order body after a creation retry crosses Seoul midnight", async () => {
+    const server = fakeServer();
+    server.failNext("create", "network");
+    const clock = { current: new Date("2026-11-17T14:59:00.000Z") };
+    const session = new UploadSession(input(), { ...deps(server), now: () => clock.current });
+
+    await expect(run(session)).rejects.toMatchObject({ stage: "workOrder", ambiguous: true });
+    clock.current = new Date("2026-11-17T15:01:00.000Z");
+    await run(session);
+
+    const creates = server.calls.filter((call) => call.url.endsWith("/observation-work-orders"));
+    expect(creates).toHaveLength(2);
+    expect(creates[1]!.headers["Idempotency-Key"]).toBe(creates[0]!.headers["Idempotency-Key"]);
+    expect(creates[1]!.body).toEqual(creates[0]!.body);
+    expect(creates[0]!.body).toMatchObject({ name: "북측 1차 구역 · 2026-11-17 자료" });
+  });
+
   it("re-uploads only the file that failed and seals once", async () => {
     const server = fakeServer();
     const puts: string[] = [];
@@ -168,6 +212,7 @@ describe("UploadSession retry safety", () => {
     expect(puts).toEqual(["ortho:ortho.tif"]);
     await run(session);
     expect(puts).toEqual(["ortho:ortho.tif", "dsm:dsm.tif"]);
+    expect(server.calls.filter((call) => call.url.endsWith("/upload-grants"))).toHaveLength(3);
     expect(server.calls.filter((call) => call.url.endsWith("/seal"))).toHaveLength(1);
     expect(server.calls.filter((call) => call.url.endsWith("-submissions-v3"))).toHaveLength(1);
   });
@@ -180,8 +225,41 @@ describe("UploadSession retry safety", () => {
     await expect(run(session)).rejects.toMatchObject({ stage: "seal", ambiguous: true });
     await run(session);
     expect(puts).toHaveLength(2);
-    expect(server.calls.filter((call) => call.url.endsWith("/upload-grants"))).toHaveLength(1);
+    expect(server.calls.filter((call) => call.url.endsWith("/upload-grants"))).toHaveLength(2);
     expect(server.calls.filter((call) => call.url.endsWith("/seal"))).toHaveLength(2);
+  });
+
+  it.each(["OBSERVATION_MISSING", "OBSERVATION_MISMATCH"] as const)("reuploads the same complete revision after seal confirms %s", async (code) => {
+    const server = fakeServer();
+    const puts: string[] = [];
+    server.failNext("seal", () => server.json(422, { code }));
+    const session = new UploadSession(input(), deps(server, puts));
+
+    await expect(run(session)).rejects.toMatchObject({
+      stage: "seal", ambiguous: false, recoveryCode: code, retrySameRevision: true,
+      message: expect.stringContaining("같은 제출로 다시 시도하면 이 제출의 파일을 모두 다시 올립니다"),
+    });
+    expect(puts).toEqual(["ortho:ortho.tif", "dsm:dsm.tif"]);
+
+    await run(session);
+
+    expect(puts).toEqual(["ortho:ortho.tif", "dsm:dsm.tif", "ortho:ortho.tif", "dsm:dsm.tif"]);
+    expect(server.calls.filter((call) => call.url.endsWith("-submissions-v3"))).toHaveLength(1);
+    expect(server.calls.filter((call) => call.url.endsWith("/upload-grants"))).toHaveLength(4);
+    expect(server.calls.filter((call) => call.url.endsWith("/seal"))).toHaveLength(2);
+  });
+
+  it("keeps confirmed files after an uncertain seal response even if it carries a storage code", async () => {
+    const server = fakeServer();
+    const puts: string[] = [];
+    server.failNext("seal", () => server.json(503, { code: "OBSERVATION_MISSING" }));
+    const session = new UploadSession(input(), deps(server, puts));
+
+    await expect(run(session)).rejects.toMatchObject({ stage: "seal", ambiguous: true, retrySameRevision: false, recoveryCode: null });
+    await run(session);
+
+    expect(puts).toEqual(["ortho:ortho.tif", "dsm:dsm.tif"]);
+    expect(server.calls.filter((call) => call.url.endsWith("/upload-grants"))).toHaveLength(2);
   });
 
   it("accepts an already sealed record returned for the same registration and skips uploads", async () => {
@@ -206,6 +284,16 @@ describe("UploadSession retry safety", () => {
 });
 
 describe("UploadSession refusals", () => {
+  it.each([400, 413, 415, 422])("keeps the existing work order available after registration refusal %s", async (status) => {
+    const server = fakeServer();
+    server.failNext("register", () => server.json(status, {}));
+    const attempt = run(new UploadSession(input(), deps(server)));
+    await expect(attempt).rejects.toMatchObject({
+      stage: "register", ambiguous: false, recoveryWorkOrderId: "wo-1",
+      message: expect.not.stringContaining("같은 요청"),
+    });
+  });
+
   it.each([[401], [403], [404], [422]])("treats %s on creation as a definite refusal", async (status) => {
     const server = fakeServer();
     server.failNext("create", () => server.json(status, { detail: "x" }));

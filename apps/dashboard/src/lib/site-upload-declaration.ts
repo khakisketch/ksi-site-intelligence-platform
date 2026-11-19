@@ -65,16 +65,25 @@ export function captureWindowIssue(startedLocal: string, endedLocal: string): st
   return null;
 }
 
-/** 제작 소프트웨어는 헤더가 이름과 버전을 모두 주면 DECLARED, 이름만 주면 PARTIAL, 없으면 UNKNOWN. */
+/** 신고서는 제작 소프트웨어가 하나이므로 포함한 모든 파일의 머리말이 일치해야 한다. */
 function producerOf(files: readonly SimpleUploadFile[]): Pick<SimpleUploadBody, "producerKnowledge" | "softwareName" | "softwareVersion"> {
-  const found = files.find((file) => file.producer !== null)?.producer ?? null;
-  if (!found) return { producerKnowledge: "UNKNOWN", softwareName: null, softwareVersion: null };
-  const name = found.name.trim();
-  const version = found.version?.trim() ?? "";
-  if (name === "") return { producerKnowledge: "UNKNOWN", softwareName: null, softwareVersion: null };
-  return version === ""
-    ? { producerKnowledge: "PARTIAL", softwareName: name, softwareVersion: null }
-    : { producerKnowledge: "DECLARED", softwareName: name, softwareVersion: version };
+  if (files.some((file) => file.producer === null)) {
+    return { producerKnowledge: "UNKNOWN", softwareName: null, softwareVersion: null };
+  }
+
+  const producers = files.flatMap(({ producer }) => producer
+    ? [{ name: producer.name.trim(), version: producer.version?.trim() ?? "" }]
+    : []);
+  const names = [...new Set(producers.map(({ name }) => name))];
+  if (names.length !== 1 || names[0] === "") {
+    return { producerKnowledge: "UNKNOWN", softwareName: null, softwareVersion: null };
+  }
+
+  const versions = [...new Set(producers.map(({ version }) => version).filter(Boolean))];
+  if (versions.length !== 1 || producers.some(({ version }) => version === "")) {
+    return { producerKnowledge: "PARTIAL", softwareName: names[0]!, softwareVersion: null };
+  }
+  return { producerKnowledge: "DECLARED", softwareName: names[0]!, softwareVersion: versions[0]! };
 }
 
 export type BuildResult = { ok: true; body: SimpleUploadBody } | { ok: false; reason: string };

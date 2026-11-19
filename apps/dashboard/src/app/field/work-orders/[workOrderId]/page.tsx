@@ -367,6 +367,7 @@ export default async function FieldWorkOrderPage({ params, searchParams }: {
         {externalWorkflow && <ExternalReconstructionPanel
           workOrderId={workOrder.workOrderId}
           siteId={workOrder.siteId}
+          catalogWorkAreaId={workOrder.workAreaIds.length === 1 ? workOrder.workAreaIds[0] : undefined}
           expectedEpochId={externalContext?.expectedEpochId ?? null}
           canWrite={canRegister}
           permissions={session.principal.permissions}

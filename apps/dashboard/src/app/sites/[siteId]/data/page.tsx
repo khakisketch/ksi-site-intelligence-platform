@@ -16,7 +16,7 @@ import { listObservationWorkOrders } from "@/lib/core-api/observation-work-order
 import { hasAllPermissions } from "@/lib/core-api/permissions";
 import { getSite } from "@/lib/core-api/sites";
 import { listSpatialAssets } from "@/lib/core-api/spatial-assets";
-import { sortByCaptureDescending } from "@/lib/spatial-asset-order";
+import { isLegacySpatialAssetCursor, sortByCaptureDescending } from "@/lib/spatial-asset-order";
 import { listSpatialDataRequests } from "@/lib/core-api/spatial-data-requests";
 import { getVerticalDeclarationState } from "@/lib/core-api/vertical-reference";
 import { listWorkAreas } from "@/lib/core-api/workAreas";
@@ -85,8 +85,9 @@ export default async function SiteDataPage({
   const areaQueryInvalid = areasKnown && requestedAreaId !== null && !allAreas.some((area) => area.workAreaId === requestedAreaId);
   const cursor = typeof query.cursor === "string" && query.cursor.length <= 1024 ? query.cursor || undefined : undefined;
   const cursorInvalid = query.cursor !== undefined && query.cursor !== "" && cursor === undefined;
+  const legacyCursor = cursor ? isLegacySpatialAssetCursor(cursor) : false;
   const assetRefRaw = first(query.assetRef);
-  const selectionMalformed = assetRefRaw !== undefined && assetRefRaw !== "" && exactMaterialsAssetRef(assetRefRaw) === null;
+  const selectionMalformed = Array.isArray(query.assetRef) || (assetRefRaw !== undefined && assetRefRaw !== "" && exactMaterialsAssetRef(assetRefRaw) === null);
   const filters = normalizeCatalogFilters({ q: first(query.q), kind: first(query.kind), state: first(query.state) });
 
   const selectedWorkAreaId = areasKnown && !areaQueryInvalid
@@ -101,7 +102,9 @@ export default async function SiteDataPage({
   const selectedArea = selectedWorkAreaId ? allAreas.find((area) => area.workAreaId === selectedWorkAreaId) ?? null : null;
 
   const assets = selectedWorkAreaId && !cursorInvalid
-    ? await listSpatialAssets(site.siteId, selectedWorkAreaId, cursor ? { limit: 50, cursor } : { limit: 50 })
+    ? await listSpatialAssets(site.siteId, selectedWorkAreaId, cursor
+      ? { limit: 50, cursor, order: legacyCursor ? "asset-ref" : "capture-desc" }
+      : { limit: 50, order: "capture-desc" })
       .then((page) => scopeMaterialsPage(page, site.siteId, selectedWorkAreaId))
       .then(
         (page) => ({ status: "ready" as const, page }),
@@ -109,11 +112,14 @@ export default async function SiteDataPage({
       )
     : { status: "not-requested" as const };
   const page = assets.status === "ready" ? assets.page : null;
-  const filtered = page ? sortByCaptureDescending(applyCatalogFilters(page.assets, filters)) : [];
+  const matchingAssets = page ? applyCatalogFilters(page.assets, filters) : [];
+  const filtered = legacyCursor ? sortByCaptureDescending(matchingAssets) : matchingAssets;
   const kinds = page ? [...new Set([...page.assets.map((item) => item.kind), ...(filters.kind ? [filters.kind] : [])])] : [];
 
-  // 선택 자료 — 이번에 읽은 페이지 안에 있는 자산만 받는다. 없으면 조용히 다른 자료로 바꾸지 않고 안내한다.
-  const selectedAssetRef = !selectionMalformed && assetRefRaw && page?.assets.some((item) => item.assetRef === assetRefRaw)
+  // A saved material can fall outside the displayed page. Resolve it once in the explicitly selected area.
+  const rowOnPage = page?.assets.some((item) => item.assetRef === assetRefRaw);
+  const canReadOffPage = requestedAreaId === selectedWorkAreaId && selectedWorkAreaId && page && (page.hasMore || cursor);
+  const selectedAssetRef = !selectionMalformed && assetRefRaw && (rowOnPage || canReadOffPage)
     ? assetRefRaw
     : null;
   const detail = selectedAssetRef && selectedWorkAreaId ? await readScopedAsset(site.siteId, selectedWorkAreaId, selectedAssetRef) : null;
@@ -165,7 +171,7 @@ export default async function SiteDataPage({
         <div className="min-w-0">
           <h2 className="text-title font-bold tracking-tight break-words">{areaLabel ?? "자료"}</h2>
           <p className="mt-0.5 text-caption text-ink-2">
-            {page ? `등록된 자료 ${page.assets.length}${page.hasMore ? "개 이상" : "개"}` : "등록된 자료"} · 분석 사용 여부는 분석의 실행 전 점검에서 확인합니다.
+            {page ? `${cursor || page.hasMore ? "이 페이지의 자료" : "등록된 자료"} ${page.assets.length}개` : "등록된 자료"} · 분석 사용 여부는 분석의 실행 전 점검에서 확인합니다.
           </p>
         </div>
         {canCreateWorkOrder && selectedArea?.status === "ACTIVE" && (
@@ -186,11 +192,12 @@ export default async function SiteDataPage({
       {assets.status === "denied" && <InlineNotice tone="high">이 구역의 자료를 볼 권한이 없습니다.</InlineNotice>}
       {assets.status === "unavailable" && <InlineNotice tone="high">자료 목록을 불러오지 못했습니다. 비어 있다는 뜻이 아닙니다. 잠시 후 다시 시도하세요.</InlineNotice>}
       {page && page.assets.length === 0 && (
-        <EmptyState compact title="이 구역에 등록된 자료가 없습니다" description="파일을 제출하고 검사를 마치면 이곳에 나타납니다." />
+        <EmptyState compact title={cursor ? "이 페이지에 자료가 없습니다" : "이 구역에 등록된 자료가 없습니다"}
+          description={cursor ? "첫 페이지에서 현재 자료를 확인하세요." : "파일을 제출하고 검사를 마치면 이곳에 나타납니다."} />
       )}
       {page && page.assets.length > 0 && filtered.length === 0 && (
         <EmptyState compact title="조건과 일치하는 자료가 없습니다" description="이미 불러온 목록 안에서 찾았습니다. 조건을 바꾸거나 초기화하세요."
-          action={{ label: "조건 초기화", href: siteDataHref(site.siteId, { workAreaId: selectedWorkAreaId }) }} />
+          action={{ label: "조건 초기화", href: siteDataHref(site.siteId, { workAreaId: selectedWorkAreaId, cursor }) }} />
       )}
       {page && selectedWorkAreaId && filtered.length > 0 && (
         <DataTable siteId={site.siteId} workAreaId={selectedWorkAreaId} items={filtered} selectedAssetRef={selectedAssetRef} scope={scope} jobs={jobs} canRead={canRead} />
@@ -198,7 +205,7 @@ export default async function SiteDataPage({
       {page && (cursor || (page.hasMore && page.nextCursor)) && (
         <div className="flex flex-wrap gap-2">
           {cursor && <Link href={siteDataHref(site.siteId, { ...scope, cursor: null })} className="btn">첫 페이지</Link>}
-          {page.hasMore && page.nextCursor && <Link href={siteDataHref(site.siteId, { ...scope, cursor: page.nextCursor })} className="btn">더 불러오기</Link>}
+          {page.hasMore && page.nextCursor && <Link href={siteDataHref(site.siteId, { ...scope, cursor: page.nextCursor })} className="btn">다음 페이지</Link>}
         </div>
       )}
     </>
@@ -228,7 +235,7 @@ export default async function SiteDataPage({
       <SectionFrame
         contextLabel="자료 보기 조건"
         context={<DataContextPanel siteId={site.siteId} areas={allAreas} selectedWorkAreaId={selectedWorkAreaId} kinds={kinds}
-          q={filters.q} kind={filters.kind} state={filters.state} loadedCount={page?.assets.length ?? null} hasMore={page?.hasMore ?? false} />}
+          q={filters.q} kind={filters.kind} state={filters.state} cursor={cursor} loadedCount={page?.assets.length ?? null} hasMore={page?.hasMore ?? false} />}
         inspectorLabel="선택한 자료 상세"
         inspector={inspector}
         drawerLabel="등록 진행"

@@ -1,4 +1,5 @@
 import type { ArtifactSlot } from "@/lib/geo/geotiff-header";
+import { describeExternalBasenameIssue } from "@/lib/external-reconstruction-basename";
 
 /**
  * 한 번에 고른 여러 파일을 정사영상/DSM 칸에 나눈다. 칸은 파일 헤더가 분명히 가리킬 때만 정한다
@@ -6,7 +7,7 @@ import type { ArtifactSlot } from "@/lib/geo/geotiff-header";
  * 정할 수 없거나 같은 칸에 둘 이상 들어오는 파일은 옮기지 않고 이유와 함께 돌려준다.
  */
 
-export type RoutingCandidate = { name: string; hint: ArtifactSlot | null; readable: boolean };
+export type RoutingCandidate = { name: string; hint: ArtifactSlot | null; readable: boolean; expectedKind?: ArtifactSlot };
 
 export type RoutingResult = {
   /** 칸 → 입력 목록에서의 위치. */
@@ -20,7 +21,7 @@ export function isTiffName(name: string): boolean {
   return /\.tiff?$/i.test(name);
 }
 
-export function assignSlots(candidates: readonly RoutingCandidate[]): RoutingResult {
+export function assignSlots(candidates: readonly RoutingCandidate[], mode: "simple" | "detailed" = "detailed"): RoutingResult {
   const assigned: RoutingResult["assigned"] = {};
   const skipped: RoutingResult["skipped"] = [];
   candidates.forEach((candidate, index) => {
@@ -28,12 +29,25 @@ export function assignSlots(candidates: readonly RoutingCandidate[]): RoutingRes
       skipped.push({ index, name: candidate.name, reason: "GeoTIFF(.tif, .tiff) 파일만 올릴 수 있습니다." });
       return;
     }
+    if (mode === "simple") {
+      // 이 화면은 항상 새 신고를 만든다. 상세 등록의 재개는 기존 바이트 결속을 따른다.
+      const issue = describeExternalBasenameIssue(candidate.name);
+      if (issue) {
+        skipped.push({ index, name: candidate.name, reason: `${issue} 영문·숫자로 시작하는 이름의 복사본을 고르세요.` });
+        return;
+      }
+    }
     if (!candidate.readable) {
       skipped.push({ index, name: candidate.name, reason: "GeoTIFF 헤더를 읽지 못했습니다. 올바른 파일인지 확인하세요." });
       return;
     }
+    if (candidate.expectedKind && candidate.hint !== candidate.expectedKind) {
+      skipped.push({ index, name: candidate.name, reason: `폴더에서 찾은 ${SLOT_LABEL[candidate.expectedKind]}의 종류를 파일 내용에서 확인할 수 없습니다. 내보낸 파일을 확인하세요.` });
+      return;
+    }
     if (candidate.hint === null) {
-      skipped.push({ index, name: candidate.name, reason: "정사영상인지 DSM인지 파일에서 알 수 없습니다. 아래 칸에서 직접 선택하세요." });
+      const help = mode === "simple" ? "파일 종류를 알고 있다면 상세 등록에서 해당 칸에 직접 선택하세요." : "아래 칸에서 직접 선택하세요.";
+      skipped.push({ index, name: candidate.name, reason: `정사영상인지 DSM인지 파일에서 알 수 없습니다. ${help}` });
       return;
     }
     if (assigned[candidate.hint] !== undefined) {

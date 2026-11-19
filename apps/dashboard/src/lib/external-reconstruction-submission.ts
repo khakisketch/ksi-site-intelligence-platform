@@ -1,5 +1,6 @@
 import { sha256 } from "@noble/hashes/sha2.js";
 import { bytesToHex, utf8ToBytes } from "@noble/hashes/utils.js";
+import { registrationInstantMicros } from "@/lib/registration-history";
 
 export type ExternalArtifactKind = "ortho" | "dsm";
 
@@ -187,10 +188,10 @@ export type ExternalV3ProducerDeclaration = {
   producerKnowledge: ExternalV3ProducerKnowledge;
   softwareName: string | null;
   softwareVersion: string | null;
-  buildIdentifier: null;
-  producerRunIdentifier: null;
-  configurationDigest: null;
-  completedAt: null;
+  buildIdentifier: string | null;
+  producerRunIdentifier: string | null;
+  configurationDigest: string | null;
+  completedAt: string | null;
   sourceNote: string | null;
 };
 
@@ -213,8 +214,8 @@ export type ExternalV3InputDeclaration = {
   rawMediaStoredByKsi: false;
   originalRetentionLocus: ExternalV3RetentionLocus;
   originalRetentionDetail: string | null;
-  localInputManifestDigest: null;
-  imageCount: null;
+  localInputManifestDigest: string | null;
+  imageCount: number | null;
   captureStartedAt: string | null;
   captureEndedAt: string | null;
   captureDate: string | null;
@@ -226,7 +227,7 @@ export type ExternalV3InputDeclaration = {
 export type ExternalSubmissionCandidateV3 = {
   contractVersion: "external-reconstruction-submission.v3";
   submissionId: string;
-  revision: 1;
+  revision: number;
   organizationId: string;
   siteId: string;
   observationEpochId: string;
@@ -257,6 +258,21 @@ function requireNullableTrimmedText(value: unknown, maxLength: number): value is
 
 function isWholeUtcSeconds(value: unknown): value is string {
   return typeof value === "string" && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/.test(value) && Number.isFinite(Date.parse(value));
+}
+
+function isAwareTimestamp(value: unknown): value is string {
+  return registrationInstantMicros(value) !== null;
+}
+
+/** Pydantic's canonical V3 JSON emits fractional seconds at microsecond precision. */
+function canonicalV3Timestamp(value: string | null): string | null {
+  if (value === null) return null;
+  const match = /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})(?:\.(\d{1,6}))?(Z|[+-]\d{2}:\d{2})$/.exec(value);
+  if (!match) throw new TypeError("V3 timestamps must be timezone-aware RFC3339");
+  const fraction = match[2]?.padEnd(6, "0");
+  const nonzeroFraction = fraction && /[1-9]/.test(fraction) ? `.${fraction}` : "";
+  const zone = match[3] === "+00:00" || match[3] === "-00:00" ? "Z" : match[3];
+  return `${match[1]}${nonzeroFraction}${zone}`;
 }
 
 /** Calendar date only — no timezone conversion is ever applied to this value. */
@@ -298,8 +314,11 @@ function validateV3Producer(declaration: ExternalV3ProducerDeclaration): void {
   if (producerKnowledge !== "DECLARED" && producerKnowledge !== "PARTIAL" && producerKnowledge !== "UNKNOWN") {
     throw new TypeError("producerKnowledge must be DECLARED, PARTIAL, or UNKNOWN");
   }
-  if (declaration.buildIdentifier !== null || declaration.producerRunIdentifier !== null || declaration.configurationDigest !== null || declaration.completedAt !== null) {
-    throw new TypeError("console declarations never set producer build, run, digest, or completion facts");
+  if (!requireNullableTrimmedText(declaration.buildIdentifier, 255)
+    || !requireNullableTrimmedText(declaration.producerRunIdentifier, 255)
+    || (declaration.configurationDigest !== null && !/^sha256:[0-9a-f]{64}$/.test(declaration.configurationDigest))
+    || (declaration.completedAt !== null && !isAwareTimestamp(declaration.completedAt))) {
+    throw new TypeError("V3 producer run facts must match the Core declaration contract");
   }
   if (!requireNullableTrimmedText(sourceNote, 1000)) throw new TypeError("sourceNote must be null or bounded text");
   if (producerKnowledge === "UNKNOWN") {
@@ -363,13 +382,16 @@ function validateV3Input(declaration: ExternalV3InputDeclaration): void {
   if (!requireNullableTrimmedText(declaration.originalRetentionDetail, 1000)) {
     throw new TypeError("original retention detail must be null or bounded text");
   }
-  if (declaration.localInputManifestDigest !== null || declaration.imageCount !== null) {
-    throw new TypeError("console declarations never set manifest digest or image count facts");
+  if ((declaration.localInputManifestDigest !== null && !/^sha256:[0-9a-f]{64}$/.test(declaration.localInputManifestDigest))
+    || (declaration.imageCount !== null && (!Number.isSafeInteger(declaration.imageCount) || declaration.imageCount < 1 || declaration.imageCount > 10_000_000))) {
+    throw new TypeError("V3 source manifest facts must match the Core declaration contract");
   }
   const { captureBasis, captureStartedAt, captureEndedAt, captureDate } = declaration;
   if (captureBasis === "EXACT_INTERVAL") {
-    if (captureDate !== null || !isWholeUtcSeconds(captureStartedAt) || !isWholeUtcSeconds(captureEndedAt) || Date.parse(captureStartedAt) >= Date.parse(captureEndedAt)) {
-      throw new TypeError("EXACT_INTERVAL requires an ordered UTC pair and no calendar date");
+    const started = registrationInstantMicros(captureStartedAt);
+    const ended = registrationInstantMicros(captureEndedAt);
+    if (captureDate !== null || !isAwareTimestamp(captureStartedAt) || !isAwareTimestamp(captureEndedAt) || started === null || ended === null || started >= ended) {
+      throw new TypeError("EXACT_INTERVAL requires an ordered timezone-aware pair and no calendar date");
     }
   } else if (captureBasis === "DATE_ONLY") {
     // No midnight invention: timestamps stay null, the calendar date stands alone.
@@ -396,8 +418,8 @@ export function validateExternalSubmissionV3Candidate(candidate: ExternalSubmiss
   validateJsonValue(candidate);
   if (candidate.contractVersion !== "external-reconstruction-submission.v3") throw new TypeError("contractVersion must be external-reconstruction-submission.v3");
   assertUtf8SafeString(candidate.submissionId);
-  if (candidate.revision !== 1 || !candidate.submissionId || !candidate.organizationId || !candidate.siteId || !candidate.observationEpochId) {
-    throw new TypeError("external V3 submission must have the fixed first-slice identity fields");
+  if (!Number.isSafeInteger(candidate.revision) || candidate.revision < 1 || !candidate.submissionId || !candidate.organizationId || !candidate.siteId || !candidate.observationEpochId) {
+    throw new TypeError("external V3 submission must have positive revision and complete identity fields");
   }
   if (!isWholeUtcSeconds(candidate.submittedAt)) throw new TypeError("submittedAt must be UTC at whole-second precision");
   validateV3Producer(candidate.producerDeclaration);
@@ -445,6 +467,15 @@ export function canonicalSubmissionV3Digest(candidate: ExternalSubmissionCandida
   validateExternalSubmissionV3Candidate(candidate);
   const canonicalCandidate = { ...candidate };
   delete canonicalCandidate.submissionDigest;
+  canonicalCandidate.producerDeclaration = {
+    ...candidate.producerDeclaration,
+    completedAt: canonicalV3Timestamp(candidate.producerDeclaration.completedAt),
+  };
+  canonicalCandidate.inputDeclaration = {
+    ...candidate.inputDeclaration,
+    captureStartedAt: canonicalV3Timestamp(candidate.inputDeclaration.captureStartedAt),
+    captureEndedAt: canonicalV3Timestamp(candidate.inputDeclaration.captureEndedAt),
+  };
   const canonical = sortCanonicalV3({
     ...canonicalCandidate,
     artifacts: [...candidate.artifacts].sort((left, right) => (left.artifactId < right.artifactId ? -1 : left.artifactId > right.artifactId ? 1 : 0)),

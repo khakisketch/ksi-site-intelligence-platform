@@ -22,6 +22,7 @@ import { hasAllPermissions } from "@/lib/core-api/permissions";
 import { whoAmI } from "@/lib/core-api/auth";
 import { getSite } from "@/lib/core-api/sites";
 import { listSpatialAssets } from "@/lib/core-api/spatial-assets";
+import { isLegacySpatialAssetCursor } from "@/lib/spatial-asset-order";
 import type { ResultReviewSummary } from "./SiteWorkspaceResults";
 import { getAnalysis, listAnalyses, listAnalysisReviews, type AnalysisView } from "@/lib/core-api/analysis";
 import { listSpatialDataRequests } from "@/lib/core-api/spatial-data-requests";
@@ -49,7 +50,7 @@ import { siteDataHref } from "@/components/nav/site-context";
 
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Disclosure } from "@/components/ui/Disclosure";
-import { exactMaterialsAssetRef, isMetadataOnly, materialsHref, normalizeCatalogFilters, type MaterialsSearchParams } from "./materials/materials-visual";
+import { exactMaterialsAssetRef, isMetadataOnly, normalizeCatalogFilters, type MaterialsSearchParams } from "./materials/materials-visual";
 import { readAssetHistory, readScopedAsset, scopeMaterialsPage } from "./materials/asset-reads";
 
 const getSiteForDetail = cache(getSite);
@@ -77,7 +78,6 @@ export default async function SiteDetailPage({
     Array.isArray(value) ? value[0] : value;
   const legacySection = firstValue(query.section) ?? firstValue(query.tab);
   const tab = normalizeSiteTab(legacySection);
-  const siteHref = `/sites/${encodeURIComponent(siteId)}`;
   // 옛 탭 주소 — 자료·등록 진행은 자료 섹션(ADR-KSI-043)으로 보낸다.
   if (tab === "work-orders") {
     redirect(siteDataHref(siteId, { workAreaId: parseScopeId(query.workAreaId), progress: true }));
@@ -162,9 +162,12 @@ export default async function SiteDetailPage({
       analysisAreaIds: analysesPage?.items.map((item) => item.workAreaId) ?? [],
     })
     : null;
+  const legacyCursor = cursor ? isLegacySpatialAssetCursor(cursor) : false;
   const assetsResult = wantSpatial && !cursorInvalid
     ? await (selectedWorkAreaId
-      ? listSpatialAssets(site.siteId, selectedWorkAreaId, cursor ? { limit: 50, cursor } : { limit: 50 })
+      ? listSpatialAssets(site.siteId, selectedWorkAreaId, cursor
+        ? { limit: 50, cursor, order: legacyCursor ? "asset-ref" : "capture-desc" }
+        : { limit: 50, order: "capture-desc" })
         .then((page) => scopeMaterialsPage(page, site.siteId, selectedWorkAreaId)).then(
         (page) => ({ ok: true as const, page }),
         (error: unknown) => ({ ok: false as const, denied: error instanceof CoreApiError && error.status === 403 }),

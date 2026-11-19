@@ -1,5 +1,5 @@
 import type { ArtifactSlot, GeoTiffRawHeader } from "@/lib/geo/geotiff-header";
-import { isAnalysisCrs } from "@/lib/geo/known-crs";
+import { isAnalysisCrs, isKnownProjectedCrs } from "@/lib/geo/known-crs";
 
 /**
  * 올리기 전 점검: 브라우저가 읽은 첫 IFD 사실만으로 KSI 파일 검사(external_geotiff_inspector)가
@@ -73,16 +73,27 @@ export function preflightGeoTiff(slot: ArtifactSlot, header: GeoTiffRawHeader, f
       // (실제 공개 DSM: ProjectedCSType=32767 이지만 GDA94 / MGA zone 50 = EPSG:28350 으로 확인됨). 그래서 막힘이 아니라 확인 필요로 둔다.
       add("NO_EPSG", "may", "파일에 EPSG 좌표계 번호가 직접 들어 있지 않습니다(사용자 정의 좌표계). 표준 좌표계로 확인되지 않으면 검사에서 거부됩니다.", "EPSG 번호가 파일에 기록되도록 내보내세요(예: EPSG:5186, UTM).");
     } else if (slot === "dsm" && geographic && !projected) {
-      add("DSM_GEOGRAPHIC", "blocked", `DSM은 미터 단위 투영 좌표계여야 합니다. 이 파일은 위·경도(${code})입니다.`, "내보내기에서 투영 좌표계(예: UTM, 중부원점)를 고르세요.");
+      add("DSM_GEOGRAPHIC", "blocked", `DSM은 미터 단위 투영 좌표계여야 합니다. 이 파일은 위·경도(${code})입니다.`, "촬영 위치의 UTM 구역 등 미터 단위 투영 좌표계로 격자를 변환하고 원래 결측 영역을 보존해 내보내세요.");
     } else if (slot === "dsm" && layout.projLinearUnits !== null && layout.projLinearUnits !== METRE) {
       add("DSM_UNIT_NOT_METRE", "may", "DSM 좌표 단위가 미터가 아닌 것으로 표시되어 있습니다.", "단위가 미터인 투영 좌표계로 내보내세요.");
     }
     if (slot === "dsm" && code !== null && projected && !isAnalysisCrs(code)) {
-      add("CRS_NOT_ANALYSIS", "notice", `${code} 좌표계는 등록·표시는 되지만 단면·체적 분석은 한국 좌표계(EPSG:5179, 5185~5188)와 한국 UTM(51N·52N)에서만 합니다.`, "분석이 필요하면 한국 좌표계나 WGS84 UTM 51N·52N으로 내보내세요.");
+      const mapDisplay = isKnownProjectedCrs(code) ? "지도에는 표시할 수 있지만, " : "";
+      add(
+        "CRS_NOT_ANALYSIS",
+        "notice",
+        `${mapDisplay}${code} 좌표계는 KSI 분석 지원 범위에 포함되지 않습니다. 단면·체적 분석 지원 좌표계는 EPSG:5179·5185~5188과 WGS84 UTM 51N·52N입니다.`,
+        "원본 좌표계와 자료가 나타내는 위치를 확인하세요. 분석이 필요하면 KSI 지원 범위를 담당자와 확인하세요.",
+      );
     }
     if (slot === "dsm") {
       if (layout.verticalCsType === null) {
-        add("NO_VERTICAL_REFERENCE", "notice", "파일에 수직 기준(높이 기준)이 없습니다. 등록한 뒤 자료 상세에서 수직 기준을 선언하면 높이·단면을 읽을 수 있습니다. 체적·두 시점 비교에는 쓸 수 없습니다.", "체적·비교가 필요하면 수직 기준이 포함된 좌표계(예: 지오이드 높이)로 내보내세요.");
+        add(
+          "NO_VERTICAL_REFERENCE",
+          "notice",
+          "파일에서 수직 기준을 확인하지 못했습니다. 자료 상세에서 실제 기준을 사용자 선언으로 기록할 수 있지만, 이 선언만으로 높이 판정이나 단면 사용이 보장되지는 않습니다. 높이 판정에는 검사 등 추가 요건이, 단면에는 지원 수평 좌표계와 선 입력도 필요합니다. 체적·두 시점 비교에는 이 선언을 사용할 수 없습니다.",
+          "원본 처리 도구에서 실제 높이 기준을 확인하세요. 모르면 추측해 선언하지 마세요.",
+        );
       } else if (layout.verticalCsType === USER_DEFINED) {
         add("VERTICAL_USER_DEFINED", "may", "수직 기준이 EPSG 번호 없는 사용자 정의입니다.", "EPSG 번호가 있는 수직 기준으로 내보내세요.");
       } else if (layout.verticalUnits !== null && layout.verticalUnits !== METRE) {
@@ -106,7 +117,7 @@ export function preflightGeoTiff(slot: ArtifactSlot, header: GeoTiffRawHeader, f
     }
     if (layout) {
       if (layout.hasNoDataTag) {
-        add("ORTHO_NODATA", "blocked", "정사영상에 NoData 값이 지정되어 있습니다.", "NoData 지정 없이 내보내세요. 투명한 부분은 알파 밴드로 표현합니다.");
+        add("ORTHO_NODATA", "blocked", "정사영상에 NoData 값이 지정되어 있습니다.", "결측 영역을 투명도 밴드에 그대로 보존할 수 있을 때만 NoData 지정 없이 내보내세요.");
       }
       if (!ORTHO_COMPRESSION.has(layout.compression)) {
         add("ORTHO_COMPRESSION", "blocked", `정사영상 압축 방식(${compressionName(layout.compression)})을 받지 않습니다.`, "LZW, Deflate, ZSTD 중 하나이거나 무압축으로 내보내세요.");
@@ -124,7 +135,7 @@ export function preflightGeoTiff(slot: ArtifactSlot, header: GeoTiffRawHeader, f
         }
       }
       if (bands === 4) {
-        add("ORTHO_ALPHA_BINARY", "notice", "투명도(알파)는 0 또는 255 값만 받습니다. 반투명 가장자리가 있으면 검사에서 거부됩니다.", "경계를 부드럽게 처리하지 않고 투명/불투명 두 값으로 내보내세요.");
+        add("ORTHO_ALPHA_BINARY", "notice", "투명도(알파)는 0 또는 255 값만 받습니다. 반투명 가장자리가 있으면 검사에서 거부됩니다.", "원자료에 반투명 영역이 있으면 그대로 보존하세요. 같은 경계를 가진 이진 마스크 원자료가 있을 때만 그 자료로 다시 내보내세요.");
         if (layout.extraSamples.length > 0 && layout.extraSamples[0] === 0) {
           add("ORTHO_ALPHA_UNSPECIFIED", "may", "네 번째 밴드가 투명도(알파)로 표시되어 있지 않습니다.", "네 번째 밴드를 알파로 지정해 내보내세요.");
         }

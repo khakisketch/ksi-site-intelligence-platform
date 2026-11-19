@@ -96,6 +96,8 @@ export interface SpatialAssetCatalogPage {
   hasMore: boolean;
 }
 
+export type SpatialAssetCatalogOrder = "asset-ref" | "capture-desc";
+
 export type SpatialAssetCatalogDetail = SpatialAssetCatalogItem;
 
 function catalogPath(siteId: string, workAreaId: string): string {
@@ -106,10 +108,10 @@ function catalogPath(siteId: string, workAreaId: string): string {
 export function listSpatialAssets(
   siteId: string,
   workAreaId: string,
-  options: { limit: 50; cursor?: string },
+  options: { limit: 50; cursor?: string; order?: SpatialAssetCatalogOrder },
 ): Promise<SpatialAssetCatalogPage> {
   return coreFetch<SpatialAssetCatalogPage>(catalogPath(siteId, workAreaId), {
-    query: { limit: options.limit, cursor: options.cursor },
+    query: { limit: options.limit, cursor: options.cursor, order: options.order },
   });
 }
 

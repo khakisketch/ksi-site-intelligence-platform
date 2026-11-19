@@ -20,6 +20,8 @@ export type UploadCandidate = {
   file: File;
   /** 파일이 가리키는 종류. 헤더가 분명히 말하지 않으면 null. */
   kind: ArtifactSlot | null;
+  /** 폴더의 파일 배치가 가리키는 종류. 헤더와 일치할 때만 자동 선택한다. */
+  expectedKind?: ArtifactSlot;
   readable: boolean;
   header: GeoTiffRawHeader | null;
   recognition: GeoTiffRecognition | null;
@@ -68,7 +70,7 @@ export type SlotAssignment = {
 
 /** 고른 파일들을 정사영상·DSM 칸에 나눈다. 칸은 헤더가 분명히 가리킬 때만 정한다(이름으로 추측하지 않는다). */
 export function assignCandidates(candidates: readonly UploadCandidate[]): SlotAssignment {
-  const routing = assignSlots(candidates.map((candidate) => ({ name: candidate.file.name, hint: candidate.kind, readable: candidate.readable })));
+  const routing = assignSlots(candidates.map((candidate) => ({ name: candidate.file.name, hint: candidate.kind, readable: candidate.readable, expectedKind: candidate.expectedKind })), "simple");
   return {
     ortho: routing.assigned.ortho !== undefined ? candidates[routing.assigned.ortho]! : null,
     dsm: routing.assigned.dsm !== undefined ? candidates[routing.assigned.dsm]! : null,
@@ -96,9 +98,13 @@ export function chipsOf(candidate: UploadCandidate): UploadChip[] {
   const describe = (items: readonly PreflightFinding[]) => items.map((item) => (item.fix ? `${item.title} ${item.fix}` : item.title)).join("\n");
   if (candidate.coverage) chips.push(COVERAGE_CHIP[candidate.coverage]);
   const crs = candidate.recognition?.declaredCrs ?? null;
-  if (crs && !candidate.findings.some((finding) => finding.code === "CRS_NOT_ANALYSIS")) chips.push({ key: "crs", tone: "ok", label: crs, detail: null });
-  const notAnalysisCrs = candidate.findings.find((finding) => finding.code === "CRS_NOT_ANALYSIS");
-  if (notAnalysisCrs) chips.push({ key: "crs", tone: "warn", label: "분석 좌표계 아님", detail: notAnalysisCrs.fix ? `${notAnalysisCrs.title} ${notAnalysisCrs.fix}` : notAnalysisCrs.title });
+  const crsIssue = candidate.findings.find(({ code }) => code === "DSM_GEOGRAPHIC" || code === "GEOCENTRIC_CRS" || code === "CRS_NOT_ANALYSIS");
+  if (crsIssue) {
+    const label = crsIssue.code === "CRS_NOT_ANALYSIS" ? "분석 좌표계 아님" : [crs, "투영 좌표계 필요"].filter(Boolean).join(" · ");
+    chips.push({ key: "crs", tone: crsIssue.level === "blocked" ? "block" : "warn", label, detail: describe([crsIssue]) });
+  } else if (crs) {
+    chips.push({ key: "crs", tone: "ok", label: crs, detail: null });
+  }
   const vertical = candidate.findings.find((finding) => finding.code === "NO_VERTICAL_REFERENCE");
   if (vertical) chips.push({ key: "vertical", tone: "warn", label: "높이 기준 없음", detail: vertical.title });
   if (blocked.length > 0) chips.push({ key: "blocked", tone: "block", label: `거부 예상 ${blocked.length}`, detail: describe(blocked) });

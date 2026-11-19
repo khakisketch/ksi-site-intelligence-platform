@@ -69,6 +69,42 @@ describe("buildSimpleUploadBody", () => {
     expect(none.ok && none.body).toMatchObject({ producerKnowledge: "UNKNOWN", softwareName: null, softwareVersion: null });
   });
 
+  it("declares a producer only when every included artifact agrees on its name and version", () => {
+    const missing = { ...dsm, producer: null };
+    const matching = { ...dsm, producer: { name: "Pix4Dmatic", version: " 1.67.0 " } };
+    const differentName = { ...dsm, producer: { name: "Metashape", version: "1.67.0" } };
+    const differentVersion = { ...dsm, producer: { name: "Pix4Dmatic", version: "2.0" } };
+    const sameNameUnknownVersion = { ...dsm, producer: { name: "Pix4Dmatic", version: null } };
+    const expected = (files: readonly SimpleUploadFile[]) => {
+      const result = buildSimpleUploadBody({ ...base, files });
+      if (!result.ok) throw new Error(result.reason);
+      return result.body;
+    };
+
+    expect(expected([ortho, matching])).toMatchObject({
+      producerKnowledge: "DECLARED", softwareName: "Pix4Dmatic", softwareVersion: "1.67.0",
+    });
+    const firstOrder = expected([ortho, matching]);
+    const reversedOrder = expected([matching, ortho]);
+    expect(firstOrder).toMatchObject({
+      producerKnowledge: reversedOrder.producerKnowledge,
+      softwareName: reversedOrder.softwareName,
+      softwareVersion: reversedOrder.softwareVersion,
+    });
+    expect(expected([ortho, missing])).toMatchObject({
+      producerKnowledge: "UNKNOWN", softwareName: null, softwareVersion: null,
+    });
+    expect(expected([ortho, differentName])).toMatchObject({
+      producerKnowledge: "UNKNOWN", softwareName: null, softwareVersion: null,
+    });
+    expect(expected([ortho, differentVersion])).toMatchObject({
+      producerKnowledge: "PARTIAL", softwareName: "Pix4Dmatic", softwareVersion: null,
+    });
+    expect(expected([ortho, sameNameUnknownVersion])).toMatchObject({
+      producerKnowledge: "PARTIAL", softwareName: "Pix4Dmatic", softwareVersion: null,
+    });
+  });
+
   it("refuses bad intervals, empty selections and duplicate kinds", () => {
     expect(buildSimpleUploadBody({ ...base, startedLocal: "", files: [ortho] })).toMatchObject({ ok: false });
     expect(buildSimpleUploadBody({ ...base, files: [] })).toMatchObject({ ok: false });
@@ -106,5 +142,22 @@ describe("compatibility with the V3 registration BFF", () => {
     expect(submitted.inputDeclaration.captureBasis).toBe("EXACT_INTERVAL");
     expect(submitted.submissionDigest).toMatch(/^sha256:[0-9a-f]{64}$/);
     expect(submitted.artifacts).toHaveLength(files.length);
+  });
+
+  it("registers files with conflicting producer tags without inventing one group producer", async () => {
+    const files = [ortho, { ...dsm, producer: { name: "Metashape", version: "2.1" } }];
+    const built = buildSimpleUploadBody({ ...base, files });
+    if (!built.ok) throw new Error(built.reason);
+
+    const response = await POST(
+      new Request("http://console.test/api", { method: "POST", headers: { "content-type": "application/json", host: "console.test" }, body: JSON.stringify(built.body) }) as never,
+      { params: Promise.resolve({ workOrderId: "work-1" }) },
+    );
+
+    expect(response.status).toBe(201);
+    expect(mocked.register.mock.calls[0]![1].producerDeclaration).toMatchObject({
+      producerKnowledge: "UNKNOWN", softwareName: null, softwareVersion: null,
+    });
+    expect(mocked.register.mock.calls[0]![1].submissionDigest).toMatch(/^sha256:[0-9a-f]{64}$/);
   });
 });

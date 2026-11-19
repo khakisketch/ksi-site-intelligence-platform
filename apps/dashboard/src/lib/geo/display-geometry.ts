@@ -155,6 +155,19 @@ export function toDisplayVertices(
   return { ok: true, vertices };
 }
 
+/** WorkArea 표시용 WGS84 복사본. 원본 기하·CRS는 바꾸지 않고, 지원하지 않는 형상은 null이다. */
+export function toDisplayPolygonWgs84(
+  polygon: Record<string, unknown> | null | undefined,
+  crs: string | null | undefined,
+): Record<string, unknown> | null {
+  if (!polygon || !crs) return null;
+  const converted = toDisplayVertices(polygon, crs);
+  if (!converted.ok) return null;
+  const ring = converted.vertices.map(({ lonDeg, latDeg }) => [lonDeg, latDeg]);
+  ring.push([...ring[0]!]);
+  return { type: "Polygon", coordinates: [ring] };
+}
+
 export type SupportedWorkAreaShape = { id: string; name: string; positions: [number, number][] };
 export type UnsupportedWorkArea = { workAreaId: string; name: string; reason: string };
 

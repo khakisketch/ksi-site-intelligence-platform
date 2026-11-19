@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { sortByCaptureDescending } from "@/lib/spatial-asset-order";
+import { isLegacySpatialAssetCursor, sortByCaptureDescending } from "@/lib/spatial-asset-order";
 
 type Item = Parameters<typeof sortByCaptureDescending>[0][number];
 
@@ -10,8 +10,33 @@ function item(assetRef: string, captureStartedAt: string | null, captureDate: st
 
 const order = (items: readonly Item[]) => sortByCaptureDescending(items).map((entry) => entry.assetRef);
 
+describe("spatial asset catalog cursor version", () => {
+  it("recognizes old reference-order cursors for bookmarked pages", () => {
+    const cursor = Buffer.from(JSON.stringify({
+      after: `ksa-v1-${"a".repeat(64)}`,
+      siteId: "site-1",
+      version: 1,
+      workAreaId: "area-1",
+    })).toString("base64url");
+    expect(isLegacySpatialAssetCursor(cursor)).toBe(true);
+  });
+
+  it("uses Core ordering for capture-order cursors and malformed values", () => {
+    const cursor = Buffer.from(JSON.stringify({
+      after: `ksa-v1-${"a".repeat(64)}`,
+      afterCapture: 1_800_000_000_123_456,
+      order: "capture-desc",
+      siteId: "site-1",
+      version: 2,
+      workAreaId: "area-1",
+    })).toString("base64url");
+    expect(isLegacySpatialAssetCursor(cursor)).toBe(false);
+    expect(isLegacySpatialAssetCursor("malformed")).toBe(false);
+  });
+});
+
 describe("sortByCaptureDescending", () => {
-  it("촬영이 늦은 자료를 위로 둔다(Core의 자료 참조 순서와 무관하게)", () => {
+  it("구형 페이지 내 표시는 촬영이 늦은 자료부터 정렬한다", () => {
     expect(order([
       item("ksa-v1-a", "2019-08-20T01:00:00Z"),
       item("ksa-v1-b", "2022-08-24T01:00:00Z"),

@@ -20,6 +20,8 @@ allowlist 는 이 저장소의 실제 보안 통제다(``evidence.ALLOWED_CONTEN
 4. ``delete`` 는 없는 객체에도 성공한다(멱등).
 5. 없는 버킷은 발급이 아니라 **사용** 시점에 드러난다(기동 시 왕복 없음 —
    ADR-KSI-005 오프라인 부팅).
+6. opt-in 된 검사는 고유 임시 버킷에서 정확히 2 GiB 를 스트리밍 PUT 하고 길이·SHA-256 을
+   HEAD 로 확인한 뒤, 테스트 객체의 버전을 삭제한다.
 
 ## 돌리는 법
 
@@ -31,6 +33,9 @@ allowlist 는 이 저장소의 실제 보안 통제다(``evidence.ALLOWED_CONTEN
 
 환경변수가 없으면 **skip** 한다 — CI 기본 경로를 컨테이너에 묶지 않는다. 대신
 skip 사유에 "확인되지 않았다"를 적어, 초록불이 확인으로 읽히지 않게 한다.
+대용량 실기동 검사는 테스트 전용 S3 자격 증명을 지정하고
+``KSI_S3_LARGE_OBJECT_TEST=1``일 때만 실행한다. 고유 임시 버킷을 만들고 테스트 전체가
+끝나면 객체 버전을 확인해 지운 뒤 버킷을 제거한다. 임시 객체 본문은 청크 단위로 처리한다.
 """
 
 from __future__ import annotations
@@ -38,8 +43,11 @@ from __future__ import annotations
 import contextlib
 import hashlib
 import os
+import tempfile
 import uuid as uuid_mod
 from datetime import timedelta
+from pathlib import Path
+from typing import Any, cast
 
 import httpx
 import pytest
@@ -60,6 +68,8 @@ pytestmark = pytest.mark.skipif(
 )
 
 _BUCKET = "ksi-evidence-live"
+_LARGE_OBJECT_BYTES = 2**31
+_LARGE_OBJECT_OPT_IN = os.environ.get("KSI_S3_LARGE_OBJECT_TEST") == "1"
 
 
 @pytest.fixture(scope="module")
@@ -87,6 +97,64 @@ def storage(s3_client: object) -> S3EvidenceStorage:
 
 def _key() -> str:
     return f"sites/site-live/events/dev-1/evt-1/{uuid_mod.uuid4().hex}.jpg"
+
+
+@pytest.mark.skipif(
+    not _LARGE_OBJECT_OPT_IN,
+    reason="set KSI_S3_LARGE_OBJECT_TEST=1 to opt in to the 2 GiB local S3 test",
+)
+def test_opted_in_digest_bound_put_stores_exactly_two_gib_with_matching_checksum(
+    s3_client: object,
+) -> None:
+    """Stream opaque 2 GiB bytes and verify storage metadata without parser claims."""
+    bucket = f"ksi-evidence-large-{uuid_mod.uuid4().hex}"
+    key = f"large-object-test/{uuid_mod.uuid4().hex}.bin"
+    client = cast(Any, s3_client)
+    bucket_created = False
+    try:
+        client.create_bucket(Bucket=bucket)
+        bucket_created = True
+        client.put_bucket_versioning(
+            Bucket=bucket, VersioningConfiguration={"Status": "Enabled"}
+        )
+        storage = S3EvidenceStorage(bucket=bucket, client=client)
+        with tempfile.TemporaryDirectory(prefix="ksi-evidence-2gib-") as directory:
+            path = Path(directory) / "sparse-synthetic-bytes.bin"
+            with path.open("wb") as output:
+                output.truncate(_LARGE_OBJECT_BYTES)
+
+            with path.open("rb") as source:
+                digest = "sha256:" + hashlib.file_digest(source, "sha256").hexdigest()
+            grant = storage.presigned_put_bound_digest(
+                key,
+                content_type="application/octet-stream",
+                content_digest=digest,
+                ttl=timedelta(minutes=15),
+            )
+            timeout = httpx.Timeout(60.0, connect=10.0)
+            with path.open("rb") as source, httpx.Client(timeout=timeout) as http_client:
+                response = http_client.put(
+                    grant.upload_url,
+                    content=source,
+                    headers=grant.required_headers,
+                    follow_redirects=False,
+                )
+            assert response.status_code == 200, (
+                "S3 did not accept the exact digest-bound 2 GiB stream "
+                f"(status={response.status_code})"
+            )
+
+        head = client.head_object(Bucket=bucket, Key=key, ChecksumMode="ENABLED")
+        assert head.get("ContentLength") == _LARGE_OBJECT_BYTES
+        assert head.get("ChecksumSHA256") == grant.required_headers["x-amz-checksum-sha256"]
+        assert head.get("ContentType") == "application/octet-stream"
+    finally:
+        if bucket_created:
+            page = client.list_object_versions(Bucket=bucket, Prefix=key)
+            for version in (*page.get("Versions", []), *page.get("DeleteMarkers", [])):
+                if version["Key"] == key:
+                    client.delete_object(Bucket=bucket, Key=key, VersionId=version["VersionId"])
+            client.delete_bucket(Bucket=bucket)
 
 
 def test_presigned_put_then_get_round_trips_the_bytes(

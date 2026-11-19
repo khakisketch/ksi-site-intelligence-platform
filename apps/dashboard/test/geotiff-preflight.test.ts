@@ -107,10 +107,11 @@ describe("preflightGeoTiff — DSM", () => {
     const findings = preflightGeoTiff("dsm", dsm({}, { verticalCsType: null }), null);
     expect(findings).toHaveLength(1);
     expect(findings[0]).toMatchObject({ code: "NO_VERTICAL_REFERENCE", level: "notice" });
-    // 선언으로 높이·단면을 읽을 수 있고, 체적·비교는 안 된다는 점을 함께 말한다.
-    expect(findings[0].title).toContain("수직 기준을 선언하면 높이·단면을 읽을 수 있습니다");
-    expect(findings[0].title).toContain("체적·두 시점 비교에는 쓸 수 없습니다");
-    expect(findings[0].title).not.toContain("높이·단면·체적 분석에 쓸 수 없습니다");
+    expect(findings[0].title).toContain("실제 기준을 사용자 선언으로 기록할 수 있지만");
+    expect(findings[0].title).toContain("높이 판정이나 단면 사용이 보장되지는 않습니다");
+    expect(findings[0].title).toContain("높이 판정에는 검사 등 추가 요건이, 단면에는 지원 수평 좌표계와 선 입력도 필요합니다");
+    expect(findings[0].title).toContain("체적·두 시점 비교에는 이 선언을 사용할 수 없습니다");
+    expect(findings[0].fix).toContain("모르면 추측해 선언하지 마세요");
   });
 
   it("정사영상에는 수직 기준 안내를 하지 않는다", () => {
@@ -130,16 +131,23 @@ describe("preflightGeoTiff — DSM", () => {
     }
   });
 
-  it("한국 밖 UTM 존 DSM 은 분석 제한을 알린다", () => {
+  it("지도 표시를 아는 한국 밖 UTM DSM 은 표시와 분석 범위를 구분한다", () => {
     const findings = preflightGeoTiff("dsm", dsm({ geoKeys: { GTModelTypeGeoKey: 1, ProjectedCSTypeGeoKey: 32617 } }), null);
-    expect(codes(findings)).toContain("CRS_NOT_ANALYSIS");
+    const finding = findings.find((item) => item.code === "CRS_NOT_ANALYSIS");
+    expect(finding?.title).toContain("지도에는 표시할 수 있지만");
+    expect(finding?.title).toContain("분석 지원 좌표계는 EPSG:5179·5185~5188과 WGS84 UTM 51N·52N");
+    expect(finding?.fix).not.toContain("내보내세요");
   });
 
-  it("한국 좌표계가 아닌 투영 DSM 은 분석 제한만 알린다", () => {
+  it("알려진 표시 투영이 아닌 EPSG:7850 은 등록·표시를 단정하지 않는다", () => {
     const findings = preflightGeoTiff("dsm", dsm({ geoKeys: { GTModelTypeGeoKey: 1, ProjectedCSTypeGeoKey: 7850 } }), null);
     expect(findings).toHaveLength(1);
     expect(findings[0]).toMatchObject({ code: "CRS_NOT_ANALYSIS", level: "notice" });
     expect(findings[0].title).toContain("EPSG:7850");
+    expect(findings[0].title).not.toContain("등록");
+    expect(findings[0].title).not.toContain("지도에는 표시할 수");
+    expect(findings[0].fix).not.toContain("한국 좌표계");
+    expect(findings[0].fix).not.toContain("UTM 51N");
   });
 
   it("좌표 단위가 미터가 아닌 투영 DSM 은 거부될 수 있다고 알린다", () => {
@@ -186,6 +194,7 @@ describe("preflightGeoTiff — 정사영상", () => {
     const findings = preflightGeoTiff("ortho", ortho({ samplesPerPixel: 4 }, { extraSamples: [2] }), null);
     expect(findings).toHaveLength(1);
     expect(findings[0]).toMatchObject({ code: "ORTHO_ALPHA_BINARY", level: "notice" });
+    expect(findings[0].fix).toContain("원자료에 반투명 영역이 있으면 그대로 보존하세요.");
   });
 
   it("네 번째 밴드가 알파로 표시되지 않으면 추가로 알린다", () => {
@@ -213,9 +222,12 @@ describe("preflightGeoTiff — 공통", () => {
     expect(codes(findings)).toContain("NO_EPSG");
   });
 
-  it("실제 공개 DSM(Pix4D 내보내기, EPSG:7850, Float32, NoData)은 참고 두 가지만 남긴다", () => {
+  it("실제 공개 DSM(EPSG:7850)은 수직 선언의 조건을 밝히고 재투영을 권하지 않는다", () => {
     const findings = preflightGeoTiff("dsm", dsm({ geoKeys: { GTModelTypeGeoKey: 1, ProjectedCSTypeGeoKey: 7850, ProjLinearUnitsGeoKey: 9001 }, software: "pix4dmapper" }, { compression: 1, hasNoDataTag: true, verticalCsType: null, projLinearUnits: 9001 }), 181_144_647);
     expect(findings.map((f) => [f.code, f.level]).sort()).toEqual([["CRS_NOT_ANALYSIS", "notice"], ["NO_VERTICAL_REFERENCE", "notice"]]);
+    expect(findings.find((f) => f.code === "CRS_NOT_ANALYSIS")?.title).not.toContain("등록·표시");
+    expect(findings.find((f) => f.code === "NO_VERTICAL_REFERENCE")?.title).toContain("이 선언만으로 높이 판정이나 단면 사용이 보장되지는 않습니다");
+    expect(findings.find((f) => f.code === "NO_VERTICAL_REFERENCE")?.fix).toContain("원본 처리 도구에서 실제 높이 기준을 확인하세요");
   });
 
   it("지심 좌표계는 막는다", () => {

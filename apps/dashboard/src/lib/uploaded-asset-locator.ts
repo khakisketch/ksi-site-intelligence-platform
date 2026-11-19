@@ -7,8 +7,18 @@ export type UploadedArtifact = {
   workOrderId: string;
   submissionRef: string;
   revision: number;
-  artifactId: ExternalArtifactKind;
+  artifactId: string;
+  kind?: ExternalArtifactKind;
 };
+
+export function uploadedArtifactHref(siteId: string, target: UploadedArtifact): string {
+  const query = new URLSearchParams({
+    workAreaId: target.workAreaId, workOrderId: target.workOrderId,
+    submissionRef: target.submissionRef, revision: String(target.revision), artifactId: target.artifactId,
+  });
+  if (target.kind && target.kind !== target.artifactId) query.set("artifactKind", target.kind);
+  return `/sites/${encodeURIComponent(siteId)}/upload/open?${query}`;
+}
 
 /** 올린 직후 자료 화면이 한 번 더 읽을 수 있는 범위 — 이보다 뒤에 있으면 목록으로 보낸다. */
 export const UPLOADED_ASSET_PAGE_BUDGET = 8;
@@ -28,10 +38,15 @@ export function parseUploadedArtifact(query: URLSearchParams): UploadedArtifact 
   const submissionRef = query.get("submissionRef");
   const revisionText = query.get("revision");
   const artifactId = query.get("artifactId");
+  const explicitKind = query.get("artifactKind");
+  // Older upload links use the slot name as the identifier. A Core declaration
+  // can assign a different identifier to a DSM or orthophoto.
+  const kind = explicitKind ?? artifactId;
   if (!workAreaId || !workOrderId || !submissionRef || !SUBMISSION_REF_PATTERN.test(submissionRef)) return null;
-  if (!revisionText || !/^[1-9][0-9]{0,8}$/.test(revisionText)) return null;
-  if (artifactId !== "dsm" && artifactId !== "ortho") return null;
-  return { workAreaId, workOrderId, submissionRef, revision: Number(revisionText), artifactId };
+  if (!revisionText || !/^[1-9][0-9]{0,15}$/.test(revisionText) || !Number.isSafeInteger(Number(revisionText))) return null;
+  if (kind !== "dsm" && kind !== "ortho") return null;
+  if (!artifactId || artifactId.trim() !== artifactId || [...artifactId].length > 255) return null;
+  return { workAreaId, workOrderId, submissionRef, revision: Number(revisionText), artifactId, ...(explicitKind ? { kind } : {}) };
 }
 
 /**
@@ -53,7 +68,7 @@ export async function locateUploadedAsset(
       && item.workOrderId === target.workOrderId
       && item.submissionRef === target.submissionRef
       && item.revision === target.revision
-      && item.artifactId === target.artifactId);
+      && item.artifactId === target.artifactId && item.kind === (target.kind ?? target.artifactId));
     if (found) return { assetRef: found.assetRef, cursor };
     if (!page.hasMore || !page.nextCursor) return null;
     cursor = page.nextCursor;

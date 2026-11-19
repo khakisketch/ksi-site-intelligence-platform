@@ -9,6 +9,7 @@ import { humanizeApiError } from "@/lib/core-api/labels";
 import { getSite } from "@/lib/core-api/sites";
 import { listWorkAreas } from "@/lib/core-api/workAreas";
 import { continuityFingerprint } from "@/lib/core-api/work-order-continuity";
+import { toDisplayPolygonWgs84 } from "@/lib/geo/display-geometry";
 import { SITE_DETAIL_DOCUMENT_TITLE } from "@/lib/site-detail-title";
 
 import { UploadScreen } from "./UploadScreen";
@@ -59,7 +60,12 @@ export default async function SiteUploadPage({ params, searchParams }: { params:
       key={first(query.workAreaId) ?? ""}
       siteId={result.site.siteId}
       siteName={result.site.name}
-      workAreas={result.areas.map((area) => ({ workAreaId: area.workAreaId, name: area.name, polygon: area.polygon }))}
+      workAreas={result.areas.map((area) => ({
+        workAreaId: area.workAreaId,
+        name: area.name,
+        // 업로드 지도에 쓰는 표시 전용 경위도 사본. Core의 구역 기하와 CRS는 보존한다.
+        polygon: toDisplayPolygonWgs84(area.polygon, area.crs),
+      }))}
       initialWorkAreaId={first(query.workAreaId) ?? null}
       accountIdentity={result.accountIdentity}
     />

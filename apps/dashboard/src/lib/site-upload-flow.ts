@@ -2,10 +2,16 @@ import { isAccountContinuityMismatch } from "@/lib/account-continuity-mismatch";
 import {
   declarationEchoOfRequest,
   isRevisionViewForAttempt,
-  isUploadGrantView,
   type Revision,
 } from "@/lib/external-submission-echo";
-import { putExternalReconstructionFile, type DirectUploadGrant } from "@/lib/external-reconstruction-upload";
+import {
+  putExternalReconstructionFile,
+  sealObservationFailureCode,
+  sealObservationFailureMessage,
+  selectCompleteUploadGrant,
+  type DirectUploadGrant,
+  type SealObservationFailureCode,
+} from "@/lib/external-reconstruction-upload";
 import type { ExternalArtifactKind } from "@/lib/external-reconstruction-submission";
 import { defaultObservationName } from "@/lib/observation-default-name";
 import { buildSimpleUploadBody, type SimpleUploadBody, type SimpleUploadFile } from "@/lib/site-upload-declaration";
@@ -45,7 +51,14 @@ export type UploadFlowResult = { workOrderId: string; submissionRef: string; rev
 export class UploadFlowError extends Error {
   readonly stage: UploadFlowStage;
   readonly ambiguous: boolean;
-  constructor(stage: UploadFlowStage, ambiguous: boolean, message: string) {
+  constructor(
+    stage: UploadFlowStage,
+    ambiguous: boolean,
+    message: string,
+    readonly recoveryWorkOrderId: string | null = null,
+    readonly recoveryCode: SealObservationFailureCode | null = null,
+    readonly retrySameRevision = false,
+  ) {
     super(message);
     this.name = "UploadFlowError";
     this.stage = stage;
@@ -80,15 +93,17 @@ function definiteMessage(stage: UploadFlowStage, status: number): string {
   if (status === 401) return "로그인이 만료되었습니다. 다시 로그인한 뒤 올려 주세요.";
   if (status === 403) return "이 현장에 자료를 올릴 권한이 없습니다. 현장 담당자에게 권한을 요청하세요.";
   if (status === 404) return "현장이나 작업구역을 찾지 못했습니다. 화면을 새로 고친 뒤 다시 시도하세요.";
+  if (status === 413) return "등록 요청이 허용된 크기를 초과했습니다. 자료 구성을 확인하세요.";
   if (status === 422) return stage === "register"
     ? "올린 내용이 등록 기준에 맞지 않아 접수되지 않았습니다. 파일과 촬영 시각을 확인하세요."
     : "요청이 기준에 맞지 않아 접수되지 않았습니다.";
   if (status === 409) return "이미 닫힌 작업이거나 다른 요청과 충돌했습니다. 화면을 새로 고친 뒤 다시 시도하세요.";
-  return AMBIGUOUS_MESSAGE;
+  return "등록 요청이 거부되었습니다. 파일과 입력 내용을 확인하세요.";
 }
 
 export class UploadSession {
   private readonly workOrderKey: string;
+  private readonly workOrderName: string;
   private readonly submissionId: string;
   private readonly submittedAt: string;
   private workOrderId: string | null = null;
@@ -98,9 +113,13 @@ export class UploadSession {
   private sealed = false;
 
   constructor(private readonly input: UploadFlowInput, private readonly deps: UploadFlowDeps = defaultDeps) {
+    const startedAt = deps.now();
     this.workOrderKey = `site-upload-${deps.uuid()}`;
+    // The idempotency key and the complete creation body must describe the same
+    // request when the operator retries across midnight in Seoul.
+    this.workOrderName = defaultObservationName([input.workAreaName], startedAt);
     this.submissionId = `console-${deps.uuid()}`;
-    this.submittedAt = deps.now().toISOString().replace(/\.\d{3}Z$/, "Z");
+    this.submittedAt = startedAt.toISOString().replace(/\.\d{3}Z$/, "Z");
   }
 
   /** 끝난 단계는 건너뛰고 남은 단계를 이어서 실행한다. 실패하면 UploadFlowError, 중단하면 AbortError. */
@@ -138,15 +157,25 @@ export class UploadSession {
     const payload: unknown = await response.json().catch(() => null);
     if (!response.ok) {
       if (isAccountContinuityMismatch(response.status, payload)) throw new UploadFlowError(stage, false, MISMATCH_MESSAGE);
+      const sealFailure = stage === "seal" ? sealObservationFailureCode(response.status, payload) : null;
+      if (sealFailure) {
+        // Core has explicitly refused to seal because storage observation is
+        // missing or mismatched. The response has no artifact ID, so all PUTs
+        // in this immutable revision must be re-confirmed on the same retry.
+        this.uploaded.clear();
+        throw new UploadFlowError(stage, false, sealObservationFailureMessage(sealFailure), this.workOrderId, sealFailure, true);
+      }
       // 5xx·408·429는 Core가 처리한 뒤 유실됐을 수 있어 확정 거부로 말하지 않는다.
       const definite = response.status >= 400 && response.status < 500 && response.status !== 408 && response.status !== 429;
-      throw new UploadFlowError(stage, !definite, definite ? definiteMessage(stage, response.status) : AMBIGUOUS_MESSAGE);
+      if (!definite) throw new UploadFlowError(stage, true, AMBIGUOUS_MESSAGE);
+      const recoveryWorkOrderId = [400, 409, 413, 415, 422].includes(response.status) ? this.workOrderId : null;
+      throw new UploadFlowError(stage, false, definiteMessage(stage, response.status), recoveryWorkOrderId);
     }
     return payload;
   }
 
   private async createWorkOrder(signal: AbortSignal): Promise<void> {
-    const { siteId, workAreaId, workAreaName } = this.input;
+    const { siteId, workAreaId } = this.input;
     const payload = await this.send(
       "workOrder",
       `/api/sites/${encodeURIComponent(siteId)}/observation-work-orders`,
@@ -154,7 +183,7 @@ export class UploadSession {
         method: "POST",
         headers: this.headers({ "content-type": "application/json", "Idempotency-Key": this.workOrderKey }),
         body: JSON.stringify({
-          name: defaultObservationName([workAreaName], this.deps.now()),
+          name: this.workOrderName,
           workAreaIds: [workAreaId],
           scheduleId: null,
           executionMode: "EXTERNAL_RECONSTRUCTION",
@@ -218,16 +247,13 @@ export class UploadSession {
   private async upload(signal: AbortSignal, onEvent: (event: UploadFlowEvent) => void): Promise<void> {
     const pending = this.input.files.filter((item) => !this.uploaded.has(item.kind));
     if (pending.length === 0) return;
-    const payload = await this.send("upload", `${this.revisionBase()}/upload-grants`, { method: "POST", headers: this.headers() }, signal) as { grants?: unknown } | null;
-    const list = payload && Array.isArray(payload.grants) ? payload.grants : null;
-    const grants = list !== null && list.every(isUploadGrantView) ? list : null;
-    const ids = grants?.map((grant) => grant.artifactId) ?? null;
     const expected = this.input.files.map((item) => item.kind as string);
-    if (!grants || !ids || new Set(ids).size !== ids.length || ids.length !== expected.length || !expected.every((id) => ids.includes(id))) {
-      throw new UploadFlowError("upload", true, AMBIGUOUS_MESSAGE);
-    }
     for (const item of pending) {
-      const grant = grants.find((candidate) => candidate.artifactId === item.kind)!;
+      // Grant URLs expire. Obtain a newly issued complete-set response directly
+      // before each pending PUT so an earlier large file cannot age the next URL.
+      const payload = await this.send("upload", `${this.revisionBase()}/upload-grants`, { method: "POST", headers: this.headers() }, signal);
+      const grant = selectCompleteUploadGrant(payload, expected, item.kind);
+      if (!grant) throw new UploadFlowError("upload", true, AMBIGUOUS_MESSAGE);
       onEvent({ type: "progress", kind: item.kind, transferredBytes: 0, totalBytes: item.size });
       try {
         await this.deps.put(grant, item.file, signal, (transferred) => onEvent({ type: "progress", kind: item.kind, transferredBytes: transferred, totalBytes: item.size }));
@@ -245,5 +271,6 @@ export class UploadSession {
     const echo = { submissionRef: this.revision!.submissionRef, ...declarationEchoOfRequest(this.body!) };
     if (!isRevisionViewForAttempt(payload, echo, "SEALED")) throw new UploadFlowError("seal", true, AMBIGUOUS_MESSAGE);
     this.sealed = true;
+    this.uploaded.clear();
   }
 }
