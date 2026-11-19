@@ -77,6 +77,13 @@ KOREA_WGS84_UTM_CRS = frozenset(
 # 분석이 받는 투영좌표계. 두 시점 비교는 이 안에서도 같은 좌표계끼리만 한다.
 SUPPORTED_PROJECT_CRS = KOREA_PLANE_CRS | KOREA_WGS84_UTM_CRS
 
+# 작업구역 경계(꼭짓점)가 가질 수 있는 좌표계: 분석이 받는 투영좌표계 또는 WGS84 경위도.
+# 화면에서 그린 구역은 경위도로 저장된다. 경계는 꼭짓점이라 분석 입력(높이 격자)을 건드리지 않고
+# 측정할 때 DSM 좌표계로 변환해 쓸 수 있다. 구 측지계(Bessel)와 한국 밖 UTM 존은
+# 여기서도 받지 않는다.
+WGS84_GEOGRAPHIC_CRS = "EPSG:4326"
+WORK_AREA_BOUNDARY_CRS = SUPPORTED_PROJECT_CRS | frozenset({WGS84_GEOGRAPHIC_CRS})
+
 
 class UnsupportedCrsError(ValueError):
     """화이트리스트 밖이거나 해석할 수 없는 좌표계 — fail-closed."""
@@ -135,6 +142,24 @@ def assert_supported_project_crs(crs: str) -> str:
             f"{sorted(SUPPORTED_PROJECT_CRS)}. 구 측지계(Bessel, EPSG:5173~5177)를 "
             "현행 KGD2002 와 섞으면 수백 미터 오차가 조용히 들어오고, 한국 밖 UTM 존은 "
             "현장과 다른 위치로 태깅된 자료일 수 있다"
+        )
+    return normalised
+
+
+def assert_work_area_boundary_crs(crs: str) -> str:
+    """작업구역 경계의 좌표계 검사. 통과하면 정규화된 값을 돌려준다.
+
+    구역 경계는 비교 대상 산출물이 아니라 꼭짓점 집합이다. 자기 좌표계를 그대로 신원에 남기고,
+    측정 단계가 그 꼭짓점만 DSM 좌표계로 변환한다(높이 격자는 다시 표본화하지 않는다).
+    그래서 DSM 사이의 동일성(:func:`assert_same_crs`)과 별개로, 변환이 믿을 만한 좌표계인지만 본다.
+    """
+    normalised = normalise_crs(crs)
+    if normalised not in WORK_AREA_BOUNDARY_CRS:
+        raise UnsupportedCrsError(
+            f"{normalised} 은 작업구역 경계로 받는 좌표계가 아니다 — 허용: "
+            f"{sorted(WORK_AREA_BOUNDARY_CRS)}. 구 측지계(Bessel, EPSG:5173~5177)는 현행 "
+            "KGD2002 와 수백 미터 어긋나고 한국 밖 UTM 존은 현장과 다른 위치일 수 있어, "
+            "경계를 변환해도 믿을 수 없다"
         )
     return normalised
 
@@ -256,11 +281,14 @@ __all__ = [
     "KOREA_PLANE_CRS",
     "KOREA_WGS84_UTM_CRS",
     "SUPPORTED_PROJECT_CRS",
+    "WGS84_GEOGRAPHIC_CRS",
+    "WORK_AREA_BOUNDARY_CRS",
     "CrsMismatchError",
     "ReprojectionFailedError",
     "UnsupportedCrsError",
     "assert_same_crs",
     "assert_supported_project_crs",
+    "assert_work_area_boundary_crs",
     "normalise_crs",
     "reproject_geometry",
     "reproject_point",

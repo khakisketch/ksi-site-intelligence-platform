@@ -23,6 +23,7 @@ from ksi_geo_spatial.crs import (
     UnsupportedCrsError,
     assert_same_crs,
     assert_supported_project_crs,
+    assert_work_area_boundary_crs,
     reproject_geometry,
     reproject_point,
 )
@@ -90,6 +91,34 @@ def test_utm_northing_cannot_be_mistaken_for_korean_plane_coordinates() -> None:
     lon, lat = reproject_point(x, y, from_crs="EPSG:32652", to_crs="EPSG:4326")
     assert lon == pytest.approx(_SEOUL_LON_DEG, abs=1e-9)
     assert lat == pytest.approx(_SEOUL_LAT_DEG, abs=1e-9)
+
+
+@pytest.mark.parametrize(
+    "crs", ["EPSG:4326", "epsg:4326", "EPSG:5186", "EPSG:5179", "EPSG:32651", "EPSG:32652"]
+)
+def test_work_area_boundary_accepts_wgs84_and_every_analysis_crs(crs: str) -> None:
+    """화면에서 그린 구역은 경위도다. 경계는 꼭짓점이라 측정이 DSM 좌표계로 변환해 쓴다."""
+    assert assert_work_area_boundary_crs(crs) == crs.upper()
+
+
+@pytest.mark.parametrize(
+    "crs",
+    ["EPSG:5174", "EPSG:5173", "EPSG:32617", "EPSG:32634", "EPSG:3857", "", "not-a-crs"],
+)
+def test_work_area_boundary_still_refuses_what_cannot_be_trusted_after_conversion(crs: str) -> None:
+    """구 측지계와 한국 밖 UTM 존은 변환해도 위치를 믿을 수 없다.
+
+    경위도를 허용해도 이 문은 열리지 않는다.
+    """
+    with pytest.raises(UnsupportedCrsError):
+        assert_work_area_boundary_crs(crs)
+
+
+def test_work_area_boundary_allowance_does_not_widen_the_analysis_crs_list() -> None:
+    """경위도는 구역 경계에만 허용한다. DSM 같은 분석 입력으로는 여전히 투영좌표계만 받는다."""
+    assert "EPSG:4326" not in SUPPORTED_PROJECT_CRS
+    with pytest.raises(UnsupportedCrsError):
+        assert_supported_project_crs("EPSG:4326")
 
 
 @pytest.mark.parametrize("crs", ["EPSG:32617", "EPSG:32610", "EPSG:32750", "EPSG:32653"])

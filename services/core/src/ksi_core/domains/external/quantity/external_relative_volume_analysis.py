@@ -36,7 +36,11 @@ from ksi_event_contracts.external_relative_volume_analysis import (
     EvaluationV1,
 )
 from ksi_event_contracts.processing_artifact import ProcessingArtifactKind
-from ksi_geo_spatial.crs import assert_same_crs, assert_supported_project_crs
+from ksi_geo_spatial.crs import (
+    assert_same_crs,
+    assert_supported_project_crs,
+    assert_work_area_boundary_crs,
+)
 from pydantic import ConfigDict, StringConstraints
 from pyproj import CRS
 from pyproj.exceptions import CRSError
@@ -776,11 +780,15 @@ class ExternalRelativeVolumeAnalysisStore:
         if baseline.capture_ended_at > current.capture_started_at:
             raise _PreflightBlocked("CAPTURE_CHRONOLOGY_INVALID")
         try:
-            crs = assert_same_crs(
-                assert_supported_project_crs(area.crs),
+            # 비교하는 것은 두 DSM이라 이 둘은 같은 투영좌표계여야 한다(INV-020).
+            assert_same_crs(
                 assert_supported_project_crs(baseline.horizontal_crs),
                 assert_supported_project_crs(current.horizontal_crs),
             )
+            # 구역 경계는 비교 대상이 아니라 꼭짓점 집합이다. 자기 좌표계(화면에서 그린 구역은
+            # 경위도)를 신원에 그대로 남기고, 측정이 그 꼭짓점만 DSM 좌표계로 변환한다. 높이 격자는
+            # 다시 표본화하지 않는다. 구 측지계 등 변환을 믿을 수 없는 좌표계는 받지 않는다.
+            area_crs = assert_work_area_boundary_crs(area.crs)
         except ValueError:
             raise _PreflightBlocked("HORIZONTAL_CRS_UNAVAILABLE_OR_MISMATCH") from None
         if baseline.vertical_reference_digest != current.vertical_reference_digest:
@@ -793,7 +801,7 @@ class ExternalRelativeVolumeAnalysisStore:
             )
         ):
             raise _PreflightBlocked("EMPTY_COMMON_VALID_COVERAGE")
-        identity = self._identity(organization_id, area, baseline, current, crs)
+        identity = self._identity(organization_id, area, baseline, current, area_crs)
         baseline_evaluation = self._evaluation(identity, baseline, "BASELINE", now)
         current_evaluation = self._evaluation(identity, current, "CURRENT", now)
         evaluations = (baseline_evaluation, current_evaluation)

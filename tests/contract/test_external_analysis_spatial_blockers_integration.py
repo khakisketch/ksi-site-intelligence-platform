@@ -308,6 +308,137 @@ def test_rotated_overlapping_current_grid_remains_an_analysis_candidate(tmp_path
         fixture.close()
 
 
+def test_geographic_work_area_boundary_does_not_block_a_projected_dsm_pair(tmp_path: Path) -> None:
+    """화면에서 그린 구역은 경위도다. 두 DSM이 같은 투영좌표계이면 구역 때문에 막지 않는다."""
+    fixture = build_local_analysis_api_fixture(
+        tmp_path,
+        v2_dsm_only=True,
+        real_inspection=True,
+        work_area_crs="EPSG:4326",
+    )
+    try:
+        with _CoreAndObjectServers(fixture) as servers:
+            reports = _inspect_both_epochs_with_actual_lane(
+                fixture,
+                core_origin=servers.core_origin,
+                object_origin=servers.object_origin,
+                tmp_path=tmp_path,
+            )
+            baseline = reports[0].measurement_payload.outcomes[0].measurements
+            current = reports[1].measurement_payload.outcomes[0].measurements
+            assert baseline is not None and current is not None
+            assert baseline.observed_crs_identifier == current.observed_crs_identifier
+            assert baseline.observed_crs_identifier == "EPSG:5186"
+            intent = _post_analysis(fixture, servers.core_origin, "geographic-area-candidate")
+            assert {item["code"] for item in intent["blockers"]} == set()
+            assert intent["suitabilityState"] == "PROVISIONAL_ACCURACY_UNVERIFIED"
+            assert intent["executionState"] == "QUEUED"
+            # 워커가 받는 작업 신원: 구역은 자기 좌표계를 남기고 두 DSM의 좌표계는 따로 묶인다.
+            # 측정은 구역 꼭짓점만 DSM 좌표계로 변환한다(높이 격자는 다시 표본화하지 않는다).
+            worker_client = ExternalAnalysisCoreClient(
+                base_url=servers.core_origin,
+                worker_token=fixture.worker_headers()["Authorization"].removeprefix("Bearer "),
+                worker_instance_id="geographic-area-identity-reader",
+            )
+            try:
+                (pending,) = worker_client.list_pending()
+                leased = worker_client.lease(pending.analysis_id, "geographic-area-identity")
+                received = worker_client.input(pending.analysis_id, leased.attempt)
+                identity = received.input.calculation_identity
+            finally:
+                worker_client.close()
+            assert identity.work_area_crs == "EPSG:4326"
+            assert identity.baseline_observed_crs_identifier == "EPSG:5186"
+            assert identity.current_observed_crs_identifier == "EPSG:5186"
+    finally:
+        fixture.close()
+
+
+def test_geographic_work_area_measures_the_same_volume_as_a_projected_one(tmp_path: Path) -> None:
+    """구역 꼭짓점만 DSM 좌표계로 변환하므로 수치는 투영좌표계 구역과 같아야 한다.
+
+    투영좌표계 구역(EPSG:5186)에서 같은 두 DSM을 끝까지 돌린 기존 테스트의 값과 대조한다.
+    """
+    fixture = build_local_analysis_api_fixture(
+        tmp_path,
+        v2_dsm_only=True,
+        real_inspection=True,
+        work_area_crs="EPSG:4326",
+    )
+    worker_client: ExternalAnalysisCoreClient | None = None
+    try:
+        with _CoreAndObjectServers(fixture) as servers:
+            _inspect_both_epochs_with_actual_lane(
+                fixture,
+                core_origin=servers.core_origin,
+                object_origin=servers.object_origin,
+                tmp_path=tmp_path,
+            )
+            intent = _post_analysis(fixture, servers.core_origin, "geographic-area-measured")
+            assert intent["executionState"] == "QUEUED"
+            facts = fixture.app.state.external_analysis_wiring.facade._assessments._runtime
+            envelope = fixture.app.state.external_analysis_wiring.calculations._resource_envelope
+            runtime = ProcessingWorkerRuntimeIdentityV1(
+                worker_executable_digest=facts.worker_executable_digest,
+                worker_build_digest=facts.worker_build_digest,
+                runtime_image_version=facts.runtime_image_version,
+                runtime_image_oci_digest=facts.runtime_image_oci_digest,
+                dependency_lock_digest=facts.dependency_lock_digest,
+            )
+            transport = ExternalObjectTransportPolicyV1(
+                endpoints=(
+                    TrustedObjectEndpointV1(origin=servers.object_origin, addresses=("127.0.0.1",)),
+                ),
+                max_header_bytes=16_384,
+                max_object_bytes=envelope.max_input_bytes,
+                max_chunk_bytes=min(65_536, envelope.max_input_bytes),
+            )
+            worker_client = ExternalAnalysisCoreClient(
+                base_url=servers.core_origin,
+                worker_token=fixture.worker_headers()["Authorization"].removeprefix("Bearer "),
+                worker_instance_id="geographic-area-measurement-worker",
+            )
+            assert run_once(worker_client, runtime, transport)
+            detail, result, _evidence = _terminal_analysis(
+                fixture, servers.core_origin, intent["analysisId"]
+            )
+            assert detail["executionState"] == "COMPLETED", detail
+            metrics = result["result"]["metrics"]
+            assert metrics["cutM3"] == pytest.approx(0.01)
+            assert metrics["fillM3"] == pytest.approx(0.01)
+            assert metrics["netM3"] == pytest.approx(0.0)
+    finally:
+        if worker_client is not None:
+            worker_client.close()
+        fixture.close()
+
+
+def test_work_area_boundary_in_an_old_datum_stays_blocked(tmp_path: Path) -> None:
+    """경위도를 허용해도 구 측지계(Bessel) 구역은 변환 결과를 믿을 수 없어 계속 막는다."""
+    fixture = build_local_analysis_api_fixture(
+        tmp_path,
+        v2_dsm_only=True,
+        real_inspection=True,
+        work_area_crs="EPSG:5174",
+    )
+    try:
+        with _CoreAndObjectServers(fixture) as servers:
+            _inspect_both_epochs_with_actual_lane(
+                fixture,
+                core_origin=servers.core_origin,
+                object_origin=servers.object_origin,
+                tmp_path=tmp_path,
+            )
+            intent = _post_analysis(fixture, servers.core_origin, "old-datum-area-blocker")
+            assert intent["suitabilityState"] == "BLOCKED"
+            assert intent["executionState"] == "NOT_STARTED"
+            assert {item["code"] for item in intent["blockers"]} == {
+                "HORIZONTAL_CRS_UNAVAILABLE_OR_MISMATCH"
+            }
+    finally:
+        fixture.close()
+
+
 def test_overlapping_dsm_with_declared_current_nodata_fails_without_publishing_result(
     tmp_path: Path,
 ) -> None:
