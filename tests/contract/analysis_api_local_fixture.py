@@ -78,6 +78,7 @@ from ksi_event_contracts.external_relative_volume import (
 from ksi_event_contracts.observation_work_order import ObservationWorkOrderExecutionMode
 from ksi_event_contracts.processing_artifact import ProcessingArtifactKind
 from ksi_event_contracts.site_frame import SiteFrame
+from ksi_geo_spatial.crs import reproject_geometry
 from pyproj import CRS
 from rasterio.io import MemoryFile
 from rasterio.transform import Affine, from_origin
@@ -1340,6 +1341,7 @@ def build_local_analysis_api_fixture(
     analysis_activation: Any = None,
     delta_publications: Any = None,
     masked_quantitative: Any = None,
+    work_area_crs: str = "EPSG:5186",
 ) -> LocalAnalysisApiFixture:
     """Seed inspected/sealed epochs backed by real 2×2 GeoTIFF bytes for local API tests."""
     if replay_of is not None:
@@ -1611,11 +1613,14 @@ def build_local_analysis_api_fixture(
                 ]
             ],
         }
+        if work_area_crs != "EPSG:5186":
+            # 같은 구역 모양을 다른 좌표계로 다시 쓴다(화면에서 그린 구역은 경위도다).
+            polygon = reproject_geometry(polygon, from_crs="EPSG:5186", to_crs=work_area_crs)
         area_result = app.state.work_area_store.register(
             "site-a",
             name="Local Analysis fixture area",
             polygon=polygon,
-            crs="EPSG:5186",
+            crs=work_area_crs,
             supersedes=None,
             actor=operator.principal_id,
             now=now - timedelta(minutes=29),
