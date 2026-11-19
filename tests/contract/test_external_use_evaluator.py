@@ -10,6 +10,10 @@ from typing import Any, cast
 
 import pytest
 from ksi_core.auth import Principal, PrincipalKind, Role
+from ksi_core.domains.external.quantity.external_profile_difference_authorities import (
+    ExternalProfileDifferenceAuthority,
+    SyntheticExternalProfileDifferenceAuthorityPort,
+)
 from ksi_core.domains.external.quantity.external_single_volume_authorities import (
     ExternalSingleVolumeAuthority,
 )
@@ -728,6 +732,11 @@ class _EvidenceProjection:
     ) -> tuple[object, object] | None:
         return self._lookup(digest, subject, policy_digest)
 
+    def record_for_use(
+        self, digest: str, *, subject: SealedExternalSubjectV1, policy_digest: str
+    ) -> tuple[object, object] | None:
+        return self._lookup(digest, subject, policy_digest)
+
 
 def _report_with_measured_dsm(
     original: ExternalArtifactInspectionReportV1,
@@ -862,6 +871,375 @@ def _volume_pair_evaluator(
         relative_volume_authority=volume,
     )
     return evaluator, baseline, current, volume
+
+
+def _profile_difference_evaluator(
+    tmp_path: Path,
+    *,
+    synthetic_mapping: bool = True,
+    evidence_attested: bool | None = True,
+    observed_vertical: bool = True,
+    capture_ordered: bool = True,
+    shared_epoch: bool = False,
+    mapping_evidence_digests: tuple[str, ...] = (),
+) -> tuple[
+    ExternalUseEvaluator,
+    SealedExternalSubjectV1,
+    SealedExternalSubjectV1,
+    SyntheticExternalProfileDifferenceAuthorityPort | None,
+    ExternalValidationPolicyV1,
+]:
+    baseline = subject(include_dsm=True)
+    current = baseline.model_copy(
+        update={
+            "submission_id": "submission-2",
+            "submission_digest": digest("a"),
+            "manifest_digest": digest("b"),
+        },
+        deep=True,
+    )
+    mapping_digest = digest("2")
+    template = (
+        policy_template()
+        .model_copy(
+            update={"compatibility_mapping_digests": (mapping_digest,), "policy_digest": None},
+            deep=True,
+        )
+        .sealed()
+    )
+    policy_authority_record = PolicyAuthorityRecord(
+        policy_id=template.policy_id,
+        policy_version=template.version,
+        authorized_policy_body_digest=authorized_policy_body_digest(template),
+        permitted_subjects=(baseline, current),
+        permitted_uses=("PROFILE_DIFFERENCE",),
+        authorized_actor_ids=("authority",),
+        active_from=NOW - timedelta(minutes=1),
+        active_until=datetime.now(UTC) + timedelta(days=14),
+        synthetic_test_only=True,
+    ).sealed()
+    policy = template.model_copy(
+        update={
+            "authority_record_digest": policy_authority_record.digest,
+            "policy_digest": None,
+        },
+        deep=True,
+    ).sealed()
+    assert policy.policy_digest is not None
+    coordinator = ExternalAuthorityCurrentnessCoordinator()
+    policy_authority = _PolicyAuthority(policy_authority_record)
+    registry = ExternalValidationPolicyRegistry(
+        DurableJournal(tmp_path / "profile-policy.jsonl"),
+        authority_port=policy_authority,
+        authority_currentness_port=policy_authority.bind(coordinator),
+        clock=lambda: NOW,
+        coordinator=coordinator,
+    )
+    registry.admit(policy, actor="authority", now=NOW)
+
+    base_report = _report_for_subject(baseline, policy, request_id="profile-baseline")
+    current_report = _report_for_subject(current, policy, request_id="profile-current")
+    profile_measurements = _dsm_measurements(vertical=observed_vertical)
+
+    def with_selected_dsm(
+        original: ExternalArtifactInspectionReportV1,
+    ) -> ExternalArtifactInspectionReportV1:
+        binding = SealedArtifactBindingV1(artifact_id="dsm", observed_sha256=digest("d"))
+        payload = original.measurement_payload.model_copy(
+            update={
+                "artifact_bindings": (*original.measurement_payload.artifact_bindings, binding),
+                "outcomes": (
+                    *original.measurement_payload.outcomes,
+                    ArtifactInspectionOutcomeV1(
+                        artifact_id="dsm",
+                        observed_sha256=digest("d"),
+                        outcome=ArtifactOutcome.MEASURED,
+                        measurements=profile_measurements,
+                    ),
+                ),
+            },
+            deep=True,
+        )
+        return original.model_copy(
+            update={
+                "measurement_payload": payload,
+                "measurement_payload_digest": None,
+                "report_digest": None,
+            },
+            deep=True,
+        ).sealed()
+
+    reports = {baseline: with_selected_dsm(base_report), current: with_selected_dsm(current_report)}
+    reconstruction = _PairReconstruction(baseline, current, coordinator=coordinator)
+    capture_start = NOW - timedelta(days=4)
+    capture_end = NOW - timedelta(days=3)
+    current_start = NOW - timedelta(days=2) if capture_ordered else NOW - timedelta(days=5)
+    current_end = NOW - timedelta(days=1) if capture_ordered else NOW - timedelta(days=4)
+    reconstruction._revisions[baseline] = SimpleNamespace(  # noqa: SLF001 - fixture wiring
+        manifest=sealed_manifest(include_dsm=True),
+        observation_epoch_id="profile-epoch-baseline",
+        submission=SimpleNamespace(
+            input_declaration=SimpleNamespace(
+                capture_started_at=capture_start, capture_ended_at=capture_end
+            )
+        ),
+    )
+    reconstruction._revisions[current] = SimpleNamespace(  # noqa: SLF001 - fixture wiring
+        manifest=sealed_manifest(include_dsm=True),
+        observation_epoch_id=(
+            "profile-epoch-baseline" if shared_epoch else "profile-epoch-current"
+        ),
+        submission=SimpleNamespace(
+            input_declaration=SimpleNamespace(
+                capture_started_at=current_start, capture_ended_at=current_end
+            )
+        ),
+    )
+    records: dict[tuple[SealedExternalSubjectV1, str], tuple[tuple[str, object, object], ...]] = {}
+    if evidence_attested is not None:
+        for marker, value in (("e", baseline), ("f", current)):
+            records[(value, policy.policy_digest)] = (
+                (
+                    digest(marker),
+                    SimpleNamespace(evidence_record_digest=digest(marker)),
+                    SimpleNamespace(
+                        independent_attestation=object() if evidence_attested else None,
+                        target_dsm_artifact_id="dsm",
+                        target_dsm_observed_sha256=digest("d"),
+                    ),
+                ),
+            )
+    evidence = cast(ExternalEvidenceValidationStore, _EvidenceProjection(coordinator, records))
+    observed_crs_digest = profile_measurements.observed_crs_digest
+    vertical_digest = (
+        profile_measurements.observed_vertical_reference.canonical_digest()
+        if profile_measurements.observed_vertical_reference is not None
+        else digest("5")
+    )
+    baseline_revision = reconstruction._revisions[baseline]  # noqa: SLF001 - fixture wiring
+    current_revision = reconstruction._revisions[current]  # noqa: SLF001 - fixture wiring
+    profile_authority = None
+    if synthetic_mapping and observed_vertical and capture_ordered:
+        profile_authority = SyntheticExternalProfileDifferenceAuthorityPort(
+            (
+                ExternalProfileDifferenceAuthority(
+                    baseline_subject_digest=baseline.canonical_digest(),
+                    current_subject_digest=current.canonical_digest(),
+                    baseline_artifact_id="dsm",
+                    baseline_source_sha256=digest("d"),
+                    current_artifact_id="dsm",
+                    current_source_sha256=digest("d"),
+                    baseline_capture_started_at=baseline_revision.submission.input_declaration.capture_started_at,
+                    baseline_capture_ended_at=baseline_revision.submission.input_declaration.capture_ended_at,
+                    current_capture_started_at=current_revision.submission.input_declaration.capture_started_at,
+                    current_capture_ended_at=current_revision.submission.input_declaration.capture_ended_at,
+                    observed_crs_digest=observed_crs_digest,
+                    observed_vertical_reference_digest=vertical_digest,
+                    policy_digest=policy.policy_digest,
+                    compatibility_mapping_digest=mapping_digest,
+                    historical_authority_digest=digest("3"),
+                    evidence_record_digests=mapping_evidence_digests,
+                    valid_from=NOW - timedelta(days=1),
+                    valid_until=datetime.now(UTC) + timedelta(days=30),
+                    synthetic_test_only=True,
+                ),
+            ),
+            currentness_coordinator=coordinator,
+        )
+    evaluator = ExternalUseEvaluator(
+        decisions=ExternalUseDecisionStore(
+            DurableJournal(tmp_path / "profile-decisions.jsonl"),
+            coordinator=coordinator,
+            history_verifier=_SyntheticHistoryVerifier(),
+        ),
+        reconstruction=reconstruction,  # type: ignore[arg-type]
+        inspections=_PairInspections(reports, {}, coordinator),
+        policy_registry=registry,
+        evidence_validations=evidence,
+        coordinator=coordinator,
+        profile_difference_authority=profile_authority,
+    )
+    return evaluator, baseline, current, profile_authority, policy
+
+
+def _observed_vertical_digest() -> str:
+    vertical = _dsm_measurements().observed_vertical_reference
+    assert vertical is not None
+    return vertical.canonical_digest()
+
+
+def _request_profile_difference(
+    evaluator: ExternalUseEvaluator,
+    baseline: SealedExternalSubjectV1,
+    current: SealedExternalSubjectV1,
+    *,
+    idempotency_key: str,
+    artifact_id: str = "dsm",
+    observed_crs_digest: str = digest("c"),
+    observed_vertical_reference_digest: str | None = None,
+    profile_comparison_binding_digest: str = digest("4"),
+) -> ExternalPairUseDecisionV1:
+    return evaluator.request_pair(
+        baseline,
+        current,
+        use="PROFILE_DIFFERENCE",
+        zone_id=None,
+        idempotency_key=idempotency_key,
+        principal=_principal(),
+        now=NOW,
+        observed_crs_digest=observed_crs_digest,
+        observed_vertical_reference_digest=observed_vertical_reference_digest
+        or _observed_vertical_digest(),
+        baseline_artifact_id=artifact_id,
+        baseline_source_sha256=digest("d"),
+        current_artifact_id=artifact_id,
+        current_source_sha256=digest("d"),
+        profile_comparison_binding_digest=profile_comparison_binding_digest,
+    )
+
+
+def test_profile_difference_requires_independent_mapping_and_exact_selected_dsm(
+    tmp_path: Path,
+) -> None:
+    evaluator, baseline, current, authority, policy = _profile_difference_evaluator(tmp_path)
+    decision = _request_profile_difference(
+        evaluator, baseline, current, idempotency_key="profile-difference-eligible"
+    )
+
+    assert authority is not None
+    assert decision.verdict is DecisionVerdict.ELIGIBLE
+    assert decision.zone is None
+    assert decision.compatibility_mapping_digest == digest("2")
+    assert decision.evidence_record_digests == (digest("e"), digest("f"))
+    assert decision.baseline_artifact_id == decision.current_artifact_id == "dsm"
+    assert decision.profile_comparison_binding_digest == digest("4")
+    assert decision.policy_digest == policy.policy_digest
+
+    history = CoreExternalUseDecisionHistoryVerifier(
+        reconstruction=evaluator._reconstruction,  # noqa: SLF001 - verifier fixture wiring
+        inspections=evaluator._inspections,  # noqa: SLF001 - verifier fixture wiring
+        policy_registry=evaluator._policy_registry,  # noqa: SLF001 - verifier fixture wiring
+        evidence_validations=evaluator._evidence_validations,  # noqa: SLF001
+        profile_difference_authority=authority,
+    )
+    assert history.verify(decision)
+
+    resolved = evaluator.resolve_eligible_pair_for_execution(
+        decision.decision_id,
+        principal=_principal(),
+        site_id=baseline.site_id,
+        observed_crs_digest=digest("c"),
+        observed_vertical_reference_digest=_observed_vertical_digest(),
+        baseline_artifact_id="dsm",
+        baseline_source_sha256=digest("d"),
+        current_artifact_id="dsm",
+        current_source_sha256=digest("d"),
+        profile_comparison_binding_digest=digest("4"),
+    )
+    assert resolved == decision
+    assert (
+        evaluator.resolve_eligible_pair_for_execution(
+            decision.decision_id,
+            principal=_principal(),
+            site_id=baseline.site_id,
+            observed_crs_digest=digest("c"),
+            observed_vertical_reference_digest=_observed_vertical_digest(),
+            baseline_artifact_id="dsm",
+            baseline_source_sha256=digest("d"),
+            current_artifact_id="dsm",
+            current_source_sha256=digest("d"),
+            profile_comparison_binding_digest=digest("5"),
+        )
+        is None
+    )
+
+
+@pytest.mark.parametrize(
+    ("options", "artifact_id", "expected_reason"),
+    [
+        ({"synthetic_mapping": False}, "dsm", "COMPATIBILITY_MAPPING_MISSING"),
+        ({"observed_vertical": False}, "dsm", "VERTICAL_REFERENCE_UNKNOWN"),
+        ({"capture_ordered": False}, "dsm", "PROFILE_DIFFERENCE_CAPTURE_ORDER_INVALID"),
+        ({}, "other-dsm", "DSM_MEASUREMENT_UNAVAILABLE"),
+    ],
+)
+def test_profile_difference_fails_closed_on_missing_binding_facts(
+    tmp_path: Path,
+    options: dict[str, Any],
+    artifact_id: str,
+    expected_reason: str,
+) -> None:
+    evaluator, baseline, current, _authority, _policy = _profile_difference_evaluator(
+        tmp_path, **options
+    )
+    decision = _request_profile_difference(
+        evaluator,
+        baseline,
+        current,
+        idempotency_key=f"profile-blocked-{expected_reason}",
+        artifact_id=artifact_id,
+    )
+
+    assert decision.verdict is DecisionVerdict.BLOCKED
+    assert decision.reasons == (expected_reason,)
+    assert decision.compatibility_mapping_digest is None
+    assert decision.evidence_record_digests == ()
+
+
+def test_profile_difference_uses_only_the_checkpoint_records_named_by_the_mapping(
+    tmp_path: Path,
+) -> None:
+    expected = (digest("e"), digest("f"))
+    evaluator, baseline, current, _, policy = _profile_difference_evaluator(
+        tmp_path, mapping_evidence_digests=expected
+    )
+    assert policy.policy_digest is not None
+    evidence = cast(_EvidenceProjection, evaluator._evidence_validations)  # noqa: SLF001
+    key = (baseline, policy.policy_digest)
+    approved = evidence._records[key]  # noqa: SLF001
+    alternative = (digest("8"), SimpleNamespace(evidence_record_digest=digest("8")), approved[0][2])
+    evidence._records[key] = (alternative, *approved)  # noqa: SLF001
+    decision = _request_profile_difference(
+        evaluator, baseline, current, idempotency_key="two-records"
+    )
+    assert decision.verdict is DecisionVerdict.ELIGIBLE
+    assert decision.evidence_record_digests == expected
+
+    evidence._records[key] = (alternative,)  # noqa: SLF001
+    retry = _request_profile_difference(
+        evaluator, baseline, current, idempotency_key="only-other-record"
+    )
+    assert retry.verdict is DecisionVerdict.BLOCKED
+    assert retry.reasons == ("EVIDENCE_RECORD_BINDING_INVALID",)
+    assert retry.compatibility_mapping_digest is None
+
+
+def test_profile_difference_idempotency_binds_exact_profile_pair(tmp_path: Path) -> None:
+    evaluator, baseline, current, _authority, _policy = _profile_difference_evaluator(tmp_path)
+    _request_profile_difference(
+        evaluator, baseline, current, idempotency_key="profile-pair-binding"
+    )
+
+    with pytest.raises(ExternalUseDecisionConflictError):
+        _request_profile_difference(
+            evaluator,
+            baseline,
+            current,
+            idempotency_key="profile-pair-binding",
+            profile_comparison_binding_digest=digest("5"),
+        )
+
+
+def test_profile_difference_rejects_shared_observation_epoch(tmp_path: Path) -> None:
+    evaluator, baseline, current, _authority, _policy = _profile_difference_evaluator(
+        tmp_path, shared_epoch=True
+    )
+    decision = _request_profile_difference(
+        evaluator, baseline, current, idempotency_key="profile-shared-epoch"
+    )
+
+    assert decision.verdict is DecisionVerdict.BLOCKED
+    assert decision.reasons == ("PROFILE_DIFFERENCE_CAPTURE_ORDER_INVALID",)
 
 
 def test_relative_volume_pair_names_unattested_evidence_not_missing_volume_authority(

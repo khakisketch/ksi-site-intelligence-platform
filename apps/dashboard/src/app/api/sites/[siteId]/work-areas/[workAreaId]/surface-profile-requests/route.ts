@@ -43,7 +43,12 @@ export async function POST(
     const job = await issueSurfaceProfileJobWithToken(
       site,
       area,
-      { assetRef: body.assetRef, feature: body.feature, heightDecisionId: decision.decisionId },
+      {
+        assetRef: body.assetRef,
+        feature: body.feature,
+        heightDecisionId: decision.decisionId,
+        ...(body.sampleSpacingM !== undefined ? { sampleSpacingM: body.sampleSpacingM } : {}),
+      },
       `${key}:job`,
       token,
     );

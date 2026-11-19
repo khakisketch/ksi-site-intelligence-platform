@@ -10,6 +10,7 @@ import hashlib
 import threading
 from collections.abc import Iterator
 from contextlib import contextmanager
+from dataclasses import replace
 from datetime import timedelta
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -22,6 +23,7 @@ from fastapi.testclient import TestClient
 from ksi_event_contracts.external_artifact_validation import (
     ArtifactInspectionOutcomeV1,
     ArtifactOutcome,
+    ObservedVerticalReferenceV1,
 )
 from ksi_event_contracts.surface_profile_job import SurfaceProfileActivationV1
 from ksi_processing_controller.external_object_streams import (
@@ -30,12 +32,16 @@ from ksi_processing_controller.external_object_streams import (
 )
 from ksi_processing_controller.surface_profile_core_client import SurfaceProfileCoreClient
 from ksi_processing_controller.surface_profile_runner import run_once
-from spatial_data_fixture import make_source
+from spatial_data_fixture import make_grant, make_source
 from surface_profile_job_fixture import (
     ORG,
     ORIGIN_X,
     ORIGIN_Y,
-    measured_source,
+    compute_generated_profile,
+    feature_revision,
+    inspect_generated_profile_raster,
+    line,
+    profile_policy,
     write_raster,
 )
 from test_surface_profile_api import AUTH, BASE, mounted_profile, request_body
@@ -103,11 +109,12 @@ def lane(
         build_surface_profile_worker_router,
     )
 
-    client, graph = mounted_profile(tmp_path, policy_overrides=policy_overrides)
+    core_root = tmp_path / "core"
+    core_root.mkdir()
+    client, graph = mounted_profile(core_root, policy_overrides=policy_overrides)
     data = raster.read_bytes()
     sha = "sha256:" + hashlib.sha256(data).hexdigest()
-    base = measured_source()
-    measurements = base.inspection.measurements
+    measurements = inspect_generated_profile_raster(raster)
     if claimed:
         measurements = measurements.model_copy(update=claimed)
     graph.lane.authority.source = make_source(
@@ -120,6 +127,11 @@ def lane(
             measurements=measurements,
         ),
         observed_crs_units="metre",
+    )
+    a, _, c, _, e, f = measurements.transform
+    graph.lane.authority.grant = make_grant(
+        allowed_bounds=(c, f + e * measurements.height, c + a * measurements.width, f),
+        observed_crs_digest=measurements.observed_crs_digest,
     )
     graph.storage = ProfileStorage()
     graph.storage.origin = origin
@@ -175,11 +187,13 @@ def run(graph: SimpleNamespace) -> bool:
         clock=lambda: graph.now,
         workspace_root=graph.workspace,
         heartbeat_millis=100,
+        compute=compute_generated_profile,
     )
 
 
-def issue(graph: Any) -> str:
-    response = graph.http.post(BASE, headers=AUTH, json=request_body())
+def issue(graph: Any, *, feature: Any = None) -> str:
+    body = request_body(**({"feature": feature.ref()} if feature is not None else {}))
+    response = graph.http.post(BASE, headers=AUTH, json=body)
     assert response.status_code == 200, response.text
     return response.json()["jobId"]
 
@@ -195,7 +209,8 @@ def test_worker_reads_sealed_bytes_and_reports_the_analytic_surface(tmp_path: Pa
         graph = lane(tmp_path, origin, raster)
         job_id = issue(graph)
         assert run(graph) is True
-        assert view(graph, job_id)["executionState"] == "COMPLETED"
+        state = view(graph, job_id)
+        assert state["executionState"] == "COMPLETED", state["reason"]
         released = graph.http.get(BASE + "/" + job_id + "/result", headers=AUTH)
         assert released.status_code == 200, released.text
         samples = released.json()["result"]["samples"]
@@ -214,14 +229,14 @@ def test_a_job_on_a_declared_vertical_reference_runs_and_the_receipt_says_so(
     """파일에 수직 기준이 없어도 선언 위에서 읽고, 영수증이 선언임을 그대로 되풀이한다."""
     from surface_profile_job_fixture import declared_vertical
 
-    raster = write_raster(tmp_path / "dsm.tif")
+    raster = write_raster(tmp_path / "dsm.tif", observed_vertical=False)
     with object_server({"bytes": raster.read_bytes()}) as origin:
         graph = lane(tmp_path, origin, raster, claimed={"observed_vertical_reference": None})
         graph.lane.authority.declared = declared_vertical()
         job_id = issue(graph)
         assert run(graph) is True
         state = view(graph, job_id)
-        assert state["executionState"] == "COMPLETED"
+        assert state["executionState"] == "COMPLETED", state["reason"]
         vertical = state["receipt"]["verticalReference"]
         assert vertical["provenance"] == "DECLARED" and vertical["observed"] is None
         assert vertical["declared"]["unit"] == "metre"
@@ -244,6 +259,179 @@ def test_a_job_on_a_file_observation_says_observed_and_names_no_declaration(
         assert vertical["observed"]["identifier"] == "EPSG:5773"
 
 
+def test_an_internal_masked_tiled_dsm_keeps_the_observed_profile_values(tmp_path: Path) -> None:
+    raster = write_raster(tmp_path / "masked.tif", internal_mask=True, tiled=True)
+    envelope = (
+        profile_policy()
+        .resource_envelope.model_copy(
+            update={
+                "max_input_bytes": 1_000_000,
+                "max_streamed_bytes": 1_000_000,
+                "max_decompressed_bytes": 1_000_000,
+                "max_sample_bytes": 1_000_000,
+                "max_workspace_bytes": 4_000_000,
+                "resource_envelope_digest": None,
+            }
+        )
+        .sealed()
+    )
+    with object_server({"bytes": raster.read_bytes()}) as origin:
+        graph = lane(tmp_path, origin, raster, policy_overrides={"resource_envelope": envelope})
+        job_id = issue(graph)
+        assert run(graph) is True
+        state = view(graph, job_id)
+        assert (state["executionState"], state["reason"]) == ("COMPLETED", None)
+        response = graph.http.get(BASE + "/" + job_id + "/result", headers=AUTH)
+        assert response.status_code == 200, response.text
+        samples = response.json()["result"]["samples"]
+        assert samples[0]["invalidReason"] == "NODATA"
+        for sample in samples[1:]:
+            expected = (
+                100.0 + 0.5 * (sample["x"] - ORIGIN_X - 0.5) + 0.25 * (ORIGIN_Y - sample["y"] - 0.5)
+            )
+            assert sample["elevationM"] == pytest.approx(expected, abs=1e-4)
+
+
+@pytest.mark.parametrize(
+    ("limit", "value"),
+    [("max_blocks", 1), ("max_decompressed_bytes", 1200), ("max_sample_bytes", 350)],
+)
+def test_internal_mask_window_bytes_and_blocks_count_toward_signed_limits(
+    tmp_path: Path, limit: str, value: int
+) -> None:
+    raster = write_raster(tmp_path / "masked.tif", internal_mask=True, tiled=True)
+    envelope = (
+        profile_policy()
+        .resource_envelope.model_copy(
+            update={
+                limit: value,
+                "max_input_bytes": 1_000_000,
+                "max_streamed_bytes": 1_000_000,
+                "resource_envelope_digest": None,
+            }
+        )
+        .sealed()
+    )
+    with object_server({"bytes": raster.read_bytes()}) as origin:
+        graph = lane(tmp_path, origin, raster, policy_overrides={"resource_envelope": envelope})
+        job_id = issue(graph)
+        assert run(graph) is True
+        failed = view(graph, job_id)
+        assert (failed["executionState"], failed["reason"]) == ("FAILED", "RESOURCE_LIMIT_EXCEEDED")
+        assert failed["receipt"] is None
+
+
+@pytest.mark.parametrize(
+    ("max_decompressed_bytes", "expected_state", "expected_reason"),
+    [(2000, "FAILED", "RESOURCE_LIMIT_EXCEEDED"), (3002, "COMPLETED", None)],
+)
+def test_narrow_read_inside_internal_mask_strips_uses_full_strip_decode_bytes(
+    tmp_path: Path,
+    max_decompressed_bytes: int,
+    expected_state: str,
+    expected_reason: str | None,
+) -> None:
+    raster = write_raster(tmp_path / "strip-mask.tif", internal_mask=True)
+    envelope = (
+        profile_policy()
+        .resource_envelope.model_copy(
+            update={
+                "max_decompressed_bytes": max_decompressed_bytes,
+                "max_sample_bytes": 1_000_000,
+                "max_input_bytes": 1_000_000,
+                "max_streamed_bytes": 1_000_000,
+                "resource_envelope_digest": None,
+            }
+        )
+        .sealed()
+    )
+    narrow_feature = feature_revision(saved=line((10, 4), (10.1, 4)))
+    with object_server({"bytes": raster.read_bytes()}) as origin:
+        graph = lane(tmp_path, origin, raster, policy_overrides={"resource_envelope": envelope})
+        graph.lane.authority.feature = narrow_feature
+        job_id = issue(graph, feature=narrow_feature)
+        assert run(graph) is True
+        state = view(graph, job_id)
+        assert (state["executionState"], state["reason"]) == (
+            expected_state,
+            expected_reason,
+        )
+        if expected_state == "FAILED":
+            assert state["receipt"] is None
+        else:
+            response = graph.http.get(BASE + "/" + job_id + "/result", headers=AUTH)
+            assert response.status_code == 200, response.text
+            first = response.json()["result"]["samples"][0]
+            expected = (
+                100.0 + 0.5 * (first["x"] - ORIGIN_X - 0.5) + 0.25 * (ORIGIN_Y - first["y"] - 0.5)
+            )
+            assert first["elevationM"] == pytest.approx(expected, abs=1e-4)
+
+
+def test_a_reported_vertical_datum_must_also_be_present_in_the_staged_file(tmp_path: Path) -> None:
+    raster = write_raster(tmp_path / "horizontal.tif", observed_vertical=False)
+    with object_server({"bytes": raster.read_bytes()}) as origin:
+        graph = lane(
+            tmp_path,
+            origin,
+            raster,
+            claimed={
+                "observed_vertical_reference": ObservedVerticalReferenceV1(
+                    identifier="EPSG:5773", basis="EGM96 height"
+                )
+            },
+        )
+        job_id = issue(graph)
+        assert run(graph)
+        state = view(graph, job_id)
+        assert (state["executionState"], state["reason"]) == (
+            "FAILED",
+            "SOURCE_MEASUREMENTS_MISMATCH",
+        )
+        assert state["receipt"] is None
+
+
+@pytest.mark.parametrize(
+    "limit", ["max_workspace_bytes", "max_sample_bytes", "max_decompressed_bytes"]
+)
+def test_resource_budget_refuses_a_read_and_releases_its_private_workspace(
+    tmp_path: Path, limit: str
+) -> None:
+    raster = write_raster(tmp_path / "original.tif")
+    envelope = (
+        profile_policy()
+        .resource_envelope.model_copy(
+            update={limit: 16, "max_input_bytes": 1_000_000, "resource_envelope_digest": None}
+        )
+        .sealed()
+    )
+    with object_server({"bytes": raster.read_bytes()}) as origin:
+        graph = lane(tmp_path, origin, raster, policy_overrides={"resource_envelope": envelope})
+        job_id = issue(graph)
+        assert run(graph)
+        state = view(graph, job_id)
+        assert (state["executionState"], state["reason"]) == ("FAILED", "RESOURCE_LIMIT_EXCEEDED")
+        assert state["receipt"] is None
+        assert list(graph.workspace.iterdir()) == []
+
+
+def test_sealed_size_above_transport_limit_is_refused_before_contacting_storage(
+    tmp_path: Path,
+) -> None:
+    raster = write_raster(tmp_path / "original.tif")
+    with object_server({"bytes": raster.read_bytes()}) as origin:
+        graph = lane(tmp_path, origin, raster)
+        graph.transport = replace(
+            graph.transport, max_object_bytes=raster.stat().st_size - 1, max_chunk_bytes=128
+        )
+        job_id = issue(graph)
+    assert run(graph)
+    state = view(graph, job_id)
+    assert (state["executionState"], state["reason"]) == ("FAILED", "RESOURCE_LIMIT_EXCEEDED")
+    assert state["receipt"] is None
+    assert list(graph.workspace.iterdir()) == []
+
+
 def test_bytes_that_differ_from_the_sealed_digest_fail_the_job_without_a_result(
     tmp_path: Path,
 ) -> None:
@@ -260,16 +448,25 @@ def test_bytes_that_differ_from_the_sealed_digest_fail_the_job_without_a_result(
 
 
 @pytest.mark.parametrize(
-    "claimed",
+    ("claimed", "reason"),
     [
-        {"width": 31},
-        {"height": 21},
-        {"transform": (2.0, 0.0, ORIGIN_X, 0.0, -2.0, ORIGIN_Y)},
-        {"observed_crs_identifier": "EPSG:5179"},
+        ({"width": 31}, "SOURCE_MEASUREMENTS_MISMATCH"),
+        ({"height": 21}, "SOURCE_MEASUREMENTS_MISMATCH"),
+        ({"transform": (2.0, 0.0, ORIGIN_X, 0.0, -2.0, ORIGIN_Y)}, "SOURCE_MEASUREMENTS_MISMATCH"),
+        (
+            {"transform": (1.0, 0.0, ORIGIN_X + 1.0, 0.0, -1.0, ORIGIN_Y)},
+            "SOURCE_MEASUREMENTS_MISMATCH",
+        ),
+        ({"dtype": "float64"}, "SOURCE_MEASUREMENTS_MISMATCH"),
+        ({"observed_crs_identifier": "EPSG:5179"}, "SOURCE_MEASUREMENTS_MISMATCH"),
+        ({"observed_crs_digest": "sha256:" + "1" * 64}, "CRS_MISMATCH"),
+        ({"footprint_wkt": "POLYGON ((0 0, 1 0, 1 1, 0 0))"}, "SOURCE_MEASUREMENTS_MISMATCH"),
+        ({"footprint_digest": "sha256:" + "2" * 64}, "SOURCE_MEASUREMENTS_MISMATCH"),
+        ({"nodata_value": -1.0}, "SOURCE_MEASUREMENTS_MISMATCH"),
     ],
 )
 def test_file_facts_must_match_the_sealed_measurements_even_when_bytes_match(
-    tmp_path: Path, claimed: dict[str, Any]
+    tmp_path: Path, claimed: dict[str, Any], reason: str
 ) -> None:
     raster = write_raster(tmp_path / "dsm.tif")
     with object_server({"bytes": raster.read_bytes()}) as origin:
@@ -277,10 +474,7 @@ def test_file_facts_must_match_the_sealed_measurements_even_when_bytes_match(
         job_id = issue(graph)
         assert run(graph) is True
         failed = view(graph, job_id)
-        assert (failed["executionState"], failed["reason"]) == (
-            "FAILED",
-            "SOURCE_MEASUREMENTS_MISMATCH",
-        )
+        assert (failed["executionState"], failed["reason"]) == ("FAILED", reason)
 
 
 def test_an_unreachable_object_store_requeues_the_job_without_a_result(tmp_path: Path) -> None:

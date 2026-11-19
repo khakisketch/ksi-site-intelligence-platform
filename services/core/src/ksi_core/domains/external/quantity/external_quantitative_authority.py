@@ -19,6 +19,7 @@ from typing import Any, Protocol, cast
 from ksi_event_contracts.external_artifact_validation import (
     ArtifactOutcome,
     DecisionVerdict,
+    ExternalArtifactInspectionReportV1,
     ExternalPairUseDecisionV1,
     ExternalValidationPolicyV1,
     SealedExternalSubjectV1,
@@ -46,6 +47,10 @@ from ksi_core.domains.external.ingress.external_reconstruction import ExternalRe
 from ksi_core.domains.external.ingress.external_validation_policy import (
     ExternalValidationPolicyRegistry,
     PolicySelectionStatus,
+)
+from ksi_core.domains.external.quantity.external_profile_difference_authorities import (
+    ExternalProfileDifferenceAuthority,
+    ExternalProfileDifferenceAuthorityPort,
 )
 from ksi_core.domains.external.quantity.external_quantitative_common import (
     _PROFILE,
@@ -86,6 +91,8 @@ _SINGLE_MAPPING_ACTIVATED = "external-quantitative-single-mapping-activated"
 _SINGLE_MAPPING_REVOKED = "external-quantitative-single-mapping-revoked"
 _SINGLE_EXECUTION_ACTIVATED = "external-quantitative-single-execution-activated"
 _SINGLE_EXECUTION_REVOKED = "external-quantitative-single-execution-revoked"
+_PROFILE_MAPPING_ACTIVATED = "external-quantitative-profile-mapping-activated"
+_PROFILE_MAPPING_REVOKED = "external-quantitative-profile-mapping-revoked"
 
 type AnyCompatibilityRecord = (
     ExternalQuantitativeCompatibilityRecord | ExternalSingleVolumeCompatibilityRecord
@@ -668,7 +675,11 @@ class ExternalQuantitativeAuthorityParticipants:
     catalog_authority: ExternalQuantitativeCatalogAuthorityBinding
 
     def current_snapshot(
-        self, record: ExternalQuantitativeCompatibilityRecord, now: datetime
+        self,
+        record: ExternalQuantitativeCompatibilityRecord,
+        now: datetime,
+        *,
+        use: str = "RELATIVE_VOLUME",
     ) -> _QuantitativeParticipantSnapshot | None:
         """Resolve source-backed currentness before the coordinator guard.
 
@@ -679,7 +690,7 @@ class ExternalQuantitativeAuthorityParticipants:
         if catalog_authority is None:
             return None
         selected = self.policy_registry.select_for_use(
-            "RELATIVE_VOLUME", (record.baseline.subject, record.current.subject)
+            use, (record.baseline.subject, record.current.subject)
         )
         policy = selected.policy
         if (
@@ -694,7 +705,14 @@ class ExternalQuantitativeAuthorityParticipants:
             or record.compatibility_rule_digest not in policy.compatibility_mapping_digests
         ):
             return None
-        if not self._record_facts_match(record, policy):
+        inspection_reports = None
+        if use == "PROFILE_DIFFERENCE":
+            before_report = self._current_profile_report(record.baseline)
+            after_report = self._current_profile_report(record.current)
+            if before_report is None or after_report is None:
+                return None
+            inspection_reports = (before_report, after_report)
+        if not self._record_facts_match(record, policy, reports=inspection_reports):
             return None
         evidence_records: list[tuple[object, object]] = []
         for binding, evidence_digest in zip(
@@ -712,6 +730,7 @@ class ExternalQuantitativeAuthorityParticipants:
             catalog_authority=catalog_authority,
             policy=policy,
             evidence_records=(evidence_records[0], evidence_records[1]),
+            inspection_reports=inspection_reports,
         )
 
     def locally_current(
@@ -719,13 +738,15 @@ class ExternalQuantitativeAuthorityParticipants:
         record: ExternalQuantitativeCompatibilityRecord,
         snapshot: _QuantitativeParticipantSnapshot,
         now: datetime,
+        *,
+        use: str = "RELATIVE_VOLUME",
     ) -> bool:
         """Recheck retained currentness while the shared coordinator excludes mutation."""
         if not self.catalog_authority.locally_permits(record, snapshot.catalog_authority, now):
             return False
         if not self.policy_registry.locally_current_use_permitted(
             record.validation_policy_digest,
-            use="RELATIVE_VOLUME",
+            use=use,
             subjects=(record.baseline.subject, record.current.subject),
             at=now,
         ):
@@ -736,9 +757,24 @@ class ExternalQuantitativeAuthorityParticipants:
             selected.status is not PolicySelectionStatus.ACTIVE
             or policy is None
             or policy != snapshot.policy
-            or not self._record_facts_match(record, policy)
+            or (
+                use != "PROFILE_DIFFERENCE"
+                and not self._record_facts_match(record, policy)
+            )
         ):
             return False
+        if use == "PROFILE_DIFFERENCE":
+            reports = snapshot.inspection_reports
+            if reports is None or not self._record_facts_match(record, policy, reports=reports):
+                return False
+            for binding, report in zip((record.baseline, record.current), reports, strict=True):
+                if (
+                    self.inspections.report_for_locally_current_use(
+                        binding.subject, report, now=now
+                    )
+                    != report
+                ):
+                    return False
         for binding, evidence_digest, expected in zip(
             (record.baseline, record.current),
             record.evidence_record_digests,
@@ -760,7 +796,14 @@ class ExternalQuantitativeAuthorityParticipants:
         return snapshot is not None and self.locally_current(record, snapshot, now)
 
     def _record_facts_match(
-        self, record: ExternalQuantitativeCompatibilityRecord, policy: ExternalValidationPolicyV1
+        self,
+        record: ExternalQuantitativeCompatibilityRecord,
+        policy: ExternalValidationPolicyV1,
+        *,
+        reports: tuple[
+            ExternalArtifactInspectionReportV1, ExternalArtifactInspectionReportV1
+        ]
+        | None = None,
     ) -> bool:
         del policy
         return (
@@ -771,10 +814,23 @@ class ExternalQuantitativeAuthorityParticipants:
                     binding,
                     validation_policy_digest=record.validation_policy_digest,
                     inspector_build_digest=record.inspector_build_digest,
+                    report=reports[index] if reports is not None else None,
                 )
-                for binding in (record.baseline, record.current)
+                for index, binding in enumerate((record.baseline, record.current))
             )
         )
+
+    def _current_profile_report(
+        self, binding: ExternalVolumeInputBindingV1
+    ) -> ExternalArtifactInspectionReportV1 | None:
+        snapshot = self.inspections.public_snapshot(binding.subject)
+        report = snapshot.report
+        if (
+            report is None
+            or report.report_digest != binding.inspection_report_digest
+        ):
+            return None
+        return report
 
     def _zone_facts_match(self, zone: ExternalVolumeZoneSnapshotV1, *, site_id: str) -> bool:
         area = self.work_areas.get(zone.work_area_id)
@@ -793,6 +849,7 @@ class ExternalQuantitativeAuthorityParticipants:
         *,
         validation_policy_digest: str,
         inspector_build_digest: str,
+        report: ExternalArtifactInspectionReportV1 | None = None,
     ) -> bool:
         revision = self.reconstruction.resolve_sealed_subject(binding.subject)
         if revision is None or revision.manifest is None:
@@ -825,13 +882,20 @@ class ExternalQuantitativeAuthorityParticipants:
         )
         if entry is None:
             return False
-        report = self.inspections.historical_report(
-            binding.subject,
-            report_digest=binding.inspection_report_digest,
-            policy_digest=validation_policy_digest,
-        )
+        current_report = report is not None
+        if report is None:
+            report = self.inspections.historical_report(
+                binding.subject,
+                report_digest=binding.inspection_report_digest,
+                policy_digest=validation_policy_digest,
+            )
         if (
             report is None
+            or (
+                current_report
+                and report.report_digest != binding.inspection_report_digest
+            )
+            or report.inspection_policy_digest != validation_policy_digest
             or report.inspector_build_digest != inspector_build_digest
             or report.inspection_policy_digest != validation_policy_digest
             or any(
@@ -977,6 +1041,9 @@ class _QuantitativeParticipantSnapshot:
     catalog_authority: ExternalQuantitativeCatalogAuthorityRecord
     policy: ExternalValidationPolicyV1
     evidence_records: tuple[tuple[object, object], tuple[object, object]]
+    inspection_reports: tuple[
+        ExternalArtifactInspectionReportV1, ExternalArtifactInspectionReportV1
+    ] | None = None
 
 
 def _snapshot_epoch_rmses(
@@ -1180,6 +1247,8 @@ class ExternalQuantitativeAuthorityCatalog:
         self._lock = threading.RLock()
         self._mappings: dict[str, _MappingState] = {}
         self._current_participant_snapshots: dict[str, _QuantitativeParticipantSnapshot] = {}
+        self._profile_mappings: dict[str, _MappingState] = {}
+        self._current_profile_snapshots: dict[str, _QuantitativeParticipantSnapshot] = {}
         self._executions: dict[str, _ExecutionState] = {}
         self._single_mappings: dict[str, _SingleMappingState] = {}
         self._current_single_snapshots: dict[str, _SingleParticipantSnapshot] = {}
@@ -1359,6 +1428,323 @@ class ExternalQuantitativeAuthorityCatalog:
             except JournalSealedError:
                 return False
         return True
+
+    def admit_profile_mapping(
+        self, record: ExternalQuantitativeCompatibilityRecord, *, actor: str, now: datetime
+    ) -> ExternalQuantitativeCompatibilityRecord | None:
+        """Admit an exact profile-comparison authority after Core validates every input."""
+        _utc(now, name="profile mapping activation time")
+        if not actor or actor != actor.strip():
+            raise ValueError("profile mapping activation actor is invalid")
+        sealed = record.sealed()
+        if not sealed.is_active_at(now):
+            return None
+        participants = self._participants
+        if participants is None:
+            return None
+        if actor != participants.catalog_authority.administration_actor_id:
+            return None
+        assert sealed.mapping_digest is not None
+        with self._lock:
+            prior = self._profile_mappings.get(sealed.mapping_digest)
+            if prior is not None:
+                return sealed if prior.record == sealed else None
+        snapshot = participants.current_snapshot(sealed, now, use="PROFILE_DIFFERENCE")
+        if snapshot is None:
+            return None
+        with self.currentness_coordinator.mutation(), self._lock:
+            prior = self._profile_mappings.get(sealed.mapping_digest)
+            if prior is not None:
+                return sealed if prior.record == sealed else None
+            if any(
+                state.active_at(now)
+                and state.record.baseline.subject == sealed.baseline.subject
+                and state.record.current.subject == sealed.current.subject
+                and state.record.zone_snapshot.work_area_id == sealed.zone_snapshot.work_area_id
+                and state.record.validation_policy_digest == sealed.validation_policy_digest
+                for state in self._profile_mappings.values()
+            ):
+                raise DuplicateActiveMappingError(
+                    "an active profile mapping already covers this pair, work area and policy; "
+                    "revoke it before admitting a replacement"
+                )
+            if not participants.locally_current(
+                sealed, snapshot, now, use="PROFILE_DIFFERENCE"
+            ):
+                return None
+            event: dict[str, object] = {
+                "kind": _PROFILE_MAPPING_ACTIVATED,
+                "version": _VERSION,
+                "mapping": {
+                    "mappingRecordDigest": sealed.mapping_digest,
+                    **sealed.canonical_payload(),
+                },
+                "activatedBy": actor,
+                "activatedAt": _wire_time(now),
+            }
+            try:
+                self._append_apply(event)
+            except JournalSealedError:
+                return None
+        return sealed
+
+    def revoke_profile_mapping(self, mapping_digest: str, *, actor: str, now: datetime) -> bool:
+        _required_digest(mapping_digest, name="profile mapping")
+        _utc(now, name="profile mapping revocation time")
+        if not actor or actor != actor.strip():
+            raise ValueError("profile mapping revocation actor is invalid")
+        participants = self._participants
+        if participants is None or actor != participants.catalog_authority.administration_actor_id:
+            return False
+        with self._lock:
+            observed_state = self._profile_mappings.get(mapping_digest)
+        if observed_state is None or now < observed_state.activated_at:
+            return False
+        if observed_state.record.organization_id != participants.catalog_authority.organization_id:
+            return False
+        with self.currentness_coordinator.mutation(), self._lock:
+            state = self._profile_mappings.get(mapping_digest)
+            if (
+                state is None
+                or state != observed_state
+                or now < state.activated_at
+            ):
+                return False
+            if state.revoked_at is not None:
+                return state.revoked_at == now
+            event: dict[str, object] = {
+                "kind": _PROFILE_MAPPING_REVOKED,
+                "version": _VERSION,
+                "mappingDigest": mapping_digest,
+                "revokedBy": actor,
+                "revokedAt": _wire_time(now),
+            }
+            try:
+                self._append_apply(event)
+            except JournalSealedError:
+                return False
+        return True
+
+    def profile_difference_port(self) -> ExternalProfileDifferenceAuthorityPort:
+        """Return the production profile authority adapter for this catalog."""
+        return _CatalogProfileDifferenceAuthorityPort(self)
+
+    def resolve_profile_for_use(
+        self,
+        *,
+        baseline: SealedExternalSubjectV1,
+        current: SealedExternalSubjectV1,
+        work_area_id: str,
+        baseline_artifact_id: str,
+        baseline_source_sha256: str,
+        current_artifact_id: str,
+        current_source_sha256: str,
+        policy: ExternalValidationPolicyV1,
+        baseline_capture_started_at: datetime,
+        baseline_capture_ended_at: datetime,
+        current_capture_started_at: datetime,
+        current_capture_ended_at: datetime,
+        observed_crs_digest: str,
+        observed_vertical_reference_digest: str,
+        now: datetime,
+    ) -> ExternalProfileDifferenceAuthority | None:
+        _utc(now, name="profile mapping use time")
+        policy_digest = policy.policy_digest
+        if not isinstance(policy_digest, str) or not work_area_id:
+            return None
+        rule_digest = CompatibilityRuleDescriptorV1().canonical_digest()
+        if rule_digest not in policy.compatibility_mapping_digests:
+            return None
+        with self._lock:
+            matches = tuple(
+                state
+                for state in self._profile_mappings.values()
+                if state.active_at(now)
+                and state.record.baseline.subject == baseline
+                and state.record.current.subject == current
+                and state.record.zone_snapshot.work_area_id == work_area_id
+                and state.record.validation_policy_digest == policy_digest
+            )
+        if len(matches) != 1:
+            return None
+        record = matches[0].record
+        authority = self._profile_authority_for_record(record)
+        if not self._profile_authority_binds_request(
+            authority,
+            baseline=baseline,
+            current=current,
+            work_area_id=work_area_id,
+            policy=policy,
+            baseline_artifact_id=baseline_artifact_id,
+            baseline_source_sha256=baseline_source_sha256,
+            current_artifact_id=current_artifact_id,
+            current_source_sha256=current_source_sha256,
+            baseline_capture_started_at=baseline_capture_started_at,
+            baseline_capture_ended_at=baseline_capture_ended_at,
+            current_capture_started_at=current_capture_started_at,
+            current_capture_ended_at=current_capture_ended_at,
+            observed_crs_digest=observed_crs_digest,
+            observed_vertical_reference_digest=observed_vertical_reference_digest,
+        ):
+            return None
+        participants = self._participants
+        if participants is None:
+            return None
+        snapshot = participants.current_snapshot(record, now, use="PROFILE_DIFFERENCE")
+        if snapshot is None:
+            return None
+        with self.currentness_coordinator.guarded_read(), self._lock:
+            state = self._profile_mappings.get(record.mapping_digest or "")
+            if (
+                state is None
+                or state.record != record
+                or not state.active_at(now)
+                or not participants.locally_current(record, snapshot, now, use="PROFILE_DIFFERENCE")
+            ):
+                return None
+            assert record.mapping_digest is not None
+            self._current_profile_snapshots[record.mapping_digest] = snapshot
+        return authority
+
+    def is_current_for_profile_use(
+        self, authority: ExternalProfileDifferenceAuthority, *, now: datetime
+    ) -> bool:
+        _utc(now, name="profile mapping currentness time")
+        digest = authority.compatibility_mapping_digest
+        with self._lock:
+            state = self._profile_mappings.get(digest)
+            record = state.record if state is not None else None
+            snapshot = self._current_profile_snapshots.get(digest)
+        participants = self._participants
+        if record is None or snapshot is None or participants is None:
+            return False
+        expected = self._profile_authority_for_record(record)
+        with self.currentness_coordinator.guarded_read(), self._lock:
+            state = self._profile_mappings.get(digest)
+            return bool(
+                state
+                and state.record == record
+                and state.active_at(now)
+                and authority == expected
+                and participants.locally_current(
+                    record, snapshot, now, use="PROFILE_DIFFERENCE"
+                )
+            )
+
+    def resolve_historical_profile_for_decision(
+        self, decision: ExternalPairUseDecisionV1
+    ) -> ExternalProfileDifferenceAuthority | None:
+        if (
+            decision.use != "PROFILE_DIFFERENCE"
+            or decision.verdict is DecisionVerdict.BLOCKED
+            or decision.compatibility_mapping_digest is None
+            or decision.policy_digest is None
+            or decision.zone is not None
+            or decision.profile_work_area_id is None
+            or len(decision.evidence_record_digests) != 2
+        ):
+            return None
+        with self._lock:
+            state = self._profile_mappings.get(decision.compatibility_mapping_digest)
+            if state is None or not state.active_at(decision.decided_at):
+                return None
+            record = state.record
+            if not self._profile_decision_binds_record(decision, record):
+                return None
+        return self._profile_authority_for_record(record)
+
+    @staticmethod
+    def _profile_authority_binds_request(
+        authority: ExternalProfileDifferenceAuthority,
+        *,
+        baseline: SealedExternalSubjectV1,
+        current: SealedExternalSubjectV1,
+        work_area_id: str,
+        policy: ExternalValidationPolicyV1,
+        baseline_artifact_id: str,
+        baseline_source_sha256: str,
+        current_artifact_id: str,
+        current_source_sha256: str,
+        baseline_capture_started_at: datetime,
+        baseline_capture_ended_at: datetime,
+        current_capture_started_at: datetime,
+        current_capture_ended_at: datetime,
+        observed_crs_digest: str,
+        observed_vertical_reference_digest: str,
+    ) -> bool:
+        return (
+            authority.work_area_id == work_area_id
+            and authority.authorized_by(policy)
+            and authority.binds(
+                baseline=baseline,
+                current=current,
+                baseline_artifact_id=baseline_artifact_id,
+                baseline_source_sha256=baseline_source_sha256,
+                current_artifact_id=current_artifact_id,
+                current_source_sha256=current_source_sha256,
+                baseline_capture_started_at=baseline_capture_started_at,
+                baseline_capture_ended_at=baseline_capture_ended_at,
+                current_capture_started_at=current_capture_started_at,
+                current_capture_ended_at=current_capture_ended_at,
+                observed_crs_digest=observed_crs_digest,
+                observed_vertical_reference_digest=observed_vertical_reference_digest,
+                policy_digest=policy.policy_digest or "",
+            )
+        )
+
+    @staticmethod
+    def _profile_decision_binds_record(
+        decision: ExternalPairUseDecisionV1,
+        record: ExternalQuantitativeCompatibilityRecord,
+    ) -> bool:
+        return (
+            decision.baseline_subject == record.baseline.subject
+            and decision.current_subject == record.current.subject
+            and decision.policy_digest == record.validation_policy_digest
+            and decision.compatibility_mapping_digest == record.mapping_digest
+            and decision.profile_work_area_id == record.zone_snapshot.work_area_id
+            and decision.baseline_artifact_id == record.baseline.dsm_artifact_id
+            and decision.baseline_source_sha256 == record.baseline.observed_sha256
+            and decision.current_artifact_id == record.current.dsm_artifact_id
+            and decision.current_source_sha256 == record.current.observed_sha256
+            and decision.baseline_inspection_report_digest
+            == record.baseline.inspection_report_digest
+            and decision.current_inspection_report_digest
+            == record.current.inspection_report_digest
+            and decision.evidence_record_digests == record.evidence_record_digests
+        )
+
+    @staticmethod
+    def _profile_authority_for_record(
+        record: ExternalQuantitativeCompatibilityRecord,
+    ) -> ExternalProfileDifferenceAuthority:
+        assert record.mapping_digest is not None
+        return ExternalProfileDifferenceAuthority(
+            baseline_subject_digest=record.baseline.subject.canonical_digest(),
+            current_subject_digest=record.current.subject.canonical_digest(),
+            baseline_artifact_id=record.baseline.dsm_artifact_id,
+            baseline_source_sha256=record.baseline.observed_sha256,
+            current_artifact_id=record.current.dsm_artifact_id,
+            current_source_sha256=record.current.observed_sha256,
+            baseline_capture_started_at=record.baseline.captured_from,
+            baseline_capture_ended_at=record.baseline.captured_to,
+            current_capture_started_at=record.current.captured_from,
+            current_capture_ended_at=record.current.captured_to,
+            observed_crs_digest=record.baseline.observed_crs_digest,
+            observed_vertical_reference_digest=record.baseline.observed_vertical_reference_digest,
+            policy_digest=record.validation_policy_digest,
+            compatibility_mapping_digest=record.mapping_digest,
+            historical_authority_digest=record.mapping_digest,
+            valid_from=record.valid_from,
+            valid_until=record.valid_until,
+            synthetic_test_only=False,
+            compatibility_rule_digest=record.compatibility_rule_digest
+            or record.compatibility_rule_canonical_digest(),
+            work_area_id=record.zone_snapshot.work_area_id,
+            evidence_record_digests=record.evidence_record_digests,
+            baseline_inspection_report_digest=record.baseline.inspection_report_digest,
+            current_inspection_report_digest=record.current.inspection_report_digest,
+        )
 
     def _current_single_participants(
         self, record: ExternalSingleVolumeCompatibilityRecord, now: datetime
@@ -2382,7 +2768,72 @@ class ExternalQuantitativeAuthorityCatalog:
             if event.get("version") != _VERSION:
                 raise ValueError("event version mismatch")
             kind = event.get("kind")
-            if kind == _MAPPING_ACTIVATED:
+            if kind == _PROFILE_MAPPING_ACTIVATED:
+                expected = {
+                    "kind",
+                    "version",
+                    "mapping",
+                    "activatedBy",
+                    "activatedAt",
+                    "eventDigest",
+                }
+                if (
+                    set(event) != expected
+                    or not isinstance(event["activatedBy"], str)
+                    or not event["activatedBy"]
+                    or event["activatedBy"] != event["activatedBy"].strip()
+                ):
+                    raise ValueError("profile mapping activation shape is invalid")
+                record = ExternalQuantitativeCompatibilityRecord.from_event_payload(
+                    event["mapping"]
+                )
+                assert record.mapping_digest is not None
+                activated_at = _parse_time(event["activatedAt"], name="profile mapping activatedAt")
+                if not record.is_active_at(activated_at):
+                    raise ValueError("profile mapping activation lies outside validity")
+                prior = self._profile_mappings.get(record.mapping_digest)
+                if prior is not None and prior.record != record:
+                    raise ValueError("profile mapping identity conflicts")
+                if prior is None:
+                    if any(
+                        state.active_at(activated_at)
+                        and state.record.baseline.subject == record.baseline.subject
+                        and state.record.current.subject == record.current.subject
+                        and state.record.zone_snapshot.work_area_id
+                        == record.zone_snapshot.work_area_id
+                        and state.record.validation_policy_digest
+                        == record.validation_policy_digest
+                        for state in self._profile_mappings.values()
+                    ):
+                        raise ValueError("profile mapping has an ambiguous active scope")
+                    self._profile_mappings[record.mapping_digest] = _MappingState(
+                        record, activated_at
+                    )
+            elif kind == _PROFILE_MAPPING_REVOKED:
+                expected = {
+                    "kind",
+                    "version",
+                    "mappingDigest",
+                    "revokedBy",
+                    "revokedAt",
+                    "eventDigest",
+                }
+                if (
+                    set(event) != expected
+                    or not isinstance(event["revokedBy"], str)
+                    or not event["revokedBy"]
+                    or event["revokedBy"] != event["revokedBy"].strip()
+                ):
+                    raise ValueError("profile mapping revocation shape is invalid")
+                mapping_digest = _required_digest(event["mappingDigest"], name="profile mapping")
+                revoked_at = _parse_time(event["revokedAt"], name="profile mapping revokedAt")
+                state = self._profile_mappings.get(mapping_digest)
+                if state is None or revoked_at < state.activated_at:
+                    raise ValueError("profile mapping revoked before activation")
+                if state.revoked_at is not None and state.revoked_at != revoked_at:
+                    raise ValueError("profile mapping has conflicting revocation")
+                self._profile_mappings[mapping_digest] = replace(state, revoked_at=revoked_at)
+            elif kind == _MAPPING_ACTIVATED:
                 expected = {
                     "kind",
                     "version",
@@ -2746,6 +3197,63 @@ class ExternalSingleVolumeMappingPort:
         self, decision: ExternalSingleVolumeDecisionV1
     ) -> ExternalSingleVolumeAuthority | None:
         return self._catalog.resolve_historical_for_single_decision(decision)
+
+
+class _CatalogProfileDifferenceAuthorityPort:
+    """Profile-difference authority view over separately admitted catalog records."""
+
+    def __init__(self, catalog: ExternalQuantitativeAuthorityCatalog) -> None:
+        self._catalog = catalog
+        self.currentness_coordinator = catalog.currentness_coordinator
+
+    def resolve_for_use(
+        self,
+        *,
+        baseline: SealedExternalSubjectV1,
+        current: SealedExternalSubjectV1,
+        baseline_artifact_id: str,
+        baseline_source_sha256: str,
+        current_artifact_id: str,
+        current_source_sha256: str,
+        policy: ExternalValidationPolicyV1,
+        baseline_capture_started_at: datetime,
+        baseline_capture_ended_at: datetime,
+        current_capture_started_at: datetime,
+        current_capture_ended_at: datetime,
+        observed_crs_digest: str,
+        observed_vertical_reference_digest: str,
+        now: datetime,
+        work_area_id: str | None = None,
+    ) -> ExternalProfileDifferenceAuthority | None:
+        if work_area_id is None:
+            return None
+        return self._catalog.resolve_profile_for_use(
+            baseline=baseline,
+            current=current,
+            work_area_id=work_area_id,
+            baseline_artifact_id=baseline_artifact_id,
+            baseline_source_sha256=baseline_source_sha256,
+            current_artifact_id=current_artifact_id,
+            current_source_sha256=current_source_sha256,
+            policy=policy,
+            baseline_capture_started_at=baseline_capture_started_at,
+            baseline_capture_ended_at=baseline_capture_ended_at,
+            current_capture_started_at=current_capture_started_at,
+            current_capture_ended_at=current_capture_ended_at,
+            observed_crs_digest=observed_crs_digest,
+            observed_vertical_reference_digest=observed_vertical_reference_digest,
+            now=now,
+        )
+
+    def is_current_for_use(
+        self, authority: ExternalProfileDifferenceAuthority, *, now: datetime
+    ) -> bool:
+        return self._catalog.is_current_for_profile_use(authority, now=now)
+
+    def resolve_historical_for_decision(
+        self, decision: ExternalPairUseDecisionV1
+    ) -> ExternalProfileDifferenceAuthority | None:
+        return self._catalog.resolve_historical_profile_for_decision(decision)
 
 
 __all__ = [

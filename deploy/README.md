@@ -26,6 +26,10 @@ Analysis/공간데이터 워커의 보호된 구성·활성화와 실제 운영 
 마이그레이션하지 않는다). 호스트의 명명 볼륨에 고유한 데이터가 있을 수 있으므로 삭제/이름 변경/
 자동 정리를 허용하지 않으며, 선언을 재생성하지 않는다. 실제 이미지 빌드·기동·배포·운영 복구는 별도 승인이다.
 
+### MinIO 이미지 확보
+
+2026-11-19 로컬 검증에서 Docker Hub가 배포 조합에 고정된 MinIO 서버와 `mc` 이미지의 pull을 거부했다. 새 호스트에서 이 조합을 준비할 때는 두 이미지의 Compose digest와 일치하는 사본을 먼저 확보한다. 같은 릴리스의 공식 Linux 바이너리로 S3 동작을 확인할 수 있으나, 그 검증으로는 배포 이미지 확보 여부를 확인할 수 없다. [MinIO 서버 릴리스](https://github.com/minio/minio/releases/tag/RELEASE.2025-09-07T16-13-09Z) · [mc 릴리스](https://github.com/minio/mc/releases/tag/RELEASE.2025-08-13T08-35-41Z)
+
 ## External reconstruction private candidate
 
 `compose.external-reconstruction.yaml` is an additive `ksi-external-rc`
@@ -89,9 +93,7 @@ regular/non-symlink/single-link 파일과 안전한 상위 경로를 운영자�
 VM 예제의 container 경로만 설정하고 마운트를 생략하면 Core는 닫힌 상태로 기동을 거부한다.
 이 연결은 subject 매핑·자격·워커를 생성하거나 운영 배포를 승인하지 않는다.
 
-현재 production 팩토리는 `spatial_data`를 주입하지 않는다. 실제 로컬 공간데이터 조립은
-`SpatialDataLocalAssemblyConfig`를 명시하는 별도 경로다. 이 구성 정리로 새 production
-환경변수나 활성화 기능이 생겼다고 간주하지 않는다.
+정식 Core 팩토리는 `KSI_CORE_SPATIAL_DATA_CONFIG_FILE`이 가리키는 보호된 설정과 권리 파일을 검증한 뒤 공간데이터 경로를 장착한다. 이 변수를 생략하면 해당 경로는 닫혀 있다.
 플랫폼 부팅은 Mission 서명키 디렉터리(`KSI_CORE_SIGNING_KEYS_DIR`)와 장비 증명
 파일(`KSI_CORE_DEVICE_ATTESTATION_KEYS_FILE`)을 요구하지도 읽지도 않으므로
 `compose.yaml` core 서비스는 그 둘을 마운트하지 않는다. 레거시 팩토리
@@ -100,6 +102,8 @@ VM 예제의 container 경로만 설정하고 마운트를 생략하면 Core는 
 `ksi_core.composition.platform_production:build_platform_production_app` 가
 정상 부팅 경로) `.env.example` 의 서명키·증명 관련 주석과
 `device-attestation-keys.example.json` 은 레거시 기록으로 유지된다.
+
+저장 선의 단면을 사용할 때는 공간데이터 설정과 함께 `KSI_CORE_SURFACE_PROFILE_CONFIG_FILE`에 서명된 단면 활성화를 포함한 보호 파일을 지정한다. `ksi-surface-profile-worker`가 DSM을 읽고 운영자는 `ksi-surface-profile`로 저장 결과를 조회한다. Linux 호스트 준비, 이전 워커 설정 전환과 두 명령의 예시는 [공간데이터 운영 지침 §9.2–10](../docs/ops/SPATIAL_DATA_PRODUCTION_PROVISIONING.md#92-저장-단면-워커-기동)을 따른다.
 
 ### 역사적 취득 설정과 출처 — 현재 플랫폼 설정/활성화 절차가 아님
 

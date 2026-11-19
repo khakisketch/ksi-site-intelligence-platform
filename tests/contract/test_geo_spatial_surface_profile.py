@@ -22,11 +22,13 @@ from ksi_event_contracts.external_artifact_validation import (
 from ksi_geo_spatial.crs import reproject_point
 from ksi_geo_spatial.surface_profile import (
     ComparisonInvalidReason,
+    ProfileSample,
     SampleInvalidReason,
     SurfaceProfileError,
     SurfaceProfileErrorReason,
     SurfaceProfilePlan,
     SurfaceProfilePolicy,
+    compare_profile_samples,
     compare_surface_profiles,
     inspect_profile_source,
     locate_profile_samples,
@@ -537,6 +539,27 @@ def test_unknown_on_either_side_is_not_a_zero_difference(tmp_path: Path) -> None
     # 같은 높이만 있고 상승/하강이 없으면 최대값은 지어내지 않는다.
     assert comparison.largest_rise_m is None
     assert comparison.largest_drop_m is None
+
+
+def test_shared_profile_sample_kernel_requires_exact_xy_positions() -> None:
+    baseline = (
+        ProfileSample(0, 0.0, 10.0, 20.0, 2.0, None),
+        ProfileSample(1, 1.0, 11.0, 20.0, None, SampleInvalidReason.NODATA),
+    )
+    current = (
+        ProfileSample(0, 0.0, 10.0, 20.0, 3.5, None),
+        ProfileSample(1, 1.0, 11.0, 20.0, 7.0, None),
+    )
+
+    rows = compare_profile_samples(baseline, current)
+    assert rows[0].difference_m == pytest.approx(1.5)
+    assert rows[1].difference_m is None
+    assert rows[1].invalid_reason is ComparisonInvalidReason.BASELINE_UNAVAILABLE
+
+    moved = (current[0], ProfileSample(1, 1.0, 11.0, 20.01, 7.0, None))
+    with pytest.raises(SurfaceProfileError) as excinfo:
+        compare_profile_samples(baseline, moved)
+    assert _reason(excinfo) is SurfaceProfileErrorReason.PLAN_MISMATCH
 
 
 def test_only_profiles_read_with_the_same_plan_can_be_compared(tmp_path: Path) -> None:

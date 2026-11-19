@@ -24,6 +24,7 @@ from pydantic import Field
 
 from ksi_processing_controller.external_object_streams import ExternalObjectTransportPolicyV1
 from ksi_processing_controller.spatial_data_worker_config import (
+    SpatialDataSandboxSettingsV1,
     SpatialDataWorkerConfigError,
     _ObjectSettings,
     _path,
@@ -55,6 +56,8 @@ class SurfaceProfileWorkerConfigV1(SpatialDataModel):
     trusted_public_key: str = Field(strict=True, min_length=1, max_length=64, repr=False)
     revoked_activation_digests: tuple[Digest, ...] = Field(max_length=4096)
     object_transport: _ObjectSettings
+    # Older configs can still be read. Starting the worker requires pinned isolation material.
+    sandbox: SpatialDataSandboxSettingsV1 | None = None
 
     @property
     def worker_instance_id(self) -> str:

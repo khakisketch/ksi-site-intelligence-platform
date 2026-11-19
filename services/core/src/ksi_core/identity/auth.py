@@ -923,6 +923,9 @@ _SPATIAL_DATA_ROUTE_ALLOWLIST: frozenset[tuple[str, str]] = frozenset(
     }
 )
 _SURFACE_PROFILE_BASE = "/v1/sites/{site_id}/work-areas/{work_area_id}/surface-profile-jobs"
+_SURFACE_PROFILE_COMPARISONS = (
+    "/v1/sites/{site_id}/work-areas/{work_area_id}/surface-profile-comparisons"
+)
 _SURFACE_PROFILE_ROUTE_ALLOWLIST: frozenset[tuple[str, str]] = frozenset(
     {
         ("GET", _SURFACE_PROFILE_BASE),
@@ -930,6 +933,8 @@ _SURFACE_PROFILE_ROUTE_ALLOWLIST: frozenset[tuple[str, str]] = frozenset(
         ("GET", _SURFACE_PROFILE_BASE + "/{job_id}"),
         ("GET", _SURFACE_PROFILE_BASE + "/{job_id}/result"),
         ("POST", _SURFACE_PROFILE_BASE + "/{job_id}/cancel"),
+        ("POST", _SURFACE_PROFILE_COMPARISONS),
+        ("GET", _SURFACE_PROFILE_COMPARISONS),
     }
 )
 _SPATIAL_DATA_ASSET_BASE = "/v1/sites/{site_id}/work-areas/{work_area_id}/spatial-data-assets"

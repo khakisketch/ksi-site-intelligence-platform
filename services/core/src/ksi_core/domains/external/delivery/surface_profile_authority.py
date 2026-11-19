@@ -18,6 +18,7 @@ asked about *exactly those cells* — never the line's bounding box and never th
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import datetime
 from typing import Any, Literal, Protocol
 
@@ -45,10 +46,9 @@ from ksi_geo_spatial.surface_profile import (
     SurfaceProfileErrorReason,
     SurfaceProfilePlan,
     SurfaceProfilePolicy,
-    locate_profile_samples,
-    neighbour_window,
     plan_surface_profile,
     profile_support_blocker,
+    profile_window_geometry,
 )
 
 from ksi_core.domains.external.delivery.errors import SpatialDataDomainError
@@ -177,23 +177,12 @@ def read_window_for(
     """The cells the sampler will read for this plan on this source, or ``None`` if none."""
     measured = source.inspection.measurements
     assert measured is not None
-    a, _, c, _, e, f = measured.transform
-    located = locate_profile_samples(
-        plan,
-        left=c,
-        top=f,
-        cell_size_x=a,
-        cell_size_y=-e,
-        width=measured.width,
-        height=measured.height,
-    )
-    span = neighbour_window(located)
-    if span is None:
+    geometry = profile_window_geometry(measured, plan)
+    if geometry is None:
         return None
-    col0, col1, row0, row1 = span
     return SurfaceProfileReadWindowV1(
-        pixel_window=span,
-        actual_bounds=(c + a * col0, f + e * row1, c + a * col1, f + e * row0),
+        pixel_window=geometry.pixel_window,
+        actual_bounds=geometry.actual_bounds,
     )
 
 
@@ -210,6 +199,7 @@ class SurfaceProfileCoreAuthority:
         currentness: SpatialDataJobCurrentnessPort,
         data_policy: SpatialDataPolicyV1,
         activation: SurfaceProfileActivationV1,
+        activation_is_current: Callable[[datetime], bool] | None = None,
         declarations: _Declarations | None = None,
         profile_policy_digest: str,
         runtime_digest: str,
@@ -235,6 +225,17 @@ class SurfaceProfileCoreAuthority:
         self._currentness = currentness
         self._data_policy = data_policy.model_copy(deep=True)
         self._activation = activation.model_copy(deep=True)
+        self._activation_is_current = activation_is_current
+
+    def _profile_activation_is_current(self, now: datetime) -> bool:
+        if not self._activation.is_current_at(now):
+            return False
+        if self._activation_is_current is None:
+            return True
+        try:
+            return self._activation_is_current(now) is True
+        except Exception:
+            return False
 
     def uses_exact_participants(
         self,
@@ -301,6 +302,10 @@ class SurfaceProfileCoreAuthority:
         policy: SurfaceProfilePolicyV1,
         now: datetime,
     ) -> SurfaceProfileAdmission:
+        if principal.organization_id != self._activation.organization_id:
+            raise SurfaceProfileDomainError("PERMISSION_DENIED", 403)
+        if not self._profile_activation_is_current(now):
+            raise SurfaceProfileDomainError("POLICY_UNAVAILABLE", 503)
         feature = self._features.get(
             organization_id=principal.organization_id,
             site_id=site_id,
@@ -468,7 +473,7 @@ class SurfaceProfileCoreAuthority:
     def worker_is_activated(self, worker: Principal, instance_id: str, now: datetime) -> bool:
         activation = self._activation
         return (
-            activation.is_current_at(now)
+            self._profile_activation_is_current(now)
             and worker.organization_id == activation.organization_id
             and worker.principal_id == activation.worker_principal_id
             and instance_id == activation.worker_instance_id

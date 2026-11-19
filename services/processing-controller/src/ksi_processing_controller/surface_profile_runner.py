@@ -1,8 +1,7 @@
 """단면 작업 한 건: 봉인된 바이트 확인, 파일 사실 재대조, 한도 있는 계산, receipt 보고.
 
 Core가 준 원본 capability로 바이트를 받아 길이와 SHA-256을 대조한 뒤에만 래스터를 연다.
-계산은 `read_surface_profile` 하나를 호출하며 한도를 넓히지 않는다. 이 프로세스는 OS 수준
-격리(자원 제한·네임스페이스)를 제공하지 않는다. 시간·메모리·동시성 한도는 별도 증거가 필요하다.
+부모는 다운로드와 Core 권한을 맡고, 계산 중에도 격리 실행기에 현재 lease를 확인해 준다.
 """
 
 from __future__ import annotations
@@ -14,26 +13,16 @@ from contextlib import suppress
 from datetime import datetime
 from pathlib import Path
 from time import monotonic
-from typing import cast, get_args
+from typing import Protocol, cast, get_args
 from uuid import uuid4
 
 from ksi_event_contracts.processing_artifact import ProcessingArtifactKind
-from ksi_event_contracts.surface_profile import (
-    CreateSurfaceProfileV1,
-    SurfaceProfileRefusalV1,
-    SurfaceProfileResultV1,
-)
+from ksi_event_contracts.surface_profile import SurfaceProfileResultV1
 from ksi_event_contracts.surface_profile_job import (
     SurfaceProfileAttemptV1,
     SurfaceProfileFrozenJobV1,
     SurfaceProfileJobReasonV1,
     SurfaceProfileReceiptV1,
-)
-from ksi_geo_spatial.crs import normalise_crs
-from ksi_geo_spatial.surface_profile import (
-    SurfaceProfileError,
-    SurfaceProfilePolicy,
-    inspect_profile_source,
 )
 
 from ksi_processing_controller.external_artifact_inspection_worker import ExternalArtifactInputV1
@@ -56,13 +45,13 @@ from ksi_processing_controller.surface_profile_core_client import (
     SurfaceProfileCoreClient,
     SurfaceProfileCoreClientError,
 )
-from ksi_processing_controller.surface_profile_worker import read_surface_profile
+from ksi_processing_controller.surface_profile_worker import SurfaceProfileWorkerError
 
 
-class SurfaceProfileWorkerError(RuntimeError):
-    def __init__(self, reason: SurfaceProfileJobReasonV1) -> None:
-        self.reason = reason
-        super().__init__(reason)
+class SurfaceProfileCompute(Protocol):
+    def __call__(
+        self, *, job: SurfaceProfileFrozenJobV1, source_path: Path, is_current: Callable[[], bool]
+    ) -> SurfaceProfileResultV1: ...
 
 
 class _LeaseGuard:
@@ -105,26 +94,6 @@ class _LeaseGuard:
             raise SurfaceProfileWorkerError("CURRENTNESS_UNAVAILABLE")
 
 
-def _same_file_facts(job: SurfaceProfileFrozenJobV1, staged: Path) -> None:
-    """받은 파일에서 다시 읽은 사실이 봉인된 측정값과 같아야 한다. 검사 보고서는 파일이 아니다."""
-    measured = job.source.inspection.measurements
-    if measured is None:
-        raise SurfaceProfileWorkerError("SOURCE_MEASUREMENTS_MISMATCH")
-    try:
-        facts = inspect_profile_source(staged)
-        a, b, _, d, e, _ = measured.transform
-        if (
-            facts.width != measured.width
-            or facts.height != measured.height
-            or (b, d) != (0.0, 0.0)
-            or (facts.cell_size_x, facts.cell_size_y) != (a, -e)
-            or facts.horizontal_crs != normalise_crs(measured.observed_crs_identifier)
-        ):
-            raise SurfaceProfileWorkerError("SOURCE_MEASUREMENTS_MISMATCH")
-    except SurfaceProfileError as exc:
-        raise SurfaceProfileWorkerError(exc.reason.value) from exc
-
-
 def _receipt(
     job: SurfaceProfileFrozenJobV1, result: SurfaceProfileResultV1, now: datetime
 ) -> SurfaceProfileReceiptV1:
@@ -162,6 +131,7 @@ def run_once(
     clock: Callable[[], datetime],
     workspace_root: Path,
     heartbeat_millis: int,
+    compute: SurfaceProfileCompute,
 ) -> bool:
     """대기 중인 작업을 최대 한 건 시도한다. true는 시도했다는 뜻이며 성공을 뜻하지 않는다."""
     job_ids = core.pending(limit=1)
@@ -183,7 +153,12 @@ def run_once(
         except SpatialDataWorkerConfigError as exc:
             raise SurfaceProfileWorkerError("STORAGE_UNAVAILABLE") from exc
         cap = info.source_capability
-        if cap.observed_size_bytes > min(envelope.max_input_bytes, envelope.max_streamed_bytes):
+        if cap.observed_size_bytes > min(
+            envelope.max_input_bytes,
+            envelope.max_streamed_bytes,
+            envelope.max_workspace_bytes,
+            transport_policy.max_object_bytes,
+        ):
             raise SurfaceProfileWorkerError("RESOURCE_LIMIT_EXCEEDED")
         seconds = min((job.deadline - clock()).total_seconds(), envelope.max_deadline_seconds)
         with tempfile.TemporaryDirectory(prefix=".ksi-profile-", dir=workspace_root) as directory:
@@ -240,26 +215,7 @@ def run_once(
                 reader.close()
             guard.require(force=True)
             phase = "compute"
-            _same_file_facts(job, staged)
-            policy = job.policy
-            outcome = read_surface_profile(
-                CreateSurfaceProfileV1(
-                    asset_ref=job.profile_request.asset_ref,
-                    line=job.profile_request.line,
-                    feature=job.profile_request.feature,
-                    sample_spacing_m=job.profile_request.sample_spacing_m,
-                ),
-                staged,
-                policy=SurfaceProfilePolicy(
-                    maximum_vertices=policy.maximum_vertices,
-                    maximum_samples=policy.maximum_samples,
-                    maximum_line_length_m=policy.maximum_line_length_m,
-                    maximum_window_cells=policy.maximum_window_cells,
-                    maximum_source_block_cells=policy.maximum_source_block_cells,
-                ),
-            )
-            if isinstance(outcome, SurfaceProfileRefusalV1):
-                raise SurfaceProfileWorkerError(cast(SurfaceProfileJobReasonV1, outcome.reason))
+            outcome = compute(job=job, source_path=staged, is_current=guard.check)
             guard.require(force=True)
             receipt = _receipt(job, outcome, max(clock(), guard.attempt.acquired_at))
             phase = "report"

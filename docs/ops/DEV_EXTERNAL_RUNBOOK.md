@@ -84,6 +84,8 @@ Anything else is a typed blocker, never a default-eligible comparison.
 
 ## 2. Console upload flow — BFF routes and Core clients (browser never calls Core directly)
 
+- For a corrected V3 export, open the rejected file's registration record and select **수정본 등록** on the latest sealed version. Choose every file to include in this version and review the prefilled capture, producer and source declarations. Record the export tool for the files being submitted. The Console posts `correctionOf` with the sealed submission reference and base revision to the existing `external-reconstruction-submissions-v3` BFF. Core keeps the same submission and observation epoch, seals the new bytes separately and inspects them again. The work order retains each version's files and inspection results.
+- When two corrections use the same base, the first registration owns that revision. The other operator can review the new version and reuse the selected files and export notes. For an imported declaration with a recorded reconstruction run or input manifest, the correction carries those records forward from the sealed version. A change to the producer, source or capture facts requires resolving the difference before registration.
 - Upload BFF: `apps/dashboard/src/app/api/observation-work-orders/[workOrderId]/external-reconstruction-submissions/route.ts`
   (register; builds the `external-reconstruction-submission.v1` candidate via
   `apps/dashboard/src/lib/external-reconstruction-submission.ts`).
@@ -211,6 +213,17 @@ jq -r '.keys[] | "key \(.keyId) \(.status) \(.notBefore) -> \(.notAfter)"' <prot
   without a restart when the catalog configuration itself is unchanged. A reload against
   still out-of-window inputs (including a key window that has ended) stays fatal and keeps
   the provider blocked.
+
+### 3b. Approving a saved-line profile comparison
+
+The catalog administrator can approve a specific ordered DSM pair for a saved-line comparison through the existing signed external authority snapshot. Both completed profile jobs must belong to the selected WorkArea and use the same saved line revision and sample positions.
+
+1. Admit a validation policy whose authority permits `PROFILE_DIFFERENCE` for the two exact subjects. Its `compatibilityMappingDigests` includes the stable digest of `CompatibilityRuleDescriptorV1`. Inspect both DSMs and validate independently attested checkpoint evidence for each file. The sealed submissions must carry ordered UTC capture intervals.
+2. In the next signed snapshot, add an `ADMIT_PROFILE_MAPPING` action to `quantitativeAdministration.actions`. Set `actionId`, `effectiveAt`, and the configured catalog administrator's `actorId`. The `mapping` field takes the sealed `ExternalQuantitativeCompatibilityRecord` with both exact DSM bindings, inspection reports, ordered evidence, WorkArea definition, observed coordinate and vertical references, policy and validity. Use the complete `mappingRecordDigest` when identifying this approval. Volume and profile approvals have separate journal events.
+3. Reload the signed generation through the existing administrator operation. The operator can request a new comparison for the same two jobs. A previously blocked decision keeps its original reason and ID. An eligible decision records its approved WorkArea and full mapping digest.
+4. To withdraw the comparison approval, publish a `REVOKE_PROFILE_MAPPING` action with the exact `mappingDigest` and reload. Opening the saved numerical result or exporting it requires current authority. The original decision can still be verified at its decision time.
+
+The signed snapshot and journal formats are implemented by the [provider](../../services/core/src/ksi_core/domains/external/authority/provider_loading.py) and the [quantitative catalog](../../services/core/src/ksi_core/domains/external/quantity/external_quantitative_authority.py).
 
 ## Appendix H. Pre-ADR-036 managed pipeline (RETIRED — not runnable, history only)
 

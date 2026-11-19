@@ -110,6 +110,7 @@ def mount_external_routes(
                 jobs=surface_profile.jobs,
                 limits=surface_profile.config.http_limits,
                 clock=surface_profile.config.clock,
+                decisions=surface_profile.decisions,
             )
         )
         app.include_router(

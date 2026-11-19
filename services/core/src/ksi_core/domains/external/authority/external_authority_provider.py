@@ -485,6 +485,28 @@ class ExternalAuthorityProvider:
                     raise ExternalAuthorityProviderError(str(exc)) from exc
                 if admitted is None:
                     raise ExternalAuthorityProviderError("signed mapping admission was not applied")
+            elif action.kind == "ADMIT_PROFILE_MAPPING":
+                if action.actor_id != self._config.catalog_administration_actor_id:
+                    raise ValueError(
+                        "profile mapping action actor is not the configured catalog administrator"
+                    )
+                mapping = ExternalQuantitativeCompatibilityRecord.from_event_payload(
+                    action.payload["mapping"]
+                )
+                if mapping.organization_id != self.organization_id:
+                    raise ExternalAuthorityProviderError(
+                        "signed profile mapping admission was not applied"
+                    )
+                try:
+                    admitted = catalog.admit_profile_mapping(
+                        mapping, actor=action.actor_id, now=action.effective_at
+                    )
+                except DuplicateActiveMappingError as exc:
+                    raise ExternalAuthorityProviderError(str(exc)) from exc
+                if admitted is None:
+                    raise ExternalAuthorityProviderError(
+                        "signed profile mapping admission was not applied"
+                    )
             elif action.kind == "ADMIT_SINGLE_MAPPING":
                 if action.actor_id != self._config.catalog_administration_actor_id:
                     raise ValueError(
@@ -526,6 +548,18 @@ class ExternalAuthorityProvider:
                 ):
                     raise ExternalAuthorityProviderError(
                         "signed mapping revocation was not applied"
+                    )
+            elif action.kind == "REVOKE_PROFILE_MAPPING":
+                if (
+                    action.actor_id != self._config.catalog_administration_actor_id
+                    or not catalog.revoke_profile_mapping(
+                        cast(str, action.payload["mappingDigest"]),
+                        actor=action.actor_id,
+                        now=action.effective_at,
+                    )
+                ):
+                    raise ExternalAuthorityProviderError(
+                        "signed profile mapping revocation was not applied"
                     )
 
     @staticmethod

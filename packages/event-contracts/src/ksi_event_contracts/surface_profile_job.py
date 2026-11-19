@@ -119,6 +119,7 @@ SurfaceProfileJobReasonV1 = Literal[
     "PROCESSING_LOCATION_DENIED",
     "POLICY_UNAVAILABLE",
     "CURRENTNESS_UNAVAILABLE",
+    "PROFILE_COMPARISON_NO_LONGER_ELIGIBLE",
     "RESOURCE_LIMIT_EXCEEDED",
     "LINE_OUTSIDE_SURFACE",
     "GRANT_REQUIRED",
@@ -532,6 +533,99 @@ class SurfaceProfileResultViewV1(SpatialDataModel):
     result: SurfaceProfileResultV1
 
 
+class CreateSurfaceProfileComparisonV1(SpatialDataModel):
+    """Explicitly request the same saved-line profile from two ordered epochs."""
+
+    baseline_job_id: SurfaceProfileJobId
+    current_job_id: SurfaceProfileJobId
+
+    @model_validator(mode="after")
+    def _distinct_jobs(self) -> Self:
+        if self.baseline_job_id == self.current_job_id:
+            raise ValueError("baseline and current profile jobs must differ")
+        return self
+
+
+class SurfaceProfileComparisonSampleV1(SpatialDataModel):
+    distance_m: Annotated[float, Field(strict=True, ge=0, allow_inf_nan=False)]
+    baseline_m: Annotated[float, Field(strict=True, allow_inf_nan=False)] | None
+    current_m: Annotated[float, Field(strict=True, allow_inf_nan=False)] | None
+    difference_m: Annotated[float, Field(strict=True, allow_inf_nan=False)] | None
+    invalid_reason: (
+        Literal["BASELINE_UNAVAILABLE", "CURRENT_UNAVAILABLE", "BOTH_UNAVAILABLE"] | None
+    )
+
+    @model_validator(mode="after")
+    def _difference_requires_both_values(self) -> Self:
+        expected_reason = (
+            "BOTH_UNAVAILABLE"
+            if self.baseline_m is None and self.current_m is None
+            else "BASELINE_UNAVAILABLE"
+            if self.baseline_m is None
+            else "CURRENT_UNAVAILABLE"
+            if self.current_m is None
+            else None
+        )
+        expected_difference = (
+            None
+            if self.baseline_m is None or self.current_m is None
+            else self.current_m - self.baseline_m
+        )
+        if self.invalid_reason != expected_reason or self.difference_m != expected_difference:
+            raise ValueError("comparison values and unknown reason must agree")
+        return self
+
+
+class SurfaceProfileComparisonResultV1(SpatialDataDigestModel):
+    """Numeric output bound to both exact immutable single-surface results."""
+
+    _digest_field = "comparison_digest"
+    baseline_result_digest: Digest
+    current_result_digest: Digest
+    samples: Annotated[
+        tuple[SurfaceProfileComparisonSampleV1, ...],
+        Field(min_length=2, max_length=MAX_PROFILE_SAMPLES),
+    ]
+    valid_count: Annotated[int, Field(strict=True, ge=0)]
+    largest_rise_m: Annotated[float, Field(strict=True, allow_inf_nan=False)] | None
+    largest_drop_m: Annotated[float, Field(strict=True, allow_inf_nan=False)] | None
+    comparison_digest: Digest | None = None
+
+    @model_validator(mode="after")
+    def _consistent_samples(self) -> Self:
+        distances = [sample.distance_m for sample in self.samples]
+        if distances[0] != 0 or any(b <= a for a, b in zip(distances, distances[1:], strict=False)):
+            raise ValueError("comparison distances must start at zero and strictly increase")
+        differences = [
+            sample.difference_m for sample in self.samples if sample.difference_m is not None
+        ]
+        if (
+            self.valid_count != len(differences)
+            or self.largest_rise_m != max((d for d in differences if d > 0), default=None)
+            or self.largest_drop_m != min((d for d in differences if d < 0), default=None)
+        ):
+            raise ValueError("comparison summary must match known samples")
+        return self
+
+
+class SurfaceProfileComparisonV1(SpatialDataModel):
+    contract_version: Literal["surface-profile-comparison.v1"] = "surface-profile-comparison.v1"
+    baseline_job_id: SurfaceProfileJobId
+    current_job_id: SurfaceProfileJobId
+    decision_id: Text
+    decision_digest: Digest
+    verdict: Literal["BLOCKED", "ELIGIBLE"]
+    reasons: tuple[Text, ...] = Field(min_length=1, max_length=32)
+    remediations: tuple[Text, ...] = Field(min_length=1, max_length=32)
+    result: SurfaceProfileComparisonResultV1 | None = None
+
+    @model_validator(mode="after")
+    def _numbers_only_after_eligible_decision(self) -> Self:
+        if (self.verdict == "ELIGIBLE") != (self.result is not None):
+            raise ValueError("numeric comparison requires an eligible decision")
+        return self
+
+
 SURFACE_PROFILE_WORKER_INSTANCE_ID_HEADER = "X-Surface-Profile-Worker-Instance-Id"
 SURFACE_PROFILE_ATTEMPT_DIGEST_HEADER = "X-Surface-Profile-Attempt-Digest"
 
@@ -540,7 +634,9 @@ class SurfaceProfileErrorV1(SpatialDataModel):
     reason: SurfaceProfileJobReasonV1
     message: Text
     retryable: StrictBool
-    remediation: tuple[Literal["CONTACT_OPERATOR"], ...]
+    remediation: tuple[
+        Literal["CONTACT_OPERATOR", "RECHECK_CURRENT_PAIR", "CREATE_NEW_COMPARISON"], ...
+    ]
 
 
 class SurfaceProfileJobPageV1(SpatialDataModel):
@@ -622,6 +718,7 @@ __all__ = [
     "SURFACE_PROFILE_PROFILE",
     "TRANSIENT_JOB_REASONS",
     "CreateSurfaceProfileJobV1",
+    "CreateSurfaceProfileComparisonV1",
     "SurfaceProfileActivationV1",
     "SurfaceProfileAttemptV1",
     "SurfaceProfileCompleteRequestV1",
@@ -637,5 +734,8 @@ __all__ = [
     "SurfaceProfileReceiptV1",
     "SurfaceProfileRenewRequestV1",
     "SurfaceProfileResultViewV1",
+    "SurfaceProfileComparisonSampleV1",
+    "SurfaceProfileComparisonResultV1",
+    "SurfaceProfileComparisonV1",
     "SurfaceProfileRuntimeV1",
 ]

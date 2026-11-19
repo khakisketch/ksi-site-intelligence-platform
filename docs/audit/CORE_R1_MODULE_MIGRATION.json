@@ -254,6 +254,15 @@
       "migrationStatus": "T3_NEW_MODULE"
     },
     {
+      "sourceModule": "ksi_core.domains.external.delivery.surface_profile_comparisons",
+      "activeCanonicalModule": "ksi_core.domains.external.delivery.surface_profile_comparisons",
+      "activePath": "ksi_core/domains/external/delivery/surface_profile_comparisons.py",
+      "plannedCanonicalModule": "ksi_core.domains.external.delivery.surface_profile_comparisons",
+      "plannedPath": "ksi_core/domains/external/delivery/surface_profile_comparisons.py",
+      "ownerBoundary": "domains/external/delivery",
+      "migrationStatus": "T3_NEW_MODULE"
+    },
+    {
       "sourceModule": "ksi_core.domains.external.delivery.surface_profile_jobs",
       "activeCanonicalModule": "ksi_core.domains.external.delivery.surface_profile_jobs",
       "activePath": "ksi_core/domains/external/delivery/surface_profile_jobs.py",
@@ -932,6 +941,15 @@
       "migrationStatus": "T3_NEW_MODULE"
     },
     {
+      "sourceModule": "ksi_core.domains.external.quantity.external_profile_difference_authorities",
+      "activeCanonicalModule": "ksi_core.domains.external.quantity.external_profile_difference_authorities",
+      "activePath": "ksi_core/domains/external/quantity/external_profile_difference_authorities.py",
+      "plannedCanonicalModule": "ksi_core.domains.external.quantity.external_profile_difference_authorities",
+      "plannedPath": "ksi_core/domains/external/quantity/external_profile_difference_authorities.py",
+      "ownerBoundary": "domains/external/quantity",
+      "migrationStatus": "T3_NEW_MODULE"
+    },
+    {
       "sourceModule": "ksi_core.domains.external.quantity.external_single_volume_authority",
       "activeCanonicalModule": "ksi_core.domains.external.quantity.external_single_volume_authority",
       "activePath": "ksi_core/domains/external/quantity/external_single_volume_authority.py",
@@ -1450,6 +1468,15 @@
       "activePath": "ksi_core/composition/spatial_data_production.py",
       "plannedCanonicalModule": "ksi_core.composition.spatial_data_production",
       "plannedPath": "ksi_core/composition/spatial_data_production.py",
+      "ownerBoundary": "composition",
+      "migrationStatus": "T5_NEW_MODULE"
+    },
+    {
+      "sourceModule": "ksi_core.composition.surface_profile_production",
+      "activeCanonicalModule": "ksi_core.composition.surface_profile_production",
+      "activePath": "ksi_core/composition/surface_profile_production.py",
+      "plannedCanonicalModule": "ksi_core.composition.surface_profile_production",
+      "plannedPath": "ksi_core/composition/surface_profile_production.py",
       "ownerBoundary": "composition",
       "migrationStatus": "T5_NEW_MODULE"
     },

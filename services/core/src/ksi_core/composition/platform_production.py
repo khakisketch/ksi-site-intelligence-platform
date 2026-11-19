@@ -43,6 +43,7 @@ from ksi_core.composition.runtime_config import (
     _require_env,
     _site_bootstrap_max_sites_per_org_env,
     _spatial_data_config_path_env,
+    _surface_profile_config_path_env,
 )
 from ksi_core.durable_journal import DurableJournal
 from ksi_core.identity.oidc_subject_registry import load_oidc_subject_registry
@@ -103,9 +104,11 @@ def build_platform_production_app() -> FastAPI:
         if oidc_subject_registry.principal_ids & opaque_principal_ids:
             raise RuntimeError("OIDC subject principalId collides with opaque principalId")
     spatial_config_path = _spatial_data_config_path_env()
+    surface_profile_config_path = _surface_profile_config_path_env()
     audit_working_set_path = _audit_working_set_path_env()
     spatial_config = None
     spatial_rights = None
+    surface_profile_config = None
     audit_working_set = None
     if audit_working_set_path is not None:
         from ksi_core.domains.external.delivery.audit_working_set import (
@@ -134,6 +137,23 @@ def build_platform_production_app() -> FastAPI:
             )
         except SpatialDataCoreConfigError as exc:
             raise RuntimeError("protected spatial data configuration is invalid") from exc
+    if surface_profile_config_path is not None:
+        if spatial_config is None:
+            raise RuntimeError("surface profile requires the protected spatial data configuration")
+        from ksi_core.composition.surface_profile_production import (
+            SurfaceProfileCoreConfigError,
+            build_surface_profile_production_config,
+        )
+
+        try:
+            surface_profile_config = build_surface_profile_production_config(
+                surface_profile_config_path,
+                spatial=spatial_config,
+                principal_records=principal_records,
+                now=datetime.now(UTC),
+            )
+        except SurfaceProfileCoreConfigError as exc:
+            raise RuntimeError("protected surface profile configuration is invalid") from exc
     external_analysis_local_graph = None
     analysis_activation = None
     analysis_paths = _analysis_activation_paths_env()
@@ -275,6 +295,7 @@ def build_platform_production_app() -> FastAPI:
             external_analysis_local_graph=external_analysis_local_graph,
             analysis_activation=analysis_activation,
             spatial_data=spatial_data,
+            surface_profile=surface_profile_config,
             site_bootstrap_max_sites_per_org=site_bootstrap_max_sites_per_org,
             registration_stopped=registration_stopped,
             expose_docs=expose_docs,

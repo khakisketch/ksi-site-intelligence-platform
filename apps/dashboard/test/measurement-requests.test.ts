@@ -76,6 +76,9 @@ describe("parseProfileRequestBody", () => {
   it("자료와 선 개정만 받는다", () => {
     expect(parseProfileRequestBody(ok)).toEqual(ok);
   });
+  it("명시적으로 요청한 표본 간격은 허용하고 그대로 보존한다", () => {
+    expect(parseProfileRequestBody({ ...ok, sampleSpacingM: 2.5 })).toEqual({ ...ok, sampleSpacingM: 2.5 });
+  });
   it.each([
     ["판정 식별자를 싣는 시도", { ...ok, heightDecisionId: "d" }],
     ["자료 참조 형식", { ...ok, assetRef: "x" }],
@@ -86,6 +89,8 @@ describe("parseProfileRequestBody", () => {
     ["선 참조에 모르는 필드", { ...ok, feature: { ...FEATURE, extra: 1 } }],
     ["선 참조가 배열", { ...ok, feature: [] }],
     ["선 참조가 없다", { assetRef: asset(1) }],
+    ["표본 간격이 0", { ...ok, sampleSpacingM: 0 }],
+    ["표본 간격이 문자열", { ...ok, sampleSpacingM: "2.5" }],
     ["객체가 아니다", "x"],
     ["배열", []],
   ])("거부한다: %s", (_name, value) => {

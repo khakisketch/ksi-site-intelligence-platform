@@ -22,12 +22,20 @@ from contextlib import suppress
 from datetime import datetime
 from pathlib import Path
 from time import monotonic
-from typing import Any, Literal, Protocol
+from typing import Any, Literal, Protocol, cast, get_args, overload
 
+from ksi_domain.canonical_json import canonical_json_bytes
 from ksi_event_contracts._spatial_data import Digest, PositiveInt, SpatialDataModel, UtcTimestamp
 from ksi_event_contracts.external_artifact_validation import ResourceEnvelopeV1
 from ksi_event_contracts.spatial_data import SpatialDataFrozenJobV1, SpatialDataReceiptV1
 from ksi_event_contracts.spatial_data_authority import SpatialDataPolicyV1, SpatialDataRuntimeV1
+from ksi_event_contracts.surface_profile import SurfaceProfileResultV1
+from ksi_event_contracts.surface_profile_job import (
+    SurfaceProfileFrozenJobV1,
+    SurfaceProfileJobReasonV1,
+    SurfaceProfilePolicyV1,
+    SurfaceProfileRuntimeV1,
+)
 from pydantic import Field
 
 from ksi_processing_controller.spatial_data_worker import SpatialDataWorkerError
@@ -36,7 +44,10 @@ from ksi_processing_controller.spatial_data_worker_config import (
     SpatialDataWorkerConfigError,
     parse_strict_json,
     read_owner_private_file,
+    require_owner_private_directory,
 )
+
+SURFACE_PROFILE_FRAME_OVERHEAD_BYTES = 256
 
 
 class SpatialDataContainmentProofV1(SpatialDataModel):
@@ -66,7 +77,7 @@ def _kernel_file(path: str, maximum: int) -> bytes:
 def verify_process_containment(
     *,
     pid: int,
-    job: SpatialDataFrozenJobV1,
+    job: SpatialDataFrozenJobV1 | SurfaceProfileFrozenJobV1,
     proof: SpatialDataContainmentProofV1,
     now: datetime,
     authority_pid: int | None = None,
@@ -87,11 +98,16 @@ def verify_process_containment(
     try:
         if (authority_pid is None) == (authority_inodes is None):
             return False
+        policy_output_bytes = (
+            job.policy.max_result_bytes
+            if isinstance(job, SurfaceProfileFrozenJobV1)
+            else job.policy.max_output_bytes
+        )
         if (
             proof.runtime_digest != job.runtime.runtime_digest
             or proof.policy_digest != job.policy.policy_digest
             or proof.resource_envelope != job.policy.resource_envelope
-            or proof.max_output_bytes != job.policy.max_output_bytes
+            or proof.max_output_bytes != policy_output_bytes
             or now >= proof.valid_until
             or os.getpgid(pid) != pid
         ):
@@ -139,7 +155,7 @@ def verify_process_containment(
         for limit, maximum in (
             (resource.RLIMIT_AS, env.max_memory_bytes),
             (resource.RLIMIT_CPU, math.ceil(env.max_cpu_seconds)),
-            (resource.RLIMIT_FSIZE, max(env.max_input_bytes, job.policy.max_output_bytes)),
+            (resource.RLIMIT_FSIZE, max(env.max_input_bytes, policy_output_bytes)),
             (resource.RLIMIT_NOFILE, 64),
             (resource.RLIMIT_NPROC, 1),
         ):
@@ -214,6 +230,10 @@ def _sealed_proof_descriptor(raw: bytes) -> int:
     return descriptor
 
 
+def _authority_namespace_inodes() -> dict[str, int]:
+    return {name: os.stat(f"/proc/self/ns/{name}").st_ino for name in ("net", "mnt", "user")}
+
+
 class SpatialDataSandboxLauncherPort(Protocol):
     def launch(
         self, *, workspace: Path, job: SpatialDataFrozenJobV1
@@ -223,16 +243,32 @@ class SpatialDataSandboxLauncherPort(Protocol):
     ) -> bool: ...
 
 
+class SurfaceProfileSandboxLauncherPort(Protocol):
+    def launch_surface_profile(
+        self, *, workspace: Path, job: SurfaceProfileFrozenJobV1
+    ) -> subprocess.Popen[bytes]: ...
+    def verify_containment(
+        self, *, process: subprocess.Popen[bytes], job: SurfaceProfileFrozenJobV1
+    ) -> bool: ...
+
+
 class PinnedSpatialDataLauncher:
     def __init__(self, settings: SpatialDataSandboxSettingsV1, *, clock: Callable[[], datetime]):
         self.settings, self.clock = settings, clock
         self._proofs: dict[int, SpatialDataContainmentProofV1] = {}
 
     def verify_material(
-        self, *, policy: SpatialDataPolicyV1, runtime: SpatialDataRuntimeV1
+        self,
+        *,
+        policy: SpatialDataPolicyV1 | SurfaceProfilePolicyV1,
+        runtime: SpatialDataRuntimeV1 | SurfaceProfileRuntimeV1,
     ) -> SpatialDataContainmentProofV1:
         """Verify explicit artifacts before polling, without creating a child or host state."""
         try:
+            if isinstance(policy, SurfaceProfilePolicyV1) != isinstance(
+                runtime, SurfaceProfileRuntimeV1
+            ):
+                raise ValueError("profile policy and runtime must be paired")
             raw = read_owner_private_file(
                 Path(self.settings.containment_proof_path), maximum_bytes=262144
             )
@@ -242,11 +278,16 @@ class PinnedSpatialDataLauncher:
             ):
                 raise ValueError("proof differs")
             proof = SpatialDataContainmentProofV1.model_validate(parse_strict_json(raw))
+            expected_output_bytes = (
+                policy.max_result_bytes
+                if isinstance(policy, SurfaceProfilePolicyV1)
+                else policy.max_output_bytes
+            )
             if (
                 proof.runtime_digest != runtime.runtime_digest
                 or proof.policy_digest != policy.policy_digest
                 or proof.resource_envelope != policy.resource_envelope
-                or proof.max_output_bytes != policy.max_output_bytes
+                or proof.max_output_bytes != expected_output_bytes
                 or proof.launcher_sha256 != self.settings.launcher_sha256
                 or self.clock() >= proof.valid_until
             ):
@@ -263,6 +304,20 @@ class PinnedSpatialDataLauncher:
             raise SpatialDataWorkerError("ACTIVATION_UNAVAILABLE") from exc
 
     def launch(self, *, workspace: Path, job: SpatialDataFrozenJobV1) -> subprocess.Popen[bytes]:
+        return self._launch(workspace=workspace, job=job, operation="native-window")
+
+    def launch_surface_profile(
+        self, *, workspace: Path, job: SurfaceProfileFrozenJobV1
+    ) -> subprocess.Popen[bytes]:
+        return self._launch(workspace=workspace, job=job, operation="surface-profile")
+
+    def _launch(
+        self,
+        *,
+        workspace: Path,
+        job: SpatialDataFrozenJobV1 | SurfaceProfileFrozenJobV1,
+        operation: Literal["native-window", "surface-profile"],
+    ) -> subprocess.Popen[bytes]:
         fd = proof_fd = -1
         try:
             proof = self.verify_material(policy=job.policy, runtime=job.runtime)
@@ -295,14 +350,19 @@ class PinnedSpatialDataLauncher:
             # credentials or default environment. The exact launcher must exec the
             # fixed entrypoint, preserving its PID/session and this one proof fd.
             proof_fd = _sealed_proof_descriptor(raw)
+            command = [
+                f"/proc/self/fd/{fd}",
+                "--workspace",
+                str(workspace),
+                "--containment-proof-fd",
+                str(proof_fd),
+            ]
+            # Preserve the existing argv for native-window launcher installations.
+            # The added mode is a fixed enum parsed by the same pinned child entrypoint.
+            if operation == "surface-profile":
+                command.extend(("--operation", operation))
             process = subprocess.Popen(
-                [
-                    f"/proc/self/fd/{fd}",
-                    "--workspace",
-                    str(workspace),
-                    "--containment-proof-fd",
-                    str(proof_fd),
-                ],
+                command,
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.DEVNULL,
@@ -327,8 +387,21 @@ class PinnedSpatialDataLauncher:
                 if descriptor >= 0:
                     os.close(descriptor)
 
+    @overload
     def verify_containment(
         self, *, process: subprocess.Popen[bytes], job: SpatialDataFrozenJobV1
+    ) -> bool: ...
+
+    @overload
+    def verify_containment(
+        self, *, process: subprocess.Popen[bytes], job: SurfaceProfileFrozenJobV1
+    ) -> bool: ...
+
+    def verify_containment(
+        self,
+        *,
+        process: subprocess.Popen[bytes],
+        job: SpatialDataFrozenJobV1 | SurfaceProfileFrozenJobV1,
     ) -> bool:
         proof = self._proofs.pop(process.pid, None)
         return proof is not None and verify_process_containment(
@@ -340,7 +413,7 @@ class SpatialDataSandbox:
     def __init__(
         self,
         *,
-        launcher: SpatialDataSandboxLauncherPort,
+        launcher: SpatialDataSandboxLauncherPort | SurfaceProfileSandboxLauncherPort,
         clock: Callable[[], datetime],
         wall_timeout_seconds: float,
         heartbeat_interval_millis: int,
@@ -377,10 +450,14 @@ class SpatialDataSandbox:
             raise SpatialDataWorkerError("PRIVATE_WORKSPACE_CLEANUP_FAILED") from exc
 
     def close(self) -> None:
-        for owned in tuple(self._owned):
-            self._reap(owned)
+        self.require_idle()
+
+    def require_idle(self) -> None:
+        """Reap owned children and refuse polling while an abandoned launch is unresolved."""
         if self._pending_launch is not None and not self._pending_launch.is_set():
             raise SpatialDataWorkerError("PRIVATE_WORKSPACE_CLEANUP_FAILED")
+        for owned in tuple(self._owned):
+            self._reap(owned)
 
     def prepare(
         self,
@@ -390,6 +467,7 @@ class SpatialDataSandbox:
         output_parent: Path,
         is_current: Callable[[], bool],
     ) -> SpatialDataReceiptV1:
+        launcher = cast(SpatialDataSandboxLauncherPort, self.launcher)
         if source_path != output_parent / "source.tif":
             raise SpatialDataWorkerError("INVALID_REQUEST_BOUNDS")
         for owned in tuple(self._owned):
@@ -417,7 +495,7 @@ class SpatialDataSandbox:
 
         def launch() -> None:
             try:
-                child = self.launcher.launch(workspace=output_parent, job=job)
+                child = launcher.launch(workspace=output_parent, job=job)
                 with handoff:
                     self._owned.append(child)
                     late = abandoned.is_set()
@@ -467,7 +545,7 @@ class SpatialDataSandbox:
             if (
                 ready
                 != {"version": "spatial-data-sandbox-ready.v1", "pid": process.pid, "ready": True}
-                or self.launcher.verify_containment(process=process, job=job) is not True
+                or launcher.verify_containment(process=process, job=job) is not True
             ):
                 raise SpatialDataWorkerError("ACTIVATION_UNAVAILABLE")
             guard()
@@ -475,10 +553,7 @@ class SpatialDataSandbox:
                 "version": "spatial-data-sandbox-request.v2",
                 "job": job.model_dump(by_alias=True, mode="json"),
                 "preparedAt": self.clock().isoformat(),
-                "authorityNamespaceInodes": {
-                    name: os.stat(f"/proc/self/ns/{name}").st_ino
-                    for name in ("net", "mnt", "user")
-                },
+                "authorityNamespaceInodes": _authority_namespace_inodes(),
             }
             if isinstance(self.launcher, PinnedSpatialDataLauncher):
                 request["containmentProofSha256"] = self.launcher.settings.containment_proof_sha256
@@ -543,3 +618,206 @@ class SpatialDataSandbox:
                 self._reap(process)
             if not success:
                 (output_parent / "candidate.tif").unlink(missing_ok=True)
+
+    def compute_surface_profile(
+        self,
+        *,
+        job: SurfaceProfileFrozenJobV1,
+        source_path: Path,
+        is_current: Callable[[], bool],
+    ) -> SurfaceProfileResultV1:
+        """Compute one profile inside the pinned no-network child process."""
+        from ksi_processing_controller.surface_profile_worker import SurfaceProfileWorkerError
+
+        launcher = cast(SurfaceProfileSandboxLauncherPort, self.launcher)
+        if source_path != source_path.parent / "source.tif":
+            raise SurfaceProfileWorkerError("INVALID_REQUEST")
+        try:
+            require_owner_private_directory(source_path.parent)
+            source_info = source_path.stat(follow_symlinks=False)
+        except (OSError, SpatialDataWorkerConfigError) as exc:
+            raise SurfaceProfileWorkerError("STORAGE_UNAVAILABLE") from exc
+        if (
+            not stat.S_ISREG(source_info.st_mode)
+            or source_info.st_uid != os.geteuid()
+            or source_info.st_gid != os.getegid()
+            or stat.S_IMODE(source_info.st_mode) != 0o600
+            or source_info.st_nlink != 1
+            or source_info.st_size != job.source.observed_size_bytes
+        ):
+            raise SurfaceProfileWorkerError("SOURCE_BYTES_MISMATCH")
+        for owned in tuple(self._owned):
+            try:
+                self._reap(owned)
+            except SpatialDataWorkerError as exc:
+                raise SurfaceProfileWorkerError("WORKER_FAILED") from exc
+        if self._pending_launch is not None and not self._pending_launch.is_set():
+            raise SurfaceProfileWorkerError("RESOURCE_LIMIT_EXCEEDED")
+
+        deadline = monotonic() + min(
+            self.wall,
+            job.policy.resource_envelope.max_deadline_seconds,
+            max(0, (job.deadline - self.clock()).total_seconds()),
+        )
+        process: subprocess.Popen[bytes] | None = None
+        done, abandoned = threading.Event(), threading.Event()
+        handoff = threading.Lock()
+        result: list[Any] = []
+
+        def guard() -> float:
+            try:
+                current = is_current()
+            except Exception as exc:
+                raise SurfaceProfileWorkerError("CURRENTNESS_UNAVAILABLE") from exc
+            if current is not True:
+                raise SurfaceProfileWorkerError("CURRENTNESS_UNAVAILABLE")
+            remaining = deadline - monotonic()
+            if remaining <= 0:
+                raise SurfaceProfileWorkerError("DEADLINE_EXCEEDED")
+            return min(remaining, self.heartbeat)
+
+        def launch() -> None:
+            try:
+                child = launcher.launch_surface_profile(workspace=source_path.parent, job=job)
+                with handoff:
+                    self._owned.append(child)
+                    late = abandoned.is_set()
+                    if not late:
+                        result.append(child)
+                if late:
+                    self._reap(child)
+            except Exception as exc:
+                result.append(exc)
+            finally:
+                done.set()
+
+        def read_exact(length: int) -> bytes:
+            assert process is not None and process.stdout is not None
+            payload = bytearray()
+            while len(payload) < length:
+                ready, _, _ = select.select([process.stdout], [], [], guard())
+                if not ready:
+                    continue
+                chunk = os.read(process.stdout.fileno(), length - len(payload))
+                if not chunk:
+                    raise SurfaceProfileWorkerError("INTEGRITY_MISMATCH")
+                payload.extend(chunk)
+            return bytes(payload)
+
+        def read_frame(maximum: int) -> Any:
+            length = struct.unpack(">I", read_exact(4))[0]
+            if not 0 < length <= maximum:
+                raise SurfaceProfileWorkerError("RESOURCE_LIMIT_EXCEEDED")
+            try:
+                return parse_strict_json(read_exact(length))
+            except (ValueError, RecursionError) as exc:
+                raise SurfaceProfileWorkerError("INTEGRITY_MISMATCH") from exc
+
+        try:
+            guard()
+            self._pending_launch = done
+            threading.Thread(target=launch, name="ksi-profile-launch", daemon=True).start()
+            while not done.wait(guard()):
+                pass
+            if not result or not isinstance(result[0], subprocess.Popen):
+                if result and isinstance(result[0], SurfaceProfileWorkerError):
+                    raise result[0]
+                raise SurfaceProfileWorkerError("POLICY_UNAVAILABLE")
+            process = result[0]
+            ready = read_frame(256)
+            if (
+                ready
+                != {
+                    "version": "surface-profile-sandbox-ready.v1",
+                    "pid": process.pid,
+                    "ready": True,
+                }
+                or launcher.verify_containment(process=process, job=job) is not True
+            ):
+                raise SurfaceProfileWorkerError("POLICY_UNAVAILABLE")
+            guard()
+            request = {
+                "version": "surface-profile-sandbox-request.v1",
+                "job": job.model_dump(by_alias=True, mode="json"),
+                "containmentProofSha256": launcher.settings.containment_proof_sha256
+                if isinstance(launcher, PinnedSpatialDataLauncher)
+                else None,
+                "authorityNamespaceInodes": _authority_namespace_inodes(),
+            }
+            raw = json.dumps(
+                request, ensure_ascii=False, allow_nan=False, separators=(",", ":")
+            ).encode("utf-8")
+            maximum_request_bytes = 262144
+            if len(raw) > maximum_request_bytes:
+                raise SurfaceProfileWorkerError("RESOURCE_LIMIT_EXCEEDED")
+            assert process.stdin is not None
+            os.set_blocking(process.stdin.fileno(), False)
+            wire = memoryview(struct.pack(">I", len(raw)) + raw)
+            while wire:
+                _, writable, _ = select.select([], [process.stdin], [], guard())
+                if writable:
+                    sent = os.write(process.stdin.fileno(), wire)
+                    if not sent:
+                        raise SurfaceProfileWorkerError("INTEGRITY_MISMATCH")
+                    wire = wire[sent:]
+            process.stdin.close()
+            response = read_frame(
+                job.policy.max_result_bytes + SURFACE_PROFILE_FRAME_OVERHEAD_BYTES
+            )
+            if (
+                not isinstance(response, dict)
+                or set(response) != {"version", "result", "reason"}
+                or response["version"] != "surface-profile-sandbox-result.v1"
+            ):
+                raise SurfaceProfileWorkerError("INTEGRITY_MISMATCH")
+            refusal_reason: SurfaceProfileJobReasonV1 | None = None
+            profile: SurfaceProfileResultV1 | None = None
+            if response["reason"] is not None:
+                if response["result"] is not None or response["reason"] not in get_args(
+                    SurfaceProfileJobReasonV1
+                ):
+                    raise SurfaceProfileWorkerError("INTEGRITY_MISMATCH")
+                refusal_reason = response["reason"]
+            else:
+                try:
+                    profile = SurfaceProfileResultV1.model_validate(response["result"])
+                except (ValueError, RecursionError) as exc:
+                    raise SurfaceProfileWorkerError("INTEGRITY_MISMATCH") from exc
+                if profile.result_digest is None:
+                    raise SurfaceProfileWorkerError("INTEGRITY_MISMATCH")
+                try:
+                    result_bytes = canonical_json_bytes(
+                        profile.model_dump(by_alias=True, mode="json")
+                    )
+                except (TypeError, ValueError, RecursionError) as exc:
+                    raise SurfaceProfileWorkerError("INTEGRITY_MISMATCH") from exc
+                if len(result_bytes) > job.policy.max_result_bytes:
+                    raise SurfaceProfileWorkerError("RESOURCE_LIMIT_EXCEEDED")
+            assert process.stdout is not None
+            while True:
+                readable, _, _ = select.select([process.stdout], [], [], guard())
+                if readable:
+                    if os.read(process.stdout.fileno(), 1):
+                        raise SurfaceProfileWorkerError("INTEGRITY_MISMATCH")
+                    break
+            while process.poll() is None:
+                threading.Event().wait(guard())
+            if process.returncode != 0:
+                raise SurfaceProfileWorkerError("WORKER_FAILED")
+            guard()
+            if refusal_reason is not None:
+                raise SurfaceProfileWorkerError(refusal_reason)
+            assert profile is not None
+            return profile
+        except (OSError, ValueError) as exc:
+            raise SurfaceProfileWorkerError("INTEGRITY_MISMATCH") from exc
+        finally:
+            with handoff:
+                abandoned.set()
+                if process is None and result and isinstance(result[0], subprocess.Popen):
+                    process = result[0]
+            if process is not None:
+                try:
+                    self._reap(process)
+                except SpatialDataWorkerError as exc:
+                    raise SurfaceProfileWorkerError("WORKER_FAILED") from exc

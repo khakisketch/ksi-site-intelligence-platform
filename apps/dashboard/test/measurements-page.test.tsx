@@ -9,7 +9,11 @@ const mocked = vi.hoisted(() => ({
   features: vi.fn(),
   jobs: vi.fn(),
   result: vi.fn(),
+  job: vi.fn(),
+  revision: vi.fn(),
+  comparison: vi.fn(),
   catalog: vi.fn(),
+  asset: vi.fn(),
 }));
 
 vi.mock("next/link", () => ({
@@ -21,15 +25,19 @@ vi.mock("next/navigation", () => ({
   useRouter: () => ({ refresh: vi.fn() }),
 }));
 vi.mock("@/app/field/resolve-session", () => ({ resolveFieldSession: mocked.session }));
+vi.mock("@/lib/core-api/session", () => ({ getSessionToken: async () => "reader" }));
 vi.mock("@/app/field/OperationsSessionFailure", () => ({ OperationsSessionFailure: () => createElement("p", null, "로그인 필요") }));
 vi.mock("@/app/sites/[siteId]/SiteHeader", () => ({ SiteHeader: () => createElement("header", null, "현장 머리") }));
 vi.mock("@/lib/core-api/sites", () => ({ getSite: mocked.site }));
 vi.mock("@/lib/core-api/workAreas", () => ({ listWorkAreas: mocked.areas }));
-vi.mock("@/lib/core-api/spatial-assets", () => ({ listSpatialAssets: mocked.catalog }));
+vi.mock("@/lib/core-api/spatial-assets", () => ({ listSpatialAssets: mocked.catalog, getSpatialAsset: mocked.asset }));
 vi.mock("@/lib/core-api/measurement", () => ({
   listMeasurementFeatures: mocked.features,
   listSurfaceProfileJobs: mocked.jobs,
   getSurfaceProfileResult: mocked.result,
+  getSurfaceProfileJob: mocked.job,
+  getMeasurementFeatureRevision: mocked.revision,
+  getSurfaceProfileComparisonWithToken: mocked.comparison,
 }));
 vi.mock("@/components/ui/ErrorState", () => ({
   ErrorState: ({ message }: { message: string }) => createElement("div", { role: "alert" }, message),
@@ -42,6 +50,7 @@ vi.mock("@/lib/core-api/client", () => ({
 
 import MeasurementsPage from "@/app/sites/[siteId]/measurements/page";
 import { CoreApiError } from "@/lib/core-api/client";
+import { measurementLoginReturn } from "@/lib/measurement-source";
 
 const DIGEST = `sha256:${"a".repeat(64)}`;
 const FEATURE_ID = `mf-${"1".repeat(32)}`;
@@ -100,6 +109,115 @@ beforeEach(() => {
 });
 
 describe("측정 선 화면", () => {
+  const linkedPair = { workAreaId: "area-1", feature: FEATURE_ID, ref: jobId(1), cur: jobId(3), comparison: "saved-decision" };
+  const sourceQuery = { workAreaId: "area-1", assetRef: asset(1) };
+  const source = { siteId: "site-1", ...sourceQuery, kind: "dsm", lifecycleState: "SEALED", inspection: { state: "INSPECTION_REPORTED", outcome: "MEASURED" }, declared: { fileName: "spring-survey.tif", captureDate: "2020-05-22" } };
+
+  it("로그인 후 고른 자료와 선으로 복귀하고 임의의 쿼리는 전달하지 않는다", () => {
+    const query = { ...sourceQuery, feature: FEATURE_ID, ref: "", token: "discard" };
+    const link = new URL(measurementLoginReturn("site-1", false, query), "http://localhost");
+    expect([...link.searchParams.keys()]).toEqual(["workAreaId", "assetRef", "feature", "ref"]);
+    expect(link.searchParams.get("assetRef")).toBe(asset(1));
+    const editor = new URL(measurementLoginReturn("site-1", true, { ...linkedPair, ...sourceQuery, featureId: FEATURE_ID, token: "discard" }), "http://localhost");
+    expect(editor.pathname).toBe("/sites/site-1/measurements/new");
+    expect([...editor.searchParams.keys()]).toEqual(["workAreaId", "assetRef", "feature", "ref", "cur", "comparison", "featureId"]);
+    expect(editor.searchParams.get("feature")).toBe(FEATURE_ID);
+    expect(editor.searchParams.get("featureId")).toBe(FEATURE_ID);
+    expect(editor.searchParams.get("token")).toBeNull();
+    const invalid = measurementLoginReturn("site-1", false, { workAreaId: "area-1", assetRef: "private-invalid-ref", feature: "../elsewhere", cur: ["not-a-job"] });
+    expect(invalid).toBe("/sites/site-1/measurements?workAreaId=area-1&assetRef=invalid&feature=invalid&cur=invalid");
+    expect(invalid).not.toContain("private-invalid-ref");
+    expect(invalid).not.toContain("elsewhere");
+  });
+
+  it("최근 자료와 선 작업 목록에 없는 선택 자료도 정확히 찾아 그 날짜만 연다", async () => {
+    mocked.asset.mockResolvedValue(source);
+    mocked.catalog.mockResolvedValue({ siteId: "site-1", workAreaId: "area-1", assets: [], hasMore: true });
+    mocked.jobs.mockImplementation(async (_s, _a, options) => {
+      if (!options.assetRef) return { items: [job(3)] };
+      if (options.executionGroup === "COMPLETED") return { items: [job(1)] };
+      if (options.executionGroup === "ACTIVE") return { items: [] };
+      return { items: Array.from({ length: 8 }, (_, i) => job(1, { jobId: `spj-${i.toString(16).padStart(32, "0")}`, executionState: "CANCELED" })) };
+    });
+    const html = await render(sourceQuery);
+    expect(mocked.asset).toHaveBeenCalledWith("site-1", "area-1", asset(1));
+    expect(mocked.jobs).toHaveBeenCalledWith("site-1", "area-1", { assetRef: asset(1), featureId: FEATURE_ID, featureRevision: 2, limit: 1, executionGroup: "COMPLETED" });
+    expect(mocked.result.mock.calls).toEqual([["site-1", "area-1", jobId(1)]]);
+    expect(html).toContain("spring-survey.tif");
+    expect(html).toContain("2020-05-22");
+    expect(html).toContain(`href="/sites/site-1?workAreaId=area-1&amp;assetRef=${asset(1)}"`);
+    expect(html).toContain('name="assetRef"');
+    expect(html).toContain("단면을 읽었습니다.");
+  });
+
+  it("선택 자료를 읽은 적이 없는 선에서 다른 날짜를 대체 표시하지 않고 선 선택과 요청을 유지한다", async () => {
+    mocked.asset.mockResolvedValue(source);
+    mocked.session.mockResolvedValue({ kind: "ready", principal: { permissions: ["SITES_READ", "SITES_WRITE", "SPATIAL_DATA_READ", "SPATIAL_DATA_REQUEST"] } });
+    mocked.features.mockResolvedValue({ features: [feature, { ...feature, name: "북쪽 사면 보조선", featureId: `mf-${"2".repeat(32)}` }] });
+    mocked.jobs.mockImplementation(async (_s, _a, options) => ({ items: options.assetRef ? [] : [job(3)] }));
+    const html = await render(sourceQuery);
+    expect(mocked.result).not.toHaveBeenCalled();
+    expect(html).toContain('id="measurement-feature"');
+    expect(html).toContain("북쪽 사면 보조선");
+    expect(html).toContain("아직 요청하지 않았습니다.");
+    expect(html).toContain(">단면 요청</button>");
+    expect(html).toContain(`/measurements/new?workAreaId=area-1&amp;assetRef=${asset(1)}`);
+    expect(html).not.toContain("2026-11-02");
+  });
+
+  it.each([{ ...source, kind: "ortho" }, { ...source, workAreaId: "different-area" }, { ...source, lifecycleState: "SUPERSEDED" }])("지정한 자료가 현재 구역의 검사된 DSM이 아니면 다른 자료를 열지 않는다", async (unavailable) => {
+    mocked.asset.mockResolvedValue(unavailable);
+    const html = await render(sourceQuery);
+    expect(html).toContain("선택한 DSM을 이 작업구역에서 열 수 없습니다");
+    expect(html).not.toContain(`href="/sites/site-1?workAreaId=area-1&amp;assetRef=${asset(1)}"`);
+    expect(mocked.jobs).not.toHaveBeenCalled();
+    expect(mocked.features).not.toHaveBeenCalled();
+  });
+
+  it("작업구역 누락·잘못된 자료 참조·고정 비교와의 혼용은 자료 조회 전에 거부한다", async () => {
+    for (const query of [{ assetRef: asset(1) }, { ...sourceQuery, assetRef: [asset(1), asset(2)] }, { ...linkedPair, assetRef: asset(1) }]) {
+      expect(await render(query)).toContain("주소의 선택 값이 올바르지 않습니다");
+    }
+    expect(mocked.asset).not.toHaveBeenCalled();
+    expect(mocked.result).not.toHaveBeenCalled();
+  });
+  it("고유 주소는 최근 목록 밖의 단면까지 읽고 저장한 판정만 조회한다", async () => {
+    mocked.jobs.mockResolvedValueOnce({ items: [job(3), job(2, { assetRef: asset(1) })] });
+    mocked.job.mockResolvedValueOnce(job(1));
+    mocked.comparison.mockResolvedValueOnce({
+      contractVersion: "surface-profile-comparison.v1", decisionId: linkedPair.comparison,
+      baselineJobId: linkedPair.ref, currentJobId: linkedPair.cur, decisionDigest: DIGEST,
+      verdict: "BLOCKED", reasons: ["COMPATIBILITY_MAPPING_MISSING"], remediations: ["AUTHORIZE_COMPATIBILITY_MAPPING"], result: null,
+    });
+    const html = await render(linkedPair);
+    expect(mocked.job).toHaveBeenCalledWith("site-1", "area-1", jobId(1));
+    expect(mocked.comparison).toHaveBeenCalledWith("site-1", "area-1", {
+      baselineJobId: jobId(1), currentJobId: jobId(3), decisionId: linkedPair.comparison,
+    }, "reader");
+    expect(html).toContain("호환성 매핑이 등록되지 않았습니다");
+    expect(html).not.toContain("높이차 CSV 내보내기");
+  });
+  it("철회된 비교 주소에서 날짜별 단면은 읽고 비교 수치는 숨긴다", async () => {
+    mocked.comparison.mockRejectedValueOnce(new CoreApiError(409, {}));
+    const html = await render(linkedPair);
+    expect(html).toContain("이 비교를 열 수 없습니다");
+    expect(html).toContain("날짜별 높이 CSV 내보내기");
+    expect(html).not.toContain("높이차 CSV 내보내기");
+  });
+  it("선을 고친 뒤에도 고유 주소는 두 작업의 이전 선 개정과 당시 판정을 읽는다", async () => {
+    mocked.features.mockResolvedValueOnce({ features: [{ ...feature, revision: 3, lineDigest: `sha256:${"e".repeat(64)}` }] });
+    mocked.revision.mockResolvedValueOnce(feature);
+    mocked.comparison.mockResolvedValueOnce({
+      contractVersion: "surface-profile-comparison.v1", decisionId: linkedPair.comparison,
+      baselineJobId: linkedPair.ref, currentJobId: linkedPair.cur, decisionDigest: DIGEST,
+      verdict: "BLOCKED", reasons: ["COMPATIBILITY_MAPPING_MISSING"], remediations: ["AUTHORIZE_COMPATIBILITY_MAPPING"], result: null,
+    });
+    const html = await render(linkedPair);
+    expect(mocked.revision).toHaveBeenCalledWith("site-1", "area-1", { featureId: FEATURE_ID, revision: 2, lineDigest: DIGEST });
+    expect(html).toContain("저장 당시 측정 선 개정");
+    expect(html).toContain("호환성 매핑이 등록되지 않았습니다");
+    expect(html).not.toContain("이 선 고치기");
+  });
   it("작업구역을 고르기 전에는 Core의 선·작업을 읽지 않는다", async () => {
     const html = await render({});
     expect(html).toContain("작업구역을 선택");
@@ -148,9 +266,27 @@ describe("측정 선 화면", () => {
       permissions: ["SITES_READ", "SITES_WRITE", "SPATIAL_DATA_READ"],
     } });
     const html = await render();
-    expect(html).toContain('href="/sites/site-1/measurements/new?workAreaId=area-1"');
-    expect(html).toContain(`href="/sites/site-1/measurements/new?workAreaId=area-1&amp;featureId=${FEATURE_ID}"`);
+    expect(html).toContain(`href="/sites/site-1/measurements/new?workAreaId=area-1&amp;feature=${FEATURE_ID}"`);
+    expect(html).toContain(`href="/sites/site-1/measurements/new?workAreaId=area-1&amp;feature=${FEATURE_ID}&amp;featureId=${FEATURE_ID}"`);
     expect(html).toContain("이 선 고치기");
+  });
+
+  it("새 선 취소는 선택한 선과 명시한 날짜를 보존하고 기본 날짜 선택은 고정하지 않는다", async () => {
+    mocked.session.mockResolvedValue({ kind: "ready", principal: {
+      principalId: "operator-1", organizationId: "org-1", kind: "OPERATOR", role: "ADMIN",
+      permissions: ["SITES_READ", "SITES_WRITE", "SPATIAL_DATA_READ"],
+    } });
+    mocked.comparison.mockResolvedValueOnce({
+      contractVersion: "surface-profile-comparison.v1", decisionId: linkedPair.comparison,
+      baselineJobId: linkedPair.ref, currentJobId: linkedPair.cur, decisionDigest: DIGEST,
+      verdict: "BLOCKED", reasons: ["COMPATIBILITY_MAPPING_MISSING"], remediations: ["AUTHORIZE_COMPATIBILITY_MAPPING"], result: null,
+    });
+    const html = await render(linkedPair);
+    expect(html).toContain(`href="/sites/site-1/measurements/new?workAreaId=area-1&amp;feature=${FEATURE_ID}&amp;ref=${jobId(1)}&amp;cur=${jobId(3)}&amp;comparison=${linkedPair.comparison}"`);
+    const unpinned = await render({ workAreaId: "area-1", feature: FEATURE_ID });
+    expect(unpinned).toContain(`href="/sites/site-1/measurements/new?workAreaId=area-1&amp;feature=${FEATURE_ID}"`);
+    expect(unpinned).not.toContain(`&amp;ref=${jobId(1)}`);
+    expect(unpinned).not.toContain(`&amp;cur=${jobId(3)}`);
   });
 
   describe("날짜별 단면 요청", () => {
@@ -165,6 +301,7 @@ describe("측정 선 화면", () => {
       writer();
       catalog([sealed(1, "2026-03-14"), sealed(3, "2026-11-02"), sealed(5, "2026-11-09")]);
       const html = await render();
+      expect(mocked.catalog).toHaveBeenCalledWith("site-1", "area-1", { limit: 50, order: "capture-desc" });
       expect(html).toContain("날짜별 단면");
       expect(html).toContain("2026-11-09");
       expect(html).toContain('data-request-state="none"');
@@ -185,6 +322,19 @@ describe("측정 선 화면", () => {
       writer();
       catalog([sealed(3, "2026-11-02", "ortho")]);
       expect(await render()).not.toContain("날짜별 단면");
+    });
+
+    it("거부된 파일과 단면 지원 범위 밖에서 검사된 DSM은 사유와 자료 상세만 제공한다", async () => {
+      writer();
+      catalog([
+        { ...sealed(5, "2024-06-24"), inspection: { state: "INSPECTION_REPORTED", outcome: "REJECTED", raster: null } },
+        { ...sealed(6, "2024-07-05"), inspection: { state: "INSPECTION_REPORTED", outcome: "MEASURED", raster: { observedCrsIdentifier: "EPSG:32634" } } },
+      ]);
+      const html = await render();
+      expect(html).toContain("파일 검사에서 거부된 DSM입니다.");
+      expect(html).toContain("수평 좌표계(EPSG:32634)는 현재 단면 분석 지원 범위 밖입니다.");
+      expect(html).toContain("자료 상세 열기");
+      expect(html).not.toContain(">단면 요청</button>");
     });
 
     it("쓰기·요청 권한이 모두 있어야 요청 버튼이 열리고, 없으면 상태만 보인다", async () => {
@@ -344,6 +494,16 @@ describe("측정 선 화면", () => {
     const html = await render();
     expect(html).toContain("고치기 전 개정의 결과 1건은 이 화면에서 제외했습니다");
     expect(mocked.result).not.toHaveBeenCalledWith("site-1", "area-1", jobId(2));
+  });
+
+  it("geometry digest가 같아도 다른 저장 선 개정의 결과는 선택하지 않는다", async () => {
+    const old = job(2, { feature: { featureId: FEATURE_ID, revision: 1, lineDigest: DIGEST } });
+    mocked.jobs.mockResolvedValueOnce({ items: [old, job(3), job(1)] });
+    const html = await render({ workAreaId: "area-1", ref: old.jobId });
+    expect(html).toContain("고치기 전 개정의 결과 1건은 이 화면에서 제외했습니다");
+    expect(mocked.result).not.toHaveBeenCalledWith("site-1", "area-1", old.jobId);
+    expect(mocked.result).toHaveBeenCalledWith("site-1", "area-1", jobId(1));
+    expect(mocked.result).toHaveBeenCalledWith("site-1", "area-1", jobId(3));
   });
 
   it("다른 작업구역의 작업은 걸러낸다", async () => {

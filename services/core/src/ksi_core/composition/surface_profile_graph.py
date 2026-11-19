@@ -43,6 +43,7 @@ class SurfaceProfileGraphConfig:
     activation: SurfaceProfileActivationV1
     http_limits: SurfaceProfileHttpLimits
     clock: Callable[[], datetime]
+    activation_is_current: Callable[[datetime], bool] | None = None
 
     def __post_init__(self) -> None:
         for name, model in (
@@ -60,6 +61,7 @@ class SurfaceProfileGraphConfig:
         if (
             not isinstance(self.http_limits, SurfaceProfileHttpLimits)
             or not callable(self.clock)
+            or (self.activation_is_current is not None and not callable(self.activation_is_current))
             or self.activation.policy_digest != self.policy.policy_digest
             or self.activation.runtime_digest != self.runtime.runtime_digest
         ):
@@ -191,6 +193,7 @@ def build_surface_profile_wiring(
         currentness=currentness,
         data_policy=data_policy,
         activation=config.activation,
+        activation_is_current=config.activation_is_current,
         profile_policy_digest=config.policy.policy_digest or "",
         runtime_digest=config.runtime.runtime_digest or "",
         coordinator=coordinator,
@@ -224,7 +227,11 @@ def bind_surface_profile_openapi(app: FastAPI) -> None:
     라우트 탐색·캐시는 애플리케이션의 OpenAPI 생성기가 계속 담당한다.
     """
     from ksi_event_contracts.surface_profile_job import (  # noqa: PLC0415
+        CreateSurfaceProfileComparisonV1,
         CreateSurfaceProfileJobV1,
+        SurfaceProfileComparisonResultV1,
+        SurfaceProfileComparisonSampleV1,
+        SurfaceProfileComparisonV1,
         SurfaceProfileCompleteRequestV1,
         SurfaceProfileErrorV1,
         SurfaceProfileFailureRequestV1,
@@ -259,6 +266,10 @@ def bind_surface_profile_openapi(app: FastAPI) -> None:
             SurfaceProfileWorkerPendingPageV1,
             SurfaceProfileWorkerInputResponseV1,
             CreateSurfaceProfileJobV1,
+            CreateSurfaceProfileComparisonV1,
+            SurfaceProfileComparisonSampleV1,
+            SurfaceProfileComparisonResultV1,
+            SurfaceProfileComparisonV1,
             SurfaceProfileLeaseRequestV1,
             SurfaceProfileLeaseViewV1,
             SurfaceProfileRenewRequestV1,

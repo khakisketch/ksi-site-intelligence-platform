@@ -258,6 +258,141 @@ def test_the_list_can_narrow_to_one_line_before_the_limit_applies(tmp_path: Path
     )
 
 
+def test_history_filters_source_revision_and_execution_group_before_limit(tmp_path: Path) -> None:
+    lane = Lane(tmp_path)
+    completed_id, attempt, job = lane.running()
+    result, receipt = lane.answer(job)
+    lane.complete(completed_id, attempt, result, receipt)
+    older_active = lane.issue(key="older-active")
+
+    # Many canceled retries must not hide this source's older completed or active request.
+    latest_canceled = None
+    for index in range(10):
+        job_id = lane.issue(key=f"later-{index}").job_id
+        latest_canceled = lane.store.cancel(
+            job_id=job_id, principal=requester(), now=NOW + later(3)
+        )
+
+    changed_feature = feature_revision(revision=2)
+    lane.authority.feature = changed_feature
+    changed_job = lane.issue(
+        key="other-revision", feature=changed_feature.ref()
+    )
+    lane.store.cancel(
+        job_id=changed_job.job_id, principal=requester(), now=NOW + later(3)
+    )
+
+    lane.authority.feature = feature_revision()
+    original_source = lane.authority.source
+    original_grant = lane.authority.grant
+    from ksi_core.domains.external.ingress.spatial_asset_catalog import asset_ref_for_subject
+
+    other_artifact_id = "artifact-other"
+    other_asset = asset_ref_for_subject(original_source.sealed_subject, other_artifact_id)
+    lane.authority.source = original_source.model_copy(
+        update={
+            "asset_ref": other_asset,
+            "artifact_id": other_artifact_id,
+            "inspection": original_source.inspection.model_copy(
+                update={"artifact_id": other_artifact_id}
+            ),
+            "source_digest": None,
+        }
+    ).sealed()
+    lane.authority.grant = original_grant.model_copy(
+        update={"asset_ref": other_asset, "grant_digest": None}
+    ).sealed()
+    other_asset_job = lane.issue(key="other-asset", asset_ref=other_asset)
+    lane.store.cancel(
+        job_id=other_asset_job.job_id, principal=requester(), now=NOW + later(3)
+    )
+    lane.authority.source = original_source
+    lane.authority.grant = original_grant
+
+    assert lane.store.list(
+        site_id=SITE,
+        work_area_id=AREA,
+        principal=requester(),
+        limit=1,
+        now=NOW + later(4),
+        feature_id="mf-" + "1" * 32,
+    )[0].job_id == other_asset_job.job_id
+
+    matches = lane.store.list(
+        site_id=SITE,
+        work_area_id=AREA,
+        principal=requester(),
+        limit=1,
+        now=NOW + later(4),
+        feature_id="mf-" + "1" * 32,
+        asset_ref="ksa-v1-" + "b" * 64,
+        feature_revision=1,
+        execution_group="COMPLETED",
+    )
+    assert [item.job_id for item in matches] == [completed_id]
+
+    active = lane.store.list(
+        site_id=SITE,
+        work_area_id=AREA,
+        principal=requester(),
+        limit=1,
+        now=NOW + later(4),
+        feature_id="mf-" + "1" * 32,
+        asset_ref="ksa-v1-" + "b" * 64,
+        feature_revision=1,
+        execution_group="ACTIVE",
+    )
+    assert [item.job_id for item in active] == [older_active.job_id]
+
+    current = lane.store.list(
+        site_id=SITE,
+        work_area_id=AREA,
+        principal=requester(),
+        limit=1,
+        now=NOW + later(4),
+        feature_id="mf-" + "1" * 32,
+        asset_ref="ksa-v1-" + "b" * 64,
+        feature_revision=1,
+    )
+    assert latest_canceled is not None
+    assert [item.job_id for item in current] == [latest_canceled.job_id]
+
+    leased = lane.issue(key="expired-active")
+    lane.lease(leased.job_id, at=1)
+    refreshed_active = lane.store.list(
+        site_id=SITE,
+        work_area_id=AREA,
+        principal=requester(),
+        limit=2,
+        now=NOW + later(7),
+        feature_id="mf-" + "1" * 32,
+        asset_ref="ksa-v1-" + "b" * 64,
+        feature_revision=1,
+        execution_group="ACTIVE",
+    )
+    assert leased.job_id in {item.job_id for item in refreshed_active}
+    refreshed_lease = next(item for item in refreshed_active if item.job_id == leased.job_id)
+    assert refreshed_lease.execution_state.value == "QUEUED"
+
+    for filters in (
+        {"asset_ref": "invalid"},
+        {"feature_revision": 0},
+        {"feature_revision": 1},
+        {"execution_group": "FAILED"},
+        {"execution_group": ["ACTIVE"]},
+    ):
+        assert _refusal(
+            lambda filters=filters: lane.store.list(
+                site_id=SITE,
+                work_area_id=AREA,
+                principal=requester(),
+                limit=1,
+                now=NOW,
+                **filters,
+            )
+        ).reason == "INVALID_REQUEST"
+
+
 # ── lease / fence ───────────────────────────────────────────────────────────
 
 

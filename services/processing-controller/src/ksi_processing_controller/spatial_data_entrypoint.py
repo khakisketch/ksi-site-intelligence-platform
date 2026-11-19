@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any
 
 from ksi_event_contracts.spatial_data import SpatialDataFrozenJobV1, SpatialDataReceiptV1
+from ksi_event_contracts.surface_profile_job import SurfaceProfileFrozenJobV1
 
 
 def prepare_native_candidate(
@@ -100,6 +101,7 @@ def main(argv: list[str] | None = None) -> int:
     from ksi_geo_spatial.external_native_window_geometry import NativeWindowError
 
     from ksi_processing_controller.spatial_data_sandbox import (
+        SURFACE_PROFILE_FRAME_OVERHEAD_BYTES,
         SpatialDataContainmentProofV1,
         apply_spatial_data_rlimits,
         verify_process_containment,
@@ -109,16 +111,31 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Fixed isolated data child; launcher-only")
     parser.add_argument("--workspace", required=True)
     parser.add_argument("--containment-proof-fd", required=True, type=int)
+    parser.add_argument(
+        "--operation",
+        choices=("native-window", "surface-profile"),
+        default="native-window",
+    )
     args = parser.parse_args(argv)
 
-    def emit(body: dict[str, Any]) -> None:
+    def emit(body: dict[str, Any], *, maximum_bytes: int = 262144) -> None:
         raw = json.dumps(body, ensure_ascii=False, allow_nan=False, separators=(",", ":")).encode(
             "utf-8"
         )
-        if len(raw) > 262144:
+        if len(raw) > maximum_bytes:
             raise ValueError("child result over budget")
         sys.stdout.buffer.write(struct.pack(">I", len(raw)) + raw)
         sys.stdout.buffer.flush()
+
+    def emit_profile_refusal(reason: str, *, maximum_bytes: int) -> None:
+        emit(
+            {
+                "version": "surface-profile-sandbox-result.v1",
+                "result": None,
+                "reason": reason,
+            },
+            maximum_bytes=maximum_bytes,
+        )
 
     try:
         proof_raw = os.read(args.containment_proof_fd, 262145)
@@ -127,7 +144,12 @@ def main(argv: list[str] | None = None) -> int:
             return 2
         proof = SpatialDataContainmentProofV1.model_validate(parse_strict_json(proof_raw))
         apply_spatial_data_rlimits(proof.resource_envelope, max_output_bytes=proof.max_output_bytes)
-        emit({"version": "spatial-data-sandbox-ready.v1", "pid": os.getpid(), "ready": True})
+        ready_version = (
+            "surface-profile-sandbox-ready.v1"
+            if args.operation == "surface-profile"
+            else "spatial-data-sandbox-ready.v1"
+        )
+        emit({"version": ready_version, "pid": os.getpid(), "ready": True})
         prefix = sys.stdin.buffer.read(4)
         if len(prefix) != 4:
             return 2
@@ -138,17 +160,31 @@ def main(argv: list[str] | None = None) -> int:
         if len(raw) != length or sys.stdin.buffer.read(1):
             return 2
         request = parse_strict_json(raw)
+        native_request_keys = {
+            "version",
+            "job",
+            "preparedAt",
+            "containmentProofSha256",
+            "authorityNamespaceInodes",
+        }
+        profile_request_keys = {
+            "version",
+            "job",
+            "containmentProofSha256",
+            "authorityNamespaceInodes",
+        }
+        expected_request_keys = (
+            profile_request_keys if args.operation == "surface-profile" else native_request_keys
+        )
+        expected_request_version = (
+            "surface-profile-sandbox-request.v1"
+            if args.operation == "surface-profile"
+            else "spatial-data-sandbox-request.v2"
+        )
         if (
             not isinstance(request, dict)
-            or set(request)
-            != {
-                "version",
-                "job",
-                "preparedAt",
-                "containmentProofSha256",
-                "authorityNamespaceInodes",
-            }
-            or request["version"] != "spatial-data-sandbox-request.v2"
+            or set(request) != expected_request_keys
+            or (request["version"] != expected_request_version)
         ):
             return 2
         if request["containmentProofSha256"] != "sha256:" + hashlib.sha256(proof_raw).hexdigest():
@@ -157,38 +193,115 @@ def main(argv: list[str] | None = None) -> int:
         if (
             not isinstance(authority_inodes, dict)
             or set(authority_inodes) != {"net", "mnt", "user"}
-            or any(
-                type(value) is not int or value <= 0 for value in authority_inodes.values()
-            )
+            or any(type(value) is not int or value <= 0 for value in authority_inodes.values())
         ):
             return 2
-        job = SpatialDataFrozenJobV1.model_validate(request["job"])
-        if job.job_digest != job.canonical_digest() or not verify_process_containment(
+        job: SurfaceProfileFrozenJobV1 | SpatialDataFrozenJobV1
+        if args.operation == "surface-profile":
+            job = SurfaceProfileFrozenJobV1.model_validate(request["job"])
+        else:
+            job = SpatialDataFrozenJobV1.model_validate(request["job"])
+        observed_at = datetime.now(UTC)
+        if job.job_digest != job.canonical_digest():
+            return 2
+        if isinstance(job, SurfaceProfileFrozenJobV1):
+            profile_frame_maximum = (
+                job.policy.max_result_bytes + SURFACE_PROFILE_FRAME_OVERHEAD_BYTES
+            )
+            if observed_at >= job.deadline:
+                emit_profile_refusal("DEADLINE_EXCEEDED", maximum_bytes=profile_frame_maximum)
+                return 0
+            if observed_at >= proof.valid_until:
+                emit_profile_refusal("POLICY_UNAVAILABLE", maximum_bytes=profile_frame_maximum)
+                return 0
+        contained = verify_process_containment(
             pid=os.getpid(),
             job=job,
             proof=proof,
-            now=datetime.now(UTC),
+            now=observed_at,
             authority_inodes=authority_inodes,
-        ):
+        )
+        if not contained:
+            if isinstance(job, SurfaceProfileFrozenJobV1):
+                emit_profile_refusal("POLICY_UNAVAILABLE", maximum_bytes=profile_frame_maximum)
+                return 0
             return 2
         workspace = Path(args.workspace)
         if not workspace.is_absolute() or workspace.is_symlink() or not workspace.is_dir():
             return 2
-        prepared = datetime.fromisoformat(request["preparedAt"])
-        receipt = prepare_native_candidate(
-            job=job,
-            source_path=workspace / "source.tif",
-            output_parent=workspace,
-            prepared_at=prepared,
-            is_current=lambda: datetime.now(UTC) < min(job.deadline, proof.valid_until),
-        )
-        emit(
-            {
-                "version": "spatial-data-sandbox-result.v1",
-                "receipt": receipt.model_dump(by_alias=True, mode="json"),
-                "reason": None,
-            }
-        )
+        source_path = workspace / "source.tif"
+        if isinstance(job, SurfaceProfileFrozenJobV1):
+            from typing import get_args
+
+            from ksi_domain.canonical_json import canonical_json_bytes
+            from ksi_event_contracts.surface_profile_job import SurfaceProfileJobReasonV1
+
+            from ksi_processing_controller.surface_profile_worker import (
+                SurfaceProfileWorkerError,
+                compute_verified_surface_profile,
+            )
+
+            try:
+                checked_at = datetime.now(UTC)
+                if checked_at >= job.deadline:
+                    emit_profile_refusal("DEADLINE_EXCEEDED", maximum_bytes=profile_frame_maximum)
+                    return 0
+                if checked_at >= proof.valid_until:
+                    emit_profile_refusal("POLICY_UNAVAILABLE", maximum_bytes=profile_frame_maximum)
+                    return 0
+                profile = compute_verified_surface_profile(job, source_path)
+                if profile.result_digest is None:
+                    raise SurfaceProfileWorkerError("INTEGRITY_MISMATCH")
+                result_body = profile.model_dump(by_alias=True, mode="json")
+                if len(canonical_json_bytes(result_body)) > job.policy.max_result_bytes:
+                    raise SurfaceProfileWorkerError("RESOURCE_LIMIT_EXCEEDED")
+                finished_at = datetime.now(UTC)
+                if finished_at >= job.deadline:
+                    emit_profile_refusal("DEADLINE_EXCEEDED", maximum_bytes=profile_frame_maximum)
+                    return 0
+                if finished_at >= proof.valid_until:
+                    emit_profile_refusal("POLICY_UNAVAILABLE", maximum_bytes=profile_frame_maximum)
+                    return 0
+                response = {
+                    "version": "surface-profile-sandbox-result.v1",
+                    "result": result_body,
+                    "reason": None,
+                }
+                emit(response, maximum_bytes=profile_frame_maximum)
+            except SurfaceProfileWorkerError as exc:
+                finished_at = datetime.now(UTC)
+                reason = exc.reason
+                if finished_at >= job.deadline:
+                    reason = "DEADLINE_EXCEEDED"
+                elif finished_at >= proof.valid_until:
+                    reason = "POLICY_UNAVAILABLE"
+                if reason not in get_args(SurfaceProfileJobReasonV1):
+                    return 2
+                emit(
+                    {
+                        "version": "surface-profile-sandbox-result.v1",
+                        "result": None,
+                        "reason": reason,
+                    },
+                    maximum_bytes=profile_frame_maximum,
+                )
+                return 0
+        else:
+            prepared = datetime.fromisoformat(request["preparedAt"])
+            receipt = prepare_native_candidate(
+                job=job,
+                source_path=source_path,
+                output_parent=workspace,
+                prepared_at=prepared,
+                is_current=lambda: datetime.now(UTC) < min(job.deadline, proof.valid_until),
+            )
+            emit(
+                {
+                    "version": "spatial-data-sandbox-result.v1",
+                    "receipt": receipt.model_dump(by_alias=True, mode="json"),
+                    "reason": None,
+                }
+            )
         return 0
     except NativeWindowError as exc:
         emit({"version": "spatial-data-sandbox-result.v1", "receipt": None, "reason": exc.reason})

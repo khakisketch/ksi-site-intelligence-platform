@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useRef, useState } from "react";
 
 import { ResponsiveActionBoundary } from "@/components/responsive/ResponsiveActionBoundary";
+import { FEATURE_ID_PATTERN } from "@/lib/core-api/measurement-types";
 import { saveLineErrorText } from "@/lib/measurement-copy";
 import {
   MAX_LINE_NAME,
@@ -38,9 +39,30 @@ export interface LineEditorProps {
   editing: { featureId: string; revision: number } | null;
   /** 저장돼 있던 좌표계. 경위도가 아니어서 변환해 보여 주는 경우에만 있다. */
   convertedFromCrs: string | null;
+  source: {
+    assetRef: string;
+    fileName: string;
+    captureDate: string | null;
+    footprint: LineVertex[] | null;
+  } | null;
+  /** 처음 지도를 열 때 자료 범위에 맞춘다. 편집 중이면 저장된 선이 우선한다. */
+  focusRing: LineVertex[] | null;
+  /** 측정 목록 복귀 주소에 작업구역과 자료 선택을 보존한다. */
+  returnHref: string;
 }
 
 const MAX_HISTORY = 50;
+const UNCONFIRMED_SAVE = "저장 응답을 확인하지 못했습니다. 같은 내용으로 다시 저장하면 처리 결과를 확인할 수 있습니다.";
+
+function savedLineHref(returnHref: string, featureId: string): string {
+  const [pathname, search = ""] = returnHref.split("?", 2);
+  const params = new URLSearchParams(search);
+  params.delete("ref");
+  params.delete("cur");
+  params.delete("comparison");
+  params.set("feature", featureId);
+  return `${pathname}?${params}`;
+}
 
 function without<T>(record: Record<number, T>, index: number): Record<number, T> {
   const next = { ...record };
@@ -48,7 +70,7 @@ function without<T>(record: Record<number, T>, index: number): Record<number, T>
   return next;
 }
 
-export function LineEditor({ siteId, workAreaId, areaName, ring, initialVertices, initialName, editing, convertedFromCrs }: LineEditorProps) {
+export function LineEditor({ siteId, workAreaId, areaName, ring, initialVertices, initialName, editing, convertedFromCrs, source, focusRing, returnHref }: LineEditorProps) {
   const router = useRouter();
   const [vertices, setVertices] = useState<LineVertex[]>(initialVertices);
   const [history, setHistory] = useState<LineVertex[][]>([]);
@@ -134,37 +156,48 @@ export function LineEditor({ siteId, workAreaId, areaName, ring, initialVertices
       });
       const value: unknown = await response.json().catch(() => null);
       if (response.ok) {
-        key.current = null;
         const featureId = typeof value === "object" && value !== null
           ? (value as { revision?: { featureId?: unknown } }).revision?.featureId
           : undefined;
-        const target = `/sites/${encodeURIComponent(siteId)}/measurements?workAreaId=${encodeURIComponent(workAreaId)}`
-          + (typeof featureId === "string" ? `&feature=${encodeURIComponent(featureId)}` : "");
-        router.push(target);
+        if (typeof featureId !== "string" || !FEATURE_ID_PATTERN.test(featureId) || (editing && featureId !== editing.featureId)) {
+          setError(UNCONFIRMED_SAVE);
+          return;
+        }
+        key.current = null;
+        router.push(savedLineHref(returnHref, featureId));
         return;
       }
-      // 서버가 답했으니 이 시도는 끝났다. 같은 키로 다시 보내지 않는다.
+      if (response.status >= 500 || response.status === 408) {
+        setError(UNCONFIRMED_SAVE);
+        return;
+      }
       key.current = null;
       const code = typeof value === "object" && value !== null && typeof (value as { code?: unknown }).code === "string" ? (value as { code: string }).code : undefined;
       setError(saveLineErrorText(response.status, code));
     } catch {
-      // 응답을 모른다. 키를 두어 같은 요청으로 다시 시도하게 한다.
-      setError("응답을 확인하지 못했습니다. 같은 내용으로 다시 저장해 보세요. 이미 저장됐다면 중복으로 만들지 않습니다.");
+      setError(UNCONFIRMED_SAVE);
     } finally {
       lock.current = false;
       setBusy(false);
     }
   }
 
-  const backHref = `/sites/${encodeURIComponent(siteId)}/measurements?workAreaId=${encodeURIComponent(workAreaId)}${editing ? `&feature=${encodeURIComponent(editing.featureId)}` : ""}`;
-
-  return (
+  return <>
+    {source && <aside aria-label="선택한 DSM" className="min-w-0 rounded-lg border border-line bg-surface px-4 py-3">
+      <p className="text-caption text-ink-muted">선택한 DSM · {source.captureDate ?? "촬영 시기 미상"}</p>
+      <p className="break-all text-body font-semibold text-ink-1">{source.fileName}</p>
+      {source.footprint
+        ? <p className="mt-1 text-caption text-ink-2">지도에 표시한 자료 경계는 DSM 전체 격자의 외곽입니다. 경계 안에도 높이가 없는 지점이 있을 수 있습니다.</p>
+        : <p className="mt-1 text-caption text-high-ink">파일의 좌표계와 격자 경계로는 이 자료의 범위를 지도에 표시할 수 없습니다.</p>}
+    </aside>}
     <ResponsiveActionBoundary action="WORK_ORDERS_WRITE" title="화면 폭 1024px 이상에서 그리기" reason="측정 선은 지도에서 점을 눌러 그립니다. 노트북에서 같은 계정으로 여세요. 모바일에서는 저장한 선을 볼 수만 있습니다.">
       <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_380px] lg:items-start">
         <div className="min-h-[420px] overflow-hidden rounded-xl border border-line bg-sunk lg:h-[600px]" aria-label="측정 선 그리기 지도">
           <LineEditorMap
             vertices={vertices}
             ring={ring}
+            sourceRing={source?.footprint ?? null}
+            focusRing={focusRing}
             disabled={busy}
             onAdd={(vertex) => vertices.length < MAX_LINE_VERTICES && change(insertVertex(vertices, vertices.length, vertex))}
             onMove={(index, vertex) => change(moveVertex(vertices, index, vertex))}
@@ -248,11 +281,11 @@ export function LineEditor({ siteId, workAreaId, areaName, ring, initialVertices
 
           <div className="flex flex-wrap gap-2">
             <button type="submit" className="btn btn-primary" disabled={!canSave}>{busy ? "저장하는 중" : editing ? "새 개정으로 저장" : "선 저장"}</button>
-            <Link href={backHref} className="btn">돌아가기</Link>
+            <Link href={returnHref} className="btn">돌아가기</Link>
           </div>
           {error && <p role="alert" className="text-body text-high-ink">{error}</p>}
         </form>
       </div>
     </ResponsiveActionBoundary>
-  );
+  </>;
 }

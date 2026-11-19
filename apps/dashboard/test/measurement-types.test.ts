@@ -6,6 +6,7 @@ import {
   isProfileResult,
   isProfileVerticalReference,
   isProfileResultView,
+  isSurfaceProfileComparison,
 } from "@/lib/core-api/measurement-types";
 
 const DIGEST = `sha256:${"a".repeat(64)}`;
@@ -21,6 +22,50 @@ const JOB = {
   availability: "AVAILABLE",
   reason: null,
 };
+
+function comparison(overrides: Record<string, unknown> = {}) {
+  return {
+    contractVersion: "surface-profile-comparison.v1",
+    baselineJobId: "spj-" + "1".repeat(32),
+    currentJobId: "spj-" + "2".repeat(32),
+    decisionId: "decision-1",
+    decisionDigest: DIGEST,
+    verdict: "ELIGIBLE",
+    reasons: ["USE_ELIGIBLE"],
+    remediations: ["CURRENT_DEPENDENCIES_RETAINED"],
+    result: {
+      comparisonDigest: DIGEST,
+      baselineResultDigest: DIGEST,
+      currentResultDigest: DIGEST,
+      samples: [
+        { distanceM: 0, baselineM: 10, currentM: 10, differenceM: 0, invalidReason: null },
+        { distanceM: 1, baselineM: 11, currentM: null, differenceM: null, invalidReason: "CURRENT_UNAVAILABLE" },
+      ],
+      validCount: 1,
+      largestRiseM: null,
+      largestDropM: null,
+    },
+    ...overrides,
+  };
+}
+
+describe("isSurfaceProfileComparison", () => {
+  it("validates a Core comparison and keeps zero distinct from unknown", () => {
+    expect(isSurfaceProfileComparison(comparison())).toBe(true);
+  });
+
+  it.each([
+    ["changes the sample spacing", { result: { ...comparison().result, samples: [comparison().result.samples[0], { ...comparison().result.samples[1], distanceM: 0 }] } }],
+    ["fills an unavailable difference", { result: { ...comparison().result, samples: [comparison().result.samples[0], { ...comparison().result.samples[1], differenceM: 0 }] } }],
+    ["reports a difference without both heights", { result: { ...comparison().result, samples: [comparison().result.samples[0], { ...comparison().result.samples[1], invalidReason: null }] } }],
+    ["uses a blocked response with numbers", { verdict: "BLOCKED", reasons: ["POLICY_UNAVAILABLE"] }],
+    ["reports an invalid sign for the largest rise", { result: { ...comparison().result, largestRiseM: -1 } }],
+    ["reports an invalid sign for the largest drop", { result: { ...comparison().result, largestDropM: 1 } }],
+    ["omits decision remediation", { remediations: undefined }],
+  ])("rejects a malformed response that %s", (_label, overrides) => {
+    expect(isSurfaceProfileComparison(comparison(overrides))).toBe(false);
+  });
+});
 
 function result(overrides: Record<string, unknown> = {}) {
   return {

@@ -39,6 +39,9 @@ from ksi_core.domains.external.ingress.external_validation_policy import (
     PolicyAuthorityCurrentnessPort,
     PolicyAuthorityPort,
 )
+from ksi_core.domains.external.quantity.external_profile_difference_authorities import (
+    ExternalProfileDifferenceAuthorityPort,
+)
 from ksi_core.domains.external.quantity.external_quantitative_authority import (
     ExternalQuantitativeAuthorityCatalog,
     ExternalQuantitativeAuthorityParticipants,
@@ -377,6 +380,24 @@ def _workflow_config(
             ),
         )
 
+    def build_profile_difference_authority(
+        coordinator: ExternalAuthorityCurrentnessCoordinator,
+    ) -> ExternalProfileDifferenceAuthorityPort:
+        if (
+            instance is None
+            or instance.currentness_coordinator is not coordinator
+            or not callable(getattr(instance, "profile_difference_port", None))
+        ):
+            raise ValueError("profile difference authority requires its exact mapping catalog")
+        authority = instance.profile_difference_port()
+        if (
+            authority is None
+            or authority.currentness_coordinator is not coordinator
+            or not callable(getattr(authority, "resolve_for_use", None))
+        ):
+            raise ValueError("profile difference authority must share the Core coordinator")
+        return authority
+
     return ExternalResultWorkflowAssemblyConfig(
         build_mapping=build_mapping,
         build_runtime=build_runtime,
@@ -386,6 +407,7 @@ def _workflow_config(
         policy_authority_port=participants.policy_authority_port,
         build_policy_authority_currentness=participants.build_policy_authority_currentness,
         build_evidence_context_authority=participants.build_evidence_context_authority,
+        build_profile_difference_authority=build_profile_difference_authority,
     )
 
 

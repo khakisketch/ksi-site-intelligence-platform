@@ -23,6 +23,9 @@ from ksi_core.domains.external.ingress.external_validation_policy import (
     PolicyAuthorityCurrentnessPort,
     PolicyAuthorityPort,
 )
+from ksi_core.domains.external.quantity.external_profile_difference_authorities import (
+    ExternalProfileDifferenceAuthorityPort,
+)
 from ksi_core.domains.external.quantity.external_relative_volume_authorities import (
     ExternalRelativeVolumeAuthorityPort,
 )
@@ -121,8 +124,16 @@ class ExternalResultWorkflowAssemblyConfig:
     build_input_capability_issuer: ExternalRelativeVolumeInputCapabilityFactory | None = None
     # Test/tool override; production assembly builds the S3 issuer from its storage.
     single_input_capability_issuer: ExternalSingleVolumeInputCapabilityIssuer | None = None
+    build_profile_difference_authority: (
+        Callable[[ExternalAuthorityCurrentnessCoordinator], ExternalProfileDifferenceAuthorityPort]
+        | None
+    ) = None
 
     def __post_init__(self) -> None:
+        if self.build_profile_difference_authority is not None and not callable(
+            self.build_profile_difference_authority
+        ):
+            raise ValueError("profile difference authority factory must be callable")
         if not all(callable(value) for value in (self.build_mapping, self.build_runtime)):
             raise ValueError("external result workflow requires explicit factories and byte issuer")
         if (self.input_capability_issuer is None) == (self.build_input_capability_issuer is None):

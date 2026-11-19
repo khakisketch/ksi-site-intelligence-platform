@@ -44,6 +44,11 @@ from ksi_core.domains.external.ingress.external_validation_policy import (
     PolicySelectionStatus,
 )
 from ksi_core.domains.external.ingress.spatial_asset_catalog import asset_ref_for_subject
+from ksi_core.domains.external.quantity.external_profile_difference_authorities import (
+    DefaultClosedExternalProfileDifferenceAuthorityPort,
+    ExternalProfileDifferenceAuthority,
+    ExternalProfileDifferenceAuthorityPort,
+)
 from ksi_core.domains.external.quantity.external_relative_volume_authorities import (
     DefaultClosedExternalRelativeVolumeAuthorityPort,
     ExternalRelativeVolumeAuthority,
@@ -146,6 +151,7 @@ class CoreExternalUseDecisionHistoryVerifier(ExternalUseDecisionHistoryVerifier)
         policy_registry: ExternalValidationPolicyRegistry,
         evidence_validations: ExternalEvidenceValidationStore,
         relative_volume_authority: ExternalRelativeVolumeAuthorityPort | None = None,
+        profile_difference_authority: ExternalProfileDifferenceAuthorityPort | None = None,
         single_volume_authority: ExternalSingleVolumeAuthorityPort | None = None,
         declared_vertical: DeclaredVerticalReferencePort | None = None,
     ) -> None:
@@ -154,6 +160,7 @@ class CoreExternalUseDecisionHistoryVerifier(ExternalUseDecisionHistoryVerifier)
         self._policy_registry = policy_registry
         self._evidence_validations = evidence_validations
         self._relative_volume_authority = relative_volume_authority
+        self._profile_difference_authority = profile_difference_authority
         self._single_volume_authority = single_volume_authority
         self._declared_vertical = declared_vertical
 
@@ -315,13 +322,40 @@ class CoreExternalUseDecisionHistoryVerifier(ExternalUseDecisionHistoryVerifier)
                 )
                 and not candidate.evidence_record_digests
             )
+        if candidate.use == "PROFILE_DIFFERENCE":
+            if self._profile_difference_authority is None:
+                return False
+            profile_authority = self._profile_difference_authority.resolve_historical_for_decision(
+                candidate
+            )
+            if (
+                profile_authority is None
+                or candidate.zone is not None
+                or candidate.compatibility_mapping_digest
+                != profile_authority.compatibility_mapping_digest
+                or not profile_authority.authorized_by(policy)
+                or candidate.profile_work_area_id != profile_authority.work_area_id
+                or (
+                    profile_authority.evidence_record_digests
+                    and candidate.evidence_record_digests
+                    != profile_authority.evidence_record_digests
+                )
+                or len(candidate.evidence_record_digests) != 2
+            ):
+                return False
+            return self._verify_profile_difference_pair(
+                candidate, resolved_reports, policy, profile_authority
+            )
         if candidate.use != "RELATIVE_VOLUME" or self._relative_volume_authority is None:
             return False
-        authority = self._relative_volume_authority.resolve_historical_for_decision(candidate)
+        volume_authority = self._relative_volume_authority.resolve_historical_for_decision(
+            candidate
+        )
         if (
-            authority is None
-            or candidate.compatibility_mapping_digest != authority.compatibility_mapping_digest
-            or candidate.zone != authority.zone
+            volume_authority is None
+            or candidate.compatibility_mapping_digest
+            != volume_authority.compatibility_mapping_digest
+            or candidate.zone != volume_authority.zone
             or len(candidate.evidence_record_digests) != 2
         ):
             return False
@@ -343,6 +377,86 @@ class CoreExternalUseDecisionHistoryVerifier(ExternalUseDecisionHistoryVerifier)
                 return False
         return True
 
+    def _verify_profile_difference_pair(
+        self,
+        candidate: ExternalPairUseDecisionV1,
+        resolved_reports: list[tuple[SealedExternalSubjectV1, ExternalArtifactInspectionReportV1]],
+        policy: ExternalValidationPolicyV1,
+        authority: ExternalProfileDifferenceAuthority,
+    ) -> bool:
+        if (
+            candidate.baseline_artifact_id is None
+            or candidate.baseline_source_sha256 is None
+            or candidate.current_artifact_id is None
+            or candidate.current_source_sha256 is None
+        ):
+            return False
+        revisions = tuple(
+            self._reconstruction.resolve_sealed_subject(subject)
+            for subject, _report in resolved_reports
+        )
+        if any(revision is None for revision in revisions):
+            return False
+        baseline_revision, current_revision = revisions
+        baseline_report, current_report = resolved_reports[0][1], resolved_reports[1][1]
+        profile_snapshot = _PairSnapshot(
+            policy=policy,
+            baseline=_SingleSnapshot(
+                policy=policy,
+                inspection=PublicInspectionSnapshot("READY", None, None, baseline_report),
+                display=None,
+                revision=baseline_revision,
+            ),
+            current=_SingleSnapshot(
+                policy=policy,
+                inspection=PublicInspectionSnapshot("READY", None, None, current_report),
+                display=None,
+                revision=current_revision,
+            ),
+        )
+        reason, facts = ExternalUseEvaluator._profile_difference_facts(
+            profile_snapshot,
+            baseline_artifact_id=candidate.baseline_artifact_id,
+            baseline_source_sha256=candidate.baseline_source_sha256,
+            current_artifact_id=candidate.current_artifact_id,
+            current_source_sha256=candidate.current_source_sha256,
+            expected_crs_digest=authority.observed_crs_digest,
+            expected_vertical_reference_digest=authority.observed_vertical_reference_digest,
+            work_area_id=candidate.profile_work_area_id,
+        )
+        if reason is not None or facts is None:
+            return False
+        if not ExternalUseEvaluator._profile_authority_binds(
+            authority,
+            baseline=candidate.baseline_subject,
+            current=candidate.current_subject,
+            policy=policy,
+            facts=facts,
+        ):
+            return False
+        for evidence_digest, (subject, report), artifact_id, source_sha256 in zip(
+            candidate.evidence_record_digests,
+            resolved_reports,
+            (facts.baseline_artifact_id, facts.current_artifact_id),
+            (facts.baseline_source_sha256, facts.current_source_sha256),
+            strict=True,
+        ):
+            resolved_evidence = self._evidence_validations.record_for_use(
+                evidence_digest, subject=subject, policy_digest=policy.policy_digest or ""
+            )
+            if resolved_evidence is None:
+                return False
+            record, context = resolved_evidence
+            if (
+                record.evidence_record_digest != evidence_digest
+                or context.independent_attestation is None
+                or context.target_dsm_artifact_id != artifact_id
+                or context.target_dsm_observed_sha256 != source_sha256
+                or not ExternalUseEvaluator._report_measures_dsm(report, artifact_id, source_sha256)
+            ):
+                return False
+        return True
+
 
 @dataclass(frozen=True, slots=True)
 class _SingleSnapshot:
@@ -357,6 +471,37 @@ class _PairSnapshot:
     policy: ExternalValidationPolicyV1 | None
     baseline: _SingleSnapshot
     current: _SingleSnapshot
+
+
+@dataclass(frozen=True, slots=True)
+class _ProfileCaptureIntervals:
+    baseline_started_at: datetime
+    baseline_ended_at: datetime
+    current_started_at: datetime
+    current_ended_at: datetime
+
+
+@dataclass(frozen=True, slots=True)
+class _ProfileDifferenceFacts:
+    work_area_id: str | None
+    baseline_report_digest: str
+    current_report_digest: str
+    baseline_artifact_id: str
+    baseline_source_sha256: str
+    current_artifact_id: str
+    current_source_sha256: str
+    observed_crs_digest: str
+    observed_vertical_reference_digest: str
+    capture: _ProfileCaptureIntervals
+
+    def matches_reports(self, snapshot: _PairSnapshot) -> bool:
+        before, after = snapshot.baseline.inspection.report, snapshot.current.inspection.report
+        return (
+            before is not None
+            and before.report_digest == self.baseline_report_digest
+            and after is not None
+            and after.report_digest == self.current_report_digest
+        )
 
 
 class ExternalSingleUseDecisionRequest(CamelModel):
@@ -398,6 +543,12 @@ PAIR_REASON_REMEDIATIONS: dict[str, str] = {
     "EVIDENCE_INDEPENDENCE_UNATTESTED": "ATTEST_INDEPENDENT_EVIDENCE",
     "PAIR_SUBJECTS_NOT_DISTINCT": "SELECT_DISTINCT_EPOCHS",
     "SINGLE_VOLUME_MAPPING_UNAVAILABLE": "AUTHORIZE_SINGLE_VOLUME_MAPPING",
+    "PROFILE_DIFFERENCE_CRS_MISMATCH": "SELECT_MATCHING_OBSERVED_CRS",
+    "PROFILE_DIFFERENCE_VERTICAL_REFERENCE_MISMATCH": "SELECT_MATCHING_OBSERVED_VERTICAL_REFERENCE",
+    "PROFILE_DIFFERENCE_RECEIPT_REFERENCE_MISMATCH": (
+        "REGENERATE_PROFILE_RECEIPTS_FROM_OBSERVED_REFERENCES"
+    ),
+    "PROFILE_DIFFERENCE_CAPTURE_ORDER_INVALID": "SELECT_STRICTLY_ORDERED_CAPTURE_EPOCHS",
 }
 
 
@@ -420,6 +571,7 @@ class ExternalUseEvaluator:
         evidence_validations: ExternalEvidenceValidationStore,
         coordinator: ExternalAuthorityCurrentnessCoordinator,
         relative_volume_authority: ExternalRelativeVolumeAuthorityPort | None = None,
+        profile_difference_authority: ExternalProfileDifferenceAuthorityPort | None = None,
         single_volume_authority: ExternalSingleVolumeAuthorityPort | None = None,
         declared_vertical: DeclaredVerticalReferencePort | None = None,
     ) -> None:
@@ -438,6 +590,11 @@ class ExternalUseEvaluator:
         ):
             raise ValueError("relative-volume authority must share currentness coordinator")
         if (
+            profile_difference_authority is not None
+            and profile_difference_authority.currentness_coordinator is not coordinator
+        ):
+            raise ValueError("profile-difference authority must share currentness coordinator")
+        if (
             single_volume_authority is not None
             and single_volume_authority.currentness_coordinator is not coordinator
         ):
@@ -451,6 +608,9 @@ class ExternalUseEvaluator:
         self._declared_vertical = declared_vertical
         self._relative_volume_authority = relative_volume_authority or (
             DefaultClosedExternalRelativeVolumeAuthorityPort(currentness_coordinator=coordinator)
+        )
+        self._profile_difference_authority = profile_difference_authority or (
+            DefaultClosedExternalProfileDifferenceAuthorityPort(currentness_coordinator=coordinator)
         )
         self._single_volume_authority: ExternalSingleVolumeAuthorityPort = (
             single_volume_authority
@@ -524,12 +684,32 @@ class ExternalUseEvaluator:
         idempotency_key: str,
         principal: Principal,
         now: datetime,
+        observed_crs_digest: str | None = None,
+        observed_vertical_reference_digest: str | None = None,
+        baseline_artifact_id: str | None = None,
+        baseline_source_sha256: str | None = None,
+        current_artifact_id: str | None = None,
+        current_source_sha256: str | None = None,
+        profile_comparison_binding_digest: str | None = None,
+        profile_work_area_id: str | None = None,
     ) -> ExternalPairUseDecisionV1:
         self._require_pair_scope(principal, baseline, current)
-        if use not in {"VISUAL_COMPARISON", "RELATIVE_VOLUME"}:
+        if use not in {"VISUAL_COMPARISON", "RELATIVE_VOLUME", "PROFILE_DIFFERENCE"}:
             raise ValueError("pair external use is invalid")
         if use == "VISUAL_COMPARISON" and zone_id is not None:
             raise ValueError("visual comparison cannot select a volume zone")
+        if use == "PROFILE_DIFFERENCE" and zone_id is not None:
+            raise ValueError("profile difference is zone-free")
+        if use == "PROFILE_DIFFERENCE" and not all(
+            (
+                baseline_artifact_id,
+                baseline_source_sha256,
+                current_artifact_id,
+                current_source_sha256,
+                profile_comparison_binding_digest,
+            )
+        ):
+            raise ValueError("profile difference requires exact DSM and profile-pair identities")
         if use == "RELATIVE_VOLUME" and not zone_id:
             raise ValueError("relative volume requires a zone selection")
         intent = ExternalDecisionIntent(
@@ -537,6 +717,13 @@ class ExternalUseEvaluator:
             baseline_subject=baseline,
             current_subject=current,
             requested_zone_id=zone_id,
+            baseline_artifact_id=baseline_artifact_id if use == "PROFILE_DIFFERENCE" else None,
+            baseline_source_sha256=baseline_source_sha256 if use == "PROFILE_DIFFERENCE" else None,
+            current_artifact_id=current_artifact_id if use == "PROFILE_DIFFERENCE" else None,
+            current_source_sha256=current_source_sha256 if use == "PROFILE_DIFFERENCE" else None,
+            profile_comparison_binding_digest=(
+                profile_comparison_binding_digest if use == "PROFILE_DIFFERENCE" else None
+            ),
         )
         existing = self._decisions.existing_for_intent(
             intent=intent, principal=principal, idempotency_key=idempotency_key
@@ -561,14 +748,60 @@ class ExternalUseEvaluator:
             if use == "RELATIVE_VOLUME" and snapshot.policy is not None
             else None
         )
+        profile_reason: str | None = None
+        profile_facts: _ProfileDifferenceFacts | None = None
+        if use == "PROFILE_DIFFERENCE":
+            profile_reason, profile_facts = self._profile_difference_facts(
+                snapshot,
+                work_area_id=profile_work_area_id,
+                baseline_artifact_id=baseline_artifact_id,
+                baseline_source_sha256=baseline_source_sha256,
+                current_artifact_id=current_artifact_id,
+                current_source_sha256=current_source_sha256,
+                expected_crs_digest=observed_crs_digest,
+                expected_vertical_reference_digest=observed_vertical_reference_digest,
+            )
+        profile_authority = None
+        if use == "PROFILE_DIFFERENCE" and profile_facts is not None and snapshot.policy:
+            profile_authority = self._profile_difference_authority.resolve_for_use(
+                baseline=baseline,
+                current=current,
+                work_area_id=profile_work_area_id,
+                baseline_artifact_id=profile_facts.baseline_artifact_id,
+                baseline_source_sha256=profile_facts.baseline_source_sha256,
+                current_artifact_id=profile_facts.current_artifact_id,
+                current_source_sha256=profile_facts.current_source_sha256,
+                policy=snapshot.policy,
+                baseline_capture_started_at=profile_facts.capture.baseline_started_at,
+                baseline_capture_ended_at=profile_facts.capture.baseline_ended_at,
+                current_capture_started_at=profile_facts.capture.current_started_at,
+                current_capture_ended_at=profile_facts.capture.current_ended_at,
+                observed_crs_digest=profile_facts.observed_crs_digest,
+                observed_vertical_reference_digest=profile_facts.observed_vertical_reference_digest,
+                now=now,
+            )
         # Evidence authority is resolved through its port before the guard; the
         # exact blocker is retained so the decision names the missing evidence
         # rather than a mapping that is in fact resolvable.
-        evidence_reason = (
-            self._pair_evidence_block_reason(baseline, current, snapshot)
-            if use == "RELATIVE_VOLUME" and snapshot.policy is not None
-            else None
-        )
+        evidence_reason = None
+        if use in {"RELATIVE_VOLUME", "PROFILE_DIFFERENCE"} and snapshot.policy is not None:
+            expected_targets = (
+                (
+                    (baseline_artifact_id or "", baseline_source_sha256 or ""),
+                    (current_artifact_id or "", current_source_sha256 or ""),
+                )
+                if use == "PROFILE_DIFFERENCE"
+                else None
+            )
+            evidence_reason = self._pair_evidence_block_reason(
+                baseline,
+                current,
+                snapshot,
+                expected_targets=expected_targets,
+                expected_digests=profile_authority.evidence_record_digests
+                if profile_authority
+                else (),
+            )
         with self._coordinator.guarded_read():
             current_snapshot = self._pair_still_current(baseline, current, use, snapshot, now=now)
             if use == "RELATIVE_VOLUME" and (
@@ -576,6 +809,25 @@ class ExternalUseEvaluator:
                 or not self._relative_volume_authority.is_current_for_use(volume, now=now)
             ):
                 volume = None
+            if (
+                use == "PROFILE_DIFFERENCE"
+                and profile_authority is not None
+                and (
+                    profile_facts is None
+                    or current_snapshot.policy is None
+                    or not self._profile_authority_binds(
+                        profile_authority,
+                        baseline=baseline,
+                        current=current,
+                        policy=current_snapshot.policy,
+                        facts=profile_facts,
+                    )
+                    or not self._profile_difference_authority.is_current_for_use(
+                        profile_authority, now=now
+                    )
+                )
+            ):
+                profile_authority = None
             candidate = self._pair_candidate(
                 baseline,
                 current,
@@ -583,8 +835,16 @@ class ExternalUseEvaluator:
                 zone_id,
                 current_snapshot,
                 volume,
+                profile_authority,
+                baseline_artifact_id,
+                baseline_source_sha256,
+                current_artifact_id,
+                current_source_sha256,
+                profile_comparison_binding_digest,
                 evaluation_identity,
                 now,
+                profile_reason=profile_reason,
+                profile_facts=profile_facts,
                 evidence_reason=evidence_reason,
             )
             return cast(
@@ -601,14 +861,35 @@ class ExternalUseEvaluator:
         zone_id: str | None,
         principal: Principal,
         idempotency_key: str,
+        baseline_artifact_id: str | None = None,
+        baseline_source_sha256: str | None = None,
+        current_artifact_id: str | None = None,
+        current_source_sha256: str | None = None,
+        profile_comparison_binding_digest: str | None = None,
     ) -> ExternalPairUseDecisionV1 | None:
         """Read an exact retained pair-use retry without evaluating live authority."""
-
+        if use == "PROFILE_DIFFERENCE" and not all(
+            (
+                baseline_artifact_id,
+                baseline_source_sha256,
+                current_artifact_id,
+                current_source_sha256,
+                profile_comparison_binding_digest,
+            )
+        ):
+            return None
         intent = ExternalDecisionIntent(
             requested_use=use,
             baseline_subject=baseline,
             current_subject=current,
             requested_zone_id=zone_id,
+            baseline_artifact_id=baseline_artifact_id if use == "PROFILE_DIFFERENCE" else None,
+            baseline_source_sha256=baseline_source_sha256 if use == "PROFILE_DIFFERENCE" else None,
+            current_artifact_id=current_artifact_id if use == "PROFILE_DIFFERENCE" else None,
+            current_source_sha256=current_source_sha256 if use == "PROFILE_DIFFERENCE" else None,
+            profile_comparison_binding_digest=(
+                profile_comparison_binding_digest if use == "PROFILE_DIFFERENCE" else None
+            ),
         )
         existing = self._decisions.existing_for_intent(
             intent=intent, principal=principal, idempotency_key=idempotency_key
@@ -781,7 +1062,20 @@ class ExternalUseEvaluator:
         ).sealed()
 
     def resolve_eligible_pair_for_execution(
-        self, decision_id: str, *, principal: Principal, site_id: str
+        self,
+        decision_id: str,
+        *,
+        principal: Principal,
+        site_id: str,
+        observed_crs_digest: str | None = None,
+        observed_vertical_reference_digest: str | None = None,
+        baseline_artifact_id: str | None = None,
+        baseline_source_sha256: str | None = None,
+        current_artifact_id: str | None = None,
+        current_source_sha256: str | None = None,
+        profile_comparison_binding_digest: str | None = None,
+        profile_work_area_id: str | None = None,
+        before_return: Callable[[ExternalPairUseDecisionV1], bool] | None = None,
     ) -> ExternalPairUseDecisionV1 | None:
         """Private handoff for the later volume request issuer.
 
@@ -794,6 +1088,8 @@ class ExternalUseEvaluator:
             not isinstance(candidate, ExternalPairUseDecisionV1)
             or candidate.verdict is not DecisionVerdict.ELIGIBLE
         ):
+            return None
+        if before_return is not None and candidate.use != "PROFILE_DIFFERENCE":
             return None
         snapshot = self._pair_snapshot(
             candidate.baseline_subject, candidate.current_subject, candidate.use
@@ -812,9 +1108,75 @@ class ExternalUseEvaluator:
             and snapshot.policy is not None
             else None
         )
+        if candidate.use == "PROFILE_DIFFERENCE" and not all(
+            (
+                observed_crs_digest,
+                observed_vertical_reference_digest,
+                baseline_artifact_id,
+                baseline_source_sha256,
+                current_artifact_id,
+                current_source_sha256,
+                profile_comparison_binding_digest,
+            )
+        ):
+            return None
+        if candidate.use == "PROFILE_DIFFERENCE" and (
+            candidate.baseline_artifact_id != baseline_artifact_id
+            or candidate.baseline_source_sha256 != baseline_source_sha256
+            or candidate.current_artifact_id != current_artifact_id
+            or candidate.current_source_sha256 != current_source_sha256
+            or candidate.profile_comparison_binding_digest != profile_comparison_binding_digest
+            or (
+                candidate.profile_work_area_id is not None
+                and candidate.profile_work_area_id != profile_work_area_id
+            )
+        ):
+            return None
+        profile_reason: str | None = None
+        profile_facts: _ProfileDifferenceFacts | None = None
+        if candidate.use == "PROFILE_DIFFERENCE":
+            profile_reason, profile_facts = self._profile_difference_facts(
+                snapshot,
+                work_area_id=profile_work_area_id,
+                baseline_artifact_id=baseline_artifact_id,
+                baseline_source_sha256=baseline_source_sha256,
+                current_artifact_id=current_artifact_id,
+                current_source_sha256=current_source_sha256,
+                expected_crs_digest=observed_crs_digest,
+                expected_vertical_reference_digest=observed_vertical_reference_digest,
+            )
+        profile_authority = None
+        if (
+            candidate.use == "PROFILE_DIFFERENCE"
+            and profile_reason is None
+            and profile_facts is not None
+            and snapshot.policy
+        ):
+            profile_authority = self._profile_difference_authority.resolve_for_use(
+                baseline=candidate.baseline_subject,
+                current=candidate.current_subject,
+                work_area_id=profile_work_area_id,
+                baseline_artifact_id=profile_facts.baseline_artifact_id,
+                baseline_source_sha256=profile_facts.baseline_source_sha256,
+                current_artifact_id=profile_facts.current_artifact_id,
+                current_source_sha256=profile_facts.current_source_sha256,
+                policy=snapshot.policy,
+                baseline_capture_started_at=profile_facts.capture.baseline_started_at,
+                baseline_capture_ended_at=profile_facts.capture.baseline_ended_at,
+                current_capture_started_at=profile_facts.capture.current_started_at,
+                current_capture_ended_at=profile_facts.capture.current_ended_at,
+                observed_crs_digest=profile_facts.observed_crs_digest,
+                observed_vertical_reference_digest=profile_facts.observed_vertical_reference_digest,
+                now=now,
+            )
         evidence_current = (
             self._evidence_digests_remain_current(candidate, snapshot.policy)
             if candidate.use == "RELATIVE_VOLUME" and snapshot.policy is not None
+            else False
+        )
+        profile_evidence_current = (
+            self._profile_pair_evidence_remains_current(candidate, snapshot)
+            if candidate.use == "PROFILE_DIFFERENCE" and snapshot.policy is not None
             else False
         )
         with self._coordinator.guarded_read():
@@ -846,6 +1208,46 @@ class ExternalUseEvaluator:
                     candidate, current_snapshot.policy, current_snapshot
                 ):
                     return None
+            if candidate.use == "PROFILE_DIFFERENCE":
+                if (
+                    profile_facts is None
+                    or profile_reason is not None
+                    or not profile_facts.matches_reports(current_snapshot)
+                    or profile_facts.baseline_report_digest
+                    != candidate.baseline_inspection_report_digest
+                    or profile_facts.current_report_digest
+                    != candidate.current_inspection_report_digest
+                    or profile_authority is None
+                    or candidate.zone is not None
+                    or candidate.compatibility_mapping_digest
+                    != profile_authority.compatibility_mapping_digest
+                    or candidate.profile_work_area_id != profile_authority.work_area_id
+                    or (
+                        profile_authority.evidence_record_digests
+                        and profile_authority.evidence_record_digests
+                        != candidate.evidence_record_digests
+                    )
+                    or current_snapshot.policy is None
+                    or not self._profile_authority_binds(
+                        profile_authority,
+                        baseline=candidate.baseline_subject,
+                        current=candidate.current_subject,
+                        policy=current_snapshot.policy,
+                        facts=profile_facts,
+                    )
+                    or not self._profile_difference_authority.is_current_for_use(
+                        profile_authority, now=now
+                    )
+                    or not profile_evidence_current
+                    or not self._profile_evidence_locally_current(
+                        candidate, current_snapshot, profile_facts
+                    )
+                ):
+                    return None
+                if before_return is not None and not before_return(candidate):
+                    return None
+            elif before_return is not None:
+                return None
             return candidate
 
     def get_scoped(
@@ -1052,29 +1454,59 @@ class ExternalUseEvaluator:
         requested_zone_id: str | None,
         snapshot: _PairSnapshot,
         volume: ExternalRelativeVolumeAuthority | None,
+        profile_authority: ExternalProfileDifferenceAuthority | None,
+        baseline_artifact_id: str | None,
+        baseline_source_sha256: str | None,
+        current_artifact_id: str | None,
+        current_source_sha256: str | None,
+        profile_comparison_binding_digest: str | None,
         evaluation_identity: str,
         now: datetime,
         *,
+        profile_reason: str | None = None,
+        profile_facts: _ProfileDifferenceFacts | None = None,
         evidence_reason: str | None = None,
     ) -> ExternalPairUseDecisionV1:
         reason, evidence_digests = self._pair_reason(
-            baseline, current, use, snapshot, volume, evidence_reason=evidence_reason
+            baseline,
+            current,
+            use,
+            snapshot,
+            volume,
+            profile_authority,
+            profile_reason=profile_reason,
+            profile_facts=profile_facts,
+            evidence_reason=evidence_reason,
         )
         eligible = reason is None
         policy = snapshot.policy
         baseline_report = snapshot.baseline.inspection.report
         current_report = snapshot.current.inspection.report
+        decision_intent = ExternalDecisionIntent(
+            requested_use=use,
+            baseline_subject=baseline,
+            current_subject=current,
+            requested_zone_id=requested_zone_id,
+            baseline_artifact_id=baseline_artifact_id if use == "PROFILE_DIFFERENCE" else None,
+            baseline_source_sha256=baseline_source_sha256 if use == "PROFILE_DIFFERENCE" else None,
+            current_artifact_id=current_artifact_id if use == "PROFILE_DIFFERENCE" else None,
+            current_source_sha256=current_source_sha256 if use == "PROFILE_DIFFERENCE" else None,
+            profile_comparison_binding_digest=(
+                profile_comparison_binding_digest if use == "PROFILE_DIFFERENCE" else None
+            ),
+        )
         decision_id = self._decision_id(
             {
-                "intent": ExternalDecisionIntent(
-                    requested_use=use,
-                    baseline_subject=baseline,
-                    current_subject=current,
-                    requested_zone_id=requested_zone_id,
-                ).payload(),
+                "intent": decision_intent.payload(),
                 "policy": policy.policy_digest if policy else None,
                 "zone": volume.zone.model_dump(by_alias=True, mode="json") if volume else None,
-                "compatibilityMapping": volume.compatibility_mapping_digest if volume else None,
+                "compatibilityMapping": (
+                    volume.compatibility_mapping_digest
+                    if use == "RELATIVE_VOLUME" and volume
+                    else profile_authority.compatibility_mapping_digest
+                    if use == "PROFILE_DIFFERENCE" and profile_authority
+                    else None
+                ),
                 "evaluationIdentity": evaluation_identity,
             }
         )
@@ -1084,13 +1516,23 @@ class ExternalUseEvaluator:
             baseline_subject_digest=baseline.canonical_digest(),
             current_subject=current,
             current_subject_digest=current.canonical_digest(),
-            use=cast(Literal["VISUAL_COMPARISON", "RELATIVE_VOLUME"], use),
+            use=cast(Literal["VISUAL_COMPARISON", "RELATIVE_VOLUME", "PROFILE_DIFFERENCE"], use),
             policy_digest=policy.policy_digest if eligible and policy else None,
             baseline_inspection_report_digest=(
                 baseline_report.report_digest if eligible and baseline_report else None
             ),
             current_inspection_report_digest=(
                 current_report.report_digest if eligible and current_report else None
+            ),
+            profile_work_area_id=(
+                profile_authority.work_area_id if eligible and profile_authority else None
+            ),
+            baseline_artifact_id=baseline_artifact_id if use == "PROFILE_DIFFERENCE" else None,
+            baseline_source_sha256=baseline_source_sha256 if use == "PROFILE_DIFFERENCE" else None,
+            current_artifact_id=current_artifact_id if use == "PROFILE_DIFFERENCE" else None,
+            current_source_sha256=current_source_sha256 if use == "PROFILE_DIFFERENCE" else None,
+            profile_comparison_binding_digest=(
+                profile_comparison_binding_digest if use == "PROFILE_DIFFERENCE" else None
             ),
             baseline_sanitized_display_receipt_digest=(
                 snapshot.baseline.display.receipt_digest
@@ -1107,6 +1549,8 @@ class ExternalUseEvaluator:
             compatibility_mapping_digest=(
                 volume.compatibility_mapping_digest
                 if eligible and use == "RELATIVE_VOLUME" and volume
+                else profile_authority.compatibility_mapping_digest
+                if eligible and use == "PROFILE_DIFFERENCE" and profile_authority
                 else None
             ),
             verdict=DecisionVerdict.ELIGIBLE if eligible else DecisionVerdict.BLOCKED,
@@ -1155,7 +1599,10 @@ class ExternalUseEvaluator:
         use: str,
         snapshot: _PairSnapshot,
         volume: ExternalRelativeVolumeAuthority | None,
+        profile_authority: ExternalProfileDifferenceAuthority | None,
         *,
+        profile_reason: str | None = None,
+        profile_facts: _ProfileDifferenceFacts | None = None,
         evidence_reason: str | None = None,
     ) -> tuple[str | None, tuple[str, ...]]:
         if baseline.canonical_digest() == current.canonical_digest():
@@ -1174,6 +1621,47 @@ class ExternalUseEvaluator:
                 ):
                     return "DISPLAY_RECEIPT_BINDING_INVALID", ()
             return None, ()
+        if use == "PROFILE_DIFFERENCE":
+            if profile_reason is not None:
+                return profile_reason, ()
+            if profile_facts is None:
+                return "DSM_MEASUREMENT_UNAVAILABLE", ()
+            if not profile_facts.matches_reports(snapshot):
+                return "INSPECTION_REPORT_BINDING_INVALID", ()
+            if evidence_reason is not None:
+                return evidence_reason, ()
+            if profile_authority is None:
+                return "COMPATIBILITY_MAPPING_MISSING", ()
+            if not self._profile_authority_binds(
+                profile_authority,
+                baseline=baseline,
+                current=current,
+                policy=snapshot.policy,
+                facts=profile_facts,
+            ):
+                return "COMPATIBILITY_MAPPING_MISSING", ()
+            profile_evidence: list[str] = []
+            for subject, item, artifact_id, source_sha256, approved_digest in zip(
+                (baseline, current),
+                (snapshot.baseline, snapshot.current),
+                (profile_facts.baseline_artifact_id, profile_facts.current_artifact_id),
+                (profile_facts.baseline_source_sha256, profile_facts.current_source_sha256),
+                profile_authority.evidence_record_digests or (None, None),
+                strict=True,
+            ):
+                report = item.inspection.report
+                assert report is not None
+                matching, blocker = self._evidence_binding(
+                    subject,
+                    snapshot.policy,
+                    report,
+                    expected_target=(artifact_id, source_sha256),
+                    expected_digest=approved_digest,
+                )
+                if matching is None:
+                    return blocker, ()
+                profile_evidence.append(matching)
+            return None, tuple(profile_evidence)
         # Independently attested evidence is a prerequisite of any admitted
         # mapping, so an evidence blocker is named before the mapping itself.
         if evidence_reason is not None:
@@ -1182,7 +1670,7 @@ class ExternalUseEvaluator:
             return "VOLUME_AUTHORITY_UNAVAILABLE", ()
         if volume.zone.zone_id == "" or volume.zone.revision != 1:
             return "VOLUME_ZONE_BINDING_INVALID", ()
-        evidence: list[str] = []
+        volume_evidence: list[str] = []
         for subject, item in ((baseline, snapshot.baseline), (current, snapshot.current)):
             report = item.inspection.report
             assert report is not None
@@ -1192,8 +1680,8 @@ class ExternalUseEvaluator:
             matching, blocker = self._evidence_binding(subject, snapshot.policy, report)
             if matching is None:
                 return blocker, ()
-            evidence.append(matching)
-        return None, tuple(evidence)
+            volume_evidence.append(matching)
+        return None, tuple(volume_evidence)
 
     def _validated_evidence_for(
         self,
@@ -1212,6 +1700,8 @@ class ExternalUseEvaluator:
         report: ExternalArtifactInspectionReportV1,
         *,
         locally_current: bool = True,
+        expected_target: tuple[str, str] | None = None,
+        expected_digest: str | None = None,
     ) -> tuple[str | None, str]:
         """Return the usable evidence digest, or ``None`` with the exact typed blocker.
 
@@ -1224,9 +1714,14 @@ class ExternalUseEvaluator:
         blocker = "EVIDENCE_RECORD_BINDING_INVALID"
         # The evidence store intentionally exposes only exact digest lookup.
         # Querying its private projection would turn a broad list into authority.
-        for digest in self._evidence_validations.validated_record_digests_for(
-            subject=subject, policy_digest=policy.policy_digest or ""
-        ):
+        digests = (
+            (expected_digest,)
+            if expected_digest is not None
+            else self._evidence_validations.validated_record_digests_for(
+                subject=subject, policy_digest=policy.policy_digest or ""
+            )
+        )
+        for digest in digests:
             if locally_current:
                 resolved = self._evidence_validations.record_for_locally_current_use(
                     digest, subject=subject, policy_digest=policy.policy_digest or ""
@@ -1238,6 +1733,11 @@ class ExternalUseEvaluator:
             if resolved is None:
                 continue
             record, context = resolved
+            if expected_target is not None and (
+                context.target_dsm_artifact_id != expected_target[0]
+                or context.target_dsm_observed_sha256 != expected_target[1]
+            ):
+                continue
             if record.evidence_record_digest != digest or not self._report_measures_dsm(
                 report, context.target_dsm_artifact_id, context.target_dsm_observed_sha256
             ):
@@ -1247,6 +1747,248 @@ class ExternalUseEvaluator:
                 continue
             return digest, blocker
         return None, blocker
+
+    @classmethod
+    def _profile_difference_facts(
+        cls,
+        snapshot: _PairSnapshot,
+        *,
+        baseline_artifact_id: str | None,
+        baseline_source_sha256: str | None,
+        current_artifact_id: str | None,
+        current_source_sha256: str | None,
+        expected_crs_digest: str | None,
+        expected_vertical_reference_digest: str | None,
+        work_area_id: str | None,
+    ) -> tuple[str | None, _ProfileDifferenceFacts | None]:
+        """Bind parser facts to the exact selected DSM in both frozen reports."""
+        if (
+            baseline_artifact_id is None
+            or baseline_source_sha256 is None
+            or current_artifact_id is None
+            or current_source_sha256 is None
+        ):
+            return "DSM_MEASUREMENT_UNAVAILABLE", None
+        epoch_facts: list[tuple[str, str, str]] = []
+        for item, artifact_id, source_sha256 in (
+            (snapshot.baseline, baseline_artifact_id, baseline_source_sha256),
+            (snapshot.current, current_artifact_id, current_source_sha256),
+        ):
+            report = item.inspection.report
+            if report is None or not report.report_digest:
+                return "INSPECTION_REPORT_BINDING_INVALID", None
+            outcomes = (
+                cls._measured_outcomes(item.revision, report, ProcessingArtifactKind.DSM)
+                if item.revision is not None
+                else ()
+            )
+            selected = tuple(
+                outcome
+                for outcome in outcomes
+                if outcome.artifact_id == artifact_id and outcome.observed_sha256 == source_sha256
+            )
+            if len(selected) != 1:
+                return "DSM_MEASUREMENT_UNAVAILABLE", None
+            outcome = selected[0]
+            measurements = outcome.measurements
+            if (
+                measurements is None
+                or measurements.band_count != 1
+                or measurements.dtype not in {"float32", "float64"}
+            ):
+                return "DSM_MEASUREMENT_UNAVAILABLE", None
+            vertical = measurements.observed_vertical_reference
+            if vertical is None:
+                return "VERTICAL_REFERENCE_UNKNOWN", None
+            epoch_facts.append(
+                (
+                    measurements.observed_crs_digest,
+                    vertical.canonical_digest(),
+                    report.report_digest,
+                )
+            )
+        baseline_fact, current_fact = epoch_facts
+        if baseline_fact[0] != current_fact[0]:
+            return "PROFILE_DIFFERENCE_CRS_MISMATCH", None
+        if baseline_fact[1] != current_fact[1]:
+            return "PROFILE_DIFFERENCE_VERTICAL_REFERENCE_MISMATCH", None
+        capture_reason, capture = cls._profile_difference_capture_intervals(snapshot)
+        if capture_reason is not None or capture is None:
+            return capture_reason or "PROFILE_DIFFERENCE_CAPTURE_ORDER_INVALID", None
+        if (
+            expected_crs_digest is None
+            or expected_vertical_reference_digest is None
+            or baseline_fact[0] != expected_crs_digest
+            or baseline_fact[1] != expected_vertical_reference_digest
+        ):
+            return "PROFILE_DIFFERENCE_RECEIPT_REFERENCE_MISMATCH", None
+        return None, _ProfileDifferenceFacts(
+            work_area_id=work_area_id,
+            baseline_report_digest=baseline_fact[2],
+            current_report_digest=current_fact[2],
+            baseline_artifact_id=baseline_artifact_id,
+            baseline_source_sha256=baseline_source_sha256,
+            current_artifact_id=current_artifact_id,
+            current_source_sha256=current_source_sha256,
+            observed_crs_digest=baseline_fact[0],
+            observed_vertical_reference_digest=baseline_fact[1],
+            capture=capture,
+        )
+
+    @staticmethod
+    def _profile_difference_capture_intervals(
+        snapshot: _PairSnapshot,
+    ) -> tuple[str | None, _ProfileCaptureIntervals | None]:
+        """Use only the sealed submission capture intervals for epoch ordering."""
+        revisions = (snapshot.baseline.revision, snapshot.current.revision)
+        intervals: list[tuple[datetime, datetime]] = []
+        epoch_ids: list[str] = []
+        for revision in revisions:
+            if revision is None:
+                return "SUBJECT_NOT_SEALED", None
+            epoch_id = getattr(revision, "observation_epoch_id", None)
+            if not isinstance(epoch_id, str) or not epoch_id:
+                return "PROFILE_DIFFERENCE_CAPTURE_ORDER_INVALID", None
+            epoch_ids.append(epoch_id)
+            declaration = revision.submission.input_declaration
+            started = getattr(declaration, "capture_started_at", None)
+            ended = getattr(declaration, "capture_ended_at", None)
+            if (
+                not isinstance(started, datetime)
+                or not isinstance(ended, datetime)
+                or started.tzinfo is None
+                or ended.tzinfo is None
+                or started.utcoffset() != UTC.utcoffset(started)
+                or ended.utcoffset() != UTC.utcoffset(ended)
+                or started >= ended
+            ):
+                return "PROFILE_DIFFERENCE_CAPTURE_ORDER_INVALID", None
+            intervals.append((started, ended))
+        (baseline_start, baseline_end), (current_start, current_end) = intervals
+        if (
+            epoch_ids[0] == epoch_ids[1]
+            or baseline_start >= current_start
+            or baseline_end > current_start
+        ):
+            return "PROFILE_DIFFERENCE_CAPTURE_ORDER_INVALID", None
+        return None, _ProfileCaptureIntervals(
+            baseline_started_at=baseline_start,
+            baseline_ended_at=baseline_end,
+            current_started_at=current_start,
+            current_ended_at=current_end,
+        )
+
+    @staticmethod
+    def _profile_authority_binds(
+        authority: ExternalProfileDifferenceAuthority,
+        *,
+        baseline: SealedExternalSubjectV1,
+        current: SealedExternalSubjectV1,
+        policy: ExternalValidationPolicyV1,
+        facts: _ProfileDifferenceFacts,
+    ) -> bool:
+        if not authority.authorized_by(policy):
+            return False
+        if authority.work_area_id is not None and (
+            authority.work_area_id != facts.work_area_id
+            or authority.baseline_inspection_report_digest != facts.baseline_report_digest
+            or authority.current_inspection_report_digest != facts.current_report_digest
+        ):
+            return False
+        return authority.binds(
+            baseline=baseline,
+            current=current,
+            baseline_artifact_id=facts.baseline_artifact_id,
+            baseline_source_sha256=facts.baseline_source_sha256,
+            current_artifact_id=facts.current_artifact_id,
+            current_source_sha256=facts.current_source_sha256,
+            baseline_capture_started_at=facts.capture.baseline_started_at,
+            baseline_capture_ended_at=facts.capture.baseline_ended_at,
+            current_capture_started_at=facts.capture.current_started_at,
+            current_capture_ended_at=facts.capture.current_ended_at,
+            observed_crs_digest=facts.observed_crs_digest,
+            observed_vertical_reference_digest=facts.observed_vertical_reference_digest,
+            policy_digest=policy.policy_digest or "",
+        )
+
+    def _profile_pair_evidence_remains_current(
+        self, candidate: ExternalPairUseDecisionV1, snapshot: _PairSnapshot
+    ) -> bool:
+        if snapshot.policy is None or len(candidate.evidence_record_digests) != 2:
+            return False
+        for subject, item, artifact_id, source_sha256, digest in zip(
+            (candidate.baseline_subject, candidate.current_subject),
+            (snapshot.baseline, snapshot.current),
+            (candidate.baseline_artifact_id, candidate.current_artifact_id),
+            (candidate.baseline_source_sha256, candidate.current_source_sha256),
+            candidate.evidence_record_digests,
+            strict=True,
+        ):
+            report = item.inspection.report
+            if (
+                report is None
+                or self._evidence_binding(
+                    subject,
+                    snapshot.policy,
+                    report,
+                    locally_current=False,
+                    expected_target=(artifact_id or "", source_sha256 or ""),
+                    expected_digest=digest,
+                )[0]
+                is None
+            ):
+                return False
+        return True
+
+    def _profile_evidence_locally_current(
+        self,
+        candidate: ExternalPairUseDecisionV1,
+        snapshot: _PairSnapshot,
+        facts: _ProfileDifferenceFacts,
+    ) -> bool:
+        if len(candidate.evidence_record_digests) != 2 or snapshot.policy is None:
+            return False
+        for evidence_digest, subject, item, artifact_id, source_sha256 in zip(
+            candidate.evidence_record_digests,
+            (candidate.baseline_subject, candidate.current_subject),
+            (snapshot.baseline, snapshot.current),
+            (candidate.baseline_artifact_id, candidate.current_artifact_id),
+            (candidate.baseline_source_sha256, candidate.current_source_sha256),
+            strict=True,
+        ):
+            report = item.inspection.report
+            if report is None:
+                return False
+            resolved = self._evidence_validations.record_for_locally_current_use(
+                evidence_digest, subject=subject, policy_digest=snapshot.policy.policy_digest or ""
+            )
+            if resolved is None:
+                return False
+            record, context = resolved
+            outcomes = (
+                self._measured_outcomes(item.revision, report, ProcessingArtifactKind.DSM)
+                if item.revision
+                else ()
+            )
+            selected = tuple(
+                outcome
+                for outcome in outcomes
+                if outcome.artifact_id == artifact_id and outcome.observed_sha256 == source_sha256
+            )
+            if (
+                len(selected) != 1
+                or context.independent_attestation is None
+                or record.evidence_record_digest != evidence_digest
+                or context.target_dsm_artifact_id != artifact_id
+                or context.target_dsm_observed_sha256 != source_sha256
+                or selected[0].measurements is None
+                or selected[0].measurements.observed_crs_digest != facts.observed_crs_digest
+                or selected[0].measurements.observed_vertical_reference is None
+                or selected[0].measurements.observed_vertical_reference.canonical_digest()
+                != facts.observed_vertical_reference_digest
+            ):
+                return False
+        return True
 
     def _evidence_digests_remain_current(
         self, candidate: ExternalPairUseDecisionV1, policy: ExternalValidationPolicyV1
@@ -1280,17 +2022,30 @@ class ExternalUseEvaluator:
         baseline: SealedExternalSubjectV1,
         current: SealedExternalSubjectV1,
         snapshot: _PairSnapshot,
+        *,
+        expected_targets: tuple[tuple[str, str], tuple[str, str]] | None = None,
+        expected_digests: tuple[str, ...] = (),
     ) -> str | None:
         """Resolve evidence through its authority port and name the first epoch blocker."""
         policy = snapshot.policy
         if policy is None:
             return "POLICY_UNAVAILABLE"
-        for subject, item in ((baseline, snapshot.baseline), (current, snapshot.current)):
+        for (subject, item), expected_target, expected_digest in zip(
+            ((baseline, snapshot.baseline), (current, snapshot.current)),
+            expected_targets or (None, None),
+            expected_digests or (None, None),
+            strict=True,
+        ):
             report = item.inspection.report
             if report is None:
                 return "INSPECTION_REPORT_BINDING_INVALID"
             matching, blocker = self._evidence_binding(
-                subject, policy, report, locally_current=False
+                subject,
+                policy,
+                report,
+                locally_current=False,
+                expected_target=expected_target,
+                expected_digest=expected_digest,
             )
             if matching is None:
                 return blocker

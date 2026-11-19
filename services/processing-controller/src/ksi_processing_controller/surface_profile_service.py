@@ -1,20 +1,29 @@
 """단면 일꾼의 명시적 상시 실행. 환경 변수 자격이나 운영 대체 경로는 없다.
 
-이 서비스는 OS 수준 격리를 제공하지 않는다. 계산은 이 프로세스 안에서 `run_once`가 한다.
+부모가 Core 세션과 원본 전송을 소유하고 계산은 고정된 Linux 격리 실행기에 맡긴다.
 """
 
 from __future__ import annotations
 
 import argparse
+import fcntl
+import os
 import signal
+import stat
 import sys
 import threading
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import ExitStack, contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 
 import httpx
 
+from ksi_processing_controller.spatial_data_sandbox import (
+    PinnedSpatialDataLauncher,
+    SpatialDataSandbox,
+)
+from ksi_processing_controller.spatial_data_worker import SpatialDataWorkerError
 from ksi_processing_controller.spatial_data_worker_config import (
     SpatialDataWorkerConfigError,
     read_spatial_data_core_token,
@@ -37,6 +46,28 @@ def _token(path: Path) -> str:
         raise SurfaceProfileWorkerConfigError("TOKEN_UNAVAILABLE") from exc
 
 
+@contextmanager
+def _hold_workspace_slot(path: Path) -> Iterator[None]:
+    """One service per private spool, including overlapping restarts and --once runs."""
+    try:
+        directory = os.open(path, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC)
+    except OSError as exc:
+        raise SurfaceProfileWorkerConfigError("WORKSPACE_UNAVAILABLE") from exc
+    try:
+        info = os.fstat(directory)
+        if info.st_uid != os.geteuid() or stat.S_IMODE(info.st_mode) != 0o700:
+            raise SurfaceProfileWorkerConfigError("WORKSPACE_UNAVAILABLE")
+        try:
+            fcntl.flock(directory, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError as exc:
+            raise SurfaceProfileWorkerConfigError("WORKSPACE_IN_USE") from exc
+        except OSError as exc:
+            raise SurfaceProfileWorkerConfigError("WORKSPACE_UNAVAILABLE") from exc
+        yield
+    finally:
+        os.close(directory)
+
+
 def run_worker(
     *,
     config_path: Path,
@@ -47,38 +78,67 @@ def run_worker(
     transport: httpx.BaseTransport | None = None,
 ) -> int:
     config = load_surface_profile_worker_config(config_path, now=clock())
+    if config.sandbox is None:
+        raise SurfaceProfileWorkerConfigError("CONTAINMENT_REQUIRED")
+    if sys.platform != "linux" or not Path("/proc/self/ns/mnt").exists():
+        raise SurfaceProfileWorkerConfigError("LINUX_CONTAINMENT_UNAVAILABLE")
+    launcher = PinnedSpatialDataLauncher(config.sandbox, clock=clock)
+    try:
+        launcher.verify_material(policy=config.policy, runtime=config.runtime)
+    except SpatialDataWorkerError as exc:
+        raise SurfaceProfileWorkerConfigError("CONTAINMENT_UNAVAILABLE") from exc
     token = _token(token_path)
+    sandbox = SpatialDataSandbox(
+        launcher=launcher,
+        clock=clock,
+        wall_timeout_seconds=config.policy.resource_envelope.max_deadline_seconds,
+        heartbeat_interval_millis=config.heartbeat_interval_millis,
+    )
 
     def current_authority() -> bool:
         if stop.is_set():
             return False
         # 호출마다 설정을 다시 읽어 철회·만료·교체를 반영한다. 같지 않으면 현재 권한이 아니다.
+        launcher.verify_material(policy=config.policy, runtime=config.runtime)
         return load_surface_profile_worker_config(config_path, now=clock()) == config
 
-    with SurfaceProfileCoreClient(
-        base_url=config.core_origin,
-        token=token,
-        activation=config.activation,
-        policy=config.policy,
-        runtime=config.runtime,
-        clock=clock,
-        maximum_response_bytes=config.maximum_response_bytes,
-        maximum_request_bytes=config.maximum_request_bytes,
-        request_timeout_seconds=config.request_timeout_seconds,
-        transport=transport,
-        refresh_credentials=lambda: _token(token_path),
-        authority_is_current=current_authority,
-    ) as core:
+    with ExitStack() as resources:
+        resources.enter_context(_hold_workspace_slot(Path(config.workspace_root)))
+        resources.callback(sandbox.close)
+        core = resources.enter_context(
+            SurfaceProfileCoreClient(
+                base_url=config.core_origin,
+                token=token,
+                activation=config.activation,
+                policy=config.policy,
+                runtime=config.runtime,
+                clock=clock,
+                maximum_response_bytes=config.maximum_response_bytes,
+                maximum_request_bytes=config.maximum_request_bytes,
+                request_timeout_seconds=config.request_timeout_seconds,
+                transport=transport,
+                refresh_credentials=lambda: _token(token_path),
+                authority_is_current=current_authority,
+            )
+        )
         while not stop.is_set():
             try:
+                # A timed-out launch can finish asynchronously. Keep the next job in Core
+                # until the preceding process group has been accounted for.
+                sandbox.require_idle()
                 run_once(
                     core=core,
                     transport_policy=config.object_policy,
                     clock=clock,
                     workspace_root=Path(config.workspace_root),
                     heartbeat_millis=config.heartbeat_interval_millis,
+                    compute=sandbox.compute_surface_profile,
                 )
-            except (SurfaceProfileCoreClientError, SurfaceProfileWorkerConfigError):
+            except (
+                SurfaceProfileCoreClientError,
+                SurfaceProfileWorkerConfigError,
+                SpatialDataWorkerError,
+            ):
                 if once:
                     raise
                 stop.wait(
@@ -111,7 +171,11 @@ def main(argv: list[str] | None = None) -> int:
             clock=lambda: datetime.now(UTC),
             once=args.once,
         )
-    except (SurfaceProfileWorkerConfigError, SurfaceProfileCoreClientError) as exc:
+    except (
+        SurfaceProfileWorkerConfigError,
+        SurfaceProfileCoreClientError,
+        SpatialDataWorkerError,
+    ) as exc:
         print(exc.reason, file=sys.stderr)
         return 2
     finally:

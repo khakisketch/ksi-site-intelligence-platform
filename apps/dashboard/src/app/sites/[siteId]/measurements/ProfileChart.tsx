@@ -2,7 +2,7 @@
 
 import { useRef, useState, type FocusEvent, type KeyboardEvent, type PointerEvent } from "react";
 
-import type { ProfileSample } from "@/lib/core-api/measurement-types";
+import type { ProfileSample, SurfaceProfileComparisonSample } from "@/lib/core-api/measurement-types";
 import { knownRuns, nearestSample, verticalScale } from "@/lib/measurement-profile";
 
 export interface ChartSeries {
@@ -38,6 +38,12 @@ function distanceTicks(lengthM: number): number[] {
 
 function formatTick(value: number): string {
   return Number.isInteger(value) ? String(value) : value.toFixed(1);
+}
+
+interface DifferencePoint {
+  index: number;
+  distanceM: number;
+  elevationM: number | null;
 }
 
 /**
@@ -200,6 +206,114 @@ export function ProfileChart({
         onPointerMove={onMove}
         onPointerUp={onUp}
         onPointerLeave={onLeave}
+        onKeyDown={onKey}
+      />
+    </svg>
+  );
+}
+
+/** Core-authorized difference trace. Null values split the line and zero stays visible as a reference. */
+export function ProfileDifferenceChart({ samples, lengthM, probeM, onProbe, className }: {
+  samples: readonly SurfaceProfileComparisonSample[];
+  lengthM: number;
+  probeM: number | null;
+  onProbe: (distanceM: number | null) => void;
+  className?: string;
+}) {
+  const svgRef = useRef<SVGSVGElement | null>(null);
+  const [ring, setRing] = useState(false);
+  const points: DifferencePoint[] = samples.map((sample, index) => ({
+    index,
+    distanceM: sample.distanceM,
+    elevationM: sample.differenceM,
+  }));
+  const runs = knownRuns(points);
+  const scale = verticalScale(runs, "fit", PLOT_W, PLOT_H, lengthM, true);
+  if (scale === null) {
+    return <p className="rounded-md border border-line bg-sunk px-3 py-5 text-center text-caption text-ink-muted">높이차를 계산할 수 있는 표본이 없습니다.</p>;
+  }
+
+  const xOf = (distanceM: number) => LEFT + (distanceM / lengthM) * PLOT_W;
+  const yOf = (value: number) => TOP + (1 - (value - scale.lo) / (scale.hi - scale.lo)) * PLOT_H;
+  const zeroY = yOf(0);
+  const probe = probeM === null ? null : nearestSample(points, probeM);
+
+  function distanceFromPointer(event: PointerEvent<SVGRectElement>): number {
+    const box = svgRef.current!.getBoundingClientRect();
+    const px = ((event.clientX - box.left) / box.width) * W;
+    const raw = ((px - LEFT) / PLOT_W) * lengthM;
+    const bounded = Math.max(0, Math.min(lengthM, raw));
+    return nearestSample(points, bounded)?.distanceM ?? bounded;
+  }
+
+  function onFocus(event: FocusEvent<SVGRectElement>) {
+    try { setRing(event.currentTarget.matches(":focus-visible")); } catch { setRing(false); }
+  }
+
+  function onKey(event: KeyboardEvent<SVGRectElement>) {
+    if (event.key === "Escape") {
+      onProbe(null);
+      return;
+    }
+    if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+    event.preventDefault();
+    const current = probeM === null ? null : nearestSample(points, probeM);
+    const at = current ? current.index : event.key === "ArrowRight" ? -1 : points.length;
+    const index = Math.max(0, Math.min(points.length - 1, at + (event.key === "ArrowRight" ? 1 : -1)));
+    onProbe(points[index]!.distanceM);
+  }
+
+  return (
+    <svg ref={svgRef} viewBox={`0 0 ${W} ${H}`} role="presentation" className={`block h-auto w-full overflow-visible ${className ?? ""}`}>
+      {scale.ticks.map((tick) => (
+        <g key={`y${tick}`}>
+          <line x1={LEFT} x2={W - RIGHT} y1={yOf(tick)} y2={yOf(tick)} stroke="var(--line)" strokeDasharray="2 3" />
+          <text x={LEFT - 6} y={yOf(tick) + 4} textAnchor="end" fontSize="11.5" fill="var(--ink-muted)" className="tabular">{formatTick(tick)}</text>
+        </g>
+      ))}
+      {distanceTicks(lengthM).map((tick) => (
+        <text key={`x${tick}`} x={xOf(tick)} y={H - BOTTOM + 18} textAnchor="middle" fontSize="11.5" fill="var(--ink-muted)" className="tabular">{formatTick(tick)}</text>
+      ))}
+      <text x={W - RIGHT} y={H - 4} textAnchor="end" fontSize="11.5" fill="var(--ink-2)">A에서 거리 (m)</text>
+      <text x={LEFT - 30} y={TOP - 7} fontSize="11.5" fill="var(--ink-2)">높이차 (m)</text>
+      <line data-testid="profile-difference-zero" x1={LEFT} x2={W - RIGHT} y1={zeroY} y2={zeroY} stroke="var(--accent)" strokeDasharray="4 3" strokeWidth="1.5" />
+      <text x={W - RIGHT} y={zeroY - 4} textAnchor="end" fontSize="10.5" fill="var(--accent)" className="tabular">0 m</text>
+      <g data-series="difference">
+        {runs.map((run, position) => (
+          <path
+            key={`line${position}`}
+            d={run.map((row, index) => `${index === 0 ? "M" : "L"}${xOf(row.distanceM).toFixed(1)} ${yOf(row.elevationM!).toFixed(1)}`).join(" ")}
+            fill="none"
+            stroke="var(--ink-1)"
+            strokeWidth="2.4"
+            strokeLinejoin="round"
+            strokeLinecap="round"
+          />
+        ))}
+      </g>
+      {probe && (
+        <g data-testid="profile-difference-probe">
+          <line x1={xOf(probe.distanceM)} x2={xOf(probe.distanceM)} y1={TOP} y2={H - BOTTOM} stroke="var(--ink-muted)" strokeDasharray="2 3" />
+          {probe.elevationM !== null && <circle cx={xOf(probe.distanceM)} cy={yOf(probe.elevationM)} r="4.5" fill="var(--ink-1)" stroke="var(--surface)" strokeWidth="2" />}
+        </g>
+      )}
+      {ring && <rect x={LEFT - 3} y={TOP - 3} width={PLOT_W + 6} height={PLOT_H + 6} rx="4" fill="none" stroke="var(--accent)" strokeWidth="2" pointerEvents="none" />}
+      <rect
+        data-testid="profile-difference-chart-hit"
+        x={LEFT}
+        y={TOP}
+        width={PLOT_W}
+        height={PLOT_H}
+        fill="transparent"
+        tabIndex={0}
+        role="group"
+        aria-label="높이차 그래프. 좌우 화살표로 거리를 옮기고 Esc로 해제합니다."
+        style={{ touchAction: "pan-y", cursor: "crosshair", outline: "none" }}
+        onFocus={onFocus}
+        onBlur={() => setRing(false)}
+        onPointerDown={(event) => { try { event.currentTarget.setPointerCapture(event.pointerId); } catch { /* pointer capture may be unavailable */ } onProbe(distanceFromPointer(event)); }}
+        onPointerMove={(event) => onProbe(distanceFromPointer(event))}
+        onPointerLeave={() => onProbe(null)}
         onKeyDown={onKey}
       />
     </svg>

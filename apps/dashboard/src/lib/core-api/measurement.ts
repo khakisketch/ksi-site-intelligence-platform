@@ -8,11 +8,14 @@ import {
   isJobView,
   isJobPage,
   isProfileResultView,
+  isSurfaceProfileComparison,
   type MeasurementFeatureList,
+  type MeasurementFeatureRef,
   type MeasurementFeatureRevision,
   type SurfaceProfileJobView,
   type SurfaceProfileJobPage,
   type SurfaceProfileResultView,
+  type SurfaceProfileComparison,
 } from "./measurement-types";
 
 export type {
@@ -39,36 +42,109 @@ export async function listMeasurementFeatures(siteId: string, workAreaId: string
   return value;
 }
 
+export async function getMeasurementFeatureRevision(
+  siteId: string, workAreaId: string, ref: MeasurementFeatureRef,
+): Promise<MeasurementFeatureRevision> {
+  const path = `${areaPath(siteId, workAreaId)}/measurement-features/${encodeURIComponent(ref.featureId)}/revisions/${ref.revision}`;
+  const value = await coreFetch<unknown>(path);
+  if (!isFeatureRevision(value) || value.siteId !== siteId || value.workAreaId !== workAreaId
+    || value.featureId !== ref.featureId || value.revision !== ref.revision || value.lineDigest !== ref.lineDigest) throw malformed();
+  return value;
+}
+
 /** 이 작업구역에서 요청한 단면 작업(최신순). 수치는 싣지 않고 상태와 영수증 사실만 담는다. */
 export async function listSurfaceProfileJobs(
   siteId: string,
   workAreaId: string,
-  options: { limit: number; featureId?: string },
+  options: { limit: number; featureId?: string; assetRef?: string; featureRevision?: number; executionGroup?: "ACTIVE" | "COMPLETED" },
 ): Promise<SurfaceProfileJobPage> {
   // 선을 지정하면 Core가 한도를 적용하기 전에 그 선의 작업만 남긴다. 다른 선의 작업이 이 선의 오래된 요청을 밀어내지 않는다.
+  const query: Record<string, number | string | undefined> = {
+    limit: options.limit,
+    feature_id: options.featureId,
+  };
+  if (options.assetRef !== undefined) query.asset_ref = options.assetRef;
+  if (options.featureRevision !== undefined) query.feature_revision = options.featureRevision;
+  if (options.executionGroup !== undefined) query.execution_group = options.executionGroup;
   const value = await coreFetch<unknown>(`${areaPath(siteId, workAreaId)}/surface-profile-jobs`, {
-    query: { limit: options.limit, feature_id: options.featureId },
+    query,
   });
   if (!isJobPage(value)) throw malformed();
+  if (value.items.some((item) =>
+    item.siteId !== siteId || item.workAreaId !== workAreaId
+    || (options.assetRef !== undefined && item.assetRef !== options.assetRef)
+    || (options.featureId !== undefined && item.feature.featureId !== options.featureId)
+    || (options.featureRevision !== undefined && item.feature.revision !== options.featureRevision)
+    || (options.executionGroup === "ACTIVE" && item.executionState !== "QUEUED" && item.executionState !== "RUNNING")
+    || (options.executionGroup === "COMPLETED" && item.executionState !== "COMPLETED")
+  )) throw malformed();
   return value;
 }
 
-/** 수치는 이 경로에서만 나온다. Core가 매번 현재 읽기 권한을 다시 확인한다. */
+/** 저장된 비교를 다시 열 때 최근 목록 밖에 있는 작업도 고유 주소로 조회한다. */
+export async function getSurfaceProfileJob(siteId: string, workAreaId: string, jobId: string): Promise<SurfaceProfileJobView> {
+  const value = await coreFetch<unknown>(`${areaPath(siteId, workAreaId)}/surface-profile-jobs/${encodeURIComponent(jobId)}`);
+  if (!isJobView(value) || value.jobId !== jobId || value.siteId !== siteId || value.workAreaId !== workAreaId) throw malformed();
+  return value;
+}
+
+/** Core가 현재 읽기 권한을 확인한 수치와 영수증을 반환한다. */
 export async function getSurfaceProfileResult(
   siteId: string,
   workAreaId: string,
   jobId: string,
+  token?: string,
 ): Promise<SurfaceProfileResultView> {
-  const value = await coreFetch<unknown>(
-    `${areaPath(siteId, workAreaId)}/surface-profile-jobs/${encodeURIComponent(jobId)}/result`,
-  );
+  const path = `${areaPath(siteId, workAreaId)}/surface-profile-jobs/${encodeURIComponent(jobId)}/result`;
+  const value = token === undefined ? await coreFetch<unknown>(path) : await coreFetchWithToken<unknown>(path, token);
   if (!isProfileResultView(value)) throw malformed();
   return value;
 }
 
-function unwrapRevision(value: unknown): MeasurementFeatureRevision {
+/** 저장된 두 단면의 차이를 Core가 독립 근거와 현재 권한으로 판정해 계산한다. */
+export async function requestSurfaceProfileComparisonWithToken(
+  siteId: string,
+  workAreaId: string,
+  body: { baselineJobId: string; currentJobId: string },
+  idempotencyKey: string,
+  token: string,
+): Promise<SurfaceProfileComparison> {
+  const value = await coreFetchWithToken<unknown>(
+    `${areaPath(siteId, workAreaId)}/surface-profile-comparisons`,
+    token,
+    { method: "POST", body, headers: { "Idempotency-Key": idempotencyKey } },
+  );
+  if (!isSurfaceProfileComparison(value)) throw malformed();
+  return value;
+}
+
+/** 이미 요청한 동일 비교를 최신 권한으로 다시 읽는다. 결과 파일을 내려받기 전에도 쓴다. */
+export async function getSurfaceProfileComparisonWithToken(
+  siteId: string,
+  workAreaId: string,
+  input: { baselineJobId: string; currentJobId: string; decisionId: string },
+  token: string,
+): Promise<SurfaceProfileComparison> {
+  const value = await coreFetchWithToken<unknown>(
+    `${areaPath(siteId, workAreaId)}/surface-profile-comparisons`,
+    token,
+    {
+      query: {
+        baseline_job_id: input.baselineJobId,
+        current_job_id: input.currentJobId,
+        decision_id: input.decisionId,
+      },
+    },
+  );
+  if (!isSurfaceProfileComparison(value) || value.baselineJobId !== input.baselineJobId
+    || value.currentJobId !== input.currentJobId || value.decisionId !== input.decisionId) throw malformed();
+  return value;
+}
+
+function unwrapRevision(value: unknown, siteId: string, workAreaId: string, expectedRevision: number, featureId?: string): MeasurementFeatureRevision {
   const revision = typeof value === "object" && value !== null ? (value as Record<string, unknown>).revision : null;
-  if (!isFeatureRevision(revision)) throw malformed();
+  if (!isFeatureRevision(revision) || revision.siteId !== siteId || revision.workAreaId !== workAreaId
+    || revision.revision !== expectedRevision || (featureId !== undefined && revision.featureId !== featureId)) throw malformed();
   return revision;
 }
 
@@ -85,7 +161,7 @@ export async function createMeasurementFeatureWithToken(
     body,
     headers: { "Idempotency-Key": idempotencyKey },
   });
-  return unwrapRevision(value);
+  return unwrapRevision(value, siteId, workAreaId, 1);
 }
 
 /** 선을 고친다 = 새 개정. 이미 그 개정으로 읽은 단면은 그 개정에 묶인 채 남는다. */
@@ -102,7 +178,7 @@ export async function reviseMeasurementFeatureWithToken(
     token,
     { method: "POST", body, headers: { "Idempotency-Key": idempotencyKey } },
   );
-  return unwrapRevision(value);
+  return unwrapRevision(value, siteId, workAreaId, body.expectedRevision + 1, featureId);
 }
 
 /** 한 DSM 자료의 높이 읽기 판정. BLOCKED도 사유와 함께 돌아오며, 화면은 이것으로 무엇이 모자란지 말한다. */
@@ -144,7 +220,7 @@ export async function requestAssetHeightDecisionWithToken(
 export async function issueSurfaceProfileJobWithToken(
   siteId: string,
   workAreaId: string,
-  body: { assetRef: string; feature: { featureId: string; revision: number; lineDigest: string }; heightDecisionId: string },
+  body: { assetRef: string; feature: { featureId: string; revision: number; lineDigest: string }; heightDecisionId: string; sampleSpacingM?: number },
   idempotencyKey: string,
   token: string,
 ): Promise<SurfaceProfileJobView> {

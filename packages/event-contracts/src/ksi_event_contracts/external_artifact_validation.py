@@ -560,10 +560,18 @@ class ExternalPairUseDecisionV1(_FrozenExternalModel):
     baseline_subject_digest: Digest
     current_subject: SealedExternalSubjectV1
     current_subject_digest: Digest
-    use: Literal["VISUAL_COMPARISON", "RELATIVE_VOLUME"]
+    use: Literal["VISUAL_COMPARISON", "RELATIVE_VOLUME", "PROFILE_DIFFERENCE"]
     policy_digest: Digest | None = None
     baseline_inspection_report_digest: Digest | None = None
     current_inspection_report_digest: Digest | None = None
+    baseline_artifact_id: _BoundedText | None = None
+    baseline_source_sha256: Digest | None = None
+    current_artifact_id: _BoundedText | None = None
+    current_source_sha256: Digest | None = None
+    profile_comparison_binding_digest: Digest | None = None
+    # A signed mapping pins the WorkArea independently of the saved-job digest.
+    # Omit the new key from every older wire format, including nested receipts.
+    profile_work_area_id: _BoundedText | None = None
     baseline_sanitized_display_receipt_digest: Digest | None = None
     current_sanitized_display_receipt_digest: Digest | None = None
     evidence_record_digests: tuple[Digest, ...] = Field(max_length=64)
@@ -597,23 +605,17 @@ class ExternalPairUseDecisionV1(_FrozenExternalModel):
             if self.policy_digest is None:
                 raise ValueError("non-BLOCKED decision requires policyDigest")
             if self.baseline_inspection_report_digest is None:
-                raise ValueError(
-                    "non-BLOCKED decision requires baselineInspectionReportDigest"
-                )
+                raise ValueError("non-BLOCKED decision requires baselineInspectionReportDigest")
             if self.current_inspection_report_digest is None:
-                raise ValueError(
-                    "non-BLOCKED decision requires currentInspectionReportDigest"
-                )
+                raise ValueError("non-BLOCKED decision requires currentInspectionReportDigest")
         if self.use == "VISUAL_COMPARISON" and self.verdict is not DecisionVerdict.BLOCKED:
             if self.baseline_sanitized_display_receipt_digest is None:
                 raise ValueError(
-                    "non-BLOCKED VISUAL_COMPARISON requires "
-                    "baselineSanitizedDisplayReceiptDigest"
+                    "non-BLOCKED VISUAL_COMPARISON requires baselineSanitizedDisplayReceiptDigest"
                 )
             if self.current_sanitized_display_receipt_digest is None:
                 raise ValueError(
-                    "non-BLOCKED VISUAL_COMPARISON requires "
-                    "currentSanitizedDisplayReceiptDigest"
+                    "non-BLOCKED VISUAL_COMPARISON requires currentSanitizedDisplayReceiptDigest"
                 )
         if self.use == "RELATIVE_VOLUME" and (
             self.baseline_sanitized_display_receipt_digest is not None
@@ -631,15 +633,55 @@ class ExternalPairUseDecisionV1(_FrozenExternalModel):
             and self.verdict is not DecisionVerdict.BLOCKED
             and self.compatibility_mapping_digest is None
         ):
-            raise ValueError(
-                "non-BLOCKED RELATIVE_VOLUME requires compatibilityMappingDigest"
+            raise ValueError("non-BLOCKED RELATIVE_VOLUME requires compatibilityMappingDigest")
+        if self.use == "PROFILE_DIFFERENCE" and (
+            self.baseline_sanitized_display_receipt_digest is not None
+            or self.current_sanitized_display_receipt_digest is not None
+            or self.zone is not None
+        ):
+            raise ValueError("PROFILE_DIFFERENCE must be a zone-free measured pair")
+        if self.use == "PROFILE_DIFFERENCE":
+            if self.profile_work_area_id is not None and self.verdict is DecisionVerdict.BLOCKED:
+                raise ValueError("a blocked profile decision has no approved WorkArea")
+            if any(
+                value is None
+                for value in (
+                    self.baseline_artifact_id,
+                    self.baseline_source_sha256,
+                    self.current_artifact_id,
+                    self.current_source_sha256,
+                    self.profile_comparison_binding_digest,
+                )
+            ):
+                raise ValueError(
+                    "PROFILE_DIFFERENCE requires exact DSM identities and profile binding"
+                )
+            if self.verdict is not DecisionVerdict.BLOCKED and (
+                self.compatibility_mapping_digest is None or len(self.evidence_record_digests) != 2
+            ):
+                raise ValueError(
+                    "eligible PROFILE_DIFFERENCE requires compatibility and both epoch evidence"
+                )
+        elif any(
+            value is not None
+            for value in (
+                self.baseline_artifact_id,
+                self.baseline_source_sha256,
+                self.current_artifact_id,
+                self.current_source_sha256,
+                self.profile_comparison_binding_digest,
+                self.profile_work_area_id,
             )
-        if (
-            self.compatibility_mapping_digest is not None
-            and (self.use != "RELATIVE_VOLUME" or self.verdict is DecisionVerdict.BLOCKED)
         ):
             raise ValueError(
-                "compatibilityMappingDigest is allowed only for non-BLOCKED RELATIVE_VOLUME"
+                "profile artifact identities and binding are only valid for PROFILE_DIFFERENCE"
+            )
+        if self.compatibility_mapping_digest is not None and (
+            self.use not in {"RELATIVE_VOLUME", "PROFILE_DIFFERENCE"}
+            or self.verdict is DecisionVerdict.BLOCKED
+        ):
+            raise ValueError(
+                "compatibilityMappingDigest is allowed only for a non-BLOCKED quantitative pair"
             )
         if self.use == "VISUAL_COMPARISON" and self.zone is not None:
             raise ValueError("VISUAL_COMPARISON must not carry a zone")
@@ -653,6 +695,17 @@ class ExternalPairUseDecisionV1(_FrozenExternalModel):
         # Omitting a null optional field preserves their canonical digests/replay.
         if self.compatibility_mapping_digest is None:
             payload.pop("compatibilityMappingDigest", None)
+        optional_asset_fields = {
+            "baseline_artifact_id": "baselineArtifactId",
+            "baseline_source_sha256": "baselineSourceSha256",
+            "current_artifact_id": "currentArtifactId",
+            "current_source_sha256": "currentSourceSha256",
+            "profile_comparison_binding_digest": "profileComparisonBindingDigest",
+            "profile_work_area_id": "profileWorkAreaId",
+        }
+        for field_name, alias in optional_asset_fields.items():
+            if getattr(self, field_name) is None:
+                payload.pop(alias, None)
         return payload
 
     def canonical_digest(self) -> str:
@@ -690,7 +743,10 @@ def external_use_decision_wire_dict(decision: ExternalUseDecisionV1) -> dict[str
 
 
 def external_pair_use_decision_wire_dict(decision: ExternalPairUseDecisionV1) -> dict[str, Any]:
-    return _wire(decision.sealed())
+    wire = _wire(decision.sealed())
+    if decision.profile_work_area_id is None:
+        wire.pop("profileWorkAreaId")
+    return wire
 
 
 __all__ = [

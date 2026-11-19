@@ -35,6 +35,7 @@ export interface CatalogAssetInfo {
   kind: string;
   captureStartedAt?: string | null;
   captureEndedAt?: string | null;
+  captureDate?: string | null;
 }
 
 /** 허가된 작업 지시 목록에서 사람용 이름을 찾는다. 없으면 null — 추정하지 않는다. */

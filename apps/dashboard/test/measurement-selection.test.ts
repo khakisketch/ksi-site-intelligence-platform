@@ -98,6 +98,13 @@ describe("chooseProfileJobs", () => {
     expect(pick.otherRevisionCount).toBe(1);
   });
 
+  it("선 모양 digest가 같아도 다른 개정의 결과는 선택하지 않는다", () => {
+    const old = job(2, { feature: { featureId: FEATURE_ID, revision: 1, lineDigest: DIGEST } });
+    const pick = chooseProfileJobs({ jobs: [old, job(3)], feature, labelOf });
+    expect(pick.options.map((option) => option.jobId)).toEqual([job(3).jobId]);
+    expect(pick.otherRevisionCount).toBe(1);
+  });
+
   it("다른 측정 선의 작업은 아예 무시한다", () => {
     const other = job(2, { feature: { featureId: `mf-${"2".repeat(32)}`, revision: 1, lineDigest: DIGEST } });
     const pick = chooseProfileJobs({ jobs: [other, job(3)], feature, labelOf });
@@ -121,6 +128,14 @@ describe("chooseProfileJobs", () => {
     expect(pick.pendingCount).toBe(1);
   });
 
+  it("명시적으로 선택한 재요청은 완료될 때까지 같은 날짜 작업으로 유지한다", () => {
+    const active = job(1, { jobId: `spj-${"9".repeat(32)}`, executionState: "RUNNING", availability: "NOT_READY" });
+    const pick = chooseProfileJobs({ jobs: [active, job(1), job(3)], feature, labelOf, requestedRef: active.jobId, requestedCur: job(3).jobId });
+    expect(pick.refJobId).toBe(active.jobId);
+    expect(pick.curJobId).toBe(job(3).jobId);
+    expect(pick.options.find((option) => option.jobId === active.jobId)?.label).toContain("단면 처리 중");
+  });
+
   it("같은 자료가 나중에 성공했다면 이전 실패는 알리지 않는다", () => {
     const failed = job(3, { jobId: `spj-${"8".repeat(32)}`, executionState: "FAILED", availability: "UNAVAILABLE", reason: "NODATA", createdAt: "2026-11-01T00:00:00Z" });
     const pick = chooseProfileJobs({ jobs: [failed, job(3)], feature, labelOf });
@@ -136,5 +151,107 @@ describe("chooseProfileJobs", () => {
     });
     expect(new Set(pick.options.map((option) => option.label)).size).toBe(2);
     expect(pick.options.every((option) => option.label.startsWith("2026-03-14"))).toBe(true);
+  });
+
+  it("자료에서 시작하면 그 자료의 단면만 현재로 고정하고 기준은 비운다", () => {
+    const pick = chooseProfileJobs({
+      jobs: [job(1), job(3)], feature, labelOf, sourceAssetRef: asset(1),
+    });
+    expect(pick.curJobId).toBe(job(1).jobId);
+    expect(pick.refJobId).toBeNull();
+  });
+
+  it("고른 자료의 완료 단면이 없으면 다른 현재와 기준을 자동으로 대신 선택하지 않는다", () => {
+    const running = job(1, { executionState: "RUNNING", availability: "NOT_READY" });
+    const pick = chooseProfileJobs({
+      jobs: [running, job(3)], feature, labelOf, sourceAssetRef: asset(1), requestedRef: job(3).jobId,
+    });
+    expect(pick.curJobId).toBeNull();
+    expect(pick.refJobId).toBeNull();
+    expect(pick.options.map((option) => option.jobId)).toEqual([job(3).jobId]);
+  });
+
+  it("자료 모드에서는 현재 자료를 기준으로 지정하지 않고 선택한 다른 자료만 기준에 둔다", () => {
+    const pick = chooseProfileJobs({
+      jobs: [job(1), job(2), job(3)], feature, labelOf,
+      sourceAssetRef: asset(3), requestedRef: job(1).jobId,
+    });
+    expect(pick.curJobId).toBe(job(3).jobId);
+    expect(pick.refJobId).toBe(job(1).jobId);
+
+    const explicit = chooseProfileJobs({
+      jobs: [job(1), job(3)], feature, labelOf,
+      sourceAssetRef: asset(3), requestedRef: job(1).jobId, requestedCur: job(3).jobId,
+    });
+    expect(explicit.curJobId).toBe(job(3).jobId);
+    expect(explicit.refJobId).toBe(job(1).jobId);
+
+    const sameSource = chooseProfileJobs({
+      jobs: [job(1), job(3)], feature, labelOf, sourceAssetRef: asset(3), requestedRef: job(3).jobId,
+    });
+    expect(sameSource.curJobId).toBe(job(3).jobId);
+    expect(sameSource.refJobId).toBeNull();
+  });
+
+  it("선택 자료에 속하지 않는 명시적 현재 결과는 양쪽 선택을 닫는다", () => {
+    const pick = chooseProfileJobs({
+      jobs: [job(1), job(2), job(3)], feature, labelOf,
+      sourceAssetRef: asset(3), requestedRef: job(1).jobId, requestedCur: job(2).jobId,
+    });
+    expect(pick.curJobId).toBeNull();
+    expect(pick.refJobId).toBeNull();
+  });
+
+  it("선택 자료의 명시적 과거 완료 결과를 유지한다", () => {
+    const older = job(3, { jobId: "spj-" + "8".repeat(32), createdAt: "2026-11-01T00:00:00Z" });
+    const pick = chooseProfileJobs({
+      jobs: [older, job(3), job(1)], feature, labelOf,
+      sourceAssetRef: asset(3), requestedRef: job(1).jobId, requestedCur: older.jobId,
+    });
+    expect(pick.curJobId).toBe(older.jobId);
+    expect(pick.refJobId).toBe(job(1).jobId);
+  });
+
+  it("알 수 없거나 미완료인 명시적 현재 결과는 양쪽 선택을 닫는다", () => {
+    const running = job(3, { jobId: "spj-" + "9".repeat(32), executionState: "RUNNING", availability: "NOT_READY" });
+    const unknown = chooseProfileJobs({
+      jobs: [job(1), job(3)], feature, labelOf,
+      sourceAssetRef: asset(3), requestedRef: job(1).jobId, requestedCur: "spj-" + "7".repeat(32),
+    });
+    const pending = chooseProfileJobs({
+      jobs: [job(1), job(3), running], feature, labelOf,
+      sourceAssetRef: asset(3), requestedRef: job(1).jobId, requestedCur: running.jobId,
+    });
+    expect(unknown.curJobId).toBeNull();
+    expect(unknown.refJobId).toBeNull();
+    expect(pending.curJobId).toBeNull();
+    expect(pending.refJobId).toBeNull();
+  });
+
+  it("자료 모드에서는 선택 자료와 명시 기준의 상태만 요약한다", () => {
+    const failedSource = job(3, { jobId: "spj-" + "8".repeat(32), executionState: "FAILED", availability: "UNAVAILABLE", reason: "NODATA" });
+    const failedOther = job(2, { jobId: "spj-" + "6".repeat(32), executionState: "FAILED", availability: "UNAVAILABLE", reason: "OUTSIDE" });
+    const waitingOther = job(1, { jobId: "spj-" + "5".repeat(32), executionState: "RUNNING", availability: "NOT_READY" });
+    const sourceOnly = chooseProfileJobs({
+      jobs: [failedSource, failedOther, waitingOther, job(2)], feature, labelOf, sourceAssetRef: asset(3),
+    });
+    expect(sourceOnly.failures).toEqual([{ label: "2026-11-02", reason: "NODATA" }]);
+    expect(sourceOnly.pendingCount).toBe(0);
+
+    const withBaseline = chooseProfileJobs({
+      jobs: [job(3), failedOther, waitingOther], feature, labelOf,
+      sourceAssetRef: asset(3), requestedRef: failedOther.jobId,
+    });
+    expect(withBaseline.failures).toEqual([{ label: "2026-06-02", reason: "OUTSIDE" }]);
+    expect(withBaseline.pendingCount).toBe(0);
+  });
+
+  it("선택 자료의 과거 작업 링크가 현재 자료를 과거 결과에 고정하지 않는다", () => {
+    const older = job(1, { jobId: "spj-" + "8".repeat(32), createdAt: "2026-11-01T00:00:00Z" });
+    const pick = chooseProfileJobs({
+      jobs: [older, job(1)], feature, labelOf, sourceAssetRef: asset(1), requestedRef: older.jobId,
+    });
+    expect(pick.curJobId).toBe(job(1).jobId);
+    expect(pick.refJobId).toBeNull();
   });
 });

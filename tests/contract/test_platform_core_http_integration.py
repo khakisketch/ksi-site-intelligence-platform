@@ -206,6 +206,7 @@ class _PlatformFlowContext:
         sdk_clients: bool = False,
         surface_profile: Any = None,
         spatial_object_origin: str | None = None,
+        build_profile_difference_authority: Any = None,
     ) -> None:
         self.now = datetime.now(UTC).replace(microsecond=0)
         self.data_dir = tmp_path
@@ -220,6 +221,12 @@ class _PlatformFlowContext:
             policy_authority=self.policy_authority,
             context_authority=self.context_authority,
         )
+        if build_profile_difference_authority is not None:
+            from dataclasses import replace
+
+            workflow = replace(
+                workflow, build_profile_difference_authority=build_profile_difference_authority
+            )
         spatial: Any = None
         if with_spatial_data:
             spatial = (
@@ -485,7 +492,14 @@ def _run_platform_spatial_worker(ctx: _PlatformFlowContext, core_origin: str) ->
 def _local_version_provider(graph: Any, origin: str) -> Any:
     from spatial_data_http_fixture import LocalVersionProvider
 
-    return LocalVersionProvider(graph, origin, b"")
+    class ProfileVersionProvider(LocalVersionProvider):
+        def issue_source_get(self, source: Any, attempt: Any, *, expires_at: datetime) -> Any:
+            cap = super().issue_source_get(source, attempt, expires_at=expires_at)
+            return cap.model_copy(
+                update={"download_url": f"{origin}/source/{source.observed_sha256}"}
+            )
+
+    return ProfileVersionProvider(graph, origin, b"")
 
 
 def _spatial_data_config(now: datetime, *, object_origin: str | None = None) -> Any:
@@ -539,7 +553,9 @@ def _spatial_data_config(now: datetime, *, object_origin: str | None = None) -> 
     )
 
 
-def _seed_site_and_area(ctx: _PlatformFlowContext, *, ai_egress_allowed: bool = False) -> str:
+def _seed_site_and_area(
+    ctx: _PlatformFlowContext, *, ai_egress_allowed: bool = False, extent_m: float = 0.2
+) -> str:
     app = ctx.app
     registered = app.state.site_store.register(
         "site-a",
@@ -561,9 +577,9 @@ def _seed_site_and_area(ctx: _PlatformFlowContext, *, ai_egress_allowed: bool = 
         "coordinates": [
             [
                 [_ORIGIN_X - 0.01, _ORIGIN_Y + 0.01],
-                [_ORIGIN_X - 0.01, _ORIGIN_Y - 0.2],
-                [_ORIGIN_X + 0.2, _ORIGIN_Y - 0.2],
-                [_ORIGIN_X + 0.2, _ORIGIN_Y + 0.01],
+                [_ORIGIN_X - 0.01, _ORIGIN_Y - extent_m],
+                [_ORIGIN_X + extent_m, _ORIGIN_Y - extent_m],
+                [_ORIGIN_X + extent_m, _ORIGIN_Y + 0.01],
                 [_ORIGIN_X - 0.01, _ORIGIN_Y + 0.01],
             ]
         ],
@@ -640,6 +656,7 @@ def _admit_real_inspection_policy(
     subjects: tuple[SealedExternalSubjectV1, SealedExternalSubjectV1],
     *,
     allow_height: bool = False,
+    profile_mapping_digest: str | None = None,
 ) -> tuple[Any, Any]:
     from ksi_core.external_quantitative_authority import CompatibilityRuleDescriptorV1
     from ksi_core.external_validation_policy import (
@@ -663,7 +680,10 @@ def _admit_real_inspection_policy(
         authority_record_digest=_digest("unbound-real-inspector-authority"),
         inspection_rule_ids=("EXTERNAL_GEOTIFF_MEASURED_V1",),
         evidence_rule_ids=("CHECKPOINT_NEAREST_PIXEL_LOWER_TIE_V1",),
-        compatibility_mapping_digests=(CompatibilityRuleDescriptorV1().canonical_digest(),),
+        compatibility_mapping_digests=(
+            CompatibilityRuleDescriptorV1().canonical_digest(),
+            *((profile_mapping_digest,) if profile_mapping_digest else ()),
+        ),
         synthetic_test_only=False,
     ).sealed()
     record = PolicyAuthorityRecord(
@@ -671,9 +691,13 @@ def _admit_real_inspection_policy(
         policy_version=template.version,
         authorized_policy_body_digest=authorized_policy_body_digest(template),
         permitted_subjects=tuple(subjects),
-        permitted_uses=("INSPECTION", "EVIDENCE", "RELATIVE_VOLUME", "HEIGHT")
-        if allow_height
-        else ("INSPECTION", "EVIDENCE", "RELATIVE_VOLUME"),
+        permitted_uses=(
+            "INSPECTION",
+            "EVIDENCE",
+            "RELATIVE_VOLUME",
+            *(("HEIGHT",) if allow_height else ()),
+            *(("PROFILE_DIFFERENCE",) if profile_mapping_digest else ()),
+        ),
         authorized_actor_ids=("policy-admin",),
         active_from=ctx.now - timedelta(hours=1),
         active_until=ctx.now + timedelta(hours=1),

@@ -4,24 +4,26 @@ import { useState, type FormEvent } from "react";
 
 import { Disclosure } from "@/components/ui/Disclosure";
 import { InlineNotice } from "@/components/ui/InlineNotice";
-import type { ProfileVerticalReference, SurfaceProfileResult } from "@/lib/core-api/measurement-types";
-import { verticalCsvCode, verticalsComparable, verticalText } from "@/lib/measurement-vertical";
+import type { ProfileVerticalReference, SurfaceProfileComparison, SurfaceProfileResult } from "@/lib/core-api/measurement-types";
+import { verticalsComparable, verticalText } from "@/lib/measurement-vertical";
 import {
   countUnknown,
   crsLabel,
   formatSigned,
   nearestSample,
-  profileCsv,
   readRange,
   unknownLabel,
 } from "@/lib/measurement-profile";
 
 import { ProfileBoard } from "./ProfileBoard";
+import { ProfileHeightExport } from "./ProfileHeightExport";
 import { ProfileChart, type ChartSeries, type DistanceRange, type VerticalRatio } from "./ProfileChart";
+import { ProfileComparison } from "./ProfileComparison";
 
 export interface DateOption {
   jobId: string;
   label: string;
+  assetRef?: string;
 }
 
 export interface LoadedSeries {
@@ -39,11 +41,18 @@ export interface UnavailableDate {
 }
 
 export interface WorkbenchProps {
+  savedComparison?: SurfaceProfileComparison | null;
+  siteId: string;
   workAreaId: string;
+  sourceAssetRef?: string;
+  featureChooserExternal?: boolean;
   features: { featureId: string; label: string }[];
   selectedFeatureId: string;
   featureName: string;
   featureRevision: number;
+  featureLineDigest: string;
+  canCompare: boolean;
+  canRequest: boolean;
   dateOptions: DateOption[];
   refJobId: string | null;
   curJobId: string | null;
@@ -68,28 +77,41 @@ function unknownReasons(result: SurfaceProfileResult): string {
   return parts.join(", ");
 }
 
-function downloadCsv(name: string, text: string) {
-  const url = URL.createObjectURL(new Blob([text], { type: "text/csv;charset=utf-8" }));
-  const anchor = document.createElement("a");
-  anchor.href = url;
-  anchor.download = name;
-  document.body.append(anchor);
-  anchor.click();
-  anchor.remove();
-  URL.revokeObjectURL(url);
-}
-
 function autoSubmit(event: FormEvent<HTMLSelectElement>) {
   event.currentTarget.form?.requestSubmit();
 }
 
 export function MeasurementWorkbench(props: WorkbenchProps) {
-  const { baseline: ref, current: cur } = props;
+  const cur = props.current;
+  const ref = props.sourceAssetRef && !cur ? null : props.baseline;
   const [ratio, setRatio] = useState<VerticalRatio>("fit");
   const [probeM, setProbeM] = useState<number | null>(null);
   const [range, setRange] = useState<DistanceRange | null>(null);
 
+  if (props.sourceAssetRef && !cur) {
+    return (
+      <section aria-label="두 시점 높이차" className="rounded-xl border border-line bg-surface p-4 sm:p-5">
+        <p className="text-body text-ink-2">선택한 자료의 단면을 먼저 읽으면 다른 날짜와 비교할 수 있습니다.</p>
+        {props.unavailable.map((item) => (
+          <InlineNotice key={`${item.role}-${item.label}`} tone="high" role="alert" className="mt-3">
+            <span className="font-semibold">{item.role === "cur" ? "현재" : "기준"} {item.label}</span> {item.message}
+          </InlineNotice>
+        ))}
+      </section>
+    );
+  }
+
   const loaded = [ref, cur].filter((entry): entry is LoadedSeries => entry !== null);
+  const sameFeatureRevision = Boolean(ref && cur
+    && ref.jobId !== cur.jobId
+    && ref.result.feature?.featureId === props.selectedFeatureId
+    && cur.result.feature?.featureId === props.selectedFeatureId
+    && ref.result.feature.revision === props.featureRevision
+    && cur.result.feature.revision === props.featureRevision
+    && ref.result.feature.lineDigest === props.featureLineDigest
+    && cur.result.feature.lineDigest === props.featureLineDigest
+    && ref.result.lineDigest === props.featureLineDigest
+    && cur.result.lineDigest === props.featureLineDigest);
   const chartSeries: ChartSeries[] = loaded.map((entry) => ({
     key: entry === cur ? "cur" : "ref",
     label: entry.label,
@@ -130,7 +152,7 @@ export function MeasurementWorkbench(props: WorkbenchProps) {
     && ref.result.samples.every((row, index) => Math.abs(row.distanceM - cur.result.samples[index]!.distanceM) < 1e-6));
 
   return (
-    <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_404px] lg:items-start">
+    <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_404px] lg:grid-rows-[auto_auto] lg:items-start">
       <ProfileBoard
         samples={primary.result.samples}
         lineLengthM={primary.result.lineLengthM}
@@ -139,11 +161,13 @@ export function MeasurementWorkbench(props: WorkbenchProps) {
         caption="실선이 측정 선입니다. A가 0 m이며, 그래프에서 고른 지점과 구간이 이 선 위에 표시됩니다."
       />
 
-      <aside aria-label="단면" className="min-w-0 rounded-xl border border-line bg-surface p-4 sm:p-5">
+      <aside aria-label="단면" className="min-w-0 self-stretch rounded-xl border border-line bg-surface p-4 sm:p-5 lg:col-start-2 lg:row-start-1 lg:row-span-2">
         <form method="get" className="flex flex-col gap-4">
           <input type="hidden" name="workAreaId" value={props.workAreaId} />
+          {props.sourceAssetRef && <input type="hidden" name="assetRef" value={props.sourceAssetRef} />}
+          {props.sourceAssetRef && props.curJobId && <input type="hidden" name="cur" value={props.curJobId} />}
           <div>
-            {props.features.length > 1 ? (
+            {props.features.length > 1 && !props.featureChooserExternal ? (
               <label className="flex flex-col gap-1.5 text-micro text-ink-muted">측정 선
                 <select name="feature" className="input" defaultValue={props.selectedFeatureId} onChange={autoSubmit}>
                   {props.features.map((feature) => <option key={feature.featureId} value={feature.featureId}>{feature.label}</option>)}
@@ -158,14 +182,24 @@ export function MeasurementWorkbench(props: WorkbenchProps) {
             <label className="flex min-w-0 flex-col gap-1.5 text-micro text-ink-muted">기준
               <select name="ref" className="input tabular" defaultValue={props.refJobId ?? ""} onChange={autoSubmit}>
                 <option value="">선택 안 함</option>
-                {props.dateOptions.map((option) => <option key={option.jobId} value={option.jobId}>{option.label}</option>)}
+                {props.dateOptions.filter((option) => option.jobId !== props.curJobId
+                  && (!props.sourceAssetRef || (option.assetRef && option.assetRef !== props.sourceAssetRef))).map((option) => <option key={option.jobId} value={option.jobId}>{option.label}</option>)}
               </select>
             </label>
-            <label className="flex min-w-0 flex-col gap-1.5 text-micro text-ink-muted">현재
-              <select name="cur" className="input tabular" defaultValue={props.curJobId ?? ""} onChange={autoSubmit}>
-                {props.dateOptions.map((option) => <option key={option.jobId} value={option.jobId}>{option.label}</option>)}
-              </select>
-            </label>
+            {props.sourceAssetRef ? (
+              <div className="flex min-w-0 flex-col gap-1.5 text-micro text-ink-muted">
+                <span>현재 · 선택한 자료</span>
+                <p className="min-h-10 rounded-md border border-line bg-sunk px-3 py-2 text-caption text-ink-1">
+                  {props.dateOptions.find((option) => option.jobId === props.curJobId)?.label ?? "이 자료의 단면을 아직 읽지 않았습니다"}
+                </p>
+              </div>
+            ) : (
+              <label className="flex min-w-0 flex-col gap-1.5 text-micro text-ink-muted">현재
+                <select name="cur" className="input tabular" defaultValue={props.curJobId ?? ""} onChange={autoSubmit}>
+                  {props.dateOptions.map((option) => <option key={option.jobId} value={option.jobId}>{option.label}</option>)}
+                </select>
+              </label>
+            )}
           </div>
           <noscript><button type="submit" className="btn">불러오기</button></noscript>
         </form>
@@ -275,14 +309,30 @@ export function MeasurementWorkbench(props: WorkbenchProps) {
         {props.notes.map((note) => <p key={note} className="mt-3 text-micro text-ink-muted">{note}</p>)}
         <p className="mt-3 text-micro text-ink-muted">등록된 격자를 선을 따라 읽은 값입니다. 측량 성과가 아닙니다. 값이 없는 지점은 0 m로 채우지 않습니다.</p>
 
-        <div className="mt-4">
-          <button
-            type="button"
-            className="btn btn-primary"
-            onClick={() => downloadCsv(`profile-${props.selectedFeatureId.slice(3, 11)}.csv`, profileCsv(loaded.map((entry) => ({ label: `${entry === cur ? "현재" : "기준"} ${entry.label}`, samples: entry.result.samples, vertical: verticalCsvCode(entry.vertical) }))))}
-          >CSV 내보내기</button>
-        </div>
+        <ProfileHeightExport
+          key={JSON.stringify([props.siteId, props.workAreaId, props.selectedFeatureId, props.featureRevision, ref?.jobId, cur?.jobId])}
+          siteId={props.siteId}
+          workAreaId={props.workAreaId}
+          featureId={props.selectedFeatureId}
+          baseline={ref}
+          current={cur}
+        />
       </aside>
+      <ProfileComparison
+        key={sameFeatureRevision && ref && cur ? `${ref.jobId}:${cur.jobId}:${props.savedComparison?.decisionDigest ?? "none"}` : "no-pair"}
+        siteId={props.siteId}
+        workAreaId={props.workAreaId}
+        feature={{ featureId: props.selectedFeatureId, revision: props.featureRevision, lineDigest: props.featureLineDigest }}
+        canCompare={props.canCompare}
+        savedComparison={props.savedComparison ?? null}
+        canRequest={props.canRequest}
+        pair={sameFeatureRevision && ref && cur ? {
+          baseline: { jobId: ref.jobId, assetRef: ref.result.assetRef, label: ref.label, spacingM: ref.result.sampleSpacingM, lineLengthM: ref.result.lineLengthM },
+          current: { jobId: cur.jobId, assetRef: cur.result.assetRef, label: cur.label, spacingM: cur.result.sampleSpacingM, lineLengthM: cur.result.lineLengthM },
+        } : null}
+        probeM={probeM}
+        onProbe={setProbeM}
+      />
     </div>
   );
 }

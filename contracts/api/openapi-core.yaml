@@ -7867,6 +7867,17 @@ paths:
         - { name: work_area_id, in: path, required: true, schema: { type: string } }
         - { name: limit, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 50, default: 20 } }
         - { name: cursor, in: query, required: false, schema: { type: string, minLength: 1, maxLength: 1024 }, description: Scope-bound navigation only; authorization is rechecked on every request. }
+        - name: order
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [asset-ref, capture-desc]
+            default: asset-ref
+          description: >-
+            asset-ref preserves catalog reference order. capture-desc orders declared capture start
+            or date descending, with unknown times last. The selected order is bound to the
+            continuation cursor. Legacy V1 cursors continue in their original reference order.
       responses:
         '200':
           description: Bounded current page; declaration, observation and inspection facts are separate.
@@ -9013,10 +9024,16 @@ paths:
       description: >-
         Newest first, only the caller's own jobs. The optional feature_id narrows to one saved line
         before the limit applies, so a busy work area cannot push one line's older jobs out of a page.
+        asset_ref narrows history to one source. feature_revision requires feature_id and selects an exact saved-line revision.
+        execution_group finds current active or retained completed jobs after refreshing state,
+        even when newer matching retries are canceled. Results still include current availability checks.
       security: [{bearerAuth: []}]
       parameters:
         - {name: limit, in: query, schema: {type: integer, minimum: 1}}
         - {name: feature_id, in: query, required: false, schema: {type: string, pattern: '^mf-[0-9a-f]{32}$'}}
+        - {name: asset_ref, in: query, required: false, schema: {type: string, pattern: '^ksa-v1-[0-9a-f]{64}$'}}
+        - {name: feature_revision, in: query, required: false, schema: {type: integer, minimum: 1, maximum: 2147483647}}
+        - {name: execution_group, in: query, required: false, schema: {type: string, enum: [ACTIVE, COMPLETED]}}
       responses:
         '200':
           description: Retained immutable history with current availability
@@ -9044,6 +9061,46 @@ paths:
         '409': {description: Idempotency conflict}
         '422': {description: Bounded strict UTF-8 JSON or request invalid}
         '429': {description: Organization profile job budget exhausted}
+        '503': {description: Authority or journal unavailable}
+  /v1/sites/{site_id}/work-areas/{work_area_id}/surface-profile-comparisons:
+    x-assembly: explicit-local-surface-profile-wiring
+    parameters: *surfaceProfileScope
+    description: >-
+      Subtract the baseline from the current surface at identical positions on one saved
+      measurement feature revision. Both job results must be readable by the requester.
+      Core verifies the ordered DSM pair and its current compatibility and evidence before
+      releasing numbers. A blocked pair decision carries its reasons and a null result.
+      Creation requires SITES_WRITE, retrieval requires SITES_READ, and both require SPATIAL_DATA_READ.
+    post:
+      summary: Evaluate an ordered pair of completed profile jobs
+      security: [{bearerAuth: []}]
+      parameters:
+        - {name: Idempotency-Key, in: header, required: true, schema: {type: string, minLength: 1}}
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/CreateSurfaceProfileComparisonV1'}}}
+      responses:
+        '200': {description: Retained decision and currently readable result, content: {application/json: {schema: {$ref: '#/components/schemas/SurfaceProfileComparisonV1'}}}}
+        '401': {description: Authentication required}
+        '403': {description: Current read permission denied}
+        '404': {description: Scope or owned job unavailable}
+        '409': {description: Conflicting key, incompatible jobs or unavailable result}
+        '422': {description: Invalid selection or request}
+        '503': {description: Authority or journal unavailable}
+    get:
+      summary: Read the exact decision and recheck current authority for both profile results
+      security: [{bearerAuth: []}]
+      parameters:
+        - {name: baseline_job_id, in: query, required: true, schema: {type: string, minLength: 36, maxLength: 36}}
+        - {name: current_job_id, in: query, required: true, schema: {type: string, minLength: 36, maxLength: 36}}
+        - {name: decision_id, in: query, required: true, schema: {type: string, minLength: 1, maxLength: 255}}
+      responses:
+        '200': {description: Exact pair decision and currently readable result, content: {application/json: {schema: {$ref: '#/components/schemas/SurfaceProfileComparisonV1'}}}}
+        '401': {description: Authentication required}
+        '403': {description: Current read permission denied}
+        '404': {description: Decision or owned job unavailable}
+        '409': {description: Binding or current eligibility has changed}
+        '422': {description: Invalid query}
         '503': {description: Authority or journal unavailable}
   /v1/sites/{site_id}/work-areas/{work_area_id}/surface-profile-jobs/{job_id}:
     x-assembly: explicit-local-surface-profile-wiring
@@ -15572,6 +15629,7 @@ components:
           enum:
           - VISUAL_COMPARISON
           - RELATIVE_VOLUME
+          - PROFILE_DIFFERENCE
           title: Use
         policyDigest:
           anyOf:
@@ -15591,6 +15649,36 @@ components:
             pattern: ^sha256:[0-9a-f]{64}$
           - type: 'null'
           title: Currentinspectionreportdigest
+        baselineArtifactId:
+          anyOf:
+          - {type: string, minLength: 1, maxLength: 255}
+          - {type: 'null'}
+          title: Baselineartifactid
+        baselineSourceSha256:
+          anyOf:
+          - {type: string, pattern: '^sha256:[0-9a-f]{64}$'}
+          - {type: 'null'}
+          title: Baselinesourcesha256
+        currentArtifactId:
+          anyOf:
+          - {type: string, minLength: 1, maxLength: 255}
+          - {type: 'null'}
+          title: Currentartifactid
+        currentSourceSha256:
+          anyOf:
+          - {type: string, pattern: '^sha256:[0-9a-f]{64}$'}
+          - {type: 'null'}
+          title: Currentsourcesha256
+        profileComparisonBindingDigest:
+          anyOf:
+          - {type: string, pattern: '^sha256:[0-9a-f]{64}$'}
+          - {type: 'null'}
+          title: Profilecomparisonbindingdigest
+        profileWorkAreaId:
+          anyOf:
+          - {type: string, minLength: 1, maxLength: 255}
+          - {type: 'null'}
+          title: Profileworkareaid
         baselineSanitizedDisplayReceiptDigest:
           anyOf:
           - type: string
@@ -20487,6 +20575,10 @@ components:
 
     CreateSurfaceProfileJobV1:
       $ref: '../schemas/surface-profile-job.v1.json#/$defs/CreateSurfaceProfileJobV1'
+    CreateSurfaceProfileComparisonV1:
+      $ref: '../schemas/surface-profile-job.v1.json#/$defs/CreateSurfaceProfileComparisonV1'
+    SurfaceProfileComparisonV1:
+      $ref: '../schemas/surface-profile-job.v1.json#/$defs/SurfaceProfileComparisonV1'
     SurfaceProfileJobPageV1:
       $ref: '../schemas/surface-profile-job.v1.json#/$defs/SurfaceProfileJobPageV1'
     SurfaceProfileJobViewV1:

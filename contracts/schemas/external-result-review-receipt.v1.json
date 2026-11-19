@@ -182,6 +182,21 @@
         "decisionDigest": {
           "pattern": "^sha256:[0-9a-f]{64}$",
           "type": "string"
+        },
+        "baselineArtifactId": {
+          "type": "null"
+        },
+        "baselineSourceSha256": {
+          "type": "null"
+        },
+        "currentArtifactId": {
+          "type": "null"
+        },
+        "currentSourceSha256": {
+          "type": "null"
+        },
+        "profileComparisonBindingDigest": {
+          "type": "null"
         }
       },
       "required": [

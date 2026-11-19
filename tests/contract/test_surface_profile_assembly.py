@@ -318,6 +318,8 @@ def test_wiring_rejects_coordinator_split(tmp_path: Path) -> None:
 _SURFACE_PROFILE_METHODS = {
     ("POST", "/v1/sites/{site_id}/work-areas/{work_area_id}/surface-profile-jobs"),
     ("GET", "/v1/sites/{site_id}/work-areas/{work_area_id}/surface-profile-jobs"),
+    ("POST", "/v1/sites/{site_id}/work-areas/{work_area_id}/surface-profile-comparisons"),
+    ("GET", "/v1/sites/{site_id}/work-areas/{work_area_id}/surface-profile-comparisons"),
     ("GET", "/v1/sites/{site_id}/work-areas/{work_area_id}/surface-profile-jobs/{job_id}"),
     (
         "GET",

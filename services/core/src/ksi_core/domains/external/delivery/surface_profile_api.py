@@ -11,7 +11,9 @@ from typing import Any
 from fastapi import APIRouter, Depends, Query, Request
 from ksi_event_contracts._spatial_data import MAX_COUNTER
 from ksi_event_contracts.surface_profile_job import (
+    CreateSurfaceProfileComparisonV1,
     CreateSurfaceProfileJobV1,
+    SurfaceProfileComparisonV1,
     SurfaceProfileErrorV1,
     SurfaceProfileJobPageV1,
     SurfaceProfileJobViewV1,
@@ -29,6 +31,9 @@ from ksi_core.domains.external.delivery.api import (
     request_schema,
 )
 from ksi_core.domains.external.delivery.errors import SpatialDataDomainError
+from ksi_core.domains.external.delivery.surface_profile_comparisons import (
+    SurfaceProfileComparisonService,
+)
 from ksi_core.domains.external.delivery.surface_profile_jobs import (
     SurfaceProfileDomainError,
     SurfaceProfileJobStore,
@@ -36,6 +41,7 @@ from ksi_core.domains.external.delivery.surface_profile_jobs import (
 from ksi_core.identity.auth import Permission, Principal, require_permission
 
 PUBLIC_BASE = "/v1/sites/{site_id}/work-areas/{work_area_id}/surface-profile-jobs"
+COMPARISON_BASE = "/v1/sites/{site_id}/work-areas/{work_area_id}/surface-profile-comparisons"
 ERROR_RESPONSES: dict[int | str, dict[str, Any]] = {
     code: {"model": SurfaceProfileErrorV1, "description": "현재 권한과 단면 계약에 따른 거부"}
     for code in (403, 404, 409, 410, 413, 422, 429, 503)
@@ -63,11 +69,18 @@ class SurfaceProfileHttpLimits:
 
 
 def profile_error_response(error: SurfaceProfileDomainError) -> JSONResponse:
+    is_stale_pair = error.reason == "PROFILE_COMPARISON_NO_LONGER_ELIGIBLE"
     model = SurfaceProfileErrorV1(
         reason=error.reason,
-        message="단면 작업을 사용할 수 없습니다.",
+        message=(
+            "현재 비교 자격을 다시 확인한 뒤 새 비교를 요청해 주세요."
+            if is_stale_pair
+            else "단면 작업을 사용할 수 없습니다."
+        ),
         retryable=error.retryable,
-        remediation=("CONTACT_OPERATOR",),
+        remediation=("RECHECK_CURRENT_PAIR", "CREATE_NEW_COMPARISON")
+        if is_stale_pair
+        else ("CONTACT_OPERATOR",),
     )
     return model_response(model, status=error.status_code)
 
@@ -118,9 +131,15 @@ def build_surface_profile_router(
     jobs: SurfaceProfileJobStore,
     limits: SurfaceProfileHttpLimits,
     clock: Callable[[], datetime],
+    decisions: Any | None = None,
 ) -> APIRouter:
     limits.validate_for(jobs.policy)
     router = APIRouter(tags=["surface-profile"], responses=ERROR_RESPONSES)
+    comparison_service = (
+        SurfaceProfileComparisonService(jobs=jobs, decisions=decisions)
+        if decisions is not None
+        else None
+    )
     create_schema = request_schema(CreateSurfaceProfileJobV1)
     create_schema["parameters"] = [
         {
@@ -134,6 +153,106 @@ def build_surface_profile_router(
             },
         }
     ]
+
+    if comparison_service is not None:
+        comparison_schema = request_schema(CreateSurfaceProfileComparisonV1)
+        comparison_schema["parameters"] = [
+            {
+                "name": "Idempotency-Key",
+                "in": "header",
+                "required": True,
+                "schema": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": jobs.policy.max_idempotency_key_bytes,
+                },
+            }
+        ]
+
+        @router.post(
+            COMPARISON_BASE,
+            response_model=SurfaceProfileComparisonV1,
+            openapi_extra=comparison_schema,
+        )
+        async def compare_surfaces(
+            site_id: str,
+            work_area_id: str,
+            request: Request,
+            principal: Principal = Depends(require_permission(Permission.SITES_WRITE)),  # noqa: B008
+        ) -> Response:
+            try:
+                await run_in_threadpool(
+                    jobs.require_requester_scope,
+                    site_id=site_id,
+                    work_area_id=work_area_id,
+                    principal=principal,
+                    permission=Permission.SPATIAL_DATA_READ,
+                )
+                body = await read_profile_model(
+                    request,
+                    CreateSurfaceProfileComparisonV1,
+                    limits=limits,
+                )
+                key = request.headers.get("idempotency-key", "")
+                if (
+                    not key
+                    or len(key.encode()) > jobs.policy.max_idempotency_key_bytes
+                    or any(ord(character) < 32 or ord(character) == 127 for character in key)
+                ):
+                    raise SurfaceProfileDomainError("INVALID_REQUEST", 422)
+                assert comparison_service is not None
+                view = await run_in_threadpool(
+                    current_profile_operation,
+                    request,
+                    principal,
+                    clock,
+                    lambda current: comparison_service.create(
+                        site_id=site_id,
+                        work_area_id=work_area_id,
+                        baseline_job_id=body.baseline_job_id,
+                        current_job_id=body.current_job_id,
+                        idempotency_key=key,
+                        principal=current,
+                        now=clock(),
+                    ),
+                )
+                return model_response(view)
+            except SurfaceProfileDomainError as exc:
+                return profile_error_response(exc)
+
+        @router.get(
+            COMPARISON_BASE,
+            response_model=SurfaceProfileComparisonV1,
+        )
+        def get_comparison(
+            site_id: str,
+            work_area_id: str,
+            request: Request,
+            baseline_job_id: str = Query(..., min_length=36, max_length=36),  # noqa: B008
+            current_job_id: str = Query(..., min_length=36, max_length=36),  # noqa: B008
+            decision_id: str = Query(..., min_length=1, max_length=255),  # noqa: B008
+            principal: Principal = Depends(require_permission(Permission.SITES_READ)),  # noqa: B008
+        ) -> Response:
+            try:
+                assert comparison_service is not None
+                return model_response(
+                    current_profile_operation(
+                        request,
+                        principal,
+                        clock,
+                        lambda current: comparison_service.get(
+                            site_id=site_id,
+                            work_area_id=work_area_id,
+                            baseline_job_id=baseline_job_id,
+                            current_job_id=current_job_id,
+                            decision_id=decision_id,
+                            principal=current,
+                            now=clock(),
+                        ),
+                    )
+                )
+            except SurfaceProfileDomainError as exc:
+                return profile_error_response(exc)
 
     @router.post(PUBLIC_BASE, response_model=SurfaceProfileJobViewV1, openapi_extra=create_schema)
     async def issue(
@@ -176,6 +295,9 @@ def build_surface_profile_router(
         request: Request,
         limit: int = 1,
         feature_id: str | None = Query(default=None, max_length=64),  # noqa: B008
+        asset_ref: str | None = Query(default=None, pattern=r"^ksa-v1-[0-9a-f]{64}$"),  # noqa: B008
+        feature_revision: int | None = Query(default=None, ge=1, le=2**31 - 1),  # noqa: B008
+        execution_group: str | None = Query(default=None, pattern=r"^(ACTIVE|COMPLETED)$"),  # noqa: B008
         principal: Principal = Depends(require_permission(Permission.SPATIAL_DATA_READ)),  # noqa: B008
     ) -> Response:
         try:
@@ -191,6 +313,9 @@ def build_surface_profile_router(
                         limit=limit,
                         now=clock(),
                         feature_id=feature_id,
+                        asset_ref=asset_ref,
+                        feature_revision=feature_revision,
+                        execution_group=execution_group,
                     )
                 ),
             )
