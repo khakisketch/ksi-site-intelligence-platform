@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { areaRingOf, coverageOfArea, fileFootprintWgs84 } from "@/lib/geo/geotiff-footprint";
+import { toDisplayPolygonWgs84 } from "@/lib/geo/display-geometry";
 import type { GeoTiffRawHeader } from "@/lib/geo/geotiff-header";
 
 // EPSG:5186 중부원점 근처 1km 사각형(서울 인근). 값은 합성이다.
@@ -84,6 +85,52 @@ describe("coverageOfArea", () => {
   it("returns null when the stored polygon is not readable", () => {
     expect(coverageOfArea(footprint, { type: "Polygon", coordinates: [[[1, 2], ["x", 3]]] })).toBeNull();
     expect(coverageOfArea(footprint, null)).toBeNull();
+  });
+});
+
+describe("toDisplayPolygonWgs84", () => {
+  it("aligns a native EPSG:32635 work area with the public DJI Terra EPSG:4326 result", () => {
+    // Sofia/SAP sunflower dataset, pinned 2026-11-19. The ring is the real
+    // local QA work area around the published result.tif bounds (plus 1 m).
+    const workArea = {
+      type: "Polygon",
+      coordinates: [[
+        [215843.76323177927, 4727946.649519713],
+        [216109.17223298742, 4727946.649519713],
+        [216109.17223298742, 4728217.935922389],
+        [215843.76323177927, 4728217.935922389],
+        [215843.76323177927, 4727946.649519713],
+      ]],
+    };
+    const displayed = toDisplayPolygonWgs84(workArea, "EPSG:32635");
+    const normalizedRing = areaRingOf(displayed)!;
+    const publicOrtho = fileFootprintWgs84(header({
+      width: 3628,
+      height: 3716,
+      samplesPerPixel: 4,
+      bitsPerSample: 8,
+      sampleFormat: 1,
+      geoKeys: { GeographicTypeGeoKey: 4326 },
+      boundingBox: [
+        23.53348665924774,
+        42.653962196501155 - 8.499409176465633e-07 * 3716,
+        23.53348665924774 + 8.499409176465633e-07 * 3628,
+        42.653962196501155,
+      ],
+    }))!;
+
+    expect(displayed?.type).toBe("Polygon");
+    expect(normalizedRing[0]![0]).toBeCloseTo(23.53348, 4);
+    expect(normalizedRing[0]![1]).toBeCloseTo(42.65153, 4);
+    expect(coverageOfArea(publicOrtho, displayed)).toBe("partial");
+    expect(workArea.coordinates[0]![0]).toEqual([215843.76323177927, 4727946.649519713]);
+  });
+
+  it("keeps WGS84 rings and returns no display geometry for unknown or invalid projections", () => {
+    const geographic = { type: "Polygon", coordinates: [[[127, 37], [127.1, 37], [127.1, 37.1], [127, 37.1], [127, 37]]] };
+    expect(toDisplayPolygonWgs84(geographic, "EPSG:4326")).toEqual(geographic);
+    expect(toDisplayPolygonWgs84(geographic, "EPSG:999999")).toBeNull();
+    expect(toDisplayPolygonWgs84({ type: "MultiPolygon", coordinates: [] }, "EPSG:4326")).toBeNull();
   });
 });
 

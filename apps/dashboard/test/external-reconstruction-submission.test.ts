@@ -134,6 +134,52 @@ describe("external reconstruction V3 missing-info intake", () => {
   it("matches the Core Python V3 digest for an exact declared interval with both artifacts", () => {
     expect(canonicalSubmissionV3Digest(v3ExactBoth())).toBe("sha256:af19326e6129f09ef8a48b0ba9c7919daf04c090aee4216ff1347a813eb74e33");
   });
+  it("matches the Core Python V3 digest for a corrected second revision", () => {
+    const corrected = v3ExactBoth();
+    corrected.revision = 2;
+    expect(canonicalSubmissionV3Digest(corrected)).toBe("sha256:24a39ee3331b8d4cc0bcab5fc75064459e4d37f1b7e5b4df0c361a492daeb1ae");
+  });
+  it("matches the Core Python golden for trusted run facts and microsecond capture timestamps", () => {
+    const precise = v3DateOnlyUnknown();
+    precise.submissionId = "x";
+    precise.revision = 2;
+    precise.organizationId = "o";
+    precise.siteId = "s";
+    precise.observationEpochId = "e";
+    precise.submittedAt = "2026-09-08T01:02:03Z";
+    precise.submittedBy = "p";
+    precise.producerDeclaration = {
+      producerKnowledge: "DECLARED", softwareName: "x", softwareVersion: "1",
+      buildIdentifier: "build-7", producerRunIdentifier: "run-42", configurationDigest: `sha256:${hex("b")}`,
+      completedAt: "2026-09-08T01:00:00.12+02:00", sourceNote: "flight log",
+    };
+    precise.inputDeclaration = {
+      rawMediaStoredByKsi: false, originalRetentionLocus: "upstream_source", originalRetentionDetail: "portal",
+      localInputManifestDigest: `sha256:${hex("c")}`, imageCount: 42,
+      captureStartedAt: "2026-09-08T01:00:00.123456+02:00", captureEndedAt: "2026-09-08T01:10:00.654321+02:00",
+      captureDate: null, captureBasis: "EXACT_INTERVAL",
+      upstreamSource: {
+        sourceUri: "https://example.invalid/dataset", sourceSha256: hex("d"),
+        licenceDeclaration: "CC BY", retrievalNote: "downloaded",
+      },
+      derivativeExport: null,
+    };
+    precise.artifacts = [{
+      artifactId: "dsm", kind: "dsm", fileName: "a.tif", format: "GeoTIFF", contentType: "application/octet-stream",
+      declaredSha256: hex("a"), declaredSizeBytes: 1, declaredCrs: "EPSG:32634",
+      declaredVerticalReference: null, declaredGsdM: null,
+    }];
+    expect(canonicalSubmissionV3Digest(precise)).toBe("sha256:0c6be9a2703b1794ebcd7f50b102453d7c33b6187645eb597492d69aa8f91796");
+    precise.producerDeclaration.completedAt = "2026-09-08T01:00:00.120000+02:00";
+    expect(canonicalSubmissionV3Digest(precise)).toBe("sha256:0c6be9a2703b1794ebcd7f50b102453d7c33b6187645eb597492d69aa8f91796");
+  });
+  it("requires V3 revisions to be positive safe integers", () => {
+    const invalid = v3ExactBoth();
+    invalid.revision = 0;
+    expect(() => validateExternalSubmissionV3Candidate(invalid)).toThrow();
+    invalid.revision = 1.5;
+    expect(() => validateExternalSubmissionV3Candidate(invalid)).toThrow();
+  });
 
   it("matches the Core Python V3 digest for a date-only unknown-producer DSM-only declaration", () => {
     expect(canonicalSubmissionV3Digest(v3DateOnlyUnknown())).toBe("sha256:7b8178828e4103bb7a719aa0b0144fcbea0a50a1d5bd74ccb133124f886b0c13");

@@ -328,7 +328,7 @@ describe("WorkOrderOperationsPanel uncertain operation recovery", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "현재 상태 다시 불러오기" }));
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
-    expect(screen.getByText(/다른 담당자에게 배정됨/)).toBeTruthy();
+    expect(await screen.findByText(/다른 담당자에게 배정됨/)).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: "같은 요청 다시 시도" }));
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));

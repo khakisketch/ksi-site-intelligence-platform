@@ -24,7 +24,7 @@ from ksi_core.domains.external.ingress.external_validation_policy import (
     PolicyAuthorityRecord,
     authorized_policy_body_digest,
 )
-from ksi_core.durable_journal import DurableJournal
+from ksi_core.durable_journal import DurableJournal, JournalSealedError
 from ksi_core.evidence import EvidenceStorageError, ObjectStorageObservation
 from ksi_core.external_authority_currentness import ExternalAuthorityCurrentnessCoordinator
 from ksi_core.external_display_artifacts import (
@@ -946,6 +946,70 @@ def test_heartbeat_cannot_extend_a_lease_past_the_absolute_deadline(tmp_path: Pa
         clock=lambda: current_time[0],
     )
     assert restarted.list_pending(1) == ()
+
+
+def test_heartbeat_with_unchanged_capped_expiry_is_replayable_without_new_events(
+    tmp_path: Path,
+) -> None:
+    policy, authority = _bound_policy()
+    current_time = [NOW]
+    registry = _policy_registry(
+        DurableJournal(tmp_path / "policy.jsonl"),
+        authority,
+        clock=lambda: current_time[0],
+    )
+    registry.admit(policy, actor="authority", now=NOW)
+    journal_path = tmp_path / "inspection.jsonl"
+    store = ExternalArtifactInspectionStore(
+        DurableJournal(journal_path),
+        policy_registry=registry,
+        external_reconstruction=_FixtureIngress(),
+        clock=lambda: current_time[0],
+    )
+    issued = store.issue_after_seal(subject(), now=NOW)
+    assert issued.request is not None
+    claim = store.claim(issued.request.request_id, LeaseFence(WORKER_A, ACQUISITION, 0), now=NOW)
+    assert claim.fence is not None
+
+    first = store.heartbeat(
+        issued.request.request_id, claim.fence, now=NOW + timedelta(seconds=3)
+    )
+    assert first.lease_expires_at == NOW + timedelta(seconds=7)
+    second = store.heartbeat(
+        issued.request.request_id, claim.fence, now=NOW + timedelta(seconds=6)
+    )
+    assert second.lease_expires_at == NOW + timedelta(seconds=10)
+    events_after_extension = tuple(store._journal.replay())  # noqa: SLF001
+    heartbeat_count = sum(
+        event["kind"] == "external-artifact-inspection-heartbeat"
+        for event in events_after_extension
+    )
+    assert heartbeat_count == 2
+
+    current_time[0] = NOW + timedelta(seconds=9)
+    for _ in range(3):
+        repeated = store.heartbeat(issued.request.request_id, claim.fence, now=current_time[0])
+        assert repeated.verdict == "LEASED"
+        assert repeated.lease_expires_at == NOW + timedelta(seconds=10)
+    assert tuple(store._journal.replay()) == events_after_extension  # noqa: SLF001
+
+    store._journal.close()  # noqa: SLF001 - verify restart preserves the capped lease.
+    restarted = ExternalArtifactInspectionStore(
+        DurableJournal(journal_path),
+        policy_registry=registry,
+        external_reconstruction=_FixtureIngress(),
+        clock=lambda: current_time[0],
+    )
+    repeated_after_restart = restarted.heartbeat(
+        issued.request.request_id, claim.fence, now=current_time[0]
+    )
+    assert repeated_after_restart.verdict == "LEASED"
+    assert repeated_after_restart.lease_expires_at == NOW + timedelta(seconds=10)
+    assert tuple(restarted._journal.replay()) == events_after_extension  # noqa: SLF001
+
+    restarted._journal.close()  # noqa: SLF001 - unchanged leases must still reject sealed journals.
+    with pytest.raises(JournalSealedError):
+        restarted.heartbeat(issued.request.request_id, claim.fence, now=current_time[0])
 
 
 def test_historical_display_obligation_survives_revocation_without_a_display_store(

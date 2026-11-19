@@ -22,8 +22,8 @@ const declared: VerticalDeclarationState = { assetRef: ASSET, observed: false, c
 const afterWithdrawal: VerticalDeclarationState = { assetRef: ASSET, observed: false, current: null, history: [record(1), record(2, { status: "WITHDRAWN", datum: null, basis: null })] };
 
 const fetchMock = vi.fn();
-function show(state: VerticalDeclarationState | null, canWrite = true) {
-  return render(<VerticalReferenceDeclaration siteId="site-1" workAreaId="area-1" assetRef={ASSET} state={state} canWrite={canWrite} />);
+function show(state: VerticalDeclarationState | null, canWrite = true, observedCrs: string | null = "EPSG:5186") {
+  return render(<VerticalReferenceDeclaration siteId="site-1" workAreaId="area-1" assetRef={ASSET} observedCrs={observedCrs} state={state} canWrite={canWrite} />);
 }
 const reply = (status: number, body: unknown) => ({ ok: status >= 200 && status < 300, status, json: async () => body });
 
@@ -42,6 +42,13 @@ async function fillForm(basis = "Terra 내보내기 설정에서 정표고를 �
 const submit = () => screen.getByRole("button", { name: "선언하기" }) as HTMLButtonElement;
 
 describe("수직 기준이 없는 DSM", () => {
+  it("파일의 수평 좌표계가 단면에서 지원되지 않아도 확인한 수직 기준을 기록할 수 있다", async () => {
+    show(none, true, "EPSG:7850");
+    expect(screen.getByText(/수평 좌표계\(EPSG:7850\).*단면을 계산할 수 없습니다/)).toBeTruthy();
+    await fillForm("원본 처리 설정에서 확인한 높이 기준");
+    expect(submit().disabled).toBe(false);
+  });
+
   it("선언이 없으면 이유와 범위를 말하고, 기준·근거·단위 확인이 모두 있어야 선언할 수 있다", () => {
     show(none);
     const section = screen.getByRole("region", { name: "수직 기준 선언" });

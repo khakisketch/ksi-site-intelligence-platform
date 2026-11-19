@@ -26,7 +26,7 @@ function AreaLink({ siteId, area, label, current }: { siteId: string; area: Work
  * 자료 조회가 구역 단위라서 구역 선택이 이 패널의 첫 줄이다. 검색·필터는 이미 불러온 페이지 안에서만 적용된다.
  */
 export function DataContextPanel({
-  siteId, areas, selectedWorkAreaId, kinds, q, kind, state, loadedCount, hasMore,
+  siteId, areas, selectedWorkAreaId, kinds, q, kind, state, cursor, loadedCount, hasMore,
 }: {
   siteId: string;
   areas: readonly WorkArea[];
@@ -35,6 +35,7 @@ export function DataContextPanel({
   q: string;
   kind: string;
   state: string;
+  cursor?: string;
   loadedCount: number | null;
   hasMore: boolean;
 }) {
@@ -42,7 +43,7 @@ export function DataContextPanel({
   const active = areas.filter((area) => area.status === "ACTIVE");
   const archived = areas.filter((area) => area.status !== "ACTIVE");
   const label = (area: WorkArea) => names.get(area.workAreaId)?.label ?? area.workAreaId;
-  const filterProps = { siteId, kinds, q, kind, state, loadedCount, hasMore };
+  const filterProps = { siteId, kinds, q, kind, state, cursor, loadedCount, hasMore };
   return (
     <>
       <section aria-label="작업구역" className="flex min-w-0 flex-col gap-1.5">
@@ -87,15 +88,17 @@ type FilterProps = {
   q: string;
   kind: string;
   state: string;
+  cursor?: string;
   loadedCount: number | null;
   hasMore: boolean;
 };
 
 /** 검색·필터 양식 — 좁은 화면은 접힘 안에서 가로로 펴고, 넓은 화면은 왼쪽 열에서 세로로 쌓는다. 같은 GET 양식이다. */
-function FilterForm({ siteId, selectedWorkAreaId, kinds, q, kind, state, loadedCount, hasMore }: FilterProps) {
+function FilterForm({ siteId, selectedWorkAreaId, kinds, q, kind, state, cursor, loadedCount, hasMore }: FilterProps) {
   return (
     <form action={`/sites/${encodeURIComponent(siteId)}/data`} method="get" className="grid min-w-0 grid-cols-2 gap-2 md:grid-cols-[minmax(0,2fr)_1fr_1fr_auto] md:items-end xl:grid-cols-1 xl:items-stretch" aria-label="자료 조건">
       <input type="hidden" name="workAreaId" value={selectedWorkAreaId} />
+      {cursor && <input type="hidden" name="cursor" value={cursor} />}
       <label className="col-span-2 grid gap-1 text-caption font-medium md:col-span-1 xl:col-span-1">자료 검색
         <input name="q" type="search" defaultValue={q} maxLength={80} placeholder="파일명 또는 종류" className="tap-target min-w-0 rounded-md border border-line bg-surface px-2 text-body" />
       </label>
@@ -114,9 +117,9 @@ function FilterForm({ siteId, selectedWorkAreaId, kinds, q, kind, state, loadedC
       </label>
       <div className="col-span-2 flex flex-wrap items-center gap-2 md:col-span-1 xl:col-span-1">
         <button type="submit" className="btn">적용</button>
-        {(q || kind || state) && <Link href={siteDataHref(siteId, { workAreaId: selectedWorkAreaId })} className="tap-target text-caption underline">초기화</Link>}
+        {(q || kind || state) && <Link href={siteDataHref(siteId, { workAreaId: selectedWorkAreaId, cursor })} className="tap-target text-caption underline">초기화</Link>}
       </div>
-      {loadedCount !== null && hasMore && <p className="col-span-2 px-1 text-micro text-ink-muted md:col-span-4 xl:col-span-1">불러온 {loadedCount}개 자료에서 검색합니다.</p>}
+      {loadedCount !== null && (hasMore || cursor) && <p className="col-span-2 px-1 text-micro text-ink-muted md:col-span-4 xl:col-span-1">이 페이지의 자료 {loadedCount}개에서 검색합니다.</p>}
     </form>
   );
 }

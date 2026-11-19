@@ -35,6 +35,28 @@ const body = {
   upstreamSource: null, derivativeExport: null,
   artifacts: [orthoArtifact],
 };
+const correctionRef = `ers-v1-${"a".repeat(64)}`;
+
+function sealedPrior(submission: Record<string, unknown>, submissionRef = correctionRef) {
+  return { submissionRef, state: "SEALED", submission: { ...submission, revision: 1, contractVersion: "external-reconstruction-submission.v3" } };
+}
+
+function priorWithRunFacts(submission: Record<string, unknown>) {
+  const candidate = structuredClone(submission) as Record<string, unknown>;
+  candidate.producerDeclaration = {
+    ...(candidate.producerDeclaration as Record<string, unknown>),
+    buildIdentifier: "build-7", producerRunIdentifier: "run-42", configurationDigest: `sha256:${hex("b")}`,
+    completedAt: "2026-09-08T01:00:00.120000+02:00",
+  };
+  candidate.inputDeclaration = {
+    ...(candidate.inputDeclaration as Record<string, unknown>),
+    originalRetentionLocus: "upstream_source", originalRetentionDetail: "portal",
+    localInputManifestDigest: `sha256:${hex("c")}`, imageCount: 42,
+    captureStartedAt: "2026-09-08T01:00:00.123456+02:00",
+    captureEndedAt: "2026-09-08T01:10:00.654321+02:00",
+  };
+  return sealedPrior(candidate);
+}
 
 beforeEach(() => {
   vi.resetAllMocks();
@@ -119,6 +141,7 @@ describe("external reconstruction V3 collection BFF", () => {
     ["DATE_ONLY with timestamps", { captureBasis: "DATE_ONLY", captureStartedAt: "2026-09-08T01:00:00Z", captureEndedAt: "2026-09-08T01:10:00Z", captureDate: "2026-09-08" }],
     ["EXACT_INTERVAL with a calendar date", { captureBasis: "EXACT_INTERVAL", captureDate: "2026-09-08" }],
     ["EXACT_INTERVAL with an equal pair", { captureBasis: "EXACT_INTERVAL", captureStartedAt: "2026-09-08T01:00:00Z", captureEndedAt: "2026-09-08T01:00:00Z" }],
+    ["new exact intervals below whole-second precision", { captureBasis: "EXACT_INTERVAL", captureStartedAt: "2026-09-08T01:00:00.123456Z", captureEndedAt: "2026-09-08T01:10:00Z" }],
     ["UNKNOWN with a date", { captureBasis: "UNKNOWN", captureDate: "2026-09-08" }],
     ["PARTIAL with a version", { producerKnowledge: "PARTIAL", softwareName: "ODM", softwareVersion: "1" }],
     ["PARTIAL without a name", { producerKnowledge: "PARTIAL", softwareName: null, softwareVersion: null }],
@@ -200,6 +223,141 @@ describe("external reconstruction V3 collection BFF", () => {
     const response = await POST(request(body) as never, context);
     expect(response.status).toBe(200);
     expect(mocked.register).toHaveBeenCalledTimes(1);
+  });
+  it("registers a correction as the next immutable revision of its sealed V3 stream", async () => {
+    await POST(request(body) as never, context);
+    const first = mocked.register.mock.calls[0]![1];
+    const prior = sealedPrior(first);
+    mocked.register.mockClear();
+    mocked.register.mockResolvedValueOnce({ submissionRef: correctionRef, state: "REGISTERED" });
+    mocked.list.mockResolvedValueOnce([prior]);
+
+    const corrected = { ...body, correctionOf: { submissionRef: correctionRef, revision: 1 }, submittedAt: "2026-09-08T01:20:03Z" };
+    const response = await POST(request(corrected) as never, context);
+    expect(response.status).toBe(201);
+    expect(mocked.register).toHaveBeenCalledTimes(1);
+    expect(mocked.register.mock.calls[0]![1]).toMatchObject({
+      submissionId: "attempt-1",
+      revision: 2,
+      observationEpochId: "epoch-1",
+    });
+    expect(mocked.register.mock.calls[0]![1].submissionDigest).not.toBe(first.submissionDigest);
+  });
+  it("retains trusted producer and source-manifest facts and precise capture times in a correction", async () => {
+    await POST(request(body) as never, context);
+    const first = mocked.register.mock.calls[0]![1];
+    const prior = priorWithRunFacts(first);
+    mocked.register.mockClear();
+    mocked.list.mockResolvedValueOnce([prior]);
+
+    const corrected = {
+      ...body,
+      correctionOf: { submissionRef: correctionRef, revision: 1 },
+      submittedAt: "2026-09-08T01:20:03Z",
+      captureStartedAt: "2026-09-08T01:00:00.123456+02:00",
+      captureEndedAt: "2026-09-08T01:10:00.654321+02:00",
+      originalRetentionLocus: "upstream_source",
+      originalRetentionDetail: "portal",
+    };
+    const response = await POST(request(corrected) as never, context);
+    expect(response.status).toBe(201);
+    const submitted = mocked.register.mock.calls[0]![1];
+    expect(submitted.producerDeclaration).toMatchObject({
+      buildIdentifier: "build-7", producerRunIdentifier: "run-42", configurationDigest: `sha256:${hex("b")}`,
+      completedAt: "2026-09-08T01:00:00.120000+02:00",
+    });
+    expect(submitted.inputDeclaration).toMatchObject({
+      localInputManifestDigest: `sha256:${hex("c")}`, imageCount: 42,
+      captureStartedAt: "2026-09-08T01:00:00.123456+02:00",
+      captureEndedAt: "2026-09-08T01:10:00.654321+02:00",
+    });
+  });
+  it.each([
+    ["producer", { softwareName: "Different reconstruction" }],
+    ["capture time", { captureStartedAt: "2026-09-08T01:00:01.123456+02:00" }],
+  ])("refuses to inherit trusted run facts after the %s declaration changes", async (_label, changes) => {
+    await POST(request(body) as never, context);
+    const first = mocked.register.mock.calls[0]![1];
+    mocked.register.mockClear();
+    mocked.list.mockResolvedValueOnce([priorWithRunFacts(first)]);
+    const corrected = {
+      ...body,
+      correctionOf: { submissionRef: correctionRef, revision: 1 },
+      submittedAt: "2026-09-08T01:20:03Z",
+      captureStartedAt: "2026-09-08T01:00:00.123456+02:00",
+      captureEndedAt: "2026-09-08T01:10:00.654321+02:00",
+      originalRetentionLocus: "upstream_source",
+      originalRetentionDetail: "portal",
+      ...changes,
+    };
+    const response = await POST(request(corrected) as never, context);
+    expect(response.status).toBe(409);
+    expect((await response.json()).code).toBe("CORRECTION_LINEAGE_CHANGED");
+    expect(mocked.register).not.toHaveBeenCalled();
+  });
+  it("returns only an exact corrected revision after a lost registration response", async () => {
+    await POST(request(body) as never, context);
+    const first = mocked.register.mock.calls[0]![1];
+    const prior = sealedPrior(first);
+    mocked.register.mockClear();
+    mocked.register.mockRejectedValueOnce(new Error("lost response"));
+    mocked.list.mockResolvedValueOnce([prior]).mockImplementationOnce(async () => [
+      prior,
+      { submissionRef: correctionRef, state: "REGISTERED", submission: mocked.register.mock.calls[0]![1] },
+    ]);
+
+    const corrected = { ...body, correctionOf: { submissionRef: correctionRef, revision: 1 }, submittedAt: "2026-09-08T01:20:03Z" };
+    const response = await POST(request(corrected) as never, context);
+    expect(response.status).toBe(200);
+    expect(mocked.register.mock.calls[0]![1].revision).toBe(2);
+  });
+  it("refuses a competing correction whose content differs from the recorded next revision", async () => {
+    await POST(request(body) as never, context);
+    const first = mocked.register.mock.calls[0]![1];
+    const prior = sealedPrior(first);
+    const competing = { ...first, revision: 2, submittedAt: "2026-09-08T01:25:00Z" };
+    mocked.register.mockClear();
+    mocked.list.mockResolvedValueOnce([
+      prior,
+      { submissionRef: correctionRef, state: "SEALED", submission: competing },
+    ]);
+
+    const corrected = { ...body, correctionOf: { submissionRef: correctionRef, revision: 1 }, submittedAt: "2026-09-08T01:30:00Z" };
+    const response = await POST(request(corrected) as never, context);
+    expect(response.status).toBe(409);
+    expect((await response.json()).code).toBe("CORRECTION_CONFLICT");
+    expect(mocked.register).not.toHaveBeenCalled();
+  });
+  it("rejects a correction against a prior revision after a later revision has sealed", async () => {
+    await POST(request(body) as never, context);
+    const first = mocked.register.mock.calls[0]![1];
+    const prior = sealedPrior(first);
+    const second = { ...first, revision: 2, submittedAt: "2026-09-08T01:25:00Z" };
+    const third = { ...first, revision: 3, submittedAt: "2026-09-08T01:35:00Z" };
+    mocked.register.mockClear();
+    mocked.list.mockResolvedValueOnce([
+      prior,
+      { submissionRef: correctionRef, state: "SEALED", submission: second },
+      { submissionRef: correctionRef, state: "SEALED", submission: third },
+    ]);
+
+    const corrected = { ...body, correctionOf: { submissionRef: correctionRef, revision: 1 }, submittedAt: "2026-09-08T01:30:00Z" };
+    const response = await POST(request(corrected) as never, context);
+    expect(response.status).toBe(409);
+    expect((await response.json()).code).toBe("STALE_CORRECTION_TARGET");
+    expect(mocked.register).not.toHaveBeenCalled();
+  });
+  it("rejects a stale, unsealed, or foreign correction target", async () => {
+    await POST(request(body) as never, context);
+    const first = mocked.register.mock.calls[0]![1];
+    mocked.register.mockClear();
+    const unsealed = { ...sealedPrior(first), state: "REGISTERED" };
+    mocked.list.mockResolvedValueOnce([unsealed]);
+    const corrected = { ...body, correctionOf: { submissionRef: correctionRef, revision: 1 } };
+    const response = await POST(request(corrected) as never, context);
+    expect(response.status).toBe(409);
+    expect((await response.json()).code).toBe("INVALID_CORRECTION_TARGET");
+    expect(mocked.register).not.toHaveBeenCalled();
   });
   it.each([
     { workOrderId: "other" }, { siteId: "foreign" }, { cycleNumber: 2 }, { workOrderVersion: 3 },

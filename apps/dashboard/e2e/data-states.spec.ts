@@ -20,12 +20,12 @@ const info = infoFile
 test.skip(!info, "KSI_DATA_STATE_INFO_FILE이 없어 데이터 상태 스택을 쓰지 않습니다.");
 test.use({ baseURL: process.env.KSI_DATA_STATE_BASE_URL ?? "http://127.0.0.1:3231" });
 
-async function login(page: Page) {
-  await page.goto("/login");
+async function login(page: Page, destination: string) {
+  await page.goto(`/login?${new URLSearchParams({ next: destination })}`);
   await page.locator("#token").fill(info!.operatorToken);
+  const redirected = page.waitForURL((url) => url.pathname + url.search === destination, { timeout: 15_000 });
   await page.getByRole("button", { name: "로그인" }).click();
-  // 로그인 화면에도 main이 있어, 이동이 끝난 뒤에야 다음 화면으로 간다.
-  await expect(page).not.toHaveURL(/\/login/);
+  await redirected;
 }
 
 async function expectNoHorizontalOverflow(page: Page) {
@@ -36,8 +36,7 @@ async function expectNoHorizontalOverflow(page: Page) {
 }
 
 test("자료 패널은 등록된 관측 2건과 검사 기록을 보이고, 정보 패널은 측정값을 보인다", async ({ page }) => {
-  await login(page);
-  await page.goto(`/sites/${info!.siteId}?panel=materials&workAreaId=${info!.workAreaId}`);
+  await login(page, `/sites/${info!.siteId}?panel=materials&workAreaId=${info!.workAreaId}`);
   const body = page.locator("body");
   await expect(body).toContainText("dsm-analysis-local-baseline.bin");
   await expect(body).toContainText("dsm-analysis-local-current.bin");
@@ -46,18 +45,45 @@ test("자료 패널은 등록된 관측 2건과 검사 기록을 보이고, 정�
   // 좁은 화면에서는 자료 패널이 하단 시트로 열려 "정보" 버튼을 가린다. 시트를 닫고 누른다.
   // 시트는 하이드레이션 뒤에 열리므로 네트워크가 잦아든 뒤에 본다.
   await page.waitForLoadState("networkidle");
-  const closeSheet = page.locator("button", { hasText: /^닫기$/ }).locator("visible=true");
-  if (await closeSheet.count()) await closeSheet.first().click();
-  await page.getByRole("button", { name: "정보" }).first().click();
+  const closeSheet = page.locator("#workbench-catalog").getByRole("button", { name: "자료 패널 닫기" });
+  if ((page.viewportSize()?.width ?? 0) < 1024) await closeSheet.tap();
+  else await closeSheet.click();
+  const openSheet = page.getByRole("button", { name: "자료 패널 열기" });
+  await openSheet.focus();
+  await page.keyboard.press("Enter");
+  await expect(closeSheet).toBeVisible();
+  await page.keyboard.press("Tab");
+  await expect(closeSheet).toBeFocused();
+  await page.keyboard.press("Enter");
+  await expect(openSheet).toBeFocused();
+  await page.keyboard.press("Enter");
+  await expect(closeSheet).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(openSheet).toBeFocused();
+  const infoToggle = page.getByRole("button", { name: "정보" }).first();
+  await infoToggle.click();
   await expect(body).toContainText("EPSG:5186");
   await expect(body).toContainText("EPSG:5773");
   await expect(body).toContainText("2 × 2 픽셀");
+  if (page.viewportSize()?.width === 768) {
+    await page.screenshot({ path: test.info().outputPath("tablet-inspection-panel.png"), fullPage: true });
+  }
+  const closeInfo = page.locator("#workspace-inspector").getByRole("button", { name: /닫기/ });
+  if ((page.viewportSize()?.width ?? 0) < 1024) await closeInfo.tap();
+  else await closeInfo.click();
+  await expect(infoToggle).toHaveAttribute("aria-expanded", "false");
+  await infoToggle.focus();
+  await page.keyboard.press("Enter");
+  await expect(closeInfo).toBeVisible();
+  await page.keyboard.press("Tab");
+  await expect(closeInfo).toBeFocused();
+  await page.keyboard.press("Enter");
+  await expect(infoToggle).toHaveAttribute("aria-expanded", "false");
   await expectNoHorizontalOverflow(page);
 });
 
 test("자료 섹션은 등록된 자료를 표로 보이고 선택·검색·등록 진행을 곁에 둔다", async ({ page }) => {
-  await login(page);
-  await page.goto(`/sites/${info!.siteId}/data?workAreaId=${info!.workAreaId}`);
+  await login(page, `/sites/${info!.siteId}/data?workAreaId=${info!.workAreaId}`);
   await page.waitForLoadState("networkidle");
   const rows = page.locator("[data-asset-row]");
   await expect(rows.filter({ hasText: "dsm-analysis-local-baseline.bin" })).toHaveCount(1);
@@ -88,8 +114,7 @@ test("자료 섹션은 등록된 자료를 표로 보이고 선택·검색·등�
 });
 
 test("자료 검색은 파일명으로 목록을 좁힌다", async ({ page }) => {
-  await login(page);
-  await page.goto(`/sites/${info!.siteId}?panel=materials&workAreaId=${info!.workAreaId}`);
+  await login(page, `/sites/${info!.siteId}?panel=materials&workAreaId=${info!.workAreaId}`);
   // 자료 패널이 한 문서에 둘 이상 그려질 수 있어 보이는 입력만 쓴다.
   await page.getByLabel("자료 검색").locator("visible=true").fill("baseline");
   await page.getByRole("button", { name: "검색·필터 적용" }).locator("visible=true").click();
@@ -99,8 +124,7 @@ test("자료 검색은 파일명으로 목록을 좁힌다", async ({ page }) =>
 });
 
 test("두 시점 비교는 A·B를 주소에 남기고, 준비 기록을 못 읽으면 빈 목록으로 단정하지 않는다", async ({ page }) => {
-  await login(page);
-  await page.goto(`/sites/${info!.siteId}?mode=compare&workAreaId=${info!.workAreaId}`);
+  await login(page, `/sites/${info!.siteId}?mode=compare&workAreaId=${info!.workAreaId}`);
   // 선택 상자는 작업구역(0), A(1), B(2) 순서다.
   await page.locator("select").nth(1).selectOption({ index: 1 });
   // A 선택의 이동이 끝나야 B 칸이 A를 주소에 싣는다. 사람이 두 칸을 고르는 속도로 맞춘다.
@@ -114,8 +138,7 @@ test("두 시점 비교는 A·B를 주소에 남기고, 준비 기록을 못 읽
 });
 
 test("분석 이력과 결과는 완료 상태·수치·정확도 미확인 고지를 함께 보인다", async ({ page }) => {
-  await login(page);
-  await page.goto(`/sites/${info!.siteId}/analysis?workAreaId=${info!.workAreaId}`);
+  await login(page, `/sites/${info!.siteId}/analysis?workAreaId=${info!.workAreaId}`);
   const main = page.getByRole("main");
   await expect(main).toContainText("실행 완료");
   await expect(main).toContainText("정확도 미확인");
@@ -135,17 +158,16 @@ test("분석 이력과 결과는 완료 상태·수치·정확도 미확인 고�
 });
 
 test("두 주기 결과는 관측일 순으로 비교되고, 검토를 남기면 결과 화면에 반영된다", async ({ page }) => {
-  await login(page);
   const [first, second] = info!.analysisIds;
   const results = (id: string) =>
     `/sites/${info!.siteId}?mode=results&workAreaId=${info!.workAreaId}&analysisId=${id}`;
   const main = page.getByRole("main");
 
   // t1→t2 결과에서 t0→t1 결과가 같은 구역·임계값·셀 크기이므로 한 차트에 함께 놓인다.
-  await page.goto(results(second!));
+  await login(page, results(second!));
   await expect(main).toContainText("이전 결과와 비교");
   await expect(main).toContainText("비교 조건");
-    await expect(main.getByRole("table", { name: /관측일별 깎임과 쌓임/ }).getByRole("row")).toHaveCount(3);
+  await expect(main.getByRole("table", { name: /관측일별 깎임과 쌓임/ }).getByRole("row")).toHaveCount(3);
   await expectNoHorizontalOverflow(page);
 
   // 지도 타일(제3자)을 요청하지 않고 계산 격자만 연다.
@@ -160,9 +182,23 @@ test("두 주기 결과는 관측일 순으로 비교되고, 검토를 남기면
   await page.goto(`/sites/${info!.siteId}/analysis?workAreaId=${info!.workAreaId}&analysisId=${second!}`);
   const form = page.getByRole("group", { name: "검토 결정 선택" });
   await form.getByLabel("추가 확인·조치 필요").check();
-  await page.getByLabel(/검토 의견/).fill(`e2e 합성 검토 ${test.info().project.name}: 입력 시점 재확인 필요`);
+  const reviewComment = `e2e 합성 검토 ${test.info().project.name}: 입력 시점 재확인 필요`;
+  await page.getByLabel(/검토 의견/).fill(reviewComment);
+  const reviewsPath = `/api/sites/${info!.siteId}/analyses/${second!}/reviews`;
+  const saved = page.waitForResponse((r) => new URL(r.url()).pathname === reviewsPath && r.request().method() === "POST");
+  const refreshed = page.waitForResponse((r) => new URL(r.url()).pathname === reviewsPath && r.request().method() === "GET");
   await page.getByRole("button", { name: "검토 기록 추가" }).click();
-  await expect(page.getByText(`e2e 합성 검토 ${test.info().project.name}: 입력 시점 재확인 필요`)).toBeVisible();
+  const response = await saved;
+  expect(response.status()).toBe(201);
+  const receipt = await response.json();
+  expect(receipt.comment).toBe(reviewComment);
+  await expect(page.getByText("검토 기록을 저장하고 최신 상태를 다시 불러왔습니다.")).toBeVisible();
+  // 여러 화면이 같은 합성 결과를 검토하므로, 저장한 영수증을 목록에서 다시 확인한다.
+  const reread = await refreshed;
+  expect(reread.ok()).toBe(true);
+  expect((await reread.json()).items).toContainEqual(expect.objectContaining({
+    reviewRef: receipt.reviewRef, receiptDigest: receipt.receiptDigest, comment: reviewComment,
+  }));
 
   await page.goto(results(second!));
   await expect(main).toContainText("검토됨 · 추가 확인 필요");

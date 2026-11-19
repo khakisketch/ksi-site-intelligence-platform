@@ -2,18 +2,12 @@ import Link from "next/link";
 
 import { StateBadge } from "@/components/ui/StatusBadge";
 import { siteDataHref, type SiteDataScope } from "@/components/nav/site-context";
-import { capturePeriodTitle, dataKindLabel } from "@/lib/operator-language";
+import { assetLifecycleLabel, capturePeriodTitle, dataKindLabel } from "@/lib/operator-language";
 import { firstReadableWindowJob, type PreparedWindowJob } from "@/lib/site-windowed-pixel-viewer";
 import type { SpatialAssetCatalogItem } from "@/lib/core-api/spatial-assets";
 
 import { MaterialThumb } from "../spatial-assets/MaterialThumb";
-import { inspectionStateLabel } from "../materials/asset-detail";
-
-/** 파일 검사 칸의 색 — 카탈로그가 아는 사실만 말한다. 분석 적합성은 이 표에서 판단하지 않는다. */
-function inspectionTone(item: SpatialAssetCatalogItem): "positive" | "warning" | "neutral" {
-  if (item.inspection.outcome === "REJECTED" || item.inspection.state === "FAILED") return "warning";
-  return item.inspection.outcome === "MEASURED" ? "positive" : "neutral";
-}
+import { inspectionDisplayLabel, inspectionTone } from "../materials/asset-detail";
 
 const HEAD = "px-3 py-2 text-left text-micro font-bold break-keep text-ink-muted";
 
@@ -70,7 +64,7 @@ export function DataTable({
                       <MaterialThumb siteId={item.siteId} workAreaId={item.workAreaId} jobId={readable.jobId} receipt={readable.receipt} fileName={item.declared.fileName} />
                     )}
                     <span className="min-w-0">
-                      <span className="block break-words font-semibold">{dataKindLabel(item.kind)} · v{item.revision}</span>
+                      <span className="block break-words font-semibold">{dataKindLabel(item.kind)} · v{item.revision}{item.lifecycleState === "SUPERSEDED" && <span className="font-normal text-ink-muted"> · {assetLifecycleLabel(item.lifecycleState)}</span>}</span>
                       <span className="block max-w-[28ch] truncate text-caption text-ink-2" title={item.declared.fileName}>{item.declared.fileName}</span>
                     </span>
                   </Link>
@@ -82,7 +76,7 @@ export function DataTable({
                   <span className="text-micro text-ink-muted md:hidden">좌표 기준 · </span>{item.inspection.raster?.observedCrsIdentifier ?? "확인 불가"}
                 </td>
                 <td className="px-3 py-2 max-md:block max-md:p-0 max-md:pt-1">
-                  <StateBadge label={inspectionStateLabel(item.inspection.state)} tone={inspectionTone(item)} />
+                  <StateBadge label={inspectionDisplayLabel(item.inspection)} tone={inspectionTone(item.inspection)} />
                 </td>
               </tr>
             );

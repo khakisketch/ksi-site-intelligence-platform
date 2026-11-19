@@ -5,6 +5,7 @@ import { useRef, useState } from "react";
 
 import { ResponsiveActionBoundary } from "@/components/responsive/ResponsiveActionBoundary";
 import { formatKoreanDateTime } from "@/lib/datetime";
+import { isAnalysisCrs } from "@/lib/geo/known-crs";
 import type { VerticalDatum } from "@/lib/core-api/measurement-types";
 import { MAX_DECLARATION_BASIS, type VerticalDeclarationState } from "@/lib/core-api/vertical-reference-types";
 import { datumLabel } from "@/lib/measurement-vertical";
@@ -20,12 +21,14 @@ export function VerticalReferenceDeclaration({
   siteId,
   workAreaId,
   assetRef,
+  observedCrs,
   state,
   canWrite,
 }: {
   siteId: string;
   workAreaId: string;
   assetRef: string;
+  observedCrs: string | null;
   /** 읽지 못했으면 null. 선언이 없다는 뜻이 아니다. */
   state: VerticalDeclarationState | null;
   canWrite: boolean;
@@ -97,6 +100,10 @@ export function VerticalReferenceDeclaration({
   return (
     <section aria-label="수직 기준 선언" className="flex min-w-0 flex-col gap-2 rounded-lg border border-line bg-surface p-3 text-caption leading-5 text-ink-2">
       <h4 className="font-semibold text-ink-1">수직 기준 선언</h4>
+
+      {observedCrs && /^EPSG:\d+$/i.test(observedCrs) && !isAnalysisCrs(observedCrs) && (
+        <p className="rounded-lg bg-sunk px-3 py-2">이 자료의 수평 좌표계({observedCrs})에서는 수직 기준을 선언해도 단면을 계산할 수 없습니다.</p>
+      )}
 
       {current ? (
         <div>

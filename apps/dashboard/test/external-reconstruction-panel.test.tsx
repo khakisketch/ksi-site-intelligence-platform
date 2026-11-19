@@ -36,6 +36,7 @@ const ECHO_REF = `ers-v1-${"d".repeat(64)}`;
 type EchoArtifact = { artifactId: string; kind: string; declaredSha256: string; declaredSizeBytes: number; fileName: string; declaredCrs: string | null };
 type EchoBody = {
   submissionId: string; expectedEpochId: string; submittedAt: string | null;
+  correctionOf?: { submissionRef: string; revision: number };
   producerKnowledge: unknown; softwareName: unknown; softwareVersion: unknown; sourceNote: unknown;
   captureBasis: unknown; captureStartedAt: unknown; captureEndedAt: unknown; captureDate: unknown;
   originalRetentionLocus: unknown; originalRetentionDetail: unknown;
@@ -52,12 +53,12 @@ const TEST_DIGEST = `sha256:${"e".repeat(64)}`;
 const TEST_MANIFEST_DIGEST = `sha256:${"d".repeat(64)}`;
 // manifest 결속 대조용 최소 합성 — 대조하는 결속 필드(계약 리터럴·제출 묶음·
 // 버전·epoch·관측 entries)만 실으며, 대조하지 않는 서버 발급 값은 합성 자리표시다.
-function manifestFor(body: { submissionId: string; expectedEpochId: string; artifacts: { artifactId: string; kind: string; declaredSha256: string; declaredSizeBytes: number }[] }, submissionDigest: string) {
+function manifestFor(body: { submissionId: string; expectedEpochId: string; artifacts: { artifactId: string; kind: string; declaredSha256: string; declaredSizeBytes: number }[] }, submissionDigest: string, revision = 1) {
   return {
     contractVersion: "external-reconstruction-manifest.v1",
     manifestId: "eman-v1-synthetic",
     submissionId: body.submissionId,
-    submissionRevision: 1,
+    submissionRevision: revision,
     organizationId: "org-synthetic",
     siteId: "site-synthetic",
     observationEpochId: body.expectedEpochId,
@@ -75,12 +76,12 @@ function manifestFor(body: { submissionId: string; expectedEpochId: string; arti
     submissionDigest,
   };
 }
-function echoDeclaration(body: EchoBody, submissionRef: string = ECHO_REF) {
+function echoDeclaration(body: EchoBody, submissionRef: string = ECHO_REF, revision = body.correctionOf ? body.correctionOf.revision + 1 : 1) {
   return {
     submissionRef,
     state: "REGISTERED",
     submission: {
-      submissionId: body.submissionId, revision: 1, observationEpochId: body.expectedEpochId,
+      submissionId: body.submissionId, revision, observationEpochId: body.expectedEpochId,
       submittedAt: body.submittedAt,
       producerDeclaration: {
         producerKnowledge: body.producerKnowledge, softwareName: body.softwareName,
@@ -98,12 +99,12 @@ function echoDeclaration(body: EchoBody, submissionRef: string = ECHO_REF) {
     },
   };
 }
-function echoSeal(body: EchoBody, submissionRef: string = ECHO_REF) {
+function echoSeal(body: EchoBody, submissionRef: string = ECHO_REF, revision = body.correctionOf ? body.correctionOf.revision + 1 : 1) {
   return {
     submissionRef,
     state: "SEALED",
     submission: {
-      submissionId: body.submissionId, revision: 1, observationEpochId: body.expectedEpochId,
+      submissionId: body.submissionId, revision, observationEpochId: body.expectedEpochId,
       submittedAt: body.submittedAt,
       producerDeclaration: {
         producerKnowledge: body.producerKnowledge, softwareName: body.softwareName,
@@ -118,7 +119,7 @@ function echoSeal(body: EchoBody, submissionRef: string = ECHO_REF) {
       artifacts: body.artifacts,
       submissionDigest: TEST_DIGEST,
     },
-    manifest: manifestFor(body, TEST_DIGEST),
+    manifest: manifestFor(body, TEST_DIGEST, revision),
   };
 }
 // 유지 제출 기록 기반 봉인 echo — retained 제출과 같은 결속으로 감싼다.
@@ -737,6 +738,7 @@ describe("ExternalReconstructionPanel", () => {
     // 재개한 시도는 compactness보다 우선해 항상 보인다.
     expect(screen.getByText("새 산출물 등록").closest("details")?.open).toBe(true);
     expect(screen.getByText("등록된 파일과 같은 파일을 다시 선택하세요.")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "결과 폴더 고르기" })).toBeNull();
   });
 
   it("aborts a pending direct upload when the operator cancels transmission", async () => {
@@ -839,6 +841,12 @@ describe("ExternalReconstructionPanel header auto-recognition (AX-3)", () => {
     await screen.findByText(/정사영상 1 KB 확인 완료/);
   }
 
+  function folderFile(name: string, path: string) {
+    const file = new File(["x".repeat(1024)], name);
+    Object.defineProperty(file, "webkitRelativePath", { value: path });
+    return file;
+  }
+
   it("pre-fills the CRS and empty producer fields from the header and declares the CRS", async () => {
     const registrations = registerFlow();
     headerMock.read.mockResolvedValue(orthoHeader);
@@ -877,6 +885,119 @@ describe("ExternalReconstructionPanel header auto-recognition (AX-3)", () => {
     fireEvent.drop(screen.getByTestId("external-file-drop-zone"), { dataTransfer: { files: [new File(["x"], "ground.tif"), new File(["y"], "picture.tif")] } });
     await screen.findByText(/정사영상 1 KB 확인 완료 · DSM 1 KB 확인 완료/);
     expect(screen.queryByLabelText("파일 나누기 안내")).toBeNull();
+  });
+
+  it("selects only the DJI Terra final pair from a folder and keeps its local path beside the files", async () => {
+    registerFlow();
+    headerMock.read.mockImplementation(async (file: File) => file.name === "dsm.tif"
+      ? { ...dsmHeader, software: null, dateTime: null }
+      : { ...orthoHeader, software: null, dateTime: null });
+    render(<ExternalReconstructionPanel workOrderId="work-1" expectedEpochId="epoch-1" canWrite accountIdentity={continuity} />);
+    await screen.findByText("아직 등록된 관측 자료가 없습니다.");
+
+    const result = folderFile("result.tif", "sunflower/05.07.2024/terra/default/map/result.tif");
+    const dsm = folderFile("dsm.tif", "sunflower/05.07.2024/terra/default/map/dsm.tif");
+    const downsampled = folderFile("gsddsm.tif", "sunflower/05.07.2024/terra/default/map/gsddsm.tif");
+    const segment = folderFile("segment.tif", "sunflower/05.07.2024/terra/default/map/segment.tif");
+    fireEvent.change(screen.getByLabelText("결과 폴더 선택"), { target: { files: [result, dsm, downsampled, segment] } });
+
+    await screen.findByText(/정사영상 1 KB 확인 완료 · DSM 1 KB 확인 완료/);
+    expect(screen.getByText(/선택한 폴더 위치 · DJI Terra/)).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "결과 폴더 고르기" })).toBeNull();
+    expect(headerMock.read.mock.calls.map(([file]) => (file as File).name).sort()).toEqual([
+      "dsm.tif", "result.tif",
+    ]);
+    expect((screen.getByLabelText("재구성 소프트웨어 이름") as HTMLInputElement).value).toBe("");
+    expect((screen.getByRole("radio", { name: "촬영 시점 미상" }) as HTMLInputElement).checked).toBe(true);
+    expect(screen.queryByLabelText("촬영 날짜 (YYYY-MM-DD)")).toBeNull();
+
+    fireEvent.change(screen.getByLabelText("정사영상 GeoTIFF"), { target: { files: [new File(["y"], "edited.tif")] } });
+    await screen.findByText(/정사영상 1 KB 확인 완료 · DSM 1 KB 확인 완료/);
+    expect(screen.queryByText(/선택한 폴더 위치 · DJI Terra/)).toBeNull();
+  });
+
+  it("skips a folder DSM whose TIFF header identifies it as an orthophoto", async () => {
+    registerFlow();
+    headerMock.read.mockResolvedValue(orthoHeader);
+    render(<ExternalReconstructionPanel workOrderId="work-1" expectedEpochId="epoch-1" canWrite accountIdentity={continuity} />);
+    await screen.findByText("아직 등록된 관측 자료가 없습니다.");
+    const result = folderFile("result.tif", "sunflower/05.07.2024/terra/default/map/result.tif");
+    const dsm = folderFile("dsm.tif", "sunflower/05.07.2024/terra/default/map/dsm.tif");
+    fireEvent.change(screen.getByLabelText("결과 폴더 선택"), { target: { files: [result, dsm] } });
+
+    await screen.findByText(/정사영상 1 KB 확인 완료/);
+    expect(screen.getByLabelText("파일 나누기 안내").textContent).toContain("DSM의 종류를 파일 내용에서 확인할 수 없습니다");
+    expect(screen.getByText(/DSM 미선택/)).toBeTruthy();
+    expect(headerMock.read.mock.calls.filter(([file]) => (file as File).name === "dsm.tif")).toHaveLength(1);
+  });
+
+  it("locks the form and does not start a second slot after hash cancellation", async () => {
+    registerFlow();
+    headerMock.read.mockImplementation(async (file: File) => file.name === "dsm.tif" ? dsmHeader : orthoHeader);
+    const dsmWorkerIndex = { value: null as number | null };
+    vi.spyOn(FakeWorker.prototype, "postMessage").mockImplementation(function (this: FakeWorker, request: { id: string }) {
+      const file = (request as { file?: File }).file;
+      if (file?.name === "dsm.tif") {
+        dsmWorkerIndex.value = FakeWorker.instances.indexOf(this);
+        return;
+      }
+      this.onmessage?.({ data: { id: request.id, sha256: "a".repeat(64), size: 1 } } as MessageEvent);
+    });
+    render(<ExternalReconstructionPanel workOrderId="work-1" expectedEpochId="epoch-1" canWrite accountIdentity={continuity} />);
+    await screen.findByText("아직 등록된 관측 자료가 없습니다.");
+    const result = folderFile("result.tif", "sunflower/05.07.2024/terra/default/map/result.tif");
+    const dsm = folderFile("dsm.tif", "sunflower/05.07.2024/terra/default/map/dsm.tif");
+    fireEvent.change(screen.getByLabelText("결과 폴더 선택"), { target: { files: [result, dsm] } });
+
+    await waitFor(() => expect((screen.getByLabelText("정사영상 GeoTIFF") as HTMLInputElement).disabled).toBe(true));
+    await screen.findByRole("button", { name: "파일 확인 취소" });
+    expect((screen.getByRole("button", { name: "자료 등록 마치기" }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: "파일 확인 취소" }));
+
+    await waitFor(() => expect((screen.getByLabelText("정사영상 GeoTIFF") as HTMLInputElement).disabled).toBe(false));
+    expect(screen.getByText(/정사영상 1 KB 확인 완료/)).toBeTruthy();
+    expect(screen.getByText(/DSM 미선택/)).toBeTruthy();
+    expect(FakeWorker.instances[dsmWorkerIndex.value ?? -1]?.terminate).toHaveBeenCalledOnce();
+    expect(headerMock.read.mock.calls.map(([file]) => (file as File).name).sort()).toEqual(["dsm.tif", "result.tif"]);
+  });
+
+  it("shows a cancellable status while folder headers are still pending", async () => {
+    let finishResultHeader!: () => void;
+    headerMock.read.mockImplementation(async (file: File) => {
+      if (file.name === "result.tif") await new Promise<void>((resolve) => { finishResultHeader = resolve; });
+      return file.name === "dsm.tif" ? dsmHeader : orthoHeader;
+    });
+    render(<ExternalReconstructionPanel workOrderId="work-1" expectedEpochId="epoch-1" canWrite accountIdentity={continuity} />);
+    await screen.findByText("아직 등록된 관측 자료가 없습니다.");
+    const result = folderFile("result.tif", "sunflower/05.07.2024/terra/default/map/result.tif");
+    const dsm = folderFile("dsm.tif", "sunflower/05.07.2024/terra/default/map/dsm.tif");
+    fireEvent.change(screen.getByLabelText("결과 폴더 선택"), { target: { files: [result, dsm] } });
+
+    expect(await screen.findByText("폴더의 결과 파일을 확인하고 있습니다.")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "파일 확인 취소" }));
+    await act(async () => { finishResultHeader(); });
+    await waitFor(() => expect((screen.getByLabelText("정사영상 GeoTIFF") as HTMLInputElement).disabled).toBe(false));
+    expect(screen.getByText(/등록할 파일\(정사영상 또는 DSM\)을 선택하세요/)).toBeTruthy();
+    expect(FakeWorker.instances).toHaveLength(0);
+  });
+
+  it("does not start file hashing when folder header checks finish after the panel unmounts", async () => {
+    let finishResultHeader!: () => void;
+    headerMock.read.mockImplementation(async (file: File) => {
+      if (file.name === "result.tif") await new Promise<void>((resolve) => { finishResultHeader = resolve; });
+      return file.name === "dsm.tif" ? dsmHeader : orthoHeader;
+    });
+    const { unmount } = render(<ExternalReconstructionPanel workOrderId="work-1" expectedEpochId="epoch-1" canWrite accountIdentity={continuity} />);
+    await screen.findByText("아직 등록된 관측 자료가 없습니다.");
+    const result = folderFile("result.tif", "sunflower/05.07.2024/terra/default/map/result.tif");
+    const dsm = folderFile("dsm.tif", "sunflower/05.07.2024/terra/default/map/dsm.tif");
+    fireEvent.change(screen.getByLabelText("결과 폴더 선택"), { target: { files: [result, dsm] } });
+    expect(await screen.findByText("폴더의 결과 파일을 확인하고 있습니다.")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "파일 확인 취소" })).toBeTruthy();
+    await waitFor(() => expect(FakeWorker.instances).toHaveLength(0));
+    unmount();
+    await act(async () => { finishResultHeader(); });
+    expect(FakeWorker.instances).toHaveLength(0);
   });
 
   it("tells which dropped files were not placed and why", async () => {
@@ -919,6 +1040,7 @@ describe("ExternalReconstructionPanel header auto-recognition (AX-3)", () => {
     render(<ExternalReconstructionPanel workOrderId="work-1" expectedEpochId="epoch-1" canWrite={false} accountIdentity={continuity} />);
     await screen.findByText("아직 등록된 관측 자료가 없습니다.");
     expect(screen.queryByTestId("external-file-drop-zone")).toBeNull();
+    expect(screen.queryByRole("button", { name: "결과 폴더 고르기" })).toBeNull();
   });
 
   it("warns when a DSM-looking file is placed in the ortho slot without moving it", async () => {
@@ -957,7 +1079,8 @@ describe("ExternalReconstructionPanel header auto-recognition (AX-3)", () => {
     await screen.findByText("아직 등록된 관측 자료가 없습니다.");
     fireEvent.change(screen.getByLabelText("DSM GeoTIFF"), { target: { files: [new File(["x"], "dsm.tif")] } });
     const status = await screen.findByRole("status", { name: "DSM 올리기 전 점검" });
-    expect(status.textContent).toContain("수직 기준(높이 기준)이 없습니다");
+    expect(status.textContent).toContain("파일에서 수직 기준을 확인하지 못했습니다");
+    expect(status.textContent).toContain("이 선언만으로 높이 판정이나 단면 사용이 보장되지는 않습니다");
     expect(status.textContent).not.toContain("거부될 가능성");
     expect(screen.queryByRole("alert", { name: "DSM 올리기 전 점검" })).toBeNull();
   });
@@ -1018,6 +1141,293 @@ describe("ExternalReconstructionPanel header auto-recognition (AX-3)", () => {
     await waitFor(() => expect(registrations).toHaveLength(1));
     expect((registrations[0].artifacts as { declaredCrs: unknown }[])[0].declaredCrs).toBeNull();
     expect((screen.getByLabelText("정사영상 좌표계 신고") as HTMLInputElement).disabled).toBe(true);
+  });
+});
+
+describe("ExternalReconstructionPanel corrections", () => {
+  it("corrects the latest non-first V3 revision with a new file and keeps stream identity", async () => {
+    const submissionRef = ECHO_REF;
+    const targetAnchor = `external-submission-${submissionRef}-revision-2`;
+    const scrollIntoView = vi.fn();
+    Object.defineProperty(HTMLElement.prototype, "scrollIntoView", { configurable: true, value: scrollIntoView });
+    window.history.replaceState(null, "", `#${targetAnchor}`);
+    const original = (revision: number) => ({
+      submissionRef, state: "SEALED", submission: {
+        contractVersion: "external-reconstruction-submission.v3", submissionId: "site-observation-1", revision, observationEpochId: "epoch-1",
+        producerDeclaration: { producerKnowledge: "DECLARED", softwareName: "DJI Terra", softwareVersion: "4.2.5", sourceNote: "2024 농지 자료" },
+        inputDeclaration: {
+          captureBasis: "DATE_ONLY", captureDate: "2024-07-05", captureStartedAt: null, captureEndedAt: null,
+          originalRetentionLocus: "customer_workstation", originalRetentionDetail: "현장 노트북",
+          upstreamSource: { sourceUri: "https://example.test/source", sourceSha256: "a".repeat(64), licenceDeclaration: "CC BY 4.0", retrievalNote: "발행본" },
+          derivativeExport: { toolName: "DJI Terra", toolVersion: "4.2.5", settingsDigest: `sha256:${"b".repeat(64)}`, exportedAt: "2024-07-05T05:00:00Z", exportNote: "원래 내보내기" },
+        },
+        artifacts: [
+          { artifactId: "ortho", kind: "ortho", fileName: "result.tif", declaredSha256: "c".repeat(64), declaredSizeBytes: 1024 },
+          { artifactId: "dsm", kind: "dsm", fileName: "dsm.tif", declaredSha256: "d".repeat(64), declaredSizeBytes: 1024 },
+        ],
+      },
+    });
+    const prior = [original(1), original(2), original(3)];
+    const sealedCorrections: ReturnType<typeof echoSeal>[] = [];
+    const correctionBodies: EchoBody[] = [];
+    fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+      if (url.endsWith("/external-reconstruction-submissions")) return { ok: true, json: async () => ({ submissions: sealedCorrections.length > 0 ? [...prior, { ...sealedCorrections[0], submission: { ...sealedCorrections[0].submission, contractVersion: "external-reconstruction-submission.v3" } }] : prior }) };
+      if (url.endsWith("/inspection")) return { ok: true, json: async () => ({
+        registrationState: "SEALED", sealState: "SEALED",
+        inspection: { state: "INSPECTION_REPORTED", outcome: [{ artifactId: "dsm", outcome: "REJECTED", reason: "AMBIGUOUS_GEOREFERENCE" }] },
+        display: { state: "SEALED", sanitizedDisplayRef: null, receiptDigest: null },
+      }) };
+      if (url.endsWith("/external-reconstruction-submissions-v3")) {
+        const body = JSON.parse(init?.body as string) as EchoBody;
+        correctionBodies.push(body);
+        return { ok: true, json: async () => echoDeclaration(body, submissionRef) };
+      }
+      if (url.endsWith("/upload-grants")) return { ok: true, json: async () => ({ grants: [{ artifactId: "dsm", uploadUrl: "https://upload.test/dsm", requiredHeaders: {} }] }) };
+      if (init?.method === "PUT") return { ok: true, json: async () => ({}) };
+      if (url.endsWith("/seal")) {
+        const sealed = echoSeal(correctionBodies[0], submissionRef);
+        sealedCorrections.push(sealed);
+        return { ok: true, json: async () => sealed };
+      }
+      return { ok: true, json: async () => ({}) };
+    });
+    vi.spyOn(FakeWorker.prototype, "postMessage").mockImplementation(function (this: FakeWorker, request: { id: string }) {
+      this.onmessage?.({ data: { id: request.id, sha256: "e".repeat(64), size: 1024 } } as MessageEvent);
+    });
+
+    render(<ExternalReconstructionPanel workOrderId="work-1" siteId="site-synthetic" catalogWorkAreaId="wa-synthetic" expectedEpochId="epoch-1" canWrite accountIdentity={continuity} />);
+    expect(await screen.findAllByText(/AMBIGUOUS_GEOREFERENCE/)).toHaveLength(3);
+    await waitFor(() => expect(scrollIntoView).toHaveBeenCalledWith({ block: "start" }));
+    const firstRow = document.getElementById(`external-submission-${submissionRef}-revision-1`) as HTMLElement;
+    expect(within(firstRow).getByRole("link", { name: "최근 등록 버전 3 보기" }).getAttribute("href")).toBe(`#external-submission-${submissionRef}-revision-3`);
+    expect(document.getElementById(`external-submission-${submissionRef}-revision-3`)).not.toBeNull();
+    expect(screen.getAllByRole("button", { name: "수정본 등록" })).toHaveLength(1);
+    fireEvent.click(screen.getByRole("button", { name: "수정본 등록" }));
+
+    expect(screen.getByText(/등록 버전 3의 수정본/)).toBeTruthy();
+    expect(screen.getByText(/원래 파일: result\.tif, dsm\.tif/)).toBeTruthy();
+    expect((screen.getByLabelText("재구성 소프트웨어 이름") as HTMLInputElement).value).toBe("DJI Terra");
+    expect((screen.getByLabelText("재구성 소프트웨어 버전") as HTMLInputElement).value).toBe("4.2.5");
+    expect((screen.getByLabelText("촬영 날짜 (YYYY-MM-DD)") as HTMLInputElement).value).toBe("2024-07-05");
+    expect((screen.getByLabelText("원본 공개 출처 주소") as HTMLInputElement).value).toBe("https://example.test/source");
+    expect((screen.getByLabelText("내보내기 도구 이름") as HTMLInputElement).value).toBe("");
+    expect(document.getElementById(`external-submission-${submissionRef}-revision-3`)).not.toBeNull();
+    expect(document.activeElement?.id).toBe("external-correction-target-heading");
+
+    fireEvent.change(screen.getByLabelText("DSM GeoTIFF"), { target: { files: [new File(["x".repeat(1024)], "dsm-corrected.tif")] } });
+    await screen.findByText(/DSM 1 KB 확인 완료/);
+    expect(screen.getByText("이번 수정본에서 빠지는 파일 · result.tif")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "자료 등록 마치기" }));
+    await waitFor(() => expect(correctionBodies).toHaveLength(1));
+    const submittedBody = correctionBodies[0];
+    expect(submittedBody).toMatchObject({
+      submissionId: "site-observation-1", expectedEpochId: "epoch-1",
+      correctionOf: { submissionRef, revision: 3 },
+      producerKnowledge: "DECLARED", softwareName: "DJI Terra", softwareVersion: "4.2.5",
+      captureBasis: "DATE_ONLY", captureDate: "2024-07-05", originalRetentionLocus: "customer_workstation",
+      upstreamSource: { sourceUri: "https://example.test/source" }, derivativeExport: null,
+    });
+    expect(submittedBody.artifacts).toHaveLength(1);
+    expect(submittedBody.artifacts[0]).toMatchObject({ artifactId: "dsm", fileName: "dsm-corrected.tif", declaredSha256: "e".repeat(64) });
+    expect(await screen.findByText(/파일 등록을 확인했습니다/)).toBeTruthy();
+    const latestLinks = await screen.findAllByRole("link", { name: "DSM 자료 열기" });
+    const latestLink = latestLinks.find((link) => new URL(link.getAttribute("href")!, "http://localhost").searchParams.get("revision") === "4");
+    if (!latestLink) throw new Error("sealed correction DSM catalog link is missing");
+    expect(latestLink.getAttribute("href")).toContain("/sites/site-synthetic/upload/open?");
+    const latestParams = new URL(latestLink.getAttribute("href")!, "http://localhost").searchParams;
+    expect(latestParams.get("workAreaId")).toBe("wa-synthetic");
+    expect(latestParams.get("workOrderId")).toBe("work-1");
+    expect(latestParams.get("submissionRef")).toBe(submissionRef);
+    expect(latestParams.get("revision")).toBe("4");
+    expect(latestParams.get("artifactId")).toBe("dsm");
+    expect(fetchMock.mock.calls.filter(([, init]) => (init as RequestInit | undefined)?.method === "PUT")).toHaveLength(1);
+    window.history.replaceState(null, "", window.location.pathname);
+    delete (HTMLElement.prototype as unknown as Record<string, unknown>).scrollIntoView;
+  });
+
+  it("retargets a verified Core conflict with the same files and current export facts", async () => {
+    let hashCalls = 0;
+    vi.spyOn(FakeWorker.prototype, "postMessage").mockImplementation(function (this: FakeWorker, request: { id: string }) {
+      hashCalls += 1;
+      this.onmessage?.({ data: { id: request.id, sha256: hashCalls === 1 ? "e".repeat(64) : "f".repeat(64), size: 1024 } } as MessageEvent);
+    });
+    headerMock.read.mockResolvedValue({
+      width: 100, height: 100, samplesPerPixel: 1, bitsPerSample: 32, sampleFormat: 3,
+      geoKeys: { ProjectedCSTypeGeoKey: 5186 }, software: "Header producer 9.9", dateTime: null, pixelSize: [1, 1],
+    } satisfies GeoTiffRawHeader);
+    const submissionRef = ECHO_REF;
+    const original = (revision: number) => ({
+      submissionRef, state: "SEALED", submission: {
+        contractVersion: "external-reconstruction-submission.v3", submissionId: "site-observation-1", revision, observationEpochId: "epoch-1",
+        producerDeclaration: { producerKnowledge: "DECLARED", softwareName: "DJI Terra", softwareVersion: "4.2.5", sourceNote: null },
+        inputDeclaration: {
+          captureBasis: "EXACT_INTERVAL", captureDate: null, captureStartedAt: "2024-07-05T05:00:00.125Z", captureEndedAt: "2024-07-05T05:30:00.875Z",
+          originalRetentionLocus: "customer_workstation", originalRetentionDetail: "현장 노트북",
+          upstreamSource: null, derivativeExport: { toolName: "Old export", toolVersion: "1", settingsDigest: null, exportedAt: null, exportNote: null },
+        },
+        artifacts: [{ artifactId: "dsm", kind: "dsm", fileName: `dsm-v${revision}.tif`, declaredSha256: "d".repeat(64), declaredSizeBytes: 1024 }],
+      },
+    });
+    let listReads = 0;
+    let declarationPosts = 0;
+    const submittedBodies: EchoBody[] = [];
+    fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+      if (url.endsWith("/external-reconstruction-submissions")) {
+        listReads += 1;
+        return { ok: true, json: async () => ({ submissions: listReads >= 2 ? [original(1), original(2), original(3)] : [original(1), original(2)] }) };
+      }
+      if (url.endsWith("/inspection")) return { ok: true, json: async () => ({
+        registrationState: "SEALED", sealState: "SEALED",
+        inspection: { state: "INSPECTION_REPORTED", outcome: [{ artifactId: "dsm", outcome: "REJECTED", reason: "AMBIGUOUS_GEOREFERENCE" }] },
+        display: { state: "SEALED", sanitizedDisplayRef: null, receiptDigest: null },
+      }) };
+      if (url.endsWith("/external-reconstruction-submissions-v3")) {
+        const body = JSON.parse(init?.body as string) as EchoBody;
+        submittedBodies.push(body);
+        declarationPosts += 1;
+        if (declarationPosts === 1) return { ok: false, status: 409, json: async () => ({ code: "CONFLICT" }) };
+        return { ok: true, json: async () => echoDeclaration(body, submissionRef) };
+      }
+      if (url.endsWith("/upload-grants")) return { ok: true, json: async () => ({ grants: [{ artifactId: "dsm", uploadUrl: "https://upload.test/dsm", requiredHeaders: {} }] }) };
+      if (init?.method === "PUT") return { ok: true, json: async () => ({}) };
+      if (url.endsWith("/seal")) return { ok: true, json: async () => echoSeal(submittedBodies[1], submissionRef) };
+      return { ok: true, json: async () => ({}) };
+    });
+
+    render(<ExternalReconstructionPanel workOrderId="work-1" expectedEpochId="epoch-1" canWrite accountIdentity={continuity} />);
+    await screen.findAllByText(/AMBIGUOUS_GEOREFERENCE/);
+    fireEvent.click(screen.getByRole("button", { name: "수정본 등록" }));
+    fireEvent.change(screen.getByLabelText("재구성 소프트웨어 이름"), { target: { value: "" } });
+    const dsmInput = screen.getByLabelText("DSM GeoTIFF") as HTMLInputElement;
+    fireEvent.change(dsmInput, { target: { files: [new File(["x".repeat(1024)], "dsm-corrected.tif")] } });
+    await screen.findByText(/DSM 1 KB 확인 완료/);
+    expect((screen.getByLabelText("재구성 소프트웨어 이름") as HTMLInputElement).value).toBe("");
+    expect((screen.getByLabelText("DSM 좌표계 신고") as HTMLInputElement).value).toBe("EPSG:5186");
+    fireEvent.change(screen.getByLabelText("재구성 소프트웨어 이름"), { target: { value: "Operator verified producer" } });
+    fireEvent.change(screen.getByLabelText("촬영 시작 시각 (한국 표준시)"), { target: { value: "2024-07-05T14:00:01" } });
+    fireEvent.change(dsmInput, { target: { files: [new File(["y".repeat(1024)], "dsm-corrected-again.tif")] } });
+    await waitFor(() => expect(hashCalls).toBe(2));
+    await waitFor(() => expect((screen.getByRole("button", { name: "자료 등록 마치기" }) as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.change(screen.getByLabelText("내보내기 도구 이름"), { target: { value: "Current export" } });
+    fireEvent.change(screen.getByLabelText("내보내기 도구 버전"), { target: { value: "2.1" } });
+    fireEvent.click(screen.getByRole("button", { name: "자료 등록 마치기" }));
+
+    expect(await screen.findByText(/최신 등록 목록에서 같은 자료 묶음의 다른 봉인본을 확인했습니다/)).toBeTruthy();
+    // First list refresh resolves the Core conflict to a distinct sealed row in the same stream.
+    await waitFor(() => expect(screen.getAllByRole("button", { name: "수정본 등록" })).toHaveLength(1));
+    fireEvent.click(screen.getByRole("button", { name: "수정본 등록" }));
+    expect(screen.getByText(/등록 버전 3의 수정본/)).toBeTruthy();
+    expect(await screen.findByText(/DSM 1 KB 확인 완료/)).toBeTruthy();
+    expect((screen.getByLabelText("내보내기 도구 이름") as HTMLInputElement).value).toBe("Current export");
+    expect((screen.getByLabelText("내보내기 도구 버전") as HTMLInputElement).value).toBe("2.1");
+    fireEvent.click(screen.getByRole("button", { name: "자료 등록 마치기" }));
+
+    await waitFor(() => expect(submittedBodies).toHaveLength(2));
+    expect(submittedBodies[1]).toMatchObject({
+      submissionId: "site-observation-1",
+      correctionOf: { submissionRef, revision: 3 },
+      derivativeExport: { toolName: "Current export", toolVersion: "2.1" },
+      captureStartedAt: "2024-07-05T05:00:00.125Z", captureEndedAt: "2024-07-05T05:30:00.875Z",
+      artifacts: [{ artifactId: "dsm", fileName: "dsm-corrected-again.tif", declaredSha256: "f".repeat(64), declaredSizeBytes: 1024 }],
+    });
+    expect(submittedBodies[0]).toMatchObject({
+      submissionId: "site-observation-1",
+      correctionOf: { submissionRef, revision: 2 },
+      captureStartedAt: "2024-07-05T05:00:01Z",
+      captureEndedAt: "2024-07-05T05:30:00.875Z",
+    });
+    expect(submittedBodies.map((body) => body.submissionId)).toEqual(["site-observation-1", "site-observation-1"]);
+    expect(submittedBodies.map((body) => body.artifacts[0].fileName)).toEqual(["dsm-corrected-again.tif", "dsm-corrected-again.tif"]);
+    expect(await screen.findByText(/파일 등록을 확인했습니다/)).toBeTruthy();
+    expect(fetchMock.mock.calls.filter(([, init]) => (init as RequestInit | undefined)?.method === "PUT")).toHaveLength(1);
+  });
+
+  it("links a stored non-slot artifact ID with its DSM kind", async () => {
+    fetchMock.mockImplementation(async (url: string) => {
+      if (url.endsWith("/external-reconstruction-submissions")) return { ok: true, json: async () => ({ submissions: [{
+        submissionRef: ECHO_REF, state: "SEALED", submission: {
+          contractVersion: "external-reconstruction-submission.v3", submissionId: "site-observation-1", revision: 2,
+          artifacts: [{ artifactId: "core-dsm-artifact-2024", kind: "dsm", fileName: "surface.tif", declaredSha256: "a".repeat(64), declaredSizeBytes: 1024 }],
+        },
+      }] }) };
+      if (url.endsWith("/inspection")) return { ok: true, json: async () => ({
+        registrationState: "SEALED", sealState: "SEALED",
+        inspection: { state: "INSPECTION_REPORTED", outcome: [] },
+        display: { state: "SEALED", sanitizedDisplayRef: null, receiptDigest: null },
+      }) };
+      return { ok: true, json: async () => ({}) };
+    });
+    render(<ExternalReconstructionPanel workOrderId="work-1" siteId="site-synthetic" catalogWorkAreaId="wa-synthetic" expectedEpochId="epoch-1" canWrite={false} />);
+    const link = await screen.findByRole("link", { name: "DSM 자료 열기" });
+    const query = new URL(link.getAttribute("href")!, "http://localhost").searchParams;
+    expect(query.get("artifactId")).toBe("core-dsm-artifact-2024");
+    expect(query.get("artifactKind")).toBe("dsm");
+    expect(query.get("submissionRef")).toBe(ECHO_REF);
+    expect(query.get("revision")).toBe("2");
+  });
+
+  it("keeps the correction editable after a first deterministic lineage decline", async () => {
+    let hashCalls = 0;
+    vi.spyOn(FakeWorker.prototype, "postMessage").mockImplementation(function (this: FakeWorker, request: { id: string }) {
+      hashCalls += 1;
+      this.onmessage?.({ data: { id: request.id, sha256: "e".repeat(64), size: 1024 } } as MessageEvent);
+    });
+    const submissionRef = ECHO_REF;
+    const prior = { submissionRef, state: "SEALED", submission: {
+      contractVersion: "external-reconstruction-submission.v3", submissionId: "site-observation-1", revision: 1, observationEpochId: "epoch-1",
+      producerDeclaration: { producerKnowledge: "DECLARED", softwareName: "DJI Terra", softwareVersion: "4.2.5", sourceNote: null },
+      inputDeclaration: {
+        captureBasis: "DATE_ONLY", captureDate: "2024-07-05", captureStartedAt: null, captureEndedAt: null,
+        originalRetentionLocus: "customer_workstation", originalRetentionDetail: null, upstreamSource: null, derivativeExport: null,
+      },
+      artifacts: [{ artifactId: "dsm", kind: "dsm", fileName: "surface.tif", declaredSha256: "a".repeat(64), declaredSizeBytes: 1024 }],
+    } };
+    const submittedBodies: EchoBody[] = [];
+    fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+      if (url.endsWith("/external-reconstruction-submissions")) return { ok: true, json: async () => ({ submissions: [prior] }) };
+      if (url.endsWith("/inspection")) return { ok: true, json: async () => ({
+        registrationState: "SEALED", sealState: "SEALED",
+        inspection: { state: "INSPECTION_REPORTED", outcome: [{ artifactId: "dsm", outcome: "REJECTED", reason: "AMBIGUOUS_GEOREFERENCE" }] },
+        display: { state: "SEALED", sanitizedDisplayRef: null, receiptDigest: null },
+      }) };
+      if (url.endsWith("/external-reconstruction-submissions-v3")) {
+        const body = JSON.parse(init?.body as string) as EchoBody;
+        submittedBodies.push(body);
+        if (submittedBodies.length === 1) return { ok: false, status: 409, json: async () => ({
+          code: "CORRECTION_LINEAGE_CHANGED",
+          message: "원자료·촬영·제작 정보가 기존 등록과 달라 실행 기록을 이어 붙이지 않았습니다. 수정 정보와 원자료를 확인해 주세요.",
+        }) };
+        return { ok: true, json: async () => echoDeclaration(body, submissionRef) };
+      }
+      if (url.endsWith("/upload-grants")) return { ok: true, json: async () => ({ grants: [{ artifactId: "dsm", uploadUrl: "https://upload.test/dsm", requiredHeaders: {} }] }) };
+      if (init?.method === "PUT") return { ok: true, json: async () => ({}) };
+      if (url.endsWith("/seal")) return { ok: true, json: async () => echoSeal(submittedBodies[1], submissionRef) };
+      return { ok: true, json: async () => ({}) };
+    });
+
+    render(<ExternalReconstructionPanel workOrderId="work-1" expectedEpochId="epoch-1" canWrite accountIdentity={continuity} />);
+    await screen.findAllByText(/AMBIGUOUS_GEOREFERENCE/);
+    fireEvent.click(screen.getByRole("button", { name: "수정본 등록" }));
+    fireEvent.change(screen.getByLabelText("DSM GeoTIFF"), { target: { files: [new File(["x".repeat(1024)], "dsm-corrected.tif")] } });
+    await screen.findByText(/DSM 1 KB 확인 완료/);
+    fireEvent.click(screen.getByRole("button", { name: "자료 등록 마치기" }));
+
+    expect(await screen.findByText(/원자료·촬영·제작 정보가 기존 등록과 달라 실행 기록을 이어 붙이지 않았습니다/)).toBeTruthy();
+    expect(submittedBodies).toHaveLength(1);
+    expect((screen.getByLabelText("재구성 소프트웨어 버전") as HTMLInputElement).disabled).toBe(false);
+    expect((screen.getByLabelText("DSM GeoTIFF") as HTMLInputElement).files?.[0]?.name).toBe("dsm-corrected.tif");
+    fireEvent.change(screen.getByLabelText("재구성 소프트웨어 버전"), { target: { value: "4.2.6" } });
+    fireEvent.click(screen.getByRole("button", { name: "자료 등록 마치기" }));
+
+    expect(await screen.findByText(/파일 등록을 확인했습니다/)).toBeTruthy();
+    expect(submittedBodies).toHaveLength(2);
+    expect(submittedBodies.map((body) => body.submissionId)).toEqual(["site-observation-1", "site-observation-1"]);
+    expect(submittedBodies.map((body) => body.correctionOf)).toEqual([
+      { submissionRef, revision: 1 }, { submissionRef, revision: 1 },
+    ]);
+    expect(submittedBodies[1].softwareVersion).toBe("4.2.6");
+    expect(submittedBodies[1].artifacts[0]).toMatchObject({ fileName: "dsm-corrected.tif", declaredSha256: "e".repeat(64) });
+    expect(hashCalls).toBe(1);
   });
 });
 
@@ -1574,6 +1984,83 @@ describe("ExternalReconstructionPanel V3 missing-info intake", () => {
     expect(JSON.stringify(posts[0])).not.toContain("T00:00:00");
   });
 
+  it("keeps producer UNKNOWN and date-only facts when selected before TIFF recognition", async () => {
+    const posts: Record<string, unknown>[] = [];
+    v3SubmitFlow(posts);
+    hashAs("b".repeat(64), 2);
+    headerMock.read.mockResolvedValue({
+      width: 4000, height: 3000, samplesPerPixel: 1, bitsPerSample: 32, sampleFormat: 3,
+      geoKeys: { ProjectedCSTypeGeoKey: 5186 }, software: "pix4dmapper",
+      dateTime: null, pixelSize: [0.1, 0.1],
+    });
+    render(<ExternalReconstructionPanel workOrderId="work-1" expectedEpochId="epoch-1" canWrite accountIdentity={continuity} />);
+    await screen.findByText("아직 등록된 관측 자료가 없습니다.");
+
+    fireEvent.click(within(screen.getByRole("radiogroup", { name: "재구성 소프트웨어 확인 방식" })).getByRole("radio", { name: "미상" }));
+    fireEvent.click(screen.getByRole("radio", { name: "촬영 날짜만 확인됨" }));
+    fireEvent.change(screen.getByLabelText("촬영 날짜 (YYYY-MM-DD)"), { target: { value: "2022-08-24" } });
+    fireEvent.change(screen.getByLabelText("DSM GeoTIFF"), { target: { files: [new File(["x"], "floreat-f4.tif")] } });
+    await screen.findByText(/DSM 1 KB 확인 완료/);
+
+    const producerOptions = within(screen.getByRole("radiogroup", { name: "재구성 소프트웨어 확인 방식" }));
+    expect((producerOptions.getByRole("radio", { name: "미상" }) as HTMLInputElement).checked).toBe(true);
+    expect(screen.queryByLabelText("재구성 소프트웨어 이름")).toBeNull();
+    expect(screen.queryByLabelText("재구성 소프트웨어 버전")).toBeNull();
+    const submit = screen.getByRole("button", { name: "자료 등록 마치기" }) as HTMLButtonElement;
+    expect(submit.disabled).toBe(false);
+    fireEvent.click(submit);
+    await waitFor(() => expect(posts).toHaveLength(1));
+    expect(posts[0]).toMatchObject({
+      producerKnowledge: "UNKNOWN",
+      softwareName: null,
+      softwareVersion: null,
+      captureBasis: "DATE_ONLY",
+      captureStartedAt: null,
+      captureEndedAt: null,
+      captureDate: "2022-08-24",
+    });
+    expect(JSON.stringify(posts[0])).not.toContain("T00:00:00");
+  });
+
+  it("keeps PARTIAL as name-only when TIFF recognition finishes after selection", async () => {
+    const posts: Record<string, unknown>[] = [];
+    v3SubmitFlow(posts);
+    hashAs("b".repeat(64), 2);
+    headerMock.read.mockResolvedValue({
+      width: 4000, height: 3000, samplesPerPixel: 1, bitsPerSample: 32, sampleFormat: 3,
+      geoKeys: { ProjectedCSTypeGeoKey: 5186 }, software: "pix4dmapper 4.8.4",
+      dateTime: null, pixelSize: [0.1, 0.1],
+    });
+    render(<ExternalReconstructionPanel workOrderId="work-1" expectedEpochId="epoch-1" canWrite accountIdentity={continuity} />);
+    await screen.findByText("아직 등록된 관측 자료가 없습니다.");
+
+    fireEvent.click(within(screen.getByRole("radiogroup", { name: "재구성 소프트웨어 확인 방식" })).getByRole("radio", { name: "이름만 알고 있음" }));
+    fireEvent.click(screen.getByRole("radio", { name: "촬영 날짜만 확인됨" }));
+    fireEvent.change(screen.getByLabelText("촬영 날짜 (YYYY-MM-DD)"), { target: { value: "2022-08-24" } });
+    fireEvent.change(screen.getByLabelText("DSM GeoTIFF"), { target: { files: [new File(["x"], "floreat-f4.tif")] } });
+    await screen.findByText(/DSM 1 KB 확인 완료/);
+
+    const producerOptions = within(screen.getByRole("radiogroup", { name: "재구성 소프트웨어 확인 방식" }));
+    expect((producerOptions.getByRole("radio", { name: "이름만 알고 있음" }) as HTMLInputElement).checked).toBe(true);
+    expect((screen.getByLabelText("재구성 소프트웨어 이름") as HTMLInputElement).value).toBe("pix4dmapper");
+    expect(screen.queryByLabelText("재구성 소프트웨어 버전")).toBeNull();
+    const submit = screen.getByRole("button", { name: "자료 등록 마치기" }) as HTMLButtonElement;
+    expect(submit.disabled).toBe(false);
+    fireEvent.click(submit);
+    await waitFor(() => expect(posts).toHaveLength(1));
+    expect(posts[0]).toMatchObject({
+      producerKnowledge: "PARTIAL",
+      softwareName: "pix4dmapper",
+      softwareVersion: null,
+      captureBasis: "DATE_ONLY",
+      captureStartedAt: null,
+      captureEndedAt: null,
+      captureDate: "2022-08-24",
+    });
+    expect(JSON.stringify(posts[0])).not.toContain("4.8.4");
+    expect(JSON.stringify(posts[0])).not.toContain("T00:00:00");
+  });
+
   it("carries optional upstream source and derivative export facts without fetching them", async () => {
     const posts: Record<string, unknown>[] = [];
     v3SubmitFlow(posts);
@@ -1680,10 +2167,11 @@ describe("ExternalReconstructionPanel V3 missing-info intake", () => {
   it("never asks for raw photos: only ortho/DSM slots exist and retention stays a declaration", async () => {
     render(<ExternalReconstructionPanel workOrderId="work-1" expectedEpochId="epoch-1" canWrite accountIdentity={continuity} />);
     await screen.findByText("아직 등록된 관측 자료가 없습니다.");
-    // 칸별 입력 둘과 "한 번에 선택" 입력 하나. 모두 GeoTIFF 만 받고, 원본 사진 입력은 없다.
+    // 칸별 입력 둘, 여러 파일 선택 하나, 결과 폴더 입력 하나가 있다.
     const inputs = Array.from(document.querySelectorAll('input[type="file"]'));
-    expect(inputs).toHaveLength(3);
-    expect(inputs.map((input) => input.getAttribute("accept"))).toEqual([".tif,.tiff", ".tif,.tiff", ".tif,.tiff"]);
+    expect(inputs).toHaveLength(4);
+    expect(inputs.filter((input) => input.hasAttribute("accept")).map((input) => input.getAttribute("accept"))).toEqual([".tif,.tiff", ".tif,.tiff", ".tif,.tiff"]);
+    expect(inputs.filter((input) => input.hasAttribute("webkitdirectory"))).toHaveLength(1);
     expect(screen.getByText(/제출할 GeoTIFF가 아니라 재구성에 사용한 원본 사진·관측 자료의 보관 위치/)).toBeTruthy();
     expect(screen.getByText(/원본 업로드는 요청하지 않습니다/)).toBeTruthy();
     expect(screen.queryByLabelText(/원본 사진/)).toBeNull();
@@ -1762,6 +2250,17 @@ describe("ExternalReconstructionPanel continuity and echo verification", () => {
     await screen.findByText(/정사영상 1 KB 확인 완료/);
   }
 
+  async function fillNewOrthoAndDsm() {
+    render(<ExternalReconstructionPanel workOrderId="work-1" expectedEpochId="epoch-1" canWrite accountIdentity={continuity} />);
+    await screen.findByText("아직 등록된 관측 자료가 없습니다.");
+    fireEvent.change(screen.getByLabelText("재구성 소프트웨어 이름"), { target: { value: "ODM" } });
+    fireEvent.change(screen.getByLabelText("재구성 소프트웨어 버전"), { target: { value: "1" } });
+    fireEvent.change(screen.getByLabelText("정사영상 GeoTIFF"), { target: { files: [new File(["x"], "ortho.tif")] } });
+    await screen.findByText(/정사영상 1 KB 확인 완료/);
+    fireEvent.change(screen.getByLabelText("DSM GeoTIFF"), { target: { files: [new File(["x"], "dsm.tif")] } });
+    await screen.findByText(/DSM 1 KB 확인 완료/);
+  }
+
   function phaseMock(sealPayload: (declared: EchoBody) => unknown) {
     const seen: Record<string, unknown> = {};
     let declared: EchoBody | null = null;
@@ -1802,6 +2301,139 @@ describe("ExternalReconstructionPanel continuity and echo verification", () => {
     const listReads = () => fetchMock.mock.calls.filter(([url, init]) => !(init as RequestInit | undefined)?.method && (url as string).endsWith("/external-reconstruction-submissions")).length;
     await waitFor(() => expect(listReads()).toBeGreaterThan(1));
     expect(router.refresh).not.toHaveBeenCalled();
+  });
+
+  it("gets a fresh complete grant immediately before each PUT after a long first transfer", async () => {
+    hashAs("a".repeat(64));
+    let currentTime = Date.parse("2026-11-18T01:30:00.000Z");
+    let declared: EchoBody | null = null;
+    const events: string[] = [];
+    const grantRequestUrls: string[] = [];
+    const putIds: string[] = [];
+    fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+      if (!init?.method) return { ok: true, json: async () => ({ submissions: [] }) };
+      if (url.endsWith("/external-reconstruction-submissions-v3")) {
+        declared = JSON.parse(init.body as string) as EchoBody;
+        events.push("declare");
+        return { ok: true, json: async () => echoDeclaration(declared as EchoBody) };
+      }
+      if (url.endsWith("/upload-grants")) {
+        events.push("grants");
+        grantRequestUrls.push(url);
+        const expiresAt = currentTime + 15 * 60 * 1000;
+        return { ok: true, json: async () => ({ grants: ["ortho", "dsm"].map((id) => ({ artifactId: id, uploadUrl: `https://upload.test/${id}?expires=${expiresAt}`, requiredHeaders: {} })) }) };
+      }
+      if (url.startsWith("https://upload.test/")) {
+        const parsed = new URL(url);
+        const id = parsed.pathname.split("/").at(-1)!;
+        events.push(`put:${id}`);
+        putIds.push(id);
+        if (currentTime >= Number(parsed.searchParams.get("expires"))) return { ok: false, status: 403, json: async () => ({}) };
+        if (id === "ortho") currentTime += 16 * 60 * 1000;
+        return { ok: true, json: async () => ({}) };
+      }
+      if (url.endsWith("/seal")) {
+        events.push("seal");
+        return { ok: true, json: async () => echoSeal(declared as EchoBody) };
+      }
+      return { ok: true, json: async () => ({}) };
+    });
+
+    await fillNewOrthoAndDsm();
+    fireEvent.click(screen.getByRole("button", { name: "자료 등록 마치기" }));
+
+    expect(await screen.findByText("파일 등록을 확인했습니다. 파일 형식과 측정 적합성 확인은 아직 진행되지 않았습니다.")).toBeTruthy();
+    expect(events).toEqual(["declare", "grants", "put:ortho", "grants", "put:dsm", "seal"]);
+    expect(putIds).toEqual(["ortho", "dsm"]);
+    expect(grantRequestUrls).toHaveLength(2);
+    expect(new Set(grantRequestUrls).size).toBe(1);
+  });
+
+  it("keeps a confirmed first PUT across an ambiguous second grant and resumes the same revision", async () => {
+    hashAs("a".repeat(64));
+    let declared: EchoBody | null = null;
+    let grantRequests = 0;
+    const declarations: EchoBody[] = [];
+    const putIds: string[] = [];
+    fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+      if (!init?.method) return { ok: true, json: async () => ({ submissions: [] }) };
+      if (url.endsWith("/external-reconstruction-submissions-v3")) {
+        declared = JSON.parse(init.body as string) as EchoBody;
+        declarations.push(declared);
+        return { ok: true, json: async () => echoDeclaration(declared as EchoBody) };
+      }
+      if (url.endsWith("/upload-grants")) {
+        grantRequests += 1;
+        if (grantRequests === 2) return { ok: false, status: 503, json: async () => ({}) };
+        return { ok: true, json: async () => BOTH_GRANTS };
+      }
+      if (url.startsWith("https://upload.test/")) {
+        putIds.push(new URL(url).pathname.split("/").at(-1)!);
+        return { ok: true, json: async () => ({}) };
+      }
+      if (url.endsWith("/seal")) return { ok: true, json: async () => echoSeal(declared as EchoBody) };
+      return { ok: true, json: async () => ({}) };
+    });
+
+    await fillNewOrthoAndDsm();
+    fireEvent.click(screen.getByRole("button", { name: "자료 등록 마치기" }));
+    expect(await screen.findByText(/응답을 확인하지 못했습니다\. 같은 시도는 같은 식별자로/)).toBeTruthy();
+    expect(putIds).toEqual(["ortho"]);
+
+    fireEvent.click(screen.getByRole("button", { name: "자료 등록 마치기" }));
+
+    expect(await screen.findByText("파일 등록을 확인했습니다. 파일 형식과 측정 적합성 확인은 아직 진행되지 않았습니다.")).toBeTruthy();
+    expect(declarations).toHaveLength(2);
+    expect(declarations[1]).toEqual(declarations[0]);
+    expect(grantRequests).toBe(3);
+    expect(putIds).toEqual(["ortho", "dsm"]);
+  });
+
+  it.each(["OBSERVATION_MISSING", "OBSERVATION_MISMATCH"] as const)("reuploads the whole confirmed revision after seal returns %s without an artifact ID", async (code) => {
+    hashAs("a".repeat(64));
+    let declared: EchoBody | null = null;
+    let grantRequests = 0;
+    let sealAttempts = 0;
+    const declarations: EchoBody[] = [];
+    const putIds: string[] = [];
+    fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+      if (!init?.method) return { ok: true, json: async () => ({ submissions: [] }) };
+      if (url.endsWith("/external-reconstruction-submissions-v3")) {
+        declared = JSON.parse(init.body as string) as EchoBody;
+        declarations.push(declared);
+        return { ok: true, json: async () => echoDeclaration(declared as EchoBody) };
+      }
+      if (url.endsWith("/upload-grants")) {
+        grantRequests += 1;
+        return { ok: true, json: async () => BOTH_GRANTS };
+      }
+      if (url.startsWith("https://upload.test/")) {
+        putIds.push(new URL(url).pathname.split("/").at(-1)!);
+        return { ok: true, json: async () => ({}) };
+      }
+      if (url.endsWith("/seal")) {
+        sealAttempts += 1;
+        if (sealAttempts === 1) return { ok: false, status: 422, json: async () => ({ code }) };
+        return { ok: true, json: async () => echoSeal(declared as EchoBody) };
+      }
+      return { ok: true, json: async () => ({}) };
+    });
+
+    await fillNewOrthoAndDsm();
+    fireEvent.click(screen.getByRole("button", { name: "자료 등록 마치기" }));
+    const recoveryMessage = await screen.findByText(/같은 제출로 다시 시도하면 이 제출의 파일을 모두 다시 올립니다\./);
+    expect(recoveryMessage).toBeTruthy();
+    expect(putIds).toEqual(["ortho", "dsm"]);
+
+    fireEvent.click(screen.getByRole("button", { name: "자료 등록 마치기" }));
+
+    expect(await screen.findByText("파일 등록을 확인했습니다. 파일 형식과 측정 적합성 확인은 아직 진행되지 않았습니다.")).toBeTruthy();
+    expect(declarations).toHaveLength(2);
+    expect(declarations[1]).toEqual(declarations[0]);
+    expect(grantRequests).toBe(4);
+    expect(sealAttempts).toBe(2);
+    expect(putIds).toEqual(["ortho", "dsm", "ortho", "dsm"]);
+    expect(fetchMock.mock.calls.filter(([url, init]) => (init as RequestInit | undefined)?.method === "POST" && (url as string).endsWith("/external-reconstruction-submissions-v3"))).toHaveLength(2);
   });
 
   it("blocks new writes without a verified identity but keeps reads", async () => {

@@ -34,7 +34,7 @@ export function MaterialsPanel({
   const kinds = new Set<string>(page.assets.map((item) => item.kind));
   if (kind) kinds.add(kind);
   const href = (overrides: Partial<MaterialsScope>) => materialsHref(siteId, workAreaId, { ...scope, ...overrides });
-  const selectionQuery = new URL(href({ q: "", kind: "", state: "", cursor: null }), "https://console.invalid").searchParams;
+  const selectionQuery = new URL(href({ q: "", kind: "", state: "" }), "https://console.invalid").searchParams;
   if (compare) selectionQuery.set("mode", "compare");
   const groups = groupAssetsByObservation(filtered);
   const thumbs = new Set(filtered.slice(0, 8).map((item) => item.assetRef));
@@ -61,10 +61,10 @@ export function MaterialsPanel({
       </div>
       <div className="flex flex-wrap items-center gap-2">
         <button type="submit" className="btn">검색·필터 적용</button>
-        {(q || kind || state) && <Link href={materialsHref(siteId, workAreaId, { ...selection, cursor: null })} className="tap-target text-caption underline">필터 초기화</Link>}
+        {(q || kind || state) && <Link href={materialsHref(siteId, workAreaId, selection)} className="tap-target text-caption underline">필터 초기화</Link>}
       </div>
     </form>
-    {page.hasMore && <p className="text-micro text-ink-muted">불러온 {page.assets.length}개 자료에서 검색합니다.</p>}
+    {(scope.cursor || page.hasMore) && <p className="text-micro text-ink-muted">현재 페이지 {page.assets.length}개 자료에서 검색합니다.</p>}
     {groups.length ? <ul className="grid gap-3">
       {groups.map(({ epochId, items }) => {
         const capture = observationGroupDateLine(items);

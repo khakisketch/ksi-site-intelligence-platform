@@ -359,17 +359,35 @@ describe("selected asset registration history (V3 submission record)", () => {
     expect(html).toContain(`assetRef=${assetRef}`);
   });
 
-  it("marks attention records with their cause and a re-request path", async () => {
+  it("shows a reported file rejection and directs the operator to its original registration", async () => {
     const failed = {
       ...asset(),
-      inspection: { ...asset().inspection, state: "FAILED", outcome: "REJECTED", reason: "검사 정책 불일치" },
+      inspection: { ...asset().inspection, state: "INSPECTION_REPORTED", outcome: "REJECTED", reason: "AMBIGUOUS_GEOREFERENCE" },
     };
     mocked.catalog.mockResolvedValueOnce({ siteId: "site-1", workAreaId: "area-1", scopePolicy: "SINGLE_WORK_AREA_WORK_ORDERS_ONLY", scopeNote: "scope", assets: [failed], nextCursor: null, hasMore: false });
     mocked.detail.mockResolvedValueOnce(failed);
     const html = renderToStaticMarkup(await callPage({ workAreaId: "area-1", assetRef, info: "1" }));
-    expect(html).toContain("검사 정책 불일치");
-    expect(html).toContain("처리 실패는");
-    expect(html).toContain("/sites/site-1/spatial-data-requests?workAreaId=area-1");
+    expect(html).toContain("검사에서 거부됨");
+    expect(html).toContain("좌표계를 하나로 확정할 수 없습니다.");
+    expect(html).toContain("EPSG 번호가 있는 투영 좌표계");
+    expect(html).toContain(`href="/field/work-orders/order-1#external-submission-${failed.submissionRef}-revision-2"`);
+    expect(html).not.toContain("이 자료 새로 준비 요청");
+    expect(html).not.toContain("처리 실패는");
+    expect(html).not.toContain("/sites/site-1/spatial-data-requests?workAreaId=area-1");
+  });
+
+  it("keeps a generic inspection worker failure on the preparation status path", async () => {
+    const failed = {
+      ...asset(),
+      inspection: { ...asset().inspection, state: "FAILED", outcome: null, reason: null, raster: null },
+    };
+    mocked.catalog.mockResolvedValueOnce({ siteId: "site-1", workAreaId: "area-1", scopePolicy: "SINGLE_WORK_AREA_WORK_ORDERS_ONLY", scopeNote: "scope", assets: [failed], nextCursor: null, hasMore: false });
+    mocked.detail.mockResolvedValueOnce(failed);
+    const html = renderToStaticMarkup(await callPage({ workAreaId: "area-1", assetRef, info: "1" }));
+
+    expect(html).toContain("검사 처리 실패는");
+    expect(html).toContain('href="/sites/site-1/spatial-data-requests?workAreaId=area-1"');
+    expect(html).not.toContain("검사에서 거부됨");
   });
 
   it("keeps the selected work area in the toolbar control", async () => {
@@ -409,7 +427,7 @@ describe("materials panel in the canonical space", () => {
       declared: { ...asset().declared, fileName: "south-dsm.tif" } };
     mocked.catalog.mockResolvedValue(pageWith([first, second], "opaque/next+="));
     const html = renderToStaticMarkup(await callPage({ workAreaId: "area-1", assetRef, q: "north", kind: "dsm", state: "inspected", cursor: "previous" }));
-    expect(mocked.catalog).toHaveBeenCalledWith("site-1", "area-1", { limit: 50, cursor: "previous" });
+    expect(mocked.catalog).toHaveBeenCalledWith("site-1", "area-1", { limit: 50, cursor: "previous", order: "capture-desc" });
     expect(html).toContain('aria-label="자료 패널"');
     expect(html).toContain("north-dsm.tif");
     expect(html.match(/data-rail-item="true"/g)).toHaveLength(1);
@@ -483,7 +501,7 @@ describe("materials panel in the canonical space", () => {
     mocked.areas.mockResolvedValue({ workAreas: [{ ...workArea, status: "ARCHIVED" }] });
     const html = renderToStaticMarkup(await callPage({ workAreaId: "area-1", assetRef, info: "1" }));
     expect(mocked.areas).toHaveBeenCalledWith("site-1", { includeArchived: true });
-    expect(mocked.catalog).toHaveBeenCalledWith("site-1", "area-1", { limit: 50 });
+    expect(mocked.catalog).toHaveBeenCalledWith("site-1", "area-1", { limit: 50, order: "capture-desc" });
     expect(html).toContain("관측 자료 상세");
     expect(html).toContain("보관됨");
   });

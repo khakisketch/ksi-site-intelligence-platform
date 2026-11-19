@@ -81,7 +81,7 @@ function asset(ref = assetRef, fileName = "north-dsm.tif", workAreaId = "area-1"
       factClass: "DECLARED", fileName, format: "GeoTIFF", contentType: "image/tiff",
       sha256: "c".repeat(64), sizeBytes: 1234, crs: "EPSG:32652", verticalReference: null,
       gsdM: 0.05, submittedAt: "2026-09-30T01:00:00Z", producerCompletedAt: "2026-09-30T00:50:00Z",
-      captureStartedAt: null, captureEndedAt: null,
+      captureStartedAt: null as string | null, captureEndedAt: null as string | null,
     },
     observed: {
       factClass: "OBSERVED", manifestDigest: digest("d"), observedAt: "2026-09-30T01:01:00Z",
@@ -130,9 +130,49 @@ beforeEach(() => {
 });
 
 describe("자료 섹션 화면 (ADR-KSI-043)", () => {
+  it("새 페이지는 Core의 마이크로초 정밀 순서를 그대로 표시한다", async () => {
+    const later = asset(refOf("z"), "마지막-마이크로초-최신.tif");
+    later.declared.captureStartedAt = "2026-09-29T23:00:00.123457Z";
+    const earlier = asset(refOf("a"), "마지막-마이크로초-이전.tif");
+    earlier.declared.captureStartedAt = "2026-09-29T23:00:00.123456Z";
+    mocked.catalog.mockResolvedValue(page([later, earlier]));
+
+    const html = await render({ workAreaId: "area-1" });
+
+    expect(mocked.catalog).toHaveBeenCalledWith("site-1", "area-1", { limit: 50, order: "capture-desc" });
+    expect(html.indexOf("마지막-마이크로초-최신.tif")).toBeLessThan(
+      html.indexOf("마지막-마이크로초-이전.tif"),
+    );
+  });
+
+  it("이전 페이지 북마크는 기존 페이지 내 촬영 순서를 유지한다", async () => {
+    const cursor = Buffer.from(JSON.stringify({
+      after: refOf("m"),
+      siteId: "site-1",
+      version: 1,
+      workAreaId: "area-1",
+    })).toString("base64url");
+    const later = asset(refOf("z"), "이전-화면-최신.tif");
+    later.declared.captureStartedAt = "2026-09-29T23:00:00.124Z";
+    const earlier = asset(refOf("a"), "이전-화면-이전.tif");
+    earlier.declared.captureStartedAt = "2026-09-29T23:00:00.123Z";
+    mocked.catalog.mockResolvedValue(page([earlier, later]));
+
+    const html = await render({ workAreaId: "area-1", cursor });
+
+    expect(mocked.catalog).toHaveBeenCalledWith("site-1", "area-1", {
+      limit: 50,
+      cursor,
+      order: "asset-ref",
+    });
+    expect(html.indexOf("이전-화면-최신.tif")).toBeLessThan(
+      html.indexOf("이전-화면-이전.tif"),
+    );
+  });
+
   it("선택 구역의 자료를 표로 보이고 구역·검색을 컨텍스트 패널에 둔다", async () => {
     const html = await render();
-    expect(mocked.catalog).toHaveBeenCalledWith("site-1", "area-1", { limit: 50 });
+    expect(mocked.catalog).toHaveBeenCalledWith("site-1", "area-1", { limit: 50, order: "capture-desc" });
     expect(html).toContain('aria-label="자료 보기 조건"');
     expect(html).toContain('aria-label="선택한 자료 상세"');
     expect(html.match(/data-asset-row="true"/g)).toHaveLength(2);
@@ -140,7 +180,7 @@ describe("자료 섹션 화면 (ADR-KSI-043)", () => {
     expect(html).toContain("north-dsm.tif");
     expect(html).toContain("EPSG:32652");
     expect(html).toContain("검사 완료");
-    expect(html).toContain("검사 실패");
+    expect(html).toContain("검사에서 거부됨");
     // 구역은 링크로 바꾸고, 보관 구역은 접힘 안에 둔다.
     expect(html).toContain('href="/sites/site-1/data?workAreaId=area-2"');
     expect(html).toContain("보관된 구역 1");
@@ -152,6 +192,24 @@ describe("자료 섹션 화면 (ADR-KSI-043)", () => {
     expect(html).toContain("분석 사용 여부는 분석의 실행 전 점검에서 확인합니다.");
     expect(html).not.toContain("분석 가능");
     expect(html).not.toContain("적합");
+  });
+
+  it.each([
+    ["INSPECTION_FAILED_INCOMPLETE", "검사 미완료"],
+    ["INSPECTION_PENDING", "검사 대기"],
+  ])("보고서가 없는 %s를 표와 선택 상세에 같은 상태로 표시한다", async (state, label) => {
+    const item = asset(assetRef, "coast-dsm.tif", "area-1", state, null);
+    const observed = { ...item, inspection: { ...item.inspection, reportDigest: null, inspectorBuildDigest: null, raster: null } };
+    mocked.catalog.mockResolvedValue({ ...page([]), assets: [observed] });
+    mocked.detail.mockResolvedValue(observed);
+    const html = await render({ workAreaId: "area-1", assetRef });
+    expect(html.split("</table>")[0]).toContain(`>${label}</span>`);
+    const detailHeader = html.split('aria-label="관측 자료 상세"')[1]?.split("<dl")[0];
+    expect(detailHeader).toContain(`>${label}</span>`);
+    if (state === "INSPECTION_FAILED_INCOMPLETE") {
+      expect(html).toContain(`href="/field/work-orders/${item.workOrderId}"`);
+      expect(html).toContain("등록 작업에서 검사 상태 확인");
+    }
   });
 
   it("행은 선택 주소(assetRef)와 인스펙터 이동 앵커를 가진다", async () => {
@@ -172,8 +230,84 @@ describe("자료 섹션 화면 (ADR-KSI-043)", () => {
   it("검사를 마친 DSM 상세에서 공간 보기와 측정 선 단면 읽기로 이어진다", async () => {
     const html = await render({ workAreaId: "area-1", assetRef });
     expect(html).toContain('aria-label="이어서 할 일"');
-    expect(html).toContain('href="/sites/site-1?workAreaId=area-1"');
-    expect(html).toContain('href="/sites/site-1/measurements?workAreaId=area-1"');
+    expect(html).toContain(`href="/sites/site-1?workAreaId=area-1&amp;assetRef=${assetRef}"`);
+    expect(html).toContain(`href="/sites/site-1/measurements?workAreaId=area-1&amp;assetRef=${assetRef}"`);
+  });
+
+  it("표와 선택 상세에서 파일 거부 이유를 보여 주고 수정 GeoTIFF 등록 경로를 안내한다", async () => {
+    const rejected = {
+      ...asset(assetRef, "dsm.tif", "area-1", "INSPECTION_REPORTED", "REJECTED"),
+      inspection: {
+        ...asset().inspection,
+        state: "INSPECTION_REPORTED",
+        outcome: "REJECTED",
+        reason: "AMBIGUOUS_GEOREFERENCE",
+        raster: null,
+      },
+    };
+    mocked.catalog.mockResolvedValue(page([rejected]));
+    mocked.detail.mockResolvedValue(rejected);
+
+    const html = await render({ workAreaId: "area-1", assetRef });
+    const row = html.split("</table>")[0] ?? html;
+    const detail = html.split('aria-label="관측 자료 상세"')[1] ?? "";
+
+    expect(row).toContain(">검사에서 거부됨</span>");
+    expect(row).not.toContain("검사 결과 기록됨");
+    expect(detail).toContain("검사에서 거부됨");
+    expect(detail).toContain("좌표계를 하나로 확정할 수 없습니다.");
+    expect(detail).toContain("EPSG 번호가 있는 투영 좌표계");
+    expect(detail).toContain(`href="/field/work-orders/order-1#external-submission-${rejected.submissionRef}-revision-2"`);
+    expect(detail).toContain("원래 등록 작업 열기");
+    expect(detail).not.toContain("이 자료 새로 준비 요청");
+    expect(detail).not.toContain("처리 실패는");
+    expect(detail).not.toContain("요청한 창은");
+  });
+
+  it("구역 목록에서 같은 촬영의 이전 거부 기록과 다시 검사한 수정본을 구별한다", async () => {
+    const corrected = asset(secondRef, "dsm.tif");
+    const original = {
+      ...asset(assetRef, "dsm.tif"), revision: 1, lifecycleState: "SUPERSEDED", observationEpochId: corrected.observationEpochId,
+      inspection: { ...asset().inspection, outcome: "REJECTED", reason: "AMBIGUOUS_GEOREFERENCE", raster: null },
+    };
+    mocked.catalog.mockResolvedValue(page([original, corrected]));
+    mocked.detail.mockResolvedValueOnce(original);
+    const history = await render({ workAreaId: "area-1", assetRef });
+    const rows = history.split("</table>")[0];
+    expect(rows).toContain("이전 등록 자료");
+    expect(rows).toContain("검사에서 거부됨");
+    expect(rows).toContain("파일 정보 확인됨");
+    expect(history).toContain("같은 제출에 새 등록 버전이 있습니다.");
+    expect(history).toContain(`#external-submission-${original.submissionRef}-revision-1"`);
+
+    mocked.detail.mockResolvedValueOnce(corrected);
+    const current = await render({ workAreaId: "area-1", assetRef: secondRef });
+    expect(current).toContain(`#external-submission-${corrected.submissionRef}-revision-2"`);
+    expect(current).toContain("등록 버전 2의 작업 기록 열기");
+  });
+
+  it("puts a reported rejection in 확인 필요 and keeps it out of 검사 완료", async () => {
+    const measured = asset(assetRef, "measured.tif");
+    const rejected = {
+      ...asset(secondRef, "rejected.tif", "area-1", "INSPECTION_REPORTED", "REJECTED"),
+      inspection: { ...asset().inspection, state: "INSPECTION_REPORTED", outcome: "REJECTED", reason: "UNSUPPORTED_RASTER" },
+    };
+    mocked.catalog.mockResolvedValue(page([measured, rejected]));
+
+    const attention = await render({ workAreaId: "area-1", state: "attention" });
+    const inspected = await render({ workAreaId: "area-1", state: "inspected" });
+
+    expect(attention).toContain("rejected.tif");
+    expect(attention).not.toContain("measured.tif");
+    expect(inspected).toContain("measured.tif");
+    expect(inspected).not.toContain("rejected.tif");
+
+    mocked.catalog.mockResolvedValue(page([rejected]));
+    mocked.detail.mockResolvedValue(rejected);
+    const rejectedDetail = await render({ workAreaId: "area-1", assetRef: secondRef });
+    expect(rejectedDetail).toContain("압축 방식, 색 방식, 밴드 구성 중 지원하지 않는 설정이 있습니다.");
+    expect(rejectedDetail).toContain("압축은 LZW나 Deflate를 사용할 수 있습니다.");
+    expect(rejectedDetail).toContain("반투명 영역이 있는 원본은 보존하세요.");
   });
 
   it("검사로 확인되지 않은 자료에는 이어서 할 일을 보이지 않는다", async () => {
@@ -239,6 +373,16 @@ describe("자료 섹션 화면 (ADR-KSI-043)", () => {
     expect(malformed).toContain("자료 주소가 올바르지 않습니다");
   });
 
+  it("측정에서 돌아온 자료가 다른 페이지에 있으면 같은 작업구역의 정확한 참조로 상세를 연다", async () => {
+    mocked.catalog.mockResolvedValue({ ...page([asset(secondRef)]), hasMore: true, nextCursor: "following" });
+    mocked.detail.mockResolvedValue(asset(assetRef, "return-to-spring.tif"));
+    const html = await render({ workAreaId: "area-1", assetRef });
+    expect(mocked.detail).toHaveBeenCalledWith("site-1", "area-1", assetRef);
+    expect(html).toContain("return-to-spring.tif");
+    expect(html).toContain(`measurements?workAreaId=area-1&amp;assetRef=${assetRef}`);
+    expect(html).toContain("다음 페이지");
+  });
+
   it("검색은 불러온 페이지 안에서만 적용하고 비면 초기화 링크를 둔다", async () => {
     const some = await render({ workAreaId: "area-1", q: "south" });
     expect(some.match(/data-asset-row="true"/g)).toHaveLength(1);
@@ -249,14 +393,30 @@ describe("자료 섹션 화면 (ADR-KSI-043)", () => {
     expect(none).not.toContain("data-asset-row");
   });
 
-  it("커서를 전달하고 더 불러오기·첫 페이지를 조건과 함께 잇는다", async () => {
+  it("현재 페이지를 검색하고 같은 조건으로 다음 페이지와 첫 페이지를 연다", async () => {
     mocked.catalog.mockResolvedValue(page([asset()], { hasMore: true, nextCursor: "next/+=" }));
     const html = await render({ workAreaId: "area-1", kind: "dsm", cursor: "previous" });
-    expect(mocked.catalog).toHaveBeenCalledWith("site-1", "area-1", { limit: 50, cursor: "previous" });
-    expect(html).toContain("등록된 자료 1개 이상");
+    expect(mocked.catalog).toHaveBeenCalledWith("site-1", "area-1", { limit: 50, cursor: "previous", order: "capture-desc" });
+    expect(html).toContain("이 페이지의 자료 1개");
+    expect(html).toContain('name="cursor" value="previous"');
+    expect(html).toContain("다음 페이지");
     expect(html).toContain('href="/sites/site-1/data?workAreaId=area-1&amp;kind=dsm&amp;cursor=next%2F%2B%3D"');
     expect(html).toContain('href="/sites/site-1/data?workAreaId=area-1&amp;kind=dsm"');
-    expect(html).toContain("불러온 1개 자료에서 검색합니다.");
+    expect(html).toContain("이 페이지의 자료 1개에서 검색합니다.");
+  });
+
+  it("마지막 페이지의 검색·초기화와 빈 페이지 안내가 현재 위치를 지킨다", async () => {
+    mocked.catalog.mockResolvedValue(page([asset()]));
+    const filtered = await render({ workAreaId: "area-1", cursor: "last", q: "없는이름" });
+    expect(filtered).toContain("이 페이지의 자료 1개");
+    expect(filtered).toContain('name="cursor" value="last"');
+    expect(filtered).toContain('href="/sites/site-1/data?workAreaId=area-1&amp;cursor=last"');
+    expect(filtered).toContain("이 페이지의 자료 1개에서 검색합니다.");
+
+    mocked.catalog.mockResolvedValue(page([]));
+    const empty = await render({ workAreaId: "area-1", cursor: "last" });
+    expect(empty).toContain("이 페이지에 자료가 없습니다");
+    expect(empty).not.toContain("이 구역에 등록된 자료가 없습니다");
   });
 
   it("알 수 없는 구역은 읽지 않고 안내하며, 다른 구역으로 조용히 바꾸지 않는다", async () => {

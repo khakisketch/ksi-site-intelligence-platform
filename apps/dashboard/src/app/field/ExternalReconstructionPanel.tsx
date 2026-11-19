@@ -12,17 +12,23 @@ import {
   type ExternalRelativeVolumeDecision,
   type TrustedExternalResultLink,
 } from "@/app/field/ExternalResultWorkflowPanel";
-import { putExternalReconstructionFile } from "@/lib/external-reconstruction-upload";
+import {
+  putExternalReconstructionFile,
+  sealObservationFailureCode,
+  sealObservationFailureMessage,
+  selectCompleteUploadGrant,
+} from "@/lib/external-reconstruction-upload";
 import { isAccountContinuityMismatch } from "@/lib/account-continuity-mismatch";
 import { describeExternalBasenameIssue } from "@/lib/external-reconstruction-basename";
 import { formatKoreanDateTime } from "@/lib/datetime";
 import { formatBytesKo, formatNumberKo } from "@/lib/number-format";
-import { formatRegistrationVersion, describeArtifactKinds, submissionStateLabel, describeProducerLine, describeCaptureLine, describeRetentionLine, formatPublisherCalendarDate } from "@/app/field/registration-language";
+import { formatRegistrationVersion, describeArtifactKinds, submissionStateLabel, describeProducerLine, describeCaptureLine, describeRetentionLine, formatPublisherCalendarDate, externalRevisionAnchor } from "@/app/field/registration-language";
 import { ExternalHeaderRecognition, type HeaderRecognitionState } from "@/app/field/ExternalHeaderRecognition";
 import { ExternalFileDropZone } from "@/app/field/ExternalFileDropZone";
+import { ExternalResultFolderPicker } from "@/components/site/ExternalResultFolderPicker";
 import { assignSlots } from "@/lib/external-file-routing";
 import { loadExternalUploadDefaults, saveExternalUploadDefaults } from "@/lib/external-upload-defaults";
-import { readGeoTiffHeader, recognizeGeoTiffHeader } from "@/lib/geo/geotiff-header";
+import { readGeoTiffHeader, recognizeGeoTiffHeader, type GeoTiffRawHeader } from "@/lib/geo/geotiff-header";
 import { preflightGeoTiff } from "@/lib/geo/geotiff-preflight";
 import {
   seoulDateTimeLocalToUtc,
@@ -35,8 +41,10 @@ import {
 } from "@/lib/external-reconstruction-submission";
 import type { ExternalArtifactInspectionView } from "@/lib/core-api/external-reconstruction";
 import { hashFile, type HashResult } from "@/lib/file-sha256";
+import { uploadedArtifactHref } from "@/lib/uploaded-asset-locator";
+import { registrationInstantMicros } from "@/lib/registration-history";
 import {
-  declarationEchoOfRequest, isExternalArtifactInspectionView, isRevisionViewForAttempt, isUploadGrantView, retainedEchoOf,
+  declarationEchoOfRequest, isExternalArtifactInspectionView, isRevisionViewForAttempt, retainedEchoOf,
   type AttemptEcho, type DeclarationEcho, type ArtifactDeclaration, type Revision, type V3DeclarationBody,
 } from "@/lib/external-submission-echo";
 
@@ -58,6 +66,29 @@ function retainedInspectionView(load: InspectionLoad | undefined): ExternalArtif
 
 function utcSeconds(): string { return new Date().toISOString().replace(/\.\d{3}Z$/, "Z"); }
 function attemptId(): string { return `console-${crypto.randomUUID()}`; }
+function seoulWholeSecondToUtc(value: string): string | null {
+  // JSDOM and some browsers serialize a step=1 datetime-local value with an
+  // explicit zero millisecond suffix. It carries no additional precision.
+  return seoulDateTimeLocalToUtc(value.replace(/(:\d{2})\.000$/, "$1"));
+}
+function seoulDateTimeLocal(value: string | null | undefined): string {
+  if (typeof value !== "string") return "";
+  const instant = new Date(value);
+  if (!Number.isFinite(instant.getTime())) return "";
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Seoul",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(instant);
+  const fields = Object.fromEntries(parts.map(({ type, value: partValue }) => [type, partValue]));
+  if (!fields.year || !fields.month || !fields.day || !fields.hour || !fields.minute || !fields.second) return "";
+  return `${fields.year}-${fields.month}-${fields.day}T${fields.hour}:${fields.minute}:${fields.second}`;
+}
 function formatFileSize(size: number): string {
   if (size < 1024 * 1024) return `${Math.max(1, Math.round(size / 1024))} KB`;
   return `${formatNumberKo(size / (1024 * 1024), 1)} MB`;
@@ -65,6 +96,9 @@ function formatFileSize(size: number): string {
 function isAbortError(error: unknown): boolean { return error instanceof DOMException && error.name === "AbortError"; }
 
 function inspectionKey(revision: Revision): string { return `${revision.submissionRef}:${revision.submission.revision}`; }
+function uploadRevisionKey(workOrderId: string, revision: Revision): string {
+  return `${workOrderId}:${revision.submissionRef}:${revision.submission.revision}`;
+}
 
 // 서버 확인 계정 비교값의 화면 측 형식 검사 — 관측 등록 폼과 같은 모양만
 // 받는다. BFF 비교 보조일 뿐 권한이 아니며, 헤더 없는 기존 호출자의 보호를
@@ -104,11 +138,15 @@ function artifact(kind: ExternalArtifactKind, value: HashResult, crs: string): A
 async function recognizeHeader(file: File, kind: ExternalArtifactKind, signal: AbortSignal): Promise<HeaderRecognitionState> {
   try {
     const header = await readGeoTiffHeader(file, signal);
-    return { status: "recognized", value: recognizeGeoTiffHeader(header), findings: preflightGeoTiff(kind, header, file.size) };
+    return recognizedHeader(file, kind, header);
   } catch (error) {
     if (isAbortError(error)) throw error;
     return { status: "not-geotiff" };
   }
+}
+
+function recognizedHeader(file: File, kind: ExternalArtifactKind, header: GeoTiffRawHeader): HeaderRecognitionState {
+  return { status: "recognized", value: recognizeGeoTiffHeader(header), findings: preflightGeoTiff(kind, header, file.size) };
 }
 
 function exactBindingsMatch(expected: NonNullable<Revision["submission"]["artifacts"]>, actual: readonly ArtifactDeclaration[]): boolean {
@@ -146,8 +184,10 @@ function volumeDecisionReceiver(store: (decision: ExternalRelativeVolumeDecision
   };
 }
 
-function ExternalReconstructionPanelState({ workOrderId, siteId = "", expectedEpochId, canWrite, permissions, initialReport, requiresCaptureInterval = false, newIntentAllowed = true, workAreaNames, accountIdentity, legacyDecisionClosed = false }: { workOrderId: string; siteId?: string; expectedEpochId: string | null; canWrite: boolean; permissions?: readonly string[]; initialReport?: TrustedExternalResultLink; requiresCaptureInterval?: boolean; newIntentAllowed?: boolean; workAreaNames?: Readonly<Record<string, string>>; accountIdentity?: { fingerprint: string } | null; legacyDecisionClosed?: boolean }) {
+function ExternalReconstructionPanelState({ workOrderId, siteId = "", catalogWorkAreaId, expectedEpochId, canWrite, permissions, initialReport, requiresCaptureInterval = false, newIntentAllowed = true, workAreaNames, accountIdentity, legacyDecisionClosed = false }: { workOrderId: string; siteId?: string; catalogWorkAreaId?: string; expectedEpochId: string | null; canWrite: boolean; permissions?: readonly string[]; initialReport?: TrustedExternalResultLink; requiresCaptureInterval?: boolean; newIntentAllowed?: boolean; workAreaNames?: Readonly<Record<string, string>>; accountIdentity?: { fingerprint: string } | null; legacyDecisionClosed?: boolean }) {
   const legacyDetails = useRef<HTMLDetailsElement>(null);
+  const lastRevisionHash = useRef<string | null>(null);
+  const correctionFocusReturn = useRef<string | null>(null);
   // V1은 보존 기능이지 현재 분석 진입점이 아니다. 기본은 접되 기존 결과·제안
   // 딥링크는 초기 진입과 같은 페이지 이동 모두에서 내용을 드러내야 한다.
   useEffect(() => {
@@ -167,6 +207,7 @@ function ExternalReconstructionPanelState({ workOrderId, siteId = "", expectedEp
   const listAbort = useRef<AbortController | null>(null);
   const inspectionAbort = useRef(new Map<string, AbortController>());
   const hashAbort = useRef<AbortController | null>(null);
+  const routingAbort = useRef<AbortController | null>(null);
   const submissionAbort = useRef<AbortController | null>(null);
   const inspectionAutoRefreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const inspectionAutoRefreshBudget = useRef(0);
@@ -174,6 +215,9 @@ function ExternalReconstructionPanelState({ workOrderId, siteId = "", expectedEp
   const [submissionId, setSubmissionId] = useState(attemptId);
   const [submittedAt, setSubmittedAt] = useState(utcSeconds);
   const [hashing, setHashing] = useState(false);
+  const [routingBatch, setRoutingBatch] = useState(false);
+  const [routingNotes, setRoutingNotes] = useState<string[]>([]);
+  const [selectedFolderLabel, setSelectedFolderLabel] = useState<string | null>(null);
   const [hashProgress, setHashProgress] = useState<number | null>(null);
   const [softwareName, setSoftwareName] = useState("");
   const [softwareVersion, setSoftwareVersion] = useState("");
@@ -184,6 +228,8 @@ function ExternalReconstructionPanelState({ workOrderId, siteId = "", expectedEp
   const [captureEndedLocal, setCaptureEndedLocal] = useState("");
   const [captureDateLocal, setCaptureDateLocal] = useState("");
   const [captureIntervalTouched, setCaptureIntervalTouched] = useState(false);
+  const [captureStartedTouched, setCaptureStartedTouched] = useState(false);
+  const [captureEndedTouched, setCaptureEndedTouched] = useState(false);
   const [retentionLocus, setRetentionLocus] = useState<ExternalV3RetentionLocus>("unknown");
   const [retentionDetail, setRetentionDetail] = useState("");
   const [upstreamUri, setUpstreamUri] = useState("");
@@ -205,6 +251,8 @@ function ExternalReconstructionPanelState({ workOrderId, siteId = "", expectedEp
   const [visibleDisplay, setVisibleDisplay] = useState<string | null>(null);
   const [listState, setListState] = useState<"loading" | "ready" | "error">("loading");
   const [resume, setResume] = useState<Revision | null>(null);
+  const [correctionOf, setCorrectionOf] = useState<Revision | null>(null);
+  const [correctionConflict, setCorrectionConflict] = useState<{ submissionId: string; requestedRevision: number; code: string } | null>(null);
   const [frozenAttempt, setFrozenAttempt] = useState<FrozenAttempt | null>(null);
   // 명시적 재개에 고정한 서버 확인 계정 비교값 — 신규 동결의 continuity와
   // 같은 역할을 하며, 재개 grant·seal 호출에 같은 값을 싣는다.
@@ -220,6 +268,9 @@ function ExternalReconstructionPanelState({ workOrderId, siteId = "", expectedEp
   // 같은 제출의 연속 클릭·이중 전송을 막는다. 응답 미확인 뒤의 명시적 재시도는
   // 같은 식별자로 보내므로 잠금과 충돌하지 않는다.
   const submitLock = useRef(false);
+  // A confirmed direct PUT remains complete across an ambiguous retry of the
+  // same immutable submission revision. Failed or unconfirmed PUTs stay pending.
+  const confirmedUploads = useRef(new Map<string, Set<string>>());
   // 등록 기준에 맞지 않는 파일 이름 — 슬롯별로 둔다. 같은 내용의 POST·동결을
   // 막고, 이전에 확인한 선택을 조용히 내보내지 않는다. 유효한 다시 선택·
   // 지우기로만 슬롯마다 푼다.
@@ -237,8 +288,21 @@ function ExternalReconstructionPanelState({ workOrderId, siteId = "", expectedEp
   const [singleVolumeDecision, setSingleVolumeDecision] = useState<ExternalRelativeVolumeDecision | null>(null);
   const [documentVisible, setDocumentVisible] = useState(true);
 
-  const captureStartedAt = captureBasis === "EXACT_INTERVAL" && captureStartedLocal ? seoulDateTimeLocalToUtc(captureStartedLocal) : null;
-  const captureEndedAt = captureBasis === "EXACT_INTERVAL" && captureEndedLocal ? seoulDateTimeLocalToUtc(captureEndedLocal) : null;
+  const correctionInput = correctionOf?.submission.inputDeclaration as {
+    captureBasis?: unknown; captureStartedAt?: unknown; captureEndedAt?: unknown;
+  } | null | undefined;
+  const captureStartedAt = captureBasis === "EXACT_INTERVAL" && captureStartedLocal
+    ? !captureStartedTouched && correctionInput?.captureBasis === "EXACT_INTERVAL" && typeof correctionInput.captureStartedAt === "string"
+      ? correctionInput.captureStartedAt
+      : seoulWholeSecondToUtc(captureStartedLocal)
+    : null;
+  const captureEndedAt = captureBasis === "EXACT_INTERVAL" && captureEndedLocal
+    ? !captureEndedTouched && correctionInput?.captureBasis === "EXACT_INTERVAL" && typeof correctionInput.captureEndedAt === "string"
+      ? correctionInput.captureEndedAt
+      : seoulWholeSecondToUtc(captureEndedLocal)
+    : null;
+  const captureStartedMicros = registrationInstantMicros(captureStartedAt);
+  const captureEndedMicros = registrationInstantMicros(captureEndedAt);
   // 서버 확인 계정 비교값 — page가 서버에서 읽어 내려준 값의 모양만 본다.
   // 미확인이면 새 쓰기를 보내지 않고 설명하되 읽기는 유지한다. BFF 비교
   // 보조일 뿐 권한이 아니다.
@@ -248,7 +312,9 @@ function ExternalReconstructionPanelState({ workOrderId, siteId = "", expectedEp
   // EXACT를 고르면 순서가 맞는 구간이 있어야 한다. 비어 있으면 UNKNOWN을 고른다.
   // DATE_ONLY는 달력 날짜 하나, UNKNOWN은 항상 유효하다.
   const captureValid = captureBasis === "EXACT_INTERVAL"
-    ? captureStartedAt !== null && captureEndedAt !== null && captureStartedAt < captureEndedAt
+    ? captureStartedAt !== null && captureEndedAt !== null
+      && captureStartedMicros !== null && captureEndedMicros !== null
+      && captureStartedMicros < captureEndedMicros
     : captureBasis === "DATE_ONLY"
       ? isPublisherCalendarDate(captureDateLocal)
       : true;
@@ -287,7 +353,7 @@ function ExternalReconstructionPanelState({ workOrderId, siteId = "", expectedEp
       if (inspectionAbort.current.get(key) === controller) inspectionAbort.current.delete(key);
     }
   }, [currentScope, workOrderId]);
-  const load = useCallback(async (requestScope = scope.current) => {
+  const load = useCallback(async (requestScope = scope.current): Promise<Revision[] | null> => {
     listAbort.current?.abort();
     const controller = new AbortController();
     listAbort.current = controller;
@@ -296,16 +362,18 @@ function ExternalReconstructionPanelState({ workOrderId, siteId = "", expectedEp
       const response = await fetch(`/api/observation-work-orders/${encodeURIComponent(workOrderId)}/external-reconstruction-submissions`, { signal: controller.signal });
       if (!response.ok) throw new Error("declarations could not be listed");
       const result = await response.json() as { submissions: Revision[] };
-      if (!currentScope(requestScope) || listAbort.current !== controller) return;
+      if (!currentScope(requestScope) || listAbort.current !== controller) return null;
       setRevisions(result.submissions);
       setInspectionByRevision(new Map());
       setInspectionAutoRefreshStopped(false);
       setVisibleDisplay(null);
       void Promise.all(result.submissions.map((revision) => loadInspection(revision, requestScope)));
       setListState("ready");
+      return result.submissions;
     } catch (error) {
-      if (isAbortError(error) || !currentScope(requestScope) || listAbort.current !== controller) return;
+      if (isAbortError(error) || !currentScope(requestScope) || listAbort.current !== controller) return null;
       setListState("error");
+      return null;
     } finally {
       if (listAbort.current === controller) listAbort.current = null;
     }
@@ -325,11 +393,13 @@ function ExternalReconstructionPanelState({ workOrderId, siteId = "", expectedEp
       inspectionControllers.forEach((controller) => controller.abort());
       inspectionControllers.clear();
       hashAbort.current?.abort();
+      routingAbort.current?.abort();
       submissionAbort.current?.abort();
       if (inspectionAutoRefreshTimer.current !== null) clearTimeout(inspectionAutoRefreshTimer.current);
       inspectionAutoRefreshTimer.current = null;
       listAbort.current = null;
       hashAbort.current = null;
+      routingAbort.current = null;
       submissionAbort.current = null;
       workerSet.forEach((worker) => worker.terminate());
       workerSet.clear();
@@ -344,6 +414,35 @@ function ExternalReconstructionPanelState({ workOrderId, siteId = "", expectedEp
   }, []);
 
   useEffect(() => {
+    const revealRevisionTarget = () => {
+      if (listState !== "ready") return;
+      const targetId = window.location.hash.slice(1);
+      if (!targetId.startsWith("external-submission-") || lastRevisionHash.current === targetId) return;
+      const target = document.getElementById(targetId);
+      if (!target) return;
+      lastRevisionHash.current = targetId;
+      target.scrollIntoView?.({ block: "start" });
+    };
+    revealRevisionTarget();
+    window.addEventListener("hashchange", revealRevisionTarget);
+    return () => window.removeEventListener("hashchange", revealRevisionTarget);
+  }, [listState, revisions]);
+
+  useEffect(() => {
+    if (correctionOf) {
+      const heading = document.getElementById("external-correction-target-heading");
+      heading?.focus({ preventScroll: true });
+      heading?.scrollIntoView?.({ block: "start" });
+      return;
+    }
+    const anchor = correctionFocusReturn.current;
+    if (!anchor) return;
+    const action = document.getElementById(anchor)?.querySelector<HTMLButtonElement>("button[data-correction-action]");
+    action?.focus({ preventScroll: true });
+    correctionFocusReturn.current = null;
+  }, [correctionOf]);
+
+  useEffect(() => {
     if (inspectionAutoRefreshTimer.current !== null) {
       clearTimeout(inspectionAutoRefreshTimer.current);
       inspectionAutoRefreshTimer.current = null;
@@ -351,7 +450,7 @@ function ExternalReconstructionPanelState({ workOrderId, siteId = "", expectedEp
     const active = revisions.filter((revision) => {
       const load = inspectionByRevision.get(inspectionKey(revision));
       const view = retainedInspectionView(load);
-      return view !== null && presentExternalInspectionStatus(view).autoRefresh;
+      return view !== null && presentExternalInspectionStatus(view, revision.submission.artifacts).autoRefresh;
     });
     if (!documentVisible || inspectionAutoRefreshStopped || active.length === 0 || inspectionAutoRefreshBudget.current >= AUTO_INSPECTION_REFRESH_BUDGET) return;
     inspectionAutoRefreshTimer.current = setTimeout(() => {
@@ -379,22 +478,29 @@ function ExternalReconstructionPanelState({ workOrderId, siteId = "", expectedEp
 
   const cancelHash = () => {
     const controller = hashAbort.current;
-    if (!controller) return;
+    const routingController = routingAbort.current;
+    if (!controller && !routingController) return;
     hashAbort.current = null;
-    controller.abort();
+    controller?.abort();
+    routingController?.abort();
     setHashing(false);
     setHashProgress(null);
   };
 
-  const select = async (kind: ExternalArtifactKind, file?: File) => {
-    if (!file || hashing || frozenAttempt || (!newIntentAllowed && !resume)) return;
+  const select = async (
+    kind: ExternalArtifactKind,
+    file?: File,
+    options: { fromBatch?: boolean; expectedKind?: ExternalArtifactKind; header?: GeoTiffRawHeader } = {},
+  ): Promise<boolean> => {
+    if (!file || hashing || (routingAbort.current && !options.fromBatch) || frozenAttempt || (!newIntentAllowed && !resume)) return false;
+    if (!options.fromBatch) setSelectedFolderLabel(null);
     // 이어하기(등록된 참조의 바이트 대조)는 새 신고가 아니라 파일 이름 문법을
     // 적용하지 않는다. 새 등록만 해시 같은 비싼 확인 전에 파일 이름을 검사한다.
     if (!resume) {
       const issue = describeExternalBasenameIssue(file.name);
       if (issue !== null) {
         setNameIssues((current) => ({ ...current, [kind]: { fileName: file.name, reason: issue } }));
-        return;
+        return false;
       }
     }
     const requestScope = scope.current;
@@ -406,18 +512,25 @@ function ExternalReconstructionPanelState({ workOrderId, siteId = "", expectedEp
     try {
       const [result, header] = await Promise.all([
         hashFile(file, workers.current, setHashProgress, controller.signal),
-        recognizeHeader(file, kind, controller.signal),
+        options.header
+          ? Promise.resolve(recognizedHeader(file, kind, options.header))
+          : recognizeHeader(file, kind, controller.signal),
       ]);
-      if (!currentScope(requestScope) || hashAbort.current !== controller) return;
+      if (!currentScope(requestScope) || hashAbort.current !== controller) return false;
+      const recognized = header.status === "recognized" ? header.value : null;
+      if (options.expectedKind && recognized?.kindHint !== options.expectedKind) {
+        setRoutingNotes((current) => [...current, `‘${file.name}’: 파일 머리말에서 ${options.expectedKind === "dsm" ? "DSM" : "정사영상"}임을 확인하지 못해 폴더 선택에서 제외했습니다.`]);
+        return false;
+      }
       if (kind === "ortho") {
         if (ortho && (ortho.sha256 !== result.sha256 || ortho.size !== result.size)) {
-          setSubmissionId(attemptId());
+          if (!correctionOf && !correctionConflict) setSubmissionId(attemptId());
           setSubmittedAt(utcSeconds());
         }
         setOrtho(result);
       } else {
         if (dsm && (dsm.sha256 !== result.sha256 || dsm.size !== result.size)) {
-          setSubmissionId(attemptId());
+          if (!correctionOf && !correctionConflict) setSubmissionId(attemptId());
           setSubmittedAt(utcSeconds());
         }
         setDsm(result);
@@ -425,17 +538,20 @@ function ExternalReconstructionPanelState({ workOrderId, siteId = "", expectedEp
       setHeaders((current) => ({ ...current, [kind]: header }));
       setNameIssues((current) => ({ ...current, [kind]: null }));
       if (!resume) {
-        const recognized = header.status === "recognized" ? header.value : null;
         setDeclaredCrs((current) => ({ ...current, [kind]: recognized?.declaredCrs ?? "" }));
         const producer = recognized?.producer;
-        if (producer) {
+        if (!correctionOf && !correctionConflict && producerKnowledge !== "UNKNOWN" && producer) {
           // 운영자가 이미 적은 값은 덮지 않는다. 빈 칸만 헤더 값으로 채운다.
           setSoftwareName((current) => (current.trim() ? current : producer.name));
-          if (producer.version) setSoftwareVersion((current) => (current.trim() ? current : producer.version ?? ""));
+          // PARTIAL means the operator knows the name only. A later file
+          // recognition must not silently upgrade that declaration with a version.
+          if (producerKnowledge === "DECLARED" && producer.version) {
+            setSoftwareVersion((current) => (current.trim() ? current : producer.version ?? ""));
+          }
         }
         // 파일 헤더가 알려 주지 못한 빈 칸만, 지난번 등록에서 기억한 값으로 채운다. 입력한 값은 덮지 않는다.
         const remembered = loadExternalUploadDefaults();
-        if (remembered) {
+        if (!correctionOf && !correctionConflict && producerKnowledge === "DECLARED" && remembered) {
           // 이름과 버전은 한 쌍이다. 둘 다 비어 있을 때만 쌍으로 채워, 다른 소프트웨어의 버전이 섞이지 않게 한다.
           if (!producer && remembered.softwareName && !softwareName.trim() && !softwareVersion.trim()) {
             setSoftwareName(remembered.softwareName);
@@ -444,8 +560,10 @@ function ExternalReconstructionPanelState({ workOrderId, siteId = "", expectedEp
         }
       }
       say(null);
+      return true;
     } catch (error) {
       if (!isAbortError(error) && currentScope(requestScope) && hashAbort.current === controller) say("파일 정보를 확인하지 못했습니다.", true);
+      return false;
     } finally {      if (hashAbort.current === controller) {
         hashAbort.current = null;
         if (currentScope(requestScope)) {
@@ -462,28 +580,72 @@ function ExternalReconstructionPanelState({ workOrderId, siteId = "", expectedEp
     saveExternalUploadDefaults({ softwareName, softwareVersion });
   };
 
-  const [routingNotes, setRoutingNotes] = useState<string[]>([]);
   // 여러 파일을 한 번에 받으면 헤더로 칸을 나누고, 나눈 파일은 칸별 선택과 같은 경로(select)로 넣는다.
-  const routeFiles = async (files: File[]) => {
-    if (hashing || frozenAttempt || (!newIntentAllowed && !resume)) return;
-    const probes = await Promise.all(files.map(async (file) => {
-      try {
-        const header = await readGeoTiffHeader(file);
-        return { name: file.name, hint: recognizeGeoTiffHeader(header).kindHint, readable: true };
-      } catch {
-        return { name: file.name, hint: null, readable: false };
+  const routeFiles = async (
+    files: File[],
+    expectedKinds?: readonly (ExternalArtifactKind | undefined)[],
+    folderLabel?: string,
+  ): Promise<void> => {
+    if (routingAbort.current || hashing || frozenAttempt || (!newIntentAllowed && !resume)) return;
+    const controller = new AbortController();
+    const requestScope = scope.current;
+    routingAbort.current = controller;
+    setRoutingBatch(true);
+    setRoutingNotes([]);
+    if (!folderLabel) setSelectedFolderLabel(null);
+    try {
+      const probes = await Promise.all(files.map(async (file, index) => {
+        try {
+          const header = await readGeoTiffHeader(file, controller.signal);
+          return {
+            name: file.name,
+            hint: recognizeGeoTiffHeader(header).kindHint,
+            readable: true,
+            expectedKind: expectedKinds?.[index],
+            header,
+          };
+        } catch {
+          return { name: file.name, hint: null, readable: false, expectedKind: expectedKinds?.[index], header: null };
+        }
+      }));
+      if (controller.signal.aborted || !currentScope(requestScope)) return;
+      const { assigned, skipped } = assignSlots(probes);
+      setRoutingNotes(skipped.map((item) => `‘${item.name}’: ${item.reason}`));
+      for (const kind of ["ortho", "dsm"] as const) {
+        const index = assigned[kind];
+        if (index === undefined) continue;
+        if (controller.signal.aborted || !currentScope(requestScope)) return;
+        const accepted = await select(kind, files[index], {
+          fromBatch: true,
+          expectedKind: expectedKinds?.[index],
+          header: probes[index]!.header ?? undefined,
+        });
+        if (folderLabel && accepted) setSelectedFolderLabel(folderLabel);
       }
-    }));
-    const { assigned, skipped } = assignSlots(probes);
-    setRoutingNotes(skipped.map((item) => `‘${item.name}’: ${item.reason}`));
-    for (const kind of ["ortho", "dsm"] as const) {
-      const index = assigned[kind];
-      if (index !== undefined) await select(kind, files[index]);
+      if (controller.signal.aborted || !currentScope(requestScope)) return;
+    } catch (error) {
+      if (!isAbortError(error) && currentScope(requestScope)) {
+        setRoutingNotes(["파일을 확인하지 못했습니다. 폴더를 다시 선택하세요."]);
+      }
+    } finally {
+      if (routingAbort.current === controller) {
+        routingAbort.current = null;
+        if (currentScope(requestScope)) setRoutingBatch(false);
+      }
     }
   };
 
+  const selectResultFolder = async (
+    items: { file: File; kind: ExternalArtifactKind }[],
+    folderLabel: string,
+  ) => {
+    if (ortho || dsm || resume || frozenAttempt) return;
+    setSelectedFolderLabel(null);
+    await routeFiles(items.map(({ file }) => file), items.map(({ kind }) => kind), folderLabel);
+  };
+
   const selectResume = (revision: Revision) => {
-    if (busy || hashing) return;
+    if (busy || hashing || routingBatch || routingAbort.current || correctionOf || correctionConflict) return;
     // 명시적 재개에 현재 확인된 계정 비교값을 고정한다. 미확인이면 grant·
     // seal 쓰기를 보내지 않고 설명하되 목록·검사 읽기는 그대로 둔다.
     if (!continuity) {
@@ -491,10 +653,13 @@ function ExternalReconstructionPanelState({ workOrderId, siteId = "", expectedEp
       return;
     }
     setFrozenAttempt(null);
+    setCorrectionOf(null);
+    setCorrectionConflict(null);
     setResume(revision);
     setResumeContinuity(continuity);
     setOrtho(null);
     setDsm(null);
+    setSelectedFolderLabel(null);
     setNameIssues({ ortho: null, dsm: null });
     setSealedComplete(false);
     // 재개는 등록된 신고를 다시 보내지 않으므로 폼 값은 참고용으로만 둔다.
@@ -506,26 +671,142 @@ function ExternalReconstructionPanelState({ workOrderId, siteId = "", expectedEp
   };
 
   const startNewAttempt = () => {
-    if (busy || hashing) return;
+    if (busy || hashing || routingBatch || routingAbort.current) return;
     if (!newIntentAllowed) {
       say("업무 종료 상태에서는 새 산출물 등록을 시작할 수 없습니다.", true);
       return;
     }
     setResume(null);
+    setCorrectionOf(null);
+    setCorrectionConflict(null);
     setResumeContinuity(null);
     setFrozenAttempt(null);
     setPayloadRejected(false);
     setNameIssues({ ortho: null, dsm: null });
+    setSelectedFolderLabel(null);
     setSealedComplete(false);
     setSubmissionId(attemptId());
     setSubmittedAt(utcSeconds());
     say(null);
   };
 
+  const selectCorrection = (revision: Revision) => {
+    const submission = revision.submission;
+    const retargetingConflict = correctionConflict !== null
+      && correctionConflict.submissionId === submission.submissionId
+      && submission.revision > correctionConflict.requestedRevision;
+    if (!newIntentAllowed || !continuity || (!newFormPristine && !retargetingConflict) || busy || hashing || routingBatch || routingAbort.current || frozenAttempt || resume) return;
+    const producer = submission.producerDeclaration;
+    const input = submission.inputDeclaration;
+    if (
+      revision.state !== "SEALED" ||
+      revision.submission.contractVersion !== "external-reconstruction-submission.v3" ||
+      typeof submission.submissionId !== "string" ||
+      typeof submission.observationEpochId !== "string" ||
+      submission.observationEpochId !== expectedEpochId ||
+      revisions.some((candidate) => candidate.submissionRef === revision.submissionRef && candidate.submission.revision > submission.revision)
+    ) return;
+
+    setFrozenAttempt(null);
+    setResume(null);
+    setResumeContinuity(null);
+    setCorrectionOf(revision);
+    setSubmissionId(submission.submissionId);
+    setSubmittedAt(utcSeconds());
+    if (!retargetingConflict) {
+      setOrtho(null);
+      setDsm(null);
+      setHeaders({});
+      setDeclaredCrs({ ortho: "", dsm: "" });
+      setSelectedFolderLabel(null);
+      setNameIssues({ ortho: null, dsm: null });
+    }
+    setPayloadRejected(false);
+    setSealedComplete(false);
+    setCorrectionConflict(null);
+    setSoftwareName(producer?.softwareName ?? "");
+    setSoftwareVersion(producer?.softwareVersion ?? "");
+    setProducerKnowledge(producer?.producerKnowledge === "PARTIAL" || producer?.producerKnowledge === "UNKNOWN" ? producer.producerKnowledge : "DECLARED");
+    setSourceNote(producer?.sourceNote ?? "");
+    const knownBasis = input?.captureBasis;
+    if (knownBasis === "EXACT_INTERVAL" || knownBasis === "DATE_ONLY" || knownBasis === "UNKNOWN") {
+      setCaptureBasis(knownBasis);
+      setCaptureStartedLocal(knownBasis === "EXACT_INTERVAL" ? seoulDateTimeLocal(input?.captureStartedAt) : "");
+      setCaptureEndedLocal(knownBasis === "EXACT_INTERVAL" ? seoulDateTimeLocal(input?.captureEndedAt) : "");
+      setCaptureDateLocal(knownBasis === "DATE_ONLY" && typeof input?.captureDate === "string" ? input.captureDate : "");
+    } else {
+      setCaptureBasis(requiresCaptureInterval ? "EXACT_INTERVAL" : "UNKNOWN");
+      setCaptureStartedLocal("");
+      setCaptureEndedLocal("");
+      setCaptureDateLocal("");
+    }
+    setCaptureIntervalTouched(false);
+    setCaptureStartedTouched(false);
+    setCaptureEndedTouched(false);
+    const knownRetention = input?.originalRetentionLocus;
+    setRetentionLocus(knownRetention === "customer_workstation" || knownRetention === "upstream_source" || knownRetention === "unknown" ? knownRetention : "unknown");
+    setRetentionDetail(input?.originalRetentionDetail ?? "");
+    setUpstreamUri(input?.upstreamSource?.sourceUri ?? "");
+    setUpstreamSha(input?.upstreamSource?.sourceSha256 ?? "");
+    setUpstreamLicence(input?.upstreamSource?.licenceDeclaration ?? "");
+    setUpstreamNote(input?.upstreamSource?.retrievalNote ?? "");
+    // 내보내기 내역은 이전 revision 신고를 복사하지 않는다. 새 파일의 내보내기
+    // 사실을 운영자가 다시 확인해 입력하도록 빈 칸으로 둔다.
+    if (!retargetingConflict) {
+      setExportToolName("");
+      setExportToolVersion("");
+      setExportSettingsDigest("");
+      setExportedAtLocal("");
+      setExportNote("");
+    }
+    say(null);
+  };
+
+  const cancelCorrection = () => {
+    if ((!correctionOf && !correctionConflict) || busy || hashing || routingBatch || frozenAttempt) return;
+    if (correctionOf) correctionFocusReturn.current = externalRevisionAnchor(correctionOf.submissionRef, correctionOf.submission.revision);
+    setCorrectionOf(null);
+    setCorrectionConflict(null);
+    setSubmissionId(attemptId());
+    setSubmittedAt(utcSeconds());
+    setOrtho(null);
+    setDsm(null);
+    setHeaders({});
+    setDeclaredCrs({ ortho: "", dsm: "" });
+    setSelectedFolderLabel(null);
+    setNameIssues({ ortho: null, dsm: null });
+    setPayloadRejected(false);
+    setSealedComplete(false);
+    setSoftwareName("");
+    setSoftwareVersion("");
+    setProducerKnowledge("DECLARED");
+    setSourceNote("");
+    setCaptureBasis(requiresCaptureInterval ? "EXACT_INTERVAL" : "UNKNOWN");
+    setCaptureStartedLocal("");
+    setCaptureEndedLocal("");
+    setCaptureDateLocal("");
+    setCaptureIntervalTouched(false);
+    setCaptureStartedTouched(false);
+    setCaptureEndedTouched(false);
+    setRetentionLocus("unknown");
+    setRetentionDetail("");
+    setUpstreamUri("");
+    setUpstreamSha("");
+    setUpstreamLicence("");
+    setUpstreamNote("");
+    setExportToolName("");
+    setExportToolVersion("");
+    setExportSettingsDigest("");
+    setExportedAtLocal("");
+    setExportNote("");
+    say(null);
+  };
+
   // 슬롯은 서로 독립이다. 한 칸을 지워도 다른 칸의 확인된 선택을 버리지
   // 않는다. 이름 문제도 고친 칸만 푼다.
   const clearSlot = (kind: ExternalArtifactKind) => {
-    if (busy || hashing || frozenAttempt) return;
+    if (busy || hashing || routingBatch || routingAbort.current || frozenAttempt) return;
+    setSelectedFolderLabel(null);
     setNameIssues((current) => ({ ...current, [kind]: null }));
     if (kind === "ortho") {
       setOrtho(null);
@@ -553,6 +834,9 @@ function ExternalReconstructionPanelState({ workOrderId, siteId = "", expectedEp
     exportToolName, exportToolVersion, exportSettingsDigest, exportedAtLocal, exportNote,
   });
   const hasFile = Boolean(ortho || dsm);
+  const omittedCorrectionFiles = correctionOf?.submission.artifacts?.filter((item) =>
+    (item.kind === "ortho" && !ortho) || (item.kind === "dsm" && !dsm),
+  ) ?? [];
 
   const freezeCurrentAttempt = (): FrozenAttempt | null => {
     if (!hasFile || !expectedEpochId || metadataIssue !== null || !captureValid || !continuity) return null;
@@ -564,7 +848,9 @@ function ExternalReconstructionPanelState({ workOrderId, siteId = "", expectedEp
     const exportedAt = exportedAtLocal ? seoulDateTimeLocalToUtc(exportedAtLocal) : null;
     const artifacts = Object.freeze([...(ortho ? [artifact("ortho", ortho, declaredCrs.ortho)] : []), ...(dsm ? [artifact("dsm", dsm, declaredCrs.dsm)] : [])]);
     const requestBody = Object.freeze({
-      submissionId, expectedEpochId, submittedAt,
+      submissionId,
+      expectedEpochId: correctionOf?.submission.observationEpochId ?? expectedEpochId,
+      submittedAt,
       producerKnowledge,
       softwareName: producerKnowledge === "UNKNOWN" ? null : name,
       softwareVersion: producerKnowledge === "DECLARED" ? version : null,
@@ -587,13 +873,14 @@ function ExternalReconstructionPanelState({ workOrderId, siteId = "", expectedEp
         exportNote: exportNote.trim() === "" ? null : exportNote.trim(),
       },
       artifacts,
+      ...(correctionOf ? { correctionOf: { submissionRef: correctionOf.submissionRef, revision: correctionOf.submission.revision } } : {}),
     });
     const bindings = Object.freeze([...(ortho ? [{ slot: "ortho" as const, artifactId: "ortho", value: ortho }] : []), ...(dsm ? [{ slot: "dsm" as const, artifactId: "dsm", value: dsm }] : [])]);
     return Object.freeze({ requestBody, bindings, continuity });
   };
 
   const submit = async () => {
-    if (!hasFile || hashing || busy || sealedComplete || submitLock.current) return;
+    if (!hasFile || hashing || routingBatch || routingAbort.current || busy || sealedComplete || submitLock.current) return;
     let revision = resume;
     let bindings: FrozenAttempt["bindings"];
     let attempt = frozenAttempt;
@@ -683,10 +970,88 @@ function ExternalReconstructionPanelState({ workOrderId, siteId = "", expectedEp
         declarationHeaders[CONTINUITY_FINGERPRINT_HEADER] = submitContinuity;
         const response = await fetch(`/api/observation-work-orders/${encodeURIComponent(workOrderId)}/external-reconstruction-submissions-v3`, { method: "POST", headers: declarationHeaders, body: JSON.stringify(attempt!.requestBody), signal: controller.signal });
         if (!response.ok) {
+          const errorPayload: unknown = await response.json().catch(() => null);
           // 계정 연속성 거부 — 원래 시도를 버리지 않고 같은 화면의 같은
           // 시도로 돌아오게 둔다. 첫 시도·재시도를 가리지 않는다.
-          if (isAccountContinuityMismatch(response.status, await response.json().catch(() => null))) {
+          if (isAccountContinuityMismatch(response.status, errorPayload)) {
             say(accountMismatchMessage(), true);
+            return;
+          }
+          const correctionTarget = attempt!.requestBody.correctionOf;
+          const errorCode = errorPayload && typeof errorPayload === "object"
+            ? (errorPayload as { code?: unknown }).code
+            : null;
+          if (response.status === 409 && correctionTarget && errorCode === "STALE_ATTEMPT") {
+            if (firstDeclaration) {
+              setFrozenAttempt(null);
+              setPayloadRejected(true);
+              say("작업 촬영 기록이 달라 수정본을 접수하지 않았습니다. 파일 선택은 이 화면에 보존했습니다. 작업 상태를 새로고침해 현재 촬영 기록을 확인한 뒤 다시 시작하세요.", true);
+            } else {
+              say("작업 촬영 기록이 달라 현재 수정 재시도는 진행되지 않았습니다. 이전 요청이 처리되었는지는 아직 알 수 없습니다. 같은 요청 연결과 파일 선택을 보존했으니 등록 목록에서 상태를 먼저 확인하세요.", true);
+            }
+            return;
+          }
+          if (response.status === 409 && correctionTarget && errorCode === "CORRECTION_LINEAGE_CHANGED") {
+            const lineageMessage = errorPayload && typeof errorPayload === "object"
+              && typeof (errorPayload as { message?: unknown }).message === "string"
+              && (errorPayload as { message: string }).message.trim() !== ""
+              ? (errorPayload as { message: string }).message
+              : "원자료·촬영·제작 정보가 기존 등록과 달라 실행 기록을 이어 붙이지 않았습니다. 수정 정보와 원자료를 확인해 주세요.";
+            if (firstDeclaration) {
+              setFrozenAttempt(null);
+              setSubmittedAt(utcSeconds());
+              setPayloadRejected(false);
+              say(`${lineageMessage} 파일과 등록 연결은 그대로 보존했습니다.`, true);
+            } else {
+              say(`${lineageMessage} 이전 요청이 처리되었는지는 아직 알 수 없습니다. 같은 요청 연결과 파일 선택을 보존했으니 등록 목록에서 상태를 먼저 확인하세요.`, true);
+            }
+            return;
+          }
+          if (response.status === 409 && correctionTarget && (errorCode === "CORRECTION_CONFLICT" || errorCode === "STALE_CORRECTION_TARGET")) {
+            const code = errorCode;
+            setFrozenAttempt(null);
+            setCorrectionOf(null);
+            setCorrectionConflict({ submissionId: attempt!.requestBody.submissionId, requestedRevision: correctionTarget.revision, code });
+            setPayloadRejected(false);
+            setSealedComplete(false);
+            say(errorCode === "CORRECTION_CONFLICT"
+              ? "같은 등록 버전에 다른 수정본이 먼저 등록되어 이번 요청은 접수되지 않았습니다. 최신 등록 목록을 확인합니다. 선택한 파일은 보존하며, 최신 등록본에서 수정 대상을 다시 선택하면 재사용할 수 있습니다."
+              : "수정 대상보다 새 등록 상태가 확인되어 이번 요청을 접수하지 않았습니다. 최신 등록 목록을 확인합니다. 선택한 파일은 보존하며, 최신 봉인본에서 수정 대상을 다시 선택하면 재사용할 수 있습니다.", true);
+            await load(requestScope);
+            return;
+          }
+          if (response.status === 409 && correctionTarget && errorCode === "CONFLICT") {
+            const refreshed = await load(requestScope);
+            const echo: AttemptEcho = { submissionRef: null, ...declarationEchoOfRequest(attempt!.requestBody) };
+            const exactAttemptIsVisible = refreshed?.some((candidate) =>
+              (candidate.state === "REGISTERED" || candidate.state === "SEALED")
+              && isRevisionViewForAttempt(candidate, echo, candidate.state),
+            ) ?? false;
+            const latestStreamRecord = refreshed
+              ?.filter((candidate) => candidate.submission.submissionId === attempt!.requestBody.submissionId && candidate.submissionRef === correctionTarget.submissionRef)
+              .reduce<Revision | null>((latest, candidate) => !latest || candidate.submission.revision > latest.submission.revision ? candidate : latest, null) ?? null;
+            if (!exactAttemptIsVisible && latestStreamRecord?.state === "SEALED"
+              && latestStreamRecord.submission.revision > correctionTarget.revision
+              && latestStreamRecord.submission.contractVersion === "external-reconstruction-submission.v3") {
+              setFrozenAttempt(null);
+              setCorrectionOf(null);
+              setCorrectionConflict({ submissionId: attempt!.requestBody.submissionId, requestedRevision: correctionTarget.revision, code: "CORRECTION_CONFLICT" });
+              setPayloadRejected(false);
+              setSealedComplete(false);
+              say("최신 등록 목록에서 같은 자료 묶음의 다른 봉인본을 확인했습니다. 이번 요청은 접수되지 않았습니다. 선택한 파일과 내보내기 신고를 보존했으니 최신 봉인본에서 수정 대상을 다시 선택하세요.", true);
+              return;
+            }
+            say(exactAttemptIsVisible
+              ? "같은 수정 등록이 이미 목록에 있습니다. 현재 요청 연결을 보존했습니다. 목록에서 등록 상태를 확인하고 이 화면에서 같은 수정본을 이어가세요."
+              : "서버에서 충돌 응답을 받았지만 다른 수정본은 확인되지 않았습니다. 현재 파일·내보내기 신고와 요청 연결을 보존했습니다. 목록을 새로고침해 확인한 뒤 같은 요청을 이어가세요.", true);
+            return;
+          }
+          if (response.status === 409 && correctionTarget && errorCode === "INVALID_CORRECTION_TARGET") {
+            say("수정 대상 등록을 확인할 수 없습니다. 현재 파일·내보내기 신고와 요청 연결을 보존했습니다. 등록 목록을 새로고침하고 원래 대상 기록을 확인하세요. 새 식별자로 자동 전환하지 않습니다.", true);
+            return;
+          }
+          if (response.status === 409 && correctionTarget && errorCode === "EXTERNAL_WORKFLOW_CLOSED") {
+            say("이 작업은 이미 종료되어 새 수정본을 받을 수 없습니다. 현재 파일·내보내기 신고와 요청 연결은 보존했습니다. 작업 상태와 등록 목록을 확인하세요.", true);
             return;
           }
           // 422는 내용 자체가 기준에 맞지 않는 분류 — 첫 신고에서만 확정한다.
@@ -736,6 +1101,7 @@ function ExternalReconstructionPanelState({ workOrderId, siteId = "", expectedEp
           // 바뀌지 않는다.
           if (isRevisionViewForAttempt(declared, declarationEcho, "SEALED")) {
             revision = declared;
+            confirmedUploads.current.delete(uploadRevisionKey(workOrderId, revision));
             setSealedComplete(true);
             rememberDeclarations();
             say("파일 등록을 확인했습니다. 파일 형식과 측정 적합성 확인은 아직 진행되지 않았습니다.");
@@ -753,38 +1119,40 @@ function ExternalReconstructionPanelState({ workOrderId, siteId = "", expectedEp
       if (!currentScope(requestScope) || submissionAbort.current !== controller) return;
       const grantHeaders: Record<string, string> = {};
       grantHeaders[CONTINUITY_FINGERPRINT_HEADER] = submitContinuity;
-      const grantsResponse = await fetch(`/api/observation-work-orders/${encodeURIComponent(workOrderId)}/external-reconstruction-submissions/${encodeURIComponent(revision.submissionRef)}/revisions/${revision.submission.revision}/upload-grants`, { method: "POST", headers: grantHeaders, signal: controller.signal });
-      if (!grantsResponse.ok) {
-        if (isAccountContinuityMismatch(grantsResponse.status, await grantsResponse.json().catch(() => null))) {
-          say(accountMismatchMessage(), true);
-          return;
-        }
-        throw new Error("grant failed");
-      }
-      // grant 응답은 이번 시도가 결속한 저장 산출물 집합과 정확히 같아야 한다.
-      // Core upload_grants는 저장 bindings를 1:1로 돌며 grant를 만들기 때문에
-      // 정상 응답에 중복·여분·누락이 있을 수 없다. 어긋나면 전송을 시작하지
-      // 않고 동결을 유지한다. 직접 PUT은 아래에서 이 grant capability로만
-      // 나가며, 조회는 슬롯 키가 아니라 결속된 저장 artifact_id로 한다.
-      const grantsPayload: unknown = await grantsResponse.json().catch(() => null);
-      const grantList = grantsPayload && typeof grantsPayload === "object" && Array.isArray((grantsPayload as { grants?: unknown }).grants)
-        ? (grantsPayload as { grants: unknown[] }).grants
-        : null;
-      const grants = grantList !== null && grantList.every(isUploadGrantView) ? grantList : null;
-      const grantIds = grants !== null ? grants.map((grant) => grant.artifactId) : null;
       const expectedGrantIds = bindings.map(({ artifactId }) => artifactId);
-      if (!grants || grantIds === null || new Set(grantIds).size !== grantIds.length || grantIds.length !== expectedGrantIds.length || !expectedGrantIds.every((artifactId) => grantIds.includes(artifactId))) {
-        say(unknownResponseMessage(), true);
-        return;
+      const confirmedKey = uploadRevisionKey(workOrderId, revision);
+      let confirmedForRevision = confirmedUploads.current.get(confirmedKey);
+      if (!confirmedForRevision) {
+        confirmedForRevision = new Set<string>();
+        confirmedUploads.current.set(confirmedKey, confirmedForRevision);
       }
       for (const { slot, artifactId, value } of bindings) {
-        const grant = grants.find((item) => item.artifactId === artifactId);
-        if (!grant) throw new Error("missing upload grant");
+        if (confirmedForRevision.has(artifactId)) continue;
+        // A grant is a short-lived capability. Fetch a fresh complete set for
+        // this exact revision immediately before each still-pending direct PUT.
+        const grantsResponse = await fetch(`/api/observation-work-orders/${encodeURIComponent(workOrderId)}/external-reconstruction-submissions/${encodeURIComponent(revision.submissionRef)}/revisions/${revision.submission.revision}/upload-grants`, { method: "POST", headers: grantHeaders, signal: controller.signal });
+        if (!grantsResponse.ok) {
+          if (isAccountContinuityMismatch(grantsResponse.status, await grantsResponse.json().catch(() => null))) {
+            say(accountMismatchMessage(), true);
+            return;
+          }
+          throw new Error("grant failed");
+        }
+        // Core grants are an exact complete-set response even when only one
+        // artifact remains pending. Reject malformed, duplicate, missing, or
+        // extra capabilities before any PUT.
+        const grantsPayload: unknown = await grantsResponse.json().catch(() => null);
+        const grant = selectCompleteUploadGrant(grantsPayload, expectedGrantIds, artifactId);
+        if (!grant) {
+          say(unknownResponseMessage(), true);
+          return;
+        }
         setUploadProgress({ artifactId: slot, transferredBytes: 0, totalBytes: value.size, phase: "uploading" });
         await putExternalReconstructionFile(grant, value.file, controller.signal, (transferredBytes) => {
           if (!currentScope(requestScope) || submissionAbort.current !== controller) return;
           setUploadProgress({ artifactId: slot, transferredBytes, totalBytes: value.size, phase: transferredBytes === value.size ? "uploaded" : "uploading" });
         });
+        confirmedForRevision.add(artifactId);
         if (!currentScope(requestScope) || submissionAbort.current !== controller) return;
       }
       const sealHeaders: Record<string, string> = {};
@@ -794,6 +1162,14 @@ function ExternalReconstructionPanelState({ workOrderId, siteId = "", expectedEp
       if (!seal.ok) {
         if (isAccountContinuityMismatch(seal.status, sealPayload)) {
           say(accountMismatchMessage(), true);
+          return;
+        }
+        const sealFailure = sealObservationFailureCode(seal.status, sealPayload);
+        if (sealFailure) {
+          // Core reports no artifact ID, so this exact confirmed refusal means
+          // the whole revision must be re-uploaded on the next explicit retry.
+          confirmedForRevision.clear();
+          say(sealObservationFailureMessage(sealFailure), true);
           return;
         }
         throw new Error("seal failed");
@@ -815,6 +1191,7 @@ function ExternalReconstructionPanelState({ workOrderId, siteId = "", expectedEp
         return;
       }
       revision = sealPayload;
+      confirmedUploads.current.delete(confirmedKey);
       if (!currentScope(requestScope) || submissionAbort.current !== controller) return;
       // 확인된 봉인에서만 완료로 잠근다. 응답 미확인 경로(throw·중단)는 동결된
       // 시도를 그대로 두고 같은 식별자로 다시 확인할 수 있게 둔다.
@@ -850,9 +1227,13 @@ function ExternalReconstructionPanelState({ workOrderId, siteId = "", expectedEp
   };
 
   const metadataReady = Boolean(resume) || (metadataIssue === null && captureValid);
-  const canSubmit = hasFile && !busy && !hashing && !sealedComplete && !nameIssues.ortho && !nameIssues.dsm && metadataReady
+  const canSubmit = hasFile && !busy && !hashing && !routingBatch && !sealedComplete && !nameIssues.ortho && !nameIssues.dsm && metadataReady
     && (Boolean(resume && resumeContinuity) || (!payloadRejected && (Boolean(frozenAttempt) || Boolean(newIntentAllowed && expectedEpochId && continuity))));
   const formIsFrozen = Boolean(frozenAttempt || resume);
+  const hasDeclarationDraft = softwareName !== "" || softwareVersion !== "" || producerKnowledge !== "DECLARED" || sourceNote !== ""
+    || captureBasis !== (requiresCaptureInterval ? "EXACT_INTERVAL" : "UNKNOWN") || captureStartedLocal !== "" || captureEndedLocal !== "" || captureDateLocal !== ""
+    || retentionLocus !== "unknown" || retentionDetail !== "" || upstreamUri !== "" || upstreamSha !== "" || upstreamLicence !== "" || upstreamNote !== ""
+    || exportToolName !== "" || exportToolVersion !== "" || exportSettingsDigest !== "" || exportedAtLocal !== "" || exportNote !== "";
 
   // 자식의 알림 effect 의존성이므로 매 렌더 새 함수가 되지 않게 고정한다.
   // volumeDecisionReceiver는 모듈 수준 순수 함수이고 store는 안정적이므로
@@ -864,7 +1245,7 @@ function ExternalReconstructionPanelState({ workOrderId, siteId = "", expectedEp
   // 시도(파일 선택·응답 미확인 재시도·재개·전송 중·안내 문구)는 절대 숨기지
   // 않는다 — compactness보다 시도 보존이 우선이다.
   const hasRetainedRevisions = listState === "ready" && revisions.length > 0;
-  const newFormPristine = !formIsFrozen && !busy && !hashing && !uploadProgress && !ortho && !dsm && message === null;
+  const newFormPristine = !correctionOf && !formIsFrozen && !busy && !hashing && !uploadProgress && !ortho && !dsm && message === null;
   const collapseNewForm = hasRetainedRevisions && newFormPristine;
 
   return <><section id="external-submissions" className="flex flex-col gap-3 rounded-xl border border-line bg-surface p-4 text-[13px]">
@@ -879,10 +1260,23 @@ function ExternalReconstructionPanelState({ workOrderId, siteId = "", expectedEp
         펼침이 되므로, 경계가 details 자체를 감싼다. 작은 화면 안내는 작업 상세
         상단의 노트북 계속 안내가 맡고, 여기에는 중복 안내를 두지 않는다. */}
     {canWrite && <ResponsiveActionBoundary action="EXTERNAL_RECONSTRUCTION_MUTATION" inlineNotice={false} reason="노트북에서 같은 계정으로 이 작업 상세를 열어 정사영상·DSM 등록을 이어가세요.">
-    <details open={collapseNewForm ? undefined : true}>
-      <summary className="tap-target cursor-pointer font-semibold">새 산출물 등록</summary>
+    <details open={correctionOf ? true : collapseNewForm ? undefined : true}>
+      <summary className="tap-target cursor-pointer font-semibold">{correctionOf ? "수정본 등록" : "새 산출물 등록"}</summary>
       <div className="mt-3 flex flex-col gap-3">
       <div className="flex flex-col gap-3">
+        {correctionConflict && <div role="alert" className="rounded-lg border border-high bg-high-bg px-3 py-2 text-[12px] leading-5 text-high-ink">
+          <p>{correctionConflict.code === "CORRECTION_CONFLICT" ? "같은 등록 버전의 다른 수정본이 먼저 접수되었습니다." : "수정 대상 등록 버전이 최신 상태와 달라졌습니다."} 최신 등록 목록을 확인하세요. 새 파일 선택은 보존했습니다.</p>
+          <p>같은 자료 묶음의 최신 봉인본에 ‘수정본 등록’이 표시되면 이를 눌러 현재 파일을 재사용할 수 있습니다.</p>
+          {listState === "error" && <button className="btn mt-2 w-fit" onClick={() => void load()}>목록 다시 시도</button>}
+        </div>}
+        {correctionOf && <div className="rounded-lg border border-line bg-sunk p-3 text-[12px] leading-5 text-ink-2" role="group" aria-label="수정본 대상">
+          <h3 id="external-correction-target-heading" tabIndex={-1} className="font-semibold">등록 버전 {correctionOf.submission.revision}의 수정본</h3>
+          <p>원래 파일: {correctionOf.submission.artifacts?.map((item) => item.fileName).join(", ") || "파일명 확인 필요"}</p>
+          <p className="mt-1">새 개정에는 지금 선택한 정사영상·DSM만 들어갑니다. 새 파일은 다시 검사합니다. 기존 등록본과 검사 기록은 보존됩니다.</p>
+          {hasFile && omittedCorrectionFiles.length > 0 && <p role="status" className="mt-1">이번 수정본에서 빠지는 파일 · {omittedCorrectionFiles.map((item) => item.fileName).join(", ")}</p>}
+          <p className="mt-1">원본 신고와 촬영 정보는 기존 기록에서 채웠습니다. 새 내보내기 도구와 설정은 현재 파일 기준으로 확인해 입력하세요.</p>
+          {!frozenAttempt && <button className="btn mt-2 w-fit" disabled={busy || hashing || routingBatch} onClick={cancelCorrection}>수정 대상 취소</button>}
+        </div>}
         {resume ? <div className="rounded-lg border border-line bg-sunk px-3 py-2 text-[12px] leading-5 text-ink-2"><p>선택한 제출본의 등록 정보를 그대로 사용합니다. 여기서는 같은 파일의 전송만 재개하며, 제작·촬영 정보는 다시 신고하거나 변경하지 않습니다.</p>{describeProducerLine(resume.submission.producerDeclaration) && <p className="mt-1">저장된 신고 · {describeProducerLine(resume.submission.producerDeclaration)}</p>}</div> : <>
         <fieldset className="grid gap-2 rounded-lg border border-line bg-sunk p-3" disabled={busy || hashing || formIsFrozen || !newIntentAllowed}>
           <legend className="px-1 font-semibold">재구성 소프트웨어</legend>
@@ -915,10 +1309,10 @@ function ExternalReconstructionPanelState({ workOrderId, siteId = "", expectedEp
             ))}
           </div>
           {captureBasis === "EXACT_INTERVAL" && <div className="grid gap-2 sm:grid-cols-2">
-            <label className="flex flex-col gap-1">시작<input className="input" aria-label="촬영 시작 시각 (한국 표준시)" type="datetime-local" step="1" value={captureStartedLocal} onChange={(event) => { setCaptureIntervalTouched(true); setCaptureStartedLocal(event.target.value); }} />
+            <label className="flex flex-col gap-1">시작<input className="input" aria-label="촬영 시작 시각 (한국 표준시)" type="datetime-local" step="1" value={captureStartedLocal} onChange={(event) => { setCaptureIntervalTouched(true); setCaptureStartedTouched(true); setCaptureStartedLocal(event.target.value); }} />
               {captureStartedAt && <span className="text-[12px] text-ink-muted">선택: {formatKoreanDateTime(captureStartedAt, { dateStyle: "short", timeStyle: "short" })}</span>}
             </label>
-            <label className="flex flex-col gap-1">종료<input className="input" aria-label="촬영 종료 시각 (한국 표준시)" type="datetime-local" step="1" value={captureEndedLocal} onChange={(event) => { setCaptureIntervalTouched(true); setCaptureEndedLocal(event.target.value); }} />
+            <label className="flex flex-col gap-1">종료<input className="input" aria-label="촬영 종료 시각 (한국 표준시)" type="datetime-local" step="1" value={captureEndedLocal} onChange={(event) => { setCaptureIntervalTouched(true); setCaptureEndedTouched(true); setCaptureEndedLocal(event.target.value); }} />
               {captureEndedAt && <span className="text-[12px] text-ink-muted">선택: {formatKoreanDateTime(captureEndedAt, { dateStyle: "short", timeStyle: "short" })}</span>}
             </label>
           </div>}
@@ -963,13 +1357,18 @@ function ExternalReconstructionPanelState({ workOrderId, siteId = "", expectedEp
           <label className="mt-2 flex flex-col gap-1 font-semibold">내보내기 기록 (선택)<input className="input" aria-label="내보내기 기록" value={exportNote} disabled={busy || hashing || formIsFrozen || !newIntentAllowed} maxLength={1000} onChange={(event) => setExportNote(event.target.value)} /></label>
         </details>
         </>}
-        <ExternalFileDropZone disabled={busy || hashing || Boolean(frozenAttempt) || (!newIntentAllowed && !resume)} onFiles={(files) => void routeFiles(files)} />
+        <ExternalFileDropZone disabled={busy || hashing || routingBatch || Boolean(frozenAttempt) || (!newIntentAllowed && !resume)} onFiles={(files) => void routeFiles(files)} />
+        {!ortho && !dsm && !resume && !frozenAttempt && newIntentAllowed && <ExternalResultFolderPicker
+          disabled={busy || hashing || routingBatch}
+          onSelect={(items, label) => selectResultFolder(items, label)}
+        />}
+        {selectedFolderLabel && <p className="text-[12px] leading-5 text-ink-2">선택한 폴더 위치 · {selectedFolderLabel}</p>}
         {routingNotes.length > 0 && <ul role="status" aria-label="파일 나누기 안내" className="list-disc rounded-lg border border-line bg-sunk py-2 pl-7 pr-3 text-[12.5px] leading-5 text-ink-2">{routingNotes.map((note) => <li key={note} className="break-all">{note}</li>)}</ul>}
         <FilePickerField
           label="정사영상 (선택)"
           ariaLabel="정사영상 GeoTIFF"
           accept=".tif,.tiff"
-          disabled={busy || hashing || Boolean(frozenAttempt) || (!newIntentAllowed && !resume)}
+          disabled={busy || hashing || routingBatch || Boolean(frozenAttempt) || (!newIntentAllowed && !resume)}
           onSelect={(file) => void select("ortho", file ?? undefined)}
           selectedFileName={ortho?.file.name ?? null}
         />
@@ -978,7 +1377,7 @@ function ExternalReconstructionPanelState({ workOrderId, siteId = "", expectedEp
           label="DSM (선택)"
           ariaLabel="DSM GeoTIFF"
           accept=".tif,.tiff"
-          disabled={busy || hashing || Boolean(frozenAttempt) || (!newIntentAllowed && !resume)}
+          disabled={busy || hashing || routingBatch || Boolean(frozenAttempt) || (!newIntentAllowed && !resume)}
           onSelect={(file) => void select("dsm", file ?? undefined)}
           selectedFileName={dsm?.file.name ?? null}
         />
@@ -999,8 +1398,9 @@ function ExternalReconstructionPanelState({ workOrderId, siteId = "", expectedEp
           </div>;
         })}
         {newIntentAllowed && (resume || frozenAttempt) && <button className="btn w-fit" disabled={busy || hashing} onClick={startNewAttempt}>새로 등록하기</button>}
-        {hashing && <p role="status" className="text-ink-2">파일 확인 중: {formatBytesKo(hashProgress ?? 0)}</p>}
-        {hashing && <button className="btn w-fit" onClick={cancelHash}>파일 확인 취소</button>}
+        {newIntentAllowed && correctionOf && !frozenAttempt && <button className="btn w-fit" disabled={busy || hashing} onClick={cancelCorrection}>수정 등록 취소</button>}
+        {(hashing || routingBatch) && <p role="status" className="text-ink-2">{hashing ? `파일 확인 중: ${formatBytesKo(hashProgress ?? 0)}` : "폴더의 결과 파일을 확인하고 있습니다."}</p>}
+        {(hashing || routingBatch) && <button className="btn w-fit" onClick={cancelHash}>파일 확인 취소</button>}
         <p className="text-ink-2">{ortho ? `정사영상 ${formatFileSize(ortho.size)} 확인 완료` : dsm ? "정사영상 미선택" : "등록할 파일(정사영상 또는 DSM)을 선택하세요."}{dsm ? ` · DSM ${formatFileSize(dsm.size)} 확인 완료` : ortho ? " · DSM 미선택" : ""}</p>
         {hasFile && !formIsFrozen && metadataIssue !== null && <p role="status" className="text-ink-2">{metadataIssue}</p>}
         {/* 버튼이 말없이 잠기지 않게 이유를 밝힌다. 촬영 기록 식별자가 없으면 새 등록을 시작할 수 없다. */}
@@ -1022,7 +1422,7 @@ function ExternalReconstructionPanelState({ workOrderId, siteId = "", expectedEp
       const key = inspectionKey(revision);
       const inspection = inspectionByRevision.get(key);
       const inspectionView = retainedInspectionView(inspection);
-      const presentation = inspectionView !== null ? presentExternalInspectionStatus(inspectionView) : null;
+      const presentation = inspectionView !== null ? presentExternalInspectionStatus(inspectionView, revision.submission.artifacts) : null;
       const display = inspectionView !== null && presentation?.displayReady === true
         && typeof inspectionView.display.sanitizedDisplayRef === "string" && typeof inspectionView.display.receiptDigest === "string"
         ? {
@@ -1039,14 +1439,33 @@ function ExternalReconstructionPanelState({ workOrderId, siteId = "", expectedEp
       const isV3Record = revision.submission.contractVersion === "external-reconstruction-submission.v3"
         || revision.submission.producerDeclaration?.producerKnowledge != null
         || revision.submission.inputDeclaration?.captureBasis != null;
-      return <li key={key} className="rounded-lg border border-line px-3 py-2"><p>{describeArtifactKinds(revision.submission.artifacts)} · {formatRegistrationVersion(revision.submission.revision)} · {presentation?.title ?? (inspection?.phase === "error" ? "검사 상태를 불러오지 못했습니다." : "검사 상태 확인 중")}</p>
+      const isLatestSealedV3 = revision.state === "SEALED"
+        && revision.submission.contractVersion === "external-reconstruction-submission.v3"
+        && typeof revision.submission.submissionId === "string"
+        && revision.submission.observationEpochId === expectedEpochId
+        && !revisions.some((candidate) => candidate.submissionRef === revision.submissionRef && candidate.submission.revision > revision.submission.revision);
+      const latestInStream = revisions
+        .filter((candidate) => candidate.submissionRef === revision.submissionRef)
+        .reduce((latest, candidate) => candidate.submission.revision > latest.submission.revision ? candidate : latest, revision);
+      const correctionDisabled = busy || hashing || routingBatch || Boolean(frozenAttempt) || Boolean(resume)
+        || (correctionConflict ? correctionConflict.submissionId !== revision.submission.submissionId || revision.submission.revision <= correctionConflict.requestedRevision : Boolean(ortho || dsm || uploadProgress) || hasDeclarationDraft || !newFormPristine)
+        || !continuity;
+      const correctionStatusId = `correction-draft-status-${revision.submissionRef}-${revision.submission.revision}`;
+      return <li key={key} id={externalRevisionAnchor(revision.submissionRef, revision.submission.revision)} className="rounded-lg border border-line px-3 py-2"><p>{describeArtifactKinds(revision.submission.artifacts)} · {formatRegistrationVersion(revision.submission.revision)} · {presentation?.title ?? (inspection?.phase === "error" ? "검사 상태를 불러오지 못했습니다." : "검사 상태 확인 중")}</p>
         {isV3Record && producerLine && <p className="mt-1 text-[12px] leading-5 text-ink-2">{producerLine}</p>}
         {isV3Record && captureLine && <p className="mt-1 text-[12px] leading-5 text-ink-2">{captureLine}</p>}
         {presentation && <><p className="mt-1 text-[12px] leading-5 text-ink-2">{presentation.detail}</p><p className="mt-1 text-[12px] leading-5 text-ink-muted">다음: {presentation.nextAction}</p>{presentation.artifactReasons.length > 0 && <ul className="mt-1 list-disc pl-5 text-[12px] leading-5 text-high-ink">{presentation.artifactReasons.map((reason) => <li key={reason}>{reason}</li>)}</ul>}</>}
         {inspection?.phase === "loading" && inspectionView !== null && <p role="status" className="mt-1 text-[12px] text-ink-2">마지막으로 확인한 검사 상태를 유지한 채 업데이트를 확인하고 있습니다.</p>}
         {inspection?.phase === "error" && inspectionView !== null && <p role="alert" className="mt-1 text-[12px] text-high-ink">검사 상태 업데이트를 확인하지 못했습니다. 마지막으로 확인한 상태를 표시합니다. 새로고침으로 다시 시도하세요.</p>}
         {inspectionAutoRefreshStopped && presentation?.autoRefresh && <p role="status" className="mt-1 text-[12px] text-ink-2">자동 상태 확인을 멈췄습니다. 마지막으로 확인한 검사 상태를 표시합니다. 새로고침으로 다시 확인하세요.</p>}
-        <div className="mt-2 flex flex-wrap gap-2"><button className="btn" onClick={() => { inspectionAutoRefreshBudget.current = 0; setInspectionAutoRefreshStopped(false); void loadInspection(revision); }}>검사 상태 새로고침</button>{display && <button className="btn" onClick={() => setVisibleDisplay((current) => current === key ? null : key)}>{visibleDisplay === key ? "표시용 정사영상 닫기" : "표시용 정사영상 열기"}</button>}{canWrite && revision.state === "REGISTERED" && <ResponsiveActionBoundary action="EXTERNAL_RECONSTRUCTION_MUTATION" reason="등록 중인 외부 산출물을 다시 이어가는 일은 노트북 이상의 화면에서만 진행합니다."><button className="btn" onClick={() => selectResume(revision)}>등록 이어하기</button></ResponsiveActionBoundary>}</div>
+        <div className="mt-2 flex flex-wrap gap-2"><button className="btn" onClick={() => { inspectionAutoRefreshBudget.current = 0; setInspectionAutoRefreshStopped(false); void loadInspection(revision); }}>검사 상태 새로고침</button>{display && <button className="btn" onClick={() => setVisibleDisplay((current) => current === key ? null : key)}>{visibleDisplay === key ? "표시용 정사영상 닫기" : "표시용 정사영상 열기"}</button>}{isLatestSealedV3 && canWrite && newIntentAllowed && <ResponsiveActionBoundary action="EXTERNAL_RECONSTRUCTION_MUTATION" reason="노트북에서 같은 계정으로 이 작업 상세를 열어 수정본 등록을 이어가세요."><button className="btn" data-correction-action="true" disabled={correctionDisabled} aria-describedby={correctionDisabled ? correctionStatusId : undefined} onClick={() => selectCorrection(revision)}>수정본 등록</button></ResponsiveActionBoundary>}{canWrite && revision.state === "REGISTERED" && <ResponsiveActionBoundary action="EXTERNAL_RECONSTRUCTION_MUTATION" reason="등록 중인 외부 산출물을 다시 이어가는 일은 노트북 이상의 화면에서만 진행합니다."><button className="btn" onClick={() => selectResume(revision)}>등록 이어하기</button></ResponsiveActionBoundary>}</div>
+        {latestInStream.submission.revision > revision.submission.revision && <p className="mt-1 text-[12px] leading-5 text-ink-2"><a className="underline" href={`#${externalRevisionAnchor(latestInStream.submissionRef, latestInStream.submission.revision)}`}>최근 등록 버전 {latestInStream.submission.revision} 보기</a></p>}
+        {revision.state === "SEALED" && isV3Record && siteId && catalogWorkAreaId && <div className="mt-2 flex flex-wrap gap-2">{(revision.submission.artifacts ?? []).flatMap((item) => (
+          (item.kind === "ortho" || item.kind === "dsm") && item.artifactId.trim() === item.artifactId && [...item.artifactId].length > 0 && [...item.artifactId].length <= 255
+            ? [<a className="btn" key={item.artifactId} href={uploadedArtifactHref(siteId, { workAreaId: catalogWorkAreaId, workOrderId, submissionRef: revision.submissionRef, revision: revision.submission.revision, artifactId: item.artifactId, kind: item.kind })}>{item.kind === "dsm" ? "DSM 자료 열기" : "정사영상 자료 열기"}</a>]
+            : []
+        ))}</div>}
+        {isLatestSealedV3 && !correctionConflict && correctionDisabled && (ortho || dsm || hasDeclarationDraft || frozenAttempt || resume || busy || hashing || routingBatch) && <p id={correctionStatusId} className="mt-1 text-[12px] leading-5 text-ink-muted">작성 중인 등록을 보존하려고 수정 대상 선택을 잠갔습니다. 현재 등록을 마치거나 수정 등록을 취소한 뒤 진행하세요.</p>}
         {display && visibleDisplay === key && <ExternalSanitizedOrthophoto workOrderId={workOrderId} submissionRef={revision.submissionRef} revision={revision.submission.revision} sanitizedDisplayRef={display.sanitizedDisplayRef} receiptDigest={display.receiptDigest} onDismiss={() => setVisibleDisplay(null)} />}
         <details className="mt-1 text-[12px] text-ink-2"><summary className="tap-target cursor-pointer">파일 정보 · 처리 상세</summary><div className="mt-1 break-all"><p>제출 상태: {submissionStateLabel(revision.state)} ({revision.state})</p><p>제출 식별자: {revision.submissionRef}</p>{producerLine && <p>{producerLine}</p>}{isV3Record && revision.submission.producerDeclaration?.sourceNote && <p>출처 기록: {revision.submission.producerDeclaration.sourceNote}</p>}{isV3Record && captureLine && <p>{captureLine}</p>}{isV3Record && retentionLine && <p>{retentionLine}</p>}{isV3Record && revision.submission.inputDeclaration?.upstreamSource && <><p>공개 출처 주소: {revision.submission.inputDeclaration.upstreamSource.sourceUri ?? "확인 필요"} (내려받거나 검증하지 않습니다)</p><p>공개 출처 확인값·권리·과정: {[revision.submission.inputDeclaration.upstreamSource.sourceSha256, revision.submission.inputDeclaration.upstreamSource.licenceDeclaration, revision.submission.inputDeclaration.upstreamSource.retrievalNote].filter((part) => typeof part === "string" && part.length > 0).join(" · ") || "신고 없음"}</p></>}{isV3Record && revision.submission.inputDeclaration?.derivativeExport && <p>내보내기 도구: {revision.submission.inputDeclaration.derivativeExport.toolName ?? "확인 필요"}{revision.submission.inputDeclaration.derivativeExport.toolVersion ? ` ${revision.submission.inputDeclaration.derivativeExport.toolVersion}` : ""} (재구성 소프트웨어와 다를 수 있음)</p>}{revision.submission.observationEpochId && <p>촬영 기록: {revision.submission.observationEpochId}</p>}{revision.submission.artifacts?.map((artifact) => <p key={artifact.artifactId}>산출물: {artifact.kind} · {artifact.fileName} · {artifact.declaredSizeBytes}바이트 · 확인값(해시) {artifact.declaredSha256}</p>)}{inspectionView !== null && <><p>검사 상태: {inspectionView.inspection.state}</p><p>표시 상태: {inspectionView.display.state}</p>{inspectionView.inspection.outcome?.map((outcome) => <p key={`${outcome.artifactId}:${outcome.outcome}:${outcome.reason ?? ""}`}>산출물 기록: {outcome.artifactId} · {outcome.outcome}{outcome.reason ? ` · 사유 코드/기록: ${outcome.reason}` : ""}</p>)}</>}</div></details>
       </li>;
@@ -1064,6 +1483,6 @@ function ExternalReconstructionPanelState({ workOrderId, siteId = "", expectedEp
   </>;
 }
 
-export function ExternalReconstructionPanel(props: { workOrderId: string; siteId?: string; expectedEpochId: string | null; canWrite: boolean; permissions?: readonly string[]; initialReport?: TrustedExternalResultLink; requiresCaptureInterval?: boolean; newIntentAllowed?: boolean; workAreaNames?: Readonly<Record<string, string>>; accountIdentity?: { fingerprint: string } | null; legacyDecisionClosed?: boolean }) {
+export function ExternalReconstructionPanel(props: { workOrderId: string; siteId?: string; catalogWorkAreaId?: string; expectedEpochId: string | null; canWrite: boolean; permissions?: readonly string[]; initialReport?: TrustedExternalResultLink; requiresCaptureInterval?: boolean; newIntentAllowed?: boolean; workAreaNames?: Readonly<Record<string, string>>; accountIdentity?: { fingerprint: string } | null; legacyDecisionClosed?: boolean }) {
   return <ExternalReconstructionPanelState key={`${props.workOrderId}:${props.initialReport?.reportRef ?? ""}:${props.initialReport?.reportDigest ?? ""}`} {...props} />;
 }

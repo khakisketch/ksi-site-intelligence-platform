@@ -12,6 +12,7 @@ import {
   parseContinuityClaim,
 } from "@/lib/core-api/work-order-continuity";
 import { assertUtf8SafeString, canonicalSubmissionV3Digest, isDeclaredCrs, isPublisherCalendarDate, type ExternalArtifactDeclaration, type ExternalSubmissionCandidateV3, type ExternalV3CaptureBasis, type ExternalV3ProducerKnowledge, type ExternalV3RetentionLocus } from "@/lib/external-reconstruction-submission";
+import { registrationInstantMicros } from "@/lib/registration-history";
 
 const MAX_DECLARATION_BYTES = 1024 * 1024;
 
@@ -21,6 +22,13 @@ function errorResponse(error: unknown) {
   if (error instanceof PayloadTooLargeError) return NextResponse.json({ code: "EXTERNAL_RECONSTRUCTION_BODY_TOO_LARGE" }, { status: 413 });
   if (error instanceof CoreApiError) return NextResponse.json({ code: error.code, detail: error.serverMessage }, { status: error.status });
   return NextResponse.json({ code: "INVALID_EXTERNAL_RECONSTRUCTION_REQUEST" }, { status: 400 });
+}
+
+function correctionLineageChangedResponse() {
+  return NextResponse.json({
+    code: "CORRECTION_LINEAGE_CHANGED",
+    message: "원자료·촬영·제작 정보가 기존 등록과 달라 실행 기록을 이어 붙이지 않았습니다. 수정 정보와 원자료를 확인해 주세요.",
+  }, { status: 409, headers: { "Cache-Control": "private, no-store" } });
 }
 
 function boundedText(value: unknown): value is string {
@@ -94,6 +102,7 @@ function isSafeHttpReference(value: unknown): boolean {
 
 type V3Body = {
   submissionId: string; expectedEpochId: string; submittedAt: string;
+  correctionOf?: { submissionRef: string; revision: number };
   producerKnowledge: ExternalV3ProducerKnowledge; softwareName: string | null; softwareVersion: string | null; sourceNote: string | null;
   captureBasis: ExternalV3CaptureBasis; captureStartedAt: string | null; captureEndedAt: string | null; captureDate: string | null;
   originalRetentionLocus: ExternalV3RetentionLocus; originalRetentionDetail: string | null;
@@ -153,8 +162,33 @@ function parseBody(value: unknown): V3Body {
   if (!value || typeof value !== "object") throw new TypeError("body must be an object");
   const body = value as Record<string, unknown>;
   const declarationKeys = ["submissionId", "expectedEpochId", "submittedAt", "producerKnowledge", "softwareName", "softwareVersion", "sourceNote", "captureBasis", "captureStartedAt", "captureEndedAt", "captureDate", "originalRetentionLocus", "originalRetentionDetail", "upstreamSource", "derivativeExport", "artifacts"] as const;
-  if (!hasExactKeys(body, declarationKeys) || !boundedText(body.submissionId) || !boundedText(body.expectedEpochId) || typeof body.submittedAt !== "string" || !Array.isArray(body.artifacts)) {
+  const correctionOf = body.correctionOf;
+  if (
+    !hasExactKeys(body, correctionOf === undefined ? declarationKeys : [...declarationKeys, "correctionOf"])
+    || !boundedText(body.submissionId)
+    || !boundedText(body.expectedEpochId)
+    || typeof body.submittedAt !== "string"
+    || !Array.isArray(body.artifacts)
+  ) {
     throw new TypeError("required V3 declaration fields are missing");
+  }
+  let parsedCorrection: V3Body["correctionOf"];
+  if (correctionOf !== undefined) {
+    const correction = correctionOf && typeof correctionOf === "object"
+      ? correctionOf as Record<string, unknown>
+      : null;
+    if (
+      !correction
+      || !hasExactKeys(correction, ["submissionRef", "revision"])
+      || typeof correction.submissionRef !== "string"
+      || !/^ers-v1-[0-9a-f]{64}$/.test(correction.submissionRef)
+      || !Number.isSafeInteger(correction.revision)
+      || (correction.revision as number) < 1
+      || (correction.revision as number) >= Number.MAX_SAFE_INTEGER
+    ) {
+      throw new TypeError("correctionOf must identify one valid prior revision");
+    }
+    parsedCorrection = { submissionRef: correction.submissionRef as string, revision: correction.revision as number };
   }
   assertUtf8SafeString(body.submittedAt);
   if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/.test(body.submittedAt)) throw new TypeError("submittedAt must use whole UTC seconds");
@@ -188,8 +222,12 @@ function parseBody(value: unknown): V3Body {
   const wholeUtc = (item: unknown): item is string =>
     typeof item === "string" && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/.test(item) && Number.isFinite(Date.parse(item));
   if (captureBasis === "EXACT_INTERVAL") {
-    if (captureDate !== null || !wholeUtc(captureStartedAt) || !wholeUtc(captureEndedAt) || Date.parse(captureStartedAt) >= Date.parse(captureEndedAt)) {
-      throw new TypeError("EXACT_INTERVAL requires an ordered UTC pair and no calendar date");
+    const startedAt = registrationInstantMicros(captureStartedAt);
+    const endedAt = registrationInstantMicros(captureEndedAt);
+    if (captureDate !== null || startedAt === null || endedAt === null
+      || (parsedCorrection ? false : (!wholeUtc(captureStartedAt) || !wholeUtc(captureEndedAt)))
+      || startedAt >= endedAt) {
+      throw new TypeError("EXACT_INTERVAL requires an ordered timezone-aware pair and no calendar date");
     }
   } else if (captureBasis === "DATE_ONLY") {
     if (!isPublisherCalendarDate(captureDate) || captureStartedAt !== null || captureEndedAt !== null) {
@@ -220,6 +258,7 @@ function parseBody(value: unknown): V3Body {
   ) throw new TypeError("V3 artifacts require an ortho or a dsm, at most one each");
   return {
     submissionId: (body.submissionId as string).trim(), expectedEpochId: (body.expectedEpochId as string).trim(), submittedAt: body.submittedAt,
+    ...(parsedCorrection ? { correctionOf: parsedCorrection } : {}),
     producerKnowledge, softwareName: softwareName as string | null, softwareVersion: softwareVersion as string | null, sourceNote: body.sourceNote as string | null,
     captureBasis, captureStartedAt: captureStartedAt as string | null, captureEndedAt: captureEndedAt as string | null, captureDate: captureDate as string | null,
     originalRetentionLocus, originalRetentionDetail: body.originalRetentionDetail as string | null,
@@ -227,24 +266,159 @@ function parseBody(value: unknown): V3Body {
   };
 }
 
-function candidateFromTrustedContext(body: V3Body, values: { organizationId: string; siteId: string; principalId: string; observationEpochId: string }): ExternalSubmissionCandidateV3 {
+type TrustedV3RunFacts = {
+  producer: Pick<ExternalSubmissionCandidateV3["producerDeclaration"], "buildIdentifier" | "producerRunIdentifier" | "configurationDigest" | "completedAt">;
+  input: Pick<ExternalSubmissionCandidateV3["inputDeclaration"], "localInputManifestDigest" | "imageCount">;
+  declaration: {
+    producerKnowledge: ExternalV3ProducerKnowledge; softwareName: string | null; softwareVersion: string | null; sourceNote: string | null;
+    captureBasis: ExternalV3CaptureBasis; captureStartedAt: string | null; captureEndedAt: string | null; captureDate: string | null;
+    upstreamSource: V3Body["upstreamSource"];
+  };
+};
+
+function trustedV3RunFacts(value: Record<string, unknown>): TrustedV3RunFacts | null {
+  const producer = value.producerDeclaration;
+  const input = value.inputDeclaration;
+  if (!producer || typeof producer !== "object" || !input || typeof input !== "object") return null;
+  const p = producer as Record<string, unknown>;
+  const i = input as Record<string, unknown>;
+  const nullableText = (item: unknown): item is string | null => item === null || typeof item === "string";
+  if (
+    (p.producerKnowledge !== "DECLARED" && p.producerKnowledge !== "PARTIAL" && p.producerKnowledge !== "UNKNOWN")
+    || !nullableText(p.softwareName) || !nullableText(p.softwareVersion) || !nullableText(p.sourceNote)
+    || !nullableText(p.buildIdentifier) || !nullableText(p.producerRunIdentifier) || !nullableText(p.configurationDigest) || !nullableText(p.completedAt)
+    || (p.completedAt !== null && registrationInstantMicros(p.completedAt) === null)
+    || !nullableText(i.localInputManifestDigest)
+    || (i.localInputManifestDigest !== null && !/^sha256:[0-9a-f]{64}$/.test(i.localInputManifestDigest))
+    || (i.imageCount !== null && (!Number.isSafeInteger(i.imageCount) || (i.imageCount as number) < 1 || (i.imageCount as number) > 10_000_000))
+    || (i.captureBasis !== "EXACT_INTERVAL" && i.captureBasis !== "DATE_ONLY" && i.captureBasis !== "UNKNOWN")
+    || !nullableText(i.captureStartedAt) || !nullableText(i.captureEndedAt) || !nullableText(i.captureDate)
+  ) return null;
+  const startedAt = registrationInstantMicros(i.captureStartedAt);
+  const endedAt = registrationInstantMicros(i.captureEndedAt);
+  if (i.captureBasis === "EXACT_INTERVAL") {
+    if (i.captureDate !== null || startedAt === null || endedAt === null || startedAt >= endedAt) return null;
+  } else if (i.captureBasis === "DATE_ONLY") {
+    if (!isPublisherCalendarDate(i.captureDate) || i.captureStartedAt !== null || i.captureEndedAt !== null) return null;
+  } else if (i.captureDate !== null || i.captureStartedAt !== null || i.captureEndedAt !== null) {
+    return null;
+  }
+  const upstream = i.upstreamSource;
+  let upstreamSource: V3Body["upstreamSource"];
+  try {
+    upstreamSource = upstream === null ? null : parseUpstreamSource(upstream);
+  } catch {
+    return null;
+  }
   return {
-    contractVersion: "external-reconstruction-submission.v3", submissionId: body.submissionId, revision: 1,
+    producer: {
+      buildIdentifier: p.buildIdentifier,
+      producerRunIdentifier: p.producerRunIdentifier,
+      configurationDigest: p.configurationDigest,
+      completedAt: p.completedAt,
+    },
+    input: { localInputManifestDigest: i.localInputManifestDigest, imageCount: i.imageCount as number | null },
+    declaration: {
+      producerKnowledge: p.producerKnowledge,
+      softwareName: p.softwareName,
+      softwareVersion: p.softwareVersion,
+      sourceNote: p.sourceNote,
+      captureBasis: i.captureBasis,
+      captureStartedAt: i.captureStartedAt,
+      captureEndedAt: i.captureEndedAt,
+      captureDate: i.captureDate,
+      upstreamSource,
+    },
+  };
+}
+
+function hasTrustedRunFacts(facts: TrustedV3RunFacts): boolean {
+  return Object.values(facts.producer).some((value) => value !== null)
+    || Object.values(facts.input).some((value) => value !== null);
+}
+
+function sameUpstreamSource(left: V3Body["upstreamSource"], right: V3Body["upstreamSource"]): boolean {
+  if (left === null || right === null) return left === right;
+  return left.sourceUri === right.sourceUri
+    && left.sourceSha256 === right.sourceSha256
+    && left.licenceDeclaration === right.licenceDeclaration
+    && left.retrievalNote === right.retrievalNote;
+}
+
+function sameReconstructionSource(body: V3Body, prior: TrustedV3RunFacts["declaration"]): boolean {
+  const sameInstant = (left: string | null, right: string | null) => {
+    if (left === null || right === null) return left === right;
+    const leftMicros = registrationInstantMicros(left);
+    const rightMicros = registrationInstantMicros(right);
+    return leftMicros !== null && leftMicros === rightMicros;
+  };
+  return body.producerKnowledge === prior.producerKnowledge
+    && body.softwareName === prior.softwareName
+    && body.softwareVersion === prior.softwareVersion
+    && body.sourceNote === prior.sourceNote
+    && body.captureBasis === prior.captureBasis
+    && body.captureDate === prior.captureDate
+    && sameInstant(body.captureStartedAt, prior.captureStartedAt)
+    && sameInstant(body.captureEndedAt, prior.captureEndedAt)
+    && sameUpstreamSource(body.upstreamSource, prior.upstreamSource);
+}
+
+function candidateFromTrustedContext(
+  body: V3Body,
+  values: { organizationId: string; siteId: string; principalId: string; observationEpochId: string; revision?: number },
+  trustedRunFacts?: TrustedV3RunFacts,
+): ExternalSubmissionCandidateV3 {
+  return {
+    contractVersion: "external-reconstruction-submission.v3", submissionId: body.submissionId, revision: values.revision ?? 1,
     organizationId: values.organizationId, siteId: values.siteId, observationEpochId: values.observationEpochId,
     submittedAt: body.submittedAt, submittedBy: values.principalId,
     executionResponsibility: "customer_operator", executionLocus: "customer_workstation",
     producerDeclaration: {
       producerKnowledge: body.producerKnowledge, softwareName: body.softwareName, softwareVersion: body.softwareVersion,
-      buildIdentifier: null, producerRunIdentifier: null, configurationDigest: null, completedAt: null, sourceNote: body.sourceNote,
+      ...trustedRunFacts?.producer,
+      buildIdentifier: trustedRunFacts?.producer.buildIdentifier ?? null,
+      producerRunIdentifier: trustedRunFacts?.producer.producerRunIdentifier ?? null,
+      configurationDigest: trustedRunFacts?.producer.configurationDigest ?? null,
+      completedAt: trustedRunFacts?.producer.completedAt ?? null,
+      sourceNote: body.sourceNote,
     },
     inputDeclaration: {
       rawMediaStoredByKsi: false, originalRetentionLocus: body.originalRetentionLocus, originalRetentionDetail: body.originalRetentionDetail,
-      localInputManifestDigest: null, imageCount: null,
+      localInputManifestDigest: trustedRunFacts?.input.localInputManifestDigest ?? null,
+      imageCount: trustedRunFacts?.input.imageCount ?? null,
       captureStartedAt: body.captureStartedAt, captureEndedAt: body.captureEndedAt, captureDate: body.captureDate, captureBasis: body.captureBasis,
       upstreamSource: body.upstreamSource, derivativeExport: body.derivativeExport,
     },
     artifacts: body.artifacts,
   };
+}
+
+async function registerCandidateWithRecovery(
+  workOrderId: string,
+  token: string,
+  candidate: ExternalSubmissionCandidateV3,
+  expectedSubmissionRef: string | null,
+): Promise<NextResponse> {
+  try {
+    return NextResponse.json(await registerExternalReconstructionSubmissionV3WithToken(workOrderId, candidate, token), { status: 201 });
+  } catch (registerError) {
+    // HTTP errors are definitive Core responses. Only transport errors need a
+    // readback to establish whether the immutable registration was recorded.
+    if (registerError instanceof CoreApiError) return errorResponse(registerError);
+    try {
+      const recoveredList = await listExternalReconstructionSubmissionsWithToken(workOrderId, token);
+      const recovered = recoveredList.find((item) => item.submission.submissionId === candidate.submissionId
+        && item.submission.revision === candidate.revision
+        && item.submission.submissionDigest === candidate.submissionDigest
+        && (expectedSubmissionRef === null || item.submissionRef === expectedSubmissionRef));
+      if (recovered) return NextResponse.json(recovered);
+    } catch {
+      // A failed recovery read cannot establish whether Core accepted the revision.
+    }
+    const unknown = NextResponse.json({ code: "EXTERNAL_RECONSTRUCTION_RESULT_UNKNOWN" }, { status: 503 });
+    unknown.headers.set("Cache-Control", "private, no-store");
+    return unknown;
+  }
 }
 
 export async function POST(request: NextRequest, context: { params: Promise<{ workOrderId: string }> }) {
@@ -304,6 +478,61 @@ export async function POST(request: NextRequest, context: { params: Promise<{ wo
     const principal = { principalId: current.principalId, organizationId: current.organizationId };
     if (workOrder.organizationId !== principal.organizationId || workOrder.siteId !== externalContext.siteId || workOrder.workOrderId !== workOrderId || externalContext.workOrderId !== workOrderId) return NextResponse.json({ code: "NOT_FOUND" }, { status: 404 });
     if (externalContext.cycleNumber !== workOrder.cycleNumber || externalContext.workOrderVersion !== workOrder.version || externalContext.executionMode !== workOrder.executionMode) return NextResponse.json({ code: "STALE_ATTEMPT" }, { status: 409 });
+    if (body.correctionOf) {
+      const target = existing.find((item) => item.submissionRef === body.correctionOf!.submissionRef
+        && item.submission.submissionId === body.submissionId
+        && item.submission.revision === body.correctionOf!.revision);
+      const targetSubmission = target?.submission as unknown as Record<string, unknown> | undefined;
+      const targetEpochId = targetSubmission?.observationEpochId;
+      if (!target || target.state !== "SEALED"
+        || targetSubmission?.contractVersion !== "external-reconstruction-submission.v3"
+        || typeof targetEpochId !== "string"
+        || targetEpochId !== body.expectedEpochId) {
+        return NextResponse.json({ code: "INVALID_CORRECTION_TARGET" }, { status: 409 });
+      }
+      const priorRunFacts = trustedV3RunFacts(targetSubmission);
+      if (!priorRunFacts) return NextResponse.json({ code: "INVALID_CORRECTION_TARGET" }, { status: 409 });
+      if (hasTrustedRunFacts(priorRunFacts) && !sameReconstructionSource(body, priorRunFacts.declaration)) {
+        return correctionLineageChangedResponse();
+      }
+
+      const stream = existing.filter((item) => item.submission.submissionId === body.submissionId);
+      if (stream.some((item) => item.submissionRef !== body.correctionOf!.submissionRef
+        || (item.submission as unknown as Record<string, unknown>).contractVersion !== "external-reconstruction-submission.v3")) {
+        return NextResponse.json({ code: "INVALID_CORRECTION_TARGET" }, { status: 409 });
+      }
+      const latest = stream.reduce((current, item) => item.submission.revision > current.submission.revision ? item : current, target);
+      const nextRevision = body.correctionOf.revision + 1;
+      const candidate = candidateFromTrustedContext(body, {
+        organizationId: principal.organizationId,
+        siteId: workOrder.siteId,
+        principalId: principal.principalId,
+        observationEpochId: targetEpochId,
+        revision: nextRevision,
+      }, priorRunFacts);
+      candidate.submissionDigest = canonicalSubmissionV3Digest(candidate);
+
+      // A repeated correction POST may arrive after its response was lost. Return
+      // that immutable revision only when the complete canonical declaration matches.
+      const alreadyRegistered = stream.find((item) => item.submission.revision === nextRevision);
+      if (alreadyRegistered?.submission.submissionDigest === candidate.submissionDigest) {
+        return NextResponse.json(alreadyRegistered);
+      }
+      if (latest.submission.revision > nextRevision) {
+        return NextResponse.json({ code: "STALE_CORRECTION_TARGET" }, { status: 409 });
+      }
+      if (alreadyRegistered) {
+        return NextResponse.json({ code: "CORRECTION_CONFLICT" }, { status: 409 });
+      }
+      if (latest.submission.revision !== body.correctionOf.revision || latest.state !== "SEALED") {
+        return NextResponse.json({ code: "STALE_CORRECTION_TARGET" }, { status: 409 });
+      }
+      if (externalContext.expectedEpochId !== targetEpochId) {
+        return NextResponse.json({ code: "STALE_ATTEMPT" }, { status: 409 });
+      }
+      return registerCandidateWithRecovery(workOrderId, token, candidate, body.correctionOf.submissionRef);
+    }
+
     const prior = existing.find((item) => item.submission.submissionId === body.submissionId && item.submission.revision === 1);
     if (prior) {
       const priorEpochId = (prior.submission as { observationEpochId?: unknown }).observationEpochId;
@@ -316,24 +545,6 @@ export async function POST(request: NextRequest, context: { params: Promise<{ wo
     if (!currentEpochId || body.expectedEpochId !== currentEpochId) return NextResponse.json({ code: "STALE_ATTEMPT" }, { status: 409 });
     const candidate = candidateFromTrustedContext(body, { organizationId: principal.organizationId, siteId: workOrder.siteId, principalId: principal.principalId, observationEpochId: currentEpochId });
     candidate.submissionDigest = canonicalSubmissionV3Digest(candidate);
-    try { return NextResponse.json(await registerExternalReconstructionSubmissionV3WithToken(workOrderId, candidate, token), { status: 201 }); }
-    catch (registerError) {
-      // HTTP 오류는 기존 상태·코드를 그대로 전파한다. 특히 5xx는 응답을 받았다는
-      // 사실만으로 미접수라고 단정하지 않는다. 별도 복구 목록 조회는 전송 계층
-      // 실패(네트워크 오류·응답 유실)일 때만 시도한다.
-      if (registerError instanceof CoreApiError) throw registerError;
-      try {
-        const recoveredList = await listExternalReconstructionSubmissionsWithToken(workOrderId, token);
-        const recovered = recoveredList.find((item) => item.submission.submissionId === candidate.submissionId && item.submission.revision === 1 && item.submission.submissionDigest === candidate.submissionDigest);
-        if (recovered) return NextResponse.json(recovered);
-      } catch {
-        // 복구 조회 실패 또는 읽을 수 없는 목록도 변이 결과를 확정하지 못한다.
-      }
-      // 목록에 없거나 다른 digest인 것도 POST가 접수되지 않았다는 증거가 아니다.
-      // GET의 오류를 POST의 확정 거절로 돌리거나 입력 오류(400)로 오인시키지 않는다.
-      const unknown = NextResponse.json({ code: "EXTERNAL_RECONSTRUCTION_RESULT_UNKNOWN" }, { status: 503 });
-      unknown.headers.set("Cache-Control", "private, no-store");
-      return unknown;
-    }
+    return registerCandidateWithRecovery(workOrderId, token, candidate, null);
   } catch (error) { return errorResponse(error); }
 }

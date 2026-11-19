@@ -1,4 +1,5 @@
 import type { ExternalArtifactInspectionView } from "@/lib/core-api/external-reconstruction";
+import { registrationInstantMicros } from "@/lib/registration-history";
 import type {
   ExternalArtifactKind,
   ExternalV3CaptureBasis,
@@ -32,6 +33,7 @@ export type RevisionSubmission = {
 export type Revision = { submissionRef: string; submission: RevisionSubmission; state: "REGISTERED" | "SEALED" };
 export type V3DeclarationBody = {
   submissionId: string; expectedEpochId: string; submittedAt: string;
+  correctionOf?: { submissionRef: string; revision: number };
   producerKnowledge: ExternalV3ProducerKnowledge; softwareName: string | null; softwareVersion: string | null; sourceNote: string | null;
   captureBasis: ExternalV3CaptureBasis; captureStartedAt: string | null; captureEndedAt: string | null; captureDate: string | null;
   originalRetentionLocus: ExternalV3RetentionLocus; originalRetentionDetail: string | null;
@@ -80,7 +82,12 @@ export type AttemptEcho = DeclarationEcho & {
   // 신규 등록 응답의 ref는 서버가 새로 발급하므로 형식만 본다. 봉인 응답은
   // 요청 경로에 쓴 ref와 정확히 같아야 한다.
   submissionRef: string | null;
+  // A corrected revision reuses the prior stream's opaque ref. This hint lets
+  // declarationEchoOfRequest bind it without changing existing call-site shapes.
+  expectedSubmissionRef?: string | null;
 };
+
+export type RequestDeclarationEcho = DeclarationEcho & { expectedSubmissionRef: string | null };
 
 export function isAbsent(value: unknown): value is null | undefined {
   return value === null || value === undefined;
@@ -98,10 +105,8 @@ export function sameText(a: unknown, b: unknown): boolean {
 // 불가도 불일치로 둔다.
 export function sameInstant(a: unknown, b: unknown): boolean {
   if (isAbsent(a) || isAbsent(b)) return isAbsent(a) && isAbsent(b);
-  if (typeof a !== "string" || typeof b !== "string") return false;
-  const ta = Date.parse(a);
-  const tb = Date.parse(b);
-  return Number.isFinite(ta) && Number.isFinite(tb) && ta === tb;
+  const ta = registrationInstantMicros(a);
+  return ta !== null && ta === registrationInstantMicros(b);
 }
 
 export function sameUpstream(a: unknown, b: unknown): boolean {
@@ -193,13 +198,13 @@ export function echoSubmissionMatches(submission: unknown, expected: Declaration
 
 // 유지된 제출 기록에서 봉인 대조용 신원을 뽑는다. 하나라도 없으면 대조하지
 // 않고 모름으로 둔다(추측으로 채우지 않는다).
-export function declarationEchoOfRequest(body: V3DeclarationBody): DeclarationEcho {
-  // 신규 V3 동결 요청서에서 대조용 신원을 뽑는다. BFF wire 본문 키 그대로를
-  // 쓴다 — Core는 값을 보관했다가 같은 키로 돌려준다. V3 고정 필드는 그대로
-  // 두고, 시간은 순간 대조로 표기 차이를 흡수한다.
+export function declarationEchoOfRequest(body: V3DeclarationBody): RequestDeclarationEcho {
+  // V3 등록 요청서에서 응답 대조값을 뽑는다. 수정 제출은 원래 참조값을 유지하고
+  // 버전만 올린다. 나머지 선언값은 Core에 보낸 그대로 대조하며 시각은 순간으로 본다.
   return {
+    expectedSubmissionRef: body.correctionOf?.submissionRef ?? null,
     submissionId: body.submissionId,
-    revision: 1,
+    revision: body.correctionOf ? body.correctionOf.revision + 1 : 1,
     observationEpochId: body.expectedEpochId,
     submittedAt: body.submittedAt,
     artifacts: body.artifacts.map((item) => ({
@@ -284,8 +289,8 @@ export function retainedEchoOf(submission: unknown): DeclarationEcho | null {
 // 등록·봉인 응답이 이번 시도(신규 동결 또는 명시적 재개)의 것인지 확인한다.
 // Core revision 화면의 실제 모양만 본다 — submissionRef 모양·상태·제출 묶음·
 // 버전·epoch·입력 바이트가 하나라도 다르면 성공으로 표시하지 않는다.
-// 계약 버전·필드 모양을 새로 지어내지 않고, 화면 진입이 이미 쓰는
-// submissionRef 패턴과 BFF가 고정하는 revision 1만 함께 확인한다.
+// 계약 버전·필드 모양을 새로 지어내지 않고, 화면에서 받은 submissionRef와
+// V3 request echo의 revision을 함께 확인한다.
 export function isRevisionViewForAttempt(
   value: unknown,
   expected: AttemptEcho,
@@ -294,7 +299,8 @@ export function isRevisionViewForAttempt(
   if (!value || typeof value !== "object") return false;
   const view = value as Record<string, unknown>;
   if (typeof view.submissionRef !== "string" || !SUBMISSION_REF_PATTERN.test(view.submissionRef)) return false;
-  if (expected.submissionRef !== null && view.submissionRef !== expected.submissionRef) return false;
+  const expectedRef = expected.expectedSubmissionRef ?? expected.submissionRef;
+  if (expectedRef !== null && view.submissionRef !== expectedRef) return false;
   if (view.state !== state) return false;
   // Core _view가 SEALED로 적는 조건(관측 바이트 결속 보유)과 같은 것만 본다.
   // manifest 화면의 제출 묶음·버전·epoch·관측 entries 집합이 어긋나거나

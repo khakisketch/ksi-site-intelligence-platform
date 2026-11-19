@@ -79,6 +79,11 @@ describe("chipsOf", () => {
     expect(chips.some((chip) => chip.tone === "block")).toBe(false);
   });
 
+  it("shows why a geographic DSM needs a projected export even when its footprint is available", async () => {
+    const chips = chipsOf(await base({ geoKeys: { GeographicTypeGeoKey: 4326 }, boundingBox: [23.53, 42.65, 23.54, 42.66] }));
+    expect(chips.find((chip) => chip.key === "crs")).toMatchObject({ tone: "block", label: "EPSG:4326 · 투영 좌표계 필요", detail: expect.stringContaining("UTM") });
+  });
+
   it("separates certain rejections from conditions that may be rejected", async () => {
     const tooBig = chipsOf(await base({}, 2 ** 31 + 1));
     expect(tooBig.find((chip) => chip.key === "blocked")).toMatchObject({ tone: "block", label: "거부 예상 1" });

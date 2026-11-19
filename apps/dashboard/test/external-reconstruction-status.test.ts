@@ -14,6 +14,21 @@ function inspection(overrides: Record<string, unknown> = {}): ExternalArtifactIn
 }
 
 describe("external reconstruction inspection presentation", () => {
+  it("finishes DSM-only and rejected reports even when the display policy is pending", () => {
+    const dsm = { artifactId: "surface-a", kind: "dsm" };
+    const ortho = { artifactId: "color-a", kind: "ortho" };
+    const reported = (entries: { artifactId: string; outcome: string; reason: string | null }[]) => inspection({
+      inspection: { state: "INSPECTION_REPORTED", phase: "COMPLETE", outcome: entries, request: null, report: null },
+      display: { state: "PENDING_POLICY", sanitizedDisplayRef: null, receiptDigest: null },
+    });
+    const measured = { artifactId: dsm.artifactId, outcome: "MEASURED", reason: null };
+    const declined = { artifactId: ortho.artifactId, outcome: "REJECTED", reason: "UNSUPPORTED_RASTER" };
+    expect(presentExternalInspectionStatus(reported([measured]), [dsm])).toMatchObject({ title: "DSM 파일 검사 완료", autoRefresh: false });
+    expect(presentExternalInspectionStatus(reported([declined]), [ortho])).toMatchObject({ title: "파일 검사에서 거부됨", autoRefresh: false });
+    expect(presentExternalInspectionStatus(reported([declined, measured]), [dsm, ortho])).toMatchObject({ title: "DSM 검사 완료 · 정사영상 거부됨", autoRefresh: false });
+    expect(presentExternalInspectionStatus(reported([measured]), [dsm, ortho]).title).not.toBe("DSM 파일 검사 완료");
+  });
+
   it("keeps registration, policy, queue, running, report, display preparation, and ready as separate operator stages", () => {
     expect(presentExternalInspectionStatus(inspection({ registrationState: "REGISTERED", sealState: "UNSEALED", inspection: { state: "INSPECTION_PENDING_SEAL", phase: null, outcome: null, request: null, report: null } })).title).toBe("자료 등록됨 · 파일 제출 마무리 필요");
     const policy = presentExternalInspectionStatus(inspection({ inspection: { state: "INSPECTION_PENDING_POLICY", phase: null, outcome: null, request: null, report: null } }));

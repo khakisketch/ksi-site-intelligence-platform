@@ -98,7 +98,7 @@ describe("Site spatial overview data bounds", () => {
     expect(mocked.analyses).toHaveBeenCalledTimes(1);
     expect(mocked.analyses).toHaveBeenCalledWith("site-1", { limit: 50 });
     expect(mocked.assets).toHaveBeenCalledTimes(1);
-    expect(mocked.assets).toHaveBeenCalledWith("site-1", "tiny-1", { limit: 50 });
+    expect(mocked.assets).toHaveBeenCalledWith("site-1", "tiny-1", { limit: 50, order: "capture-desc" });
   });
 
   it("renders an action-ready empty stage without treating it as an observation", async () => {
@@ -114,7 +114,7 @@ describe("Site spatial overview data bounds", () => {
     await renderDefaultTab({ workAreaId: "no-such-area" });
     expect(screen.getAllByText(/요청한 작업구역이 조회 범위에 없습니다/)).toHaveLength(1);
     expect(screen.queryByText(/no-such-area/)).toBeNull();
-    expect(mocked.assets).toHaveBeenCalledWith("site-1", "tiny-1", { limit: 50 });
+    expect(mocked.assets).toHaveBeenCalledWith("site-1", "tiny-1", { limit: 50, order: "capture-desc" });
   });
 
   it("uses the bound area before a newer empty area", async () => {
@@ -124,7 +124,7 @@ describe("Site spatial overview data bounds", () => {
     ] });
     mocked.orders.mockResolvedValue([{ workOrderId: "w1", workAreaIds: ["bound-1"] }]);
     await renderDefaultTab({});
-    expect(mocked.assets).toHaveBeenCalledWith("site-1", "bound-1", { limit: 50 });
+    expect(mocked.assets).toHaveBeenCalledWith("site-1", "bound-1", { limit: 50, order: "capture-desc" });
     expect(screen.getByRole("button", { name: "작업구역 · 기록 있는 구역" })).toBeTruthy();
   });
 

@@ -6,7 +6,9 @@ sidecar, URI, archive member, or GDAL virtual path.
 
 from __future__ import annotations
 
+import os
 import struct
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -101,6 +103,17 @@ class TiffStructureV1:
     index_end: int
 
 
+@dataclass(frozen=True, slots=True)
+class TiffBlockGeometryV1:
+    """Storage block geometry for one already sealed TIFF image directory."""
+
+    width: int
+    height: int
+    block_width: int
+    block_height: int
+    tiled: bool
+
+
 def _tag_values(directory: TiffDirectoryV1, tag: int, byte_order: str) -> tuple[int, ...] | None:
     entry = directory.entries.get(tag)
     return None if entry is None else entry.integers(byte_order)
@@ -133,45 +146,78 @@ def _parse_directory(
     big_tiff: bool,
     max_entries: int,
 ) -> TiffDirectoryV1:
+    return _parse_directory_from_reader(
+        lambda start, length: _bounded_slice(payload, start, length),
+        payload_size=len(payload),
+        offset=offset,
+        byte_order=byte_order,
+        big_tiff=big_tiff,
+        max_entries=max_entries,
+    )
+
+
+def _parse_directory_from_reader(
+    read_at: Callable[[int, int], bytes],
+    *,
+    payload_size: int,
+    offset: int,
+    byte_order: str,
+    big_tiff: bool,
+    max_entries: int,
+    selected_tags: set[int] | None = None,
+) -> TiffDirectoryV1:
+    """Shared bounded IFD decoder for full validation and metadata-only probes."""
     count_width = 8 if big_tiff else 2
     entry_width = 20 if big_tiff else 12
     tail_width = 8 if big_tiff else 4
     count_format = "Q" if big_tiff else "H"
-    count_raw = _bounded_slice(payload, offset, count_width)
+    count_raw = read_at(offset, count_width)
     entry_count = struct.unpack(byte_order + count_format, count_raw)[0]
     if entry_count > max_entries:
         raise TiffResourceLimitError("TIFF directory entry cap exceeded")
     table_start = offset + count_width
     table_size = entry_count * entry_width
-    _bounded_slice(payload, table_start, table_size + tail_width)
+    table = read_at(table_start, table_size + tail_width)
     entries: dict[int, TiffEntryV1] = {}
+    seen_tags: set[int] = set()
     storage_ranges: list[tuple[int, int]] = [(offset, table_start + table_size + tail_width)]
     inline_width = 8 if big_tiff else 4
     for index in range(entry_count):
-        raw = _bounded_slice(payload, table_start + index * entry_width, entry_width)
+        raw = table[index * entry_width : (index + 1) * entry_width]
         if big_tiff:
             tag, field_type, count, value_offset = struct.unpack(byte_order + "HHQQ", raw)
         else:
             tag, field_type, count, value_offset = struct.unpack(byte_order + "HHII", raw)
-        if tag in entries:
+        if tag in seen_tags:
             raise TiffStructureError("TIFF directory contains a duplicate tag")
+        seen_tags.add(tag)
         unit_size = _TYPE_SIZES.get(field_type)
         if unit_size is None:
             raise TiffStructureError("TIFF directory contains an unsupported field type")
-        if count <= 0 or count > (len(payload) // unit_size):
+        if count <= 0 or count > (payload_size // unit_size):
             raise TiffStructureError("TIFF directory contains an invalid value count")
+        if selected_tags is not None and tag in selected_tags and count != 1:
+            raise TiffStructureError(f"TIFF geometry tag {tag} must be scalar")
         byte_count = count * unit_size
         if byte_count <= inline_width:
             value = raw[-inline_width:]
         else:
-            value = _bounded_slice(payload, value_offset, byte_count)
-            storage_ranges.append((value_offset, value_offset + byte_count))
-        entries[tag] = TiffEntryV1(
-            tag=tag, field_type=field_type, count=count, raw=value[:byte_count]
-        )
+            if value_offset < 0 or byte_count > payload_size - value_offset:
+                raise TiffStructureError("TIFF offset/count pair escapes the sealed byte stream")
+            value = (
+                read_at(value_offset, byte_count)
+                if selected_tags is None or tag in selected_tags
+                else b""
+            )
+            if selected_tags is None or tag in selected_tags:
+                storage_ranges.append((value_offset, value_offset + byte_count))
+        if selected_tags is None or tag in selected_tags:
+            entries[tag] = TiffEntryV1(
+                tag=tag, field_type=field_type, count=count, raw=value[:byte_count]
+            )
     next_offset = struct.unpack(
         byte_order + ("Q" if big_tiff else "I"),
-        _bounded_slice(payload, table_start + table_size, tail_width),
+        table[table_size : table_size + tail_width],
     )[0]
     return TiffDirectoryV1(
         offset=offset,
@@ -179,6 +225,124 @@ def _parse_directory(
         next_offset=next_offset,
         storage_ranges=tuple(storage_ranges),
     )
+
+
+def read_base_mask_block_geometry(
+    path: Path, *, max_directories: int, max_entries: int
+) -> TiffBlockGeometryV1:
+    """Read only bounded IFD metadata needed to budget an internal mask window.
+
+    The caller must have verified the sealed file digest and the ordinary GeoTIFF
+    inspection. This helper deliberately does not read pixel blocks or enforce the
+    whole-image decompression envelope: a profile window only decodes intersecting
+    image and mask blocks.
+    """
+
+    relevant_tags = {254, 256, 257, 278, 322, 323}
+    fd = os.open(path, os.O_RDONLY | os.O_CLOEXEC)
+    try:
+        file_size = os.fstat(fd).st_size
+
+        def read_exact(offset: int, length: int) -> bytes:
+            if offset < 0 or length < 0 or offset > file_size or length > file_size - offset:
+                raise TiffStructureError("TIFF metadata escapes the sealed byte stream")
+            value = os.pread(fd, length, offset)
+            if len(value) != length:
+                raise TiffStructureError("TIFF metadata is truncated")
+            return value
+
+        header = read_exact(0, min(file_size, 16))
+        if len(header) < 8:
+            raise TiffStructureError("sealed input is shorter than a TIFF header")
+        byte_order = {b"II": "<", b"MM": ">"}.get(header[:2])
+        if byte_order is None:
+            raise TiffStructureError("sealed input has no TIFF byte-order marker")
+        magic = struct.unpack(byte_order + "H", header[2:4])[0]
+        if magic == 42:
+            big_tiff = False
+            first_offset = struct.unpack(byte_order + "I", header[4:8])[0]
+        elif magic == 43:
+            if len(header) < 16 or struct.unpack(byte_order + "HH", header[4:8]) != (8, 0):
+                raise TiffStructureError("BigTIFF header has unsupported offset fields")
+            big_tiff = True
+            first_offset = struct.unpack(byte_order + "Q", header[8:16])[0]
+        else:
+            raise TiffStructureError("sealed input has an unsupported TIFF magic")
+        if first_offset == 0:
+            raise TiffStructureError("TIFF has no image directory")
+
+        count_width = 8 if big_tiff else 2
+        count_format = "Q" if big_tiff else "H"
+        directories: list[TiffDirectoryV1] = []
+        total_entries = 0
+        seen: set[int] = set()
+        offset = first_offset
+        while offset:
+            if offset in seen:
+                raise TiffStructureError("TIFF directory chain contains a cycle")
+            if len(directories) >= max_directories:
+                raise TiffResourceLimitError("TIFF directory cap exceeded")
+            seen.add(offset)
+            count = struct.unpack(byte_order + count_format, read_exact(offset, count_width))[0]
+            if count > max_entries or total_entries + count > max_entries:
+                raise TiffResourceLimitError("TIFF directory entry cap exceeded")
+            directory = _parse_directory_from_reader(
+                read_exact,
+                payload_size=file_size,
+                offset=offset,
+                byte_order=byte_order,
+                big_tiff=big_tiff,
+                max_entries=max_entries,
+                selected_tags=relevant_tags,
+            )
+            directories.append(directory)
+            total_entries += count
+            offset = directory.next_offset
+    finally:
+        os.close(fd)
+
+    bases = [
+        directory
+        for directory in directories
+        if (_one(directory, 254, byte_order, required=False) or 0) == 0
+    ]
+    masks = [
+        directory
+        for directory in directories
+        if (_one(directory, 254, byte_order, required=False) or 0) == 4
+    ]
+    if len(bases) != 1 or len(masks) != 1:
+        raise TiffStructureError("internal mask TIFF requires one base image and one base mask")
+
+    def block_geometry(directory: TiffDirectoryV1) -> TiffBlockGeometryV1:
+        width = _one(directory, 256, byte_order)
+        height = _one(directory, 257, byte_order)
+        tiled = 322 in directory.entries or 323 in directory.entries
+        if width is None or height is None or width <= 0 or height <= 0:
+            raise TiffStructureError("TIFF image dimensions are invalid")
+        if tiled:
+            block_width = _one(directory, 322, byte_order)
+            block_height = _one(directory, 323, byte_order)
+            if (
+                322 not in directory.entries
+                or 323 not in directory.entries
+                or 278 in directory.entries
+            ):
+                raise TiffStructureError("TIFF tile geometry is incomplete")
+        else:
+            block_width = width
+            block_height = _one(directory, 278, byte_order)
+            if block_height is None or block_height <= 0:
+                raise TiffStructureError("TIFF strip geometry is invalid")
+        if block_width is None or block_height is None or block_width <= 0 or block_height <= 0:
+            raise TiffStructureError("TIFF storage block geometry is invalid")
+        return TiffBlockGeometryV1(width, height, block_width, block_height, tiled)
+
+    base_geometry = block_geometry(bases[0])
+    mask_geometry = block_geometry(masks[0])
+    if (base_geometry.width, base_geometry.height) != (mask_geometry.width, mask_geometry.height):
+        raise TiffStructureError("base mask dimensions differ from the base image")
+    return mask_geometry
 
 
 def _block_stats(
@@ -460,9 +624,11 @@ def _reject_secondary_ifd_routes(directory: TiffDirectoryV1) -> None:
 
 
 __all__ = [
+    "TiffBlockGeometryV1",
     "TiffDirectoryV1",
     "TiffResourceLimitError",
     "TiffStructureError",
     "TiffStructureV1",
     "parse_sealed_tiff_structure",
+    "read_base_mask_block_geometry",
 ]

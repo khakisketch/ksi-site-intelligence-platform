@@ -56,7 +56,10 @@ function presentation(
  * This projection intentionally makes no processing or readiness inference.
  * It translates only retained registration, inspection, display, and artifact outcome facts.
  */
-export function presentExternalInspectionStatus(view: ExternalArtifactInspectionView): ExternalInspectionPresentation {
+export function presentExternalInspectionStatus(
+  view: ExternalArtifactInspectionView,
+  declaredArtifacts?: readonly { artifactId?: string; kind?: string }[],
+): ExternalInspectionPresentation {
   if (view.registrationState === "REGISTERED" || view.sealState === "UNSEALED" || view.inspection.state === "INSPECTION_PENDING_SEAL") {
     return presentation(
       "자료 등록됨 · 파일 제출 마무리 필요",
@@ -116,6 +119,33 @@ export function presentExternalInspectionStatus(view: ExternalArtifactInspection
         { autoRefresh: false, displayReady: false },
         outcomeReasons(view),
       );
+  }
+
+  if (declaredArtifacts?.length && ["PENDING_INSPECTION", "PENDING_POLICY", "NOT_REQUIRED"].includes(view.display.state)) {
+    const outcomes = view.inspection.outcome;
+    const results = declaredArtifacts.map((file) => outcomes?.find((item) => item.artifactId === file.artifactId));
+    const complete = outcomes?.length === declaredArtifacts.length
+      && results.every((item) => item?.outcome === "MEASURED" || item?.outcome === "REJECTED")
+      && declaredArtifacts.every((file) => file.kind === "dsm" || file.kind === "ortho");
+    if (complete) {
+      const rejected = results.filter((item) => item?.outcome === "REJECTED").length;
+      if (rejected === results.length) {
+        return presentation(
+          "파일 검사에서 거부됨", "이 등록 버전의 모든 파일이 검사에서 거부되었습니다.",
+          "파일별 사유를 확인하고 새로 내보낼 자료를 선택하세요.",
+          { autoRefresh: false, displayReady: false }, outcomeReasons(view),
+        );
+      }
+      const orthoIndex = declaredArtifacts.findIndex((file) => file.kind === "ortho");
+      if (orthoIndex === -1 || results[orthoIndex]?.outcome === "REJECTED") {
+        return presentation(
+          rejected ? "DSM 검사 완료 · 정사영상 거부됨" : "DSM 파일 검사 완료",
+          rejected ? "DSM의 파일 정보가 확인되었습니다. 정사영상의 검사 사유를 확인하세요." : "이 등록 버전의 DSM 파일 정보가 확인되었습니다.",
+          "자료 상세에서 검사한 좌표계와 높이 기준을 확인하세요.",
+          { autoRefresh: false, displayReady: false }, outcomeReasons(view),
+        );
+      }
+    }
   }
 
   switch (view.display.state) {

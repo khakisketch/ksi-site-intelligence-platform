@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import json
 import time
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -27,6 +28,13 @@ from ksi_core.auth import (
 from ksi_core.domains.external.ingress.external_artifact_inspections import (
     ExternalArtifactInspectionStore,
 )
+from ksi_core.domains.external.ingress.external_reconstruction import (
+    build_external_reconstruction_submission_ref,
+)
+from ksi_core.domains.external.ingress.spatial_asset_catalog import (
+    _capture_sort_value,
+    build_spatial_asset_ref,
+)
 from ksi_core.durable_journal import DurableJournal
 from ksi_core.evidence import ObjectStorageObservation
 from ksi_core.external_reconstruction import ExternalReconstructionStore
@@ -39,6 +47,10 @@ from ksi_event_contracts.external_artifact_validation import ArtifactOutcome
 from ksi_event_contracts.external_reconstruction import ExternalReconstructionSubmissionV1
 from ksi_event_contracts.observation_work_order import ObservationWorkOrderExecutionMode
 from ksi_event_contracts.site_frame import SiteFrame
+from ksi_event_contracts.spatial_asset_catalog import (
+    SpatialAssetCatalogItemV1,
+    SpatialAssetDeclaredFactsV1,
+)
 
 _NOW = datetime(2026, 9, 30, tzinfo=UTC)
 _TOKEN = "spatial-catalog-owner"  # noqa: S105 -- fixed test credential
@@ -157,6 +169,8 @@ def _submission(
     submission_id: str,
     revision: int = 1,
     artifact_id: str = "ortho",
+    capture_started_at: str | None = "2026-09-29T00:00:00Z",
+    capture_ended_at: str | None = "2026-09-29T00:10:00Z",
 ) -> ExternalReconstructionSubmissionV1:
     raw = {
         "submissionId": submission_id,
@@ -181,8 +195,8 @@ def _submission(
             "originalRetentionLocus": "customer_workstation",
             "localInputManifestDigest": None,
             "imageCount": None,
-            "captureStartedAt": "2026-09-29T00:00:00Z",
-            "captureEndedAt": "2026-09-29T00:10:00Z",
+            "captureStartedAt": capture_started_at,
+            "captureEndedAt": capture_ended_at,
         },
         "artifacts": [
             {
@@ -417,6 +431,8 @@ def _register_only(
     submission_id: str,
     revision: int = 1,
     artifact_id: str = "ortho",
+    capture_started_at: str | None = "2026-09-29T00:00:00Z",
+    capture_ended_at: str | None = "2026-09-29T00:10:00Z",
 ) -> None:
     submission = _submission(
         site_id=order.site_id,
@@ -424,6 +440,8 @@ def _register_only(
         submission_id=submission_id,
         revision=revision,
         artifact_id=artifact_id,
+        capture_started_at=capture_started_at,
+        capture_ended_at=capture_ended_at,
     )
     result = reconstruction.register(
         submission, work_order=order, registered_by="catalog-owner", now=_NOW
@@ -553,6 +571,168 @@ def test_catalog_pages_stably_and_keeps_customer_artifact_ids_out_of_route_refs(
         headers=_headers(),
     )
     assert foreign_cursor.status_code == 400
+
+
+def test_catalog_capture_order_is_global_across_pages_and_legacy_cursors(
+    tmp_path: Path,
+) -> None:
+    client, order, _storage, reconstruction, area_a, _, _, _, _ = _setup(tmp_path)
+    submission_ids = [f"capture-{index:03d}" for index in range(101)]
+    refs_by_id = {
+        submission_id: build_spatial_asset_ref(
+            build_external_reconstruction_submission_ref(
+                organization_id=order.organization_id,
+                work_order_id=order.work_order_id,
+                submission_id=submission_id,
+            ),
+            1,
+            "ortho",
+        )
+        for submission_id in submission_ids
+    }
+    by_ref = sorted(submission_ids, key=refs_by_id.__getitem__)
+    ordinary_ids = by_ref[:-4]
+    capture_times = {
+        submission_id: datetime(2026, 9, 30, tzinfo=UTC) - timedelta(minutes=rank)
+        for rank, submission_id in enumerate(ordinary_ids[:49])
+    }
+    # Put distinct instants within one JavaScript millisecond across page 1/2.
+    # Their asset refs intentionally sort backward, so a millisecond/ref sort
+    # would reverse these two records.
+    capture_times[by_ref[-4]] = datetime(2026, 9, 29, 23, 0, 0, 123_456, tzinfo=UTC)
+    capture_times[by_ref[-3]] = datetime(2026, 9, 29, 23, 0, 0, 123_457, tzinfo=UTC)
+    capture_times.update(
+        {
+            submission_id: datetime(2026, 9, 29, 22, tzinfo=UTC) - timedelta(minutes=rank)
+            for rank, submission_id in enumerate(ordinary_ids[49:])
+        }
+    )
+    # Equal timestamps at page 2/3 verify that the ref tie-break remains stable.
+    tie_time = datetime(2026, 9, 29, 21, tzinfo=UTC)
+    capture_times[by_ref[-2]] = tie_time
+    capture_times[by_ref[-1]] = tie_time
+    for submission_id in submission_ids:
+        capture_started_at = (
+            capture_times[submission_id].isoformat(timespec="microseconds").replace("+00:00", "Z")
+        )
+        _register_only(
+            order,
+            reconstruction,
+            submission_id=submission_id,
+            capture_started_at=capture_started_at,
+            capture_ended_at=(capture_times[submission_id] + timedelta(minutes=10))
+            .isoformat(timespec="microseconds")
+            .replace("+00:00", "Z"),
+        )
+    _register_only(
+        order,
+        reconstruction,
+        submission_id="capture-unknown",
+        capture_started_at=None,
+        capture_ended_at=None,
+    )
+    root = f"/v1/sites/{order.site_id}/work-areas/{area_a.work_area_id}/spatial-assets"
+
+    chronological = client.get(root + "?limit=50&order=capture-desc", headers=_headers())
+    assert chronological.status_code == 200, chronological.text
+    first_page = chronological.json()
+    assert len(first_page["assets"]) == 50
+    assert first_page["hasMore"] is True
+    assert len(chronological.content) <= 512 * 1024
+    second = client.get(
+        root + "?limit=50&order=capture-desc&cursor=" + first_page["nextCursor"],
+        headers=_headers(),
+    )
+    assert second.status_code == 200, second.text
+    second_page = second.json()
+    third = client.get(
+        root + "?limit=50&order=capture-desc&cursor=" + second_page["nextCursor"],
+        headers=_headers(),
+    )
+    assert third.status_code == 200, third.text
+    assert len(third.json()["assets"]) == 2
+    all_items = [*first_page["assets"], *second_page["assets"], *third.json()["assets"]]
+
+    def capture_order(item: dict[str, Any]) -> tuple[bool, int, str]:
+        capture_start = item["declared"]["captureStartedAt"]
+        if capture_start is None:
+            return (True, 0, item["assetRef"])
+        value = datetime.fromisoformat(capture_start.replace("Z", "+00:00")).astimezone(UTC)
+        delta = value - datetime(1970, 1, 1, tzinfo=UTC)
+        capture_value = delta.days * 86_400_000_000 + delta.seconds * 1_000_000 + delta.microseconds
+        return (False, -capture_value, item["assetRef"])
+
+    expected = sorted(all_items, key=capture_order)
+    assert [item["assetRef"] for item in all_items] == [item["assetRef"] for item in expected]
+    assert first_page["assets"][-1]["assetRef"] == refs_by_id[by_ref[-3]]
+    assert second_page["assets"][0]["assetRef"] == refs_by_id[by_ref[-4]]
+    assert first_page["assets"][-1]["declared"]["captureStartedAt"].endswith(".123457Z")
+    assert second_page["assets"][0]["declared"]["captureStartedAt"].endswith(".123456Z")
+    first_boundary_time = datetime.fromisoformat(
+        first_page["assets"][-1]["declared"]["captureStartedAt"].replace("Z", "+00:00")
+    )
+    second_boundary_time = datetime.fromisoformat(
+        second_page["assets"][0]["declared"]["captureStartedAt"].replace("Z", "+00:00")
+    )
+    assert first_boundary_time - second_boundary_time == timedelta(microseconds=1)
+    assert second_page["assets"][-1]["assetRef"] == refs_by_id[by_ref[-2]]
+    assert third.json()["assets"][0]["assetRef"] == refs_by_id[by_ref[-1]]
+    assert (
+        second_page["assets"][-1]["declared"]["captureStartedAt"]
+        == third.json()["assets"][0]["declared"]["captureStartedAt"]
+    )
+    assert len({item["assetRef"] for item in all_items}) == 102
+    assert all_items[-1]["declared"]["captureStartedAt"] is None
+    mismatched_order = client.get(
+        root + "?limit=50&cursor=" + first_page["nextCursor"], headers=_headers()
+    )
+    assert mismatched_order.status_code == 400
+
+    cursor = first_page["nextCursor"]
+    cursor_raw = base64.urlsafe_b64decode(cursor + "=" * (-len(cursor) % 4))
+    cursor_payload = json.loads(cursor_raw)
+
+    def encode_payload(payload: dict[str, Any], separators: tuple[str, str]) -> str:
+        encoded = json.dumps(payload, sort_keys=True, separators=separators).encode()
+        return base64.urlsafe_b64encode(encoded).decode().rstrip("=")
+
+    unsupported_version = encode_payload({**cursor_payload, "version": 3}, (",", ":"))
+    noncanonical_json = encode_payload(cursor_payload, (", ", ": "))
+    for invalid_cursor in (unsupported_version, noncanonical_json):
+        invalid = client.get(
+            root + "?limit=50&order=capture-desc&cursor=" + invalid_cursor,
+            headers=_headers(),
+        )
+        assert invalid.status_code == 400
+
+    # A legacy URL may add the new order parameter after the Console upgrades.
+    legacy_first = client.get(root + "?limit=50", headers=_headers())
+    assert legacy_first.status_code == 200
+    legacy_second = client.get(
+        root + "?limit=50&order=capture-desc&cursor=" + legacy_first.json()["nextCursor"],
+        headers=_headers(),
+    )
+    assert legacy_second.status_code == 200, legacy_second.text
+    assert legacy_second.json()["assets"][0]["assetRef"] not in {
+        item["assetRef"] for item in legacy_first.json()["assets"]
+    }
+
+
+def test_capture_sort_uses_declared_date_and_places_unknown_capture_last() -> None:
+    dated = SpatialAssetCatalogItemV1.model_construct(
+        declared=SpatialAssetDeclaredFactsV1.model_construct(
+            capture_started_at=None, capture_date=date(2026, 9, 28)
+        )
+    )
+    unknown = SpatialAssetCatalogItemV1.model_construct(
+        declared=SpatialAssetDeclaredFactsV1.model_construct(
+            capture_started_at=None, capture_date=None
+        )
+    )
+
+    expected = datetime(2026, 9, 28, tzinfo=UTC) - datetime(1970, 1, 1, tzinfo=UTC)
+    assert _capture_sort_value(dated) == expected.days * 86_400_000_000
+    assert _capture_sort_value(unknown) is None
 
 
 def test_newer_revision_marks_older_asset_superseded_without_claiming_access(

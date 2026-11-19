@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { CoreApiError } from "@/lib/core-api/client";
 import type { SpatialAssetCatalogItem, SpatialAssetCatalogPage } from "@/lib/core-api/spatial-assets";
-import { locateUploadedAsset, parseUploadedArtifact, type UploadedArtifact } from "@/lib/uploaded-asset-locator";
+import { locateUploadedAsset, parseUploadedArtifact, uploadedArtifactHref, type UploadedArtifact } from "@/lib/uploaded-asset-locator";
 
 const mocked = vi.hoisted(() => ({ list: vi.fn() }));
 vi.mock("@/lib/core-api/spatial-assets", async (importOriginal) => {
@@ -36,10 +36,26 @@ describe("parseUploadedArtifact", () => {
     expect(parseUploadedArtifact(query({}))).toEqual(target);
   });
 
+  it("opens the exact corrected file even when site and work-area names need URL encoding", () => {
+    const correction = { ...target, workAreaId: "구역 / 1", revision: 2 };
+    const url = new URL(uploadedArtifactHref("현장/1", correction), "https://dashboard.example");
+    expect(url.pathname).toBe(`/sites/${encodeURIComponent("현장/1")}/upload/open`);
+    expect(parseUploadedArtifact(url.searchParams)).toEqual(correction);
+  });
+
+  it("round trips an imported file identifier independently of its raster kind", () => {
+    const imported: UploadedArtifact = { ...target, revision: 2, artifactId: "구역 A/DSM (원본)", kind: "dsm" };
+    const url = new URL(uploadedArtifactHref("site-1", imported), "https://dashboard.example");
+    expect(parseUploadedArtifact(url.searchParams)).toEqual(imported);
+    url.searchParams.set("artifactKind", "pointcloud");
+    expect(parseUploadedArtifact(url.searchParams)).toBeNull();
+  });
+
   it.each([
     ["submissionRef", "ers-v1-short"],
     ["revision", "0"],
     ["revision", "1.5"],
+    ["revision", "9007199254740992"],
     ["artifactId", "pointcloud"],
     ["workOrderId", " "],
     ["workAreaId", "x".repeat(257)],
@@ -49,6 +65,13 @@ describe("parseUploadedArtifact", () => {
 });
 
 describe("locateUploadedAsset", () => {
+  it("matches the stored identifier and the declared kind for a non-slot file identifier", async () => {
+    const targetFile: UploadedArtifact = { ...target, artifactId: "survey tile A", kind: "dsm" };
+    const wanted = item({ artifactId: targetFile.artifactId, assetRef: `ksa-v1-${"d".repeat(64)}` });
+    const list = vi.fn().mockResolvedValue(page([item({ artifactId: targetFile.artifactId, kind: "ortho" }), wanted]));
+    expect(await locateUploadedAsset("site-1", targetFile, list)).toEqual({ assetRef: wanted.assetRef, cursor: undefined });
+  });
+
   it("returns the Core asset of the exact submission, revision and artifact, with the page cursor", async () => {
     const wanted = item({ assetRef: `ksa-v1-${"b".repeat(64)}` });
     const list = vi.fn()
@@ -96,8 +119,11 @@ describe("upload open route", () => {
     const response = await GET(request({}), params);
     expect(response.status).toBe(303);
     expect(response.headers.get("Cache-Control")).toBe("private, no-store");
-    expect(response.headers.get("Location")).toBe(`/sites/site-1/data?workAreaId=wa-1&assetRef=${wanted.assetRef}&cursor=c-2`);
-    expect(mocked.list.mock.calls).toEqual([["site-1", "wa-1", { limit: 50 }], ["site-1", "wa-1", { limit: 50, cursor: "c-2" }]]);
+    expect(response.headers.get("Location")).toBe(`/sites/site-1/data?workAreaId=wa-1&assetRef=${wanted.assetRef}&cursor=c-2#section-inspector`);
+    expect(mocked.list.mock.calls).toEqual([
+      ["site-1", "wa-1", { limit: 50, order: "capture-desc" }],
+      ["site-1", "wa-1", { limit: 50, cursor: "c-2", order: "capture-desc" }],
+    ]);
   });
 
   it("falls back to the work area's data list when Core refuses", async () => {
