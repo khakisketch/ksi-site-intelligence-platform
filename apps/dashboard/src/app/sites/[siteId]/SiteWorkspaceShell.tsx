@@ -54,6 +54,8 @@ import { DetailBlock } from "./materials/asset-detail";
 import { MaterialsPanel, RegistrationProgressPanel } from "./materials/MaterialsPanel";
 import { isMetadataOnly, isViewableRasterKind, materialsHref, type MaterialsScope } from "./materials/materials-visual";
 import { EmptyCanvas } from "./materials/EmptyCanvas";
+import { SiteAreasMap } from "./areas/SiteAreasMap";
+import { SiteAreasPanel, type AreaAssetsInput } from "./areas/SiteAreasPanel";
 import type { readAssetHistory } from "./materials/asset-reads";
 
 const WORKSPACE_MODES: ReadonlyArray<{ key: WorkspaceMode; label: string }> = [
@@ -431,7 +433,7 @@ export function SiteWorkspaceShell({
   analysesKnown: boolean;
   assetsState: SiteSpatialAssetsState;
   assetPool?: readonly SpatialAssetCatalogItem[];
-  materialPanel?: "materials" | "intake" | null;
+  materialPanel?: "materials" | "intake" | "areas" | null;
   materialsScope?: MaterialsScope;
   materialIssue?: string | null;
   materialDetails?: ReadonlyArray<{
@@ -1232,6 +1234,14 @@ export function SiteWorkspaceShell({
   </>);
 
   if (mode === "results") return stage;
+  // 영역 탭의 자료 요약은 고른 영역의 카탈로그 첫 페이지(최근 50건)만 쓴다. 이어 읽은 페이지(cursor)는
+  // "최근" 요약이 아니므로 요약을 만들지 않는다. 읽지 못한 것은 0건이 아니라 읽지 못함으로 넘긴다.
+  const areaAssets: AreaAssetsInput = selected && assetsState.status === "ready" && !materialsScope.cursor
+    ? { status: "ready", assets: assetsState.page.assets, hasMore: assetsState.page.hasMore }
+    : selected && (assetsState.status === "denied" || assetsState.status === "unavailable")
+      ? { status: assetsState.status }
+      : { status: "not-requested" };
+  const activeAreaCount = areas.filter((area) => area.status === "ACTIVE").length;
   return <SiteWorkspaceWorkbench
     key={`${materialPanel ?? ""}-${materialsScope.info ?? ""}`}
     contextControls={contextControls}
@@ -1239,6 +1249,19 @@ export function SiteWorkspaceShell({
     initialInfoOpen={materialsScope.info === "1"}
     catalog={materialsPanel}
     intake={<RegistrationProgressPanel siteId={facts.siteId} orders={orders} />}
+    areas={<SiteAreasPanel
+      siteId={facts.siteId}
+      sitePath={sitePath}
+      areas={areas}
+      areasState={areasState}
+      canWrite={canCreateWorkArea}
+      selectedWorkAreaId={selectedWorkAreaId}
+      assets={areaAssets}
+    />}
+    areasLabel={areasState === "ready" ? `영역 ${activeAreaCount}` : "영역"}
+    areasStage={areasState === "ready" && areas.length > 0
+      ? <SiteAreasMap areas={areas} selectedWorkAreaId={selectedWorkAreaId} variant="stage" />
+      : undefined}
     catalogLabel="자료 패널"
     stage={stage}
     inspector={inspector}

@@ -80,4 +80,54 @@ describe("workspace workbench overlay", () => {
     expect(container.innerHTML).not.toMatch(/PREPARE|prepare/i);
     expect(container.querySelector("form[action*='spatial-data-requests']")).toBeNull();
   });
+
+  it("adds an 영역 toggle beside 자료 and 등록 진행, and the area list opens only when chosen", () => {
+    frame({
+      intake: <p>등록 진행 내용</p>,
+      areas: <p>영역 목록 내용</p>,
+      areasLabel: "영역 3",
+      initialPanel: "materials",
+    });
+    const group = screen.getByRole("group", { name: "자료 패널 보기" });
+    expect(Array.from(group.querySelectorAll("button")).map((button) => button.textContent)).toEqual(["자료", "등록 진행", "영역 3"]);
+    expect(screen.getByText("구역 선택")).toBeTruthy();
+    expect(screen.queryByText("영역 목록 내용")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "영역 3" }));
+    expect(screen.getByText("영역 목록 내용")).toBeTruthy();
+    expect(screen.queryByText("구역 선택")).toBeNull();
+    expect(screen.getByRole("button", { name: "영역 3" }).getAttribute("aria-pressed")).toBe("true");
+    expect(screen.getByRole("button", { name: "자료" }).getAttribute("aria-pressed")).toBe("false");
+  });
+
+  it("starts with the area tab open when initialPanel is areas", () => {
+    frame({ intake: <p>등록 진행 내용</p>, areas: <p>영역 목록 내용</p>, initialPanel: "areas" });
+    expect(screen.getByText("영역 목록 내용")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "영역" }).getAttribute("aria-pressed")).toBe("true");
+  });
+
+  it("swaps the stage for the area map on wide screens only while the tab is open, without unmounting the stage", () => {
+    frame({
+      intake: <p>등록 진행 내용</p>,
+      areas: <p>영역 목록 내용</p>,
+      areasStage: <p>영역 지도 자리</p>,
+      initialPanel: "materials",
+    });
+    const stageWrapper = () => screen.getByText("실제 화면").parentElement!.parentElement!;
+    expect(screen.queryByText("영역 지도 자리")).toBeNull();
+    expect(stageWrapper().className).toContain("contents");
+    fireEvent.click(screen.getByRole("button", { name: "영역" }));
+    expect(screen.getByText("영역 지도 자리").parentElement!.className).toContain("lg:block");
+    expect(screen.getByText("실제 화면")).toBeTruthy();
+    expect(stageWrapper().className).toContain("lg:hidden");
+    expect(document.getElementById("workspace-visual-a-layer-controls")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "자료" }));
+    expect(screen.queryByText("영역 지도 자리")).toBeNull();
+    expect(stageWrapper().className).toContain("contents");
+  });
+
+  it("keeps the old toggle (자료 / 등록 진행) when no area tab is given", () => {
+    frame({ intake: <p>등록 진행 내용</p>, initialPanel: "materials" });
+    const group = screen.getByRole("group", { name: "자료 패널 보기" });
+    expect(Array.from(group.querySelectorAll("button")).map((button) => button.textContent)).toEqual(["자료", "등록 진행"]);
+  });
 });

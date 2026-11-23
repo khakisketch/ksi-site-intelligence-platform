@@ -1260,3 +1260,31 @@ describe("browse source round trip", () => {
     expect(within(stage).queryByText(/요청한 구역·자료가 조회 범위에 없어/)).toBeNull();
   });
 });
+
+describe("workspace shell · area tab", () => {
+  it("opens on panel=areas with the count in the toggle, the list in the drawer and the map in the stage", async () => {
+    mocked.assets.mockResolvedValue({ ...EMPTY_CATALOG, assets: [rasterAsset("one")], hasMore: false });
+    await renderOverview({ panel: "areas", workAreaId: "tiny-1" });
+    const toggle = screen.getByRole("group", { name: "자료 패널 보기" });
+    expect(Array.from(toggle.querySelectorAll("button")).map((button) => button.textContent)).toEqual(["자료", "등록 진행", "영역 1"]);
+    expect(within(toggle).getByRole("button", { name: "영역 1" }).getAttribute("aria-pressed")).toBe("true");
+    const list = screen.getByRole("list", { name: "사용 중 영역" });
+    const link = within(list).getByRole("link");
+    expect(link.getAttribute("aria-current")).toBe("true");
+    expect(link.textContent).toContain("미세 분석 구역");
+    expect(link.textContent).toContain("자료 1건");
+    // 영역을 골라도 서랍이 닫히지 않게 선택 링크에는 서랍 닫기 속성을 붙이지 않는다.
+    expect(link.hasAttribute("data-workbench-catalog-select")).toBe(false);
+    expect(link.getAttribute("href")).toBe("/sites/site-1?panel=areas&workAreaId=tiny-1");
+    expect(document.querySelectorAll('[data-areas-map="stage"]')).toHaveLength(1);
+    expect(mocked.assets).toHaveBeenCalledWith("site-1", "tiny-1", { limit: 50, order: "capture-desc" });
+  });
+
+  it("shows the denial inside the area tab when the area list cannot be read, with no map", async () => {
+    mocked.areas.mockRejectedValue(new CoreApiError(403, { detail: "denied" }));
+    await renderOverview({ panel: "areas" });
+    expect(screen.getByRole("button", { name: "영역" }).getAttribute("aria-pressed")).toBe("true");
+    expect(screen.getAllByRole("alert").some((node) => node.textContent?.includes("영역 목록을 조회할 권한이 없습니다"))).toBe(true);
+    expect(document.querySelector('[data-areas-map="stage"]')).toBeNull();
+  });
+});
