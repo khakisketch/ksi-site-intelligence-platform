@@ -22,7 +22,10 @@ import { CAPTURE_STRIP_WIDTH, layoutCaptureStrip } from "./areas/area-summary";
  * 정할 수 없으므로 점이 아니라 "순서 미정" 목록으로 둔다 — 없는 시각을 만들지 않는다.
  */
 
-export type TimelineStatus = "OK" | "ONLY_ONE" | "CRS_MISMATCH" | "NO_ORDERABLE";
+export type TimelineStatus = "OK" | "ONLY_ONE" | "NOT_READY" | "CRS_MISMATCH" | "NO_ORDERABLE";
+
+/** 점 라벨에 연도를 붙이는 기준 — 띠에 오른 날짜가 해를 넘거나 이만큼(일) 넘게 벌어진다. */
+export const YEAR_LABEL_SPAN_DAYS = 330;
 
 /** 점을 고를 수 없게 흐리는 이유. 선택된 점은 흐리지 않는다. 분석 밖 좌표계는 흐리는 이유가 아니다(칩으로만 알린다). */
 export type TimelineDimReason = "no-height" | "not-ready" | "crs-different";
@@ -82,6 +85,12 @@ export type CompareTimeline = {
   unordered: UnorderedItem[];
   /** 높이 자료(DSM)이고 표시 준비된 순서 있는 점 수. */
   heightCount: number;
+  /** 높이 자료(DSM)인 순서 있는 점 전체 수(표시 준비 여부와 무관). */
+  heightTotal: number;
+  /** 그중 표시 준비 전인 수. */
+  notReadyCount: number;
+  /** 띠에 오른 날짜가 해를 넘거나 330일을 넘게 벌어져 점 라벨에 연도를 둔다. */
+  yearLabels: boolean;
   /** 분석 좌표계 중 기준으로 삼은 것. 없으면 null. */
   referenceCrs: string | null;
   referenceSwatch: number | null;
@@ -323,11 +332,15 @@ export function buildCompareTimeline(input: {
   const selectionCrsMismatch = Boolean(baseline && current && baseline.crs && current.crs && baseline.crs !== current.crs);
 
   // 상태는 고른 쌍과 무관하게 정한다 — 같은 좌표계로 묶이는(아직 모르는 것 포함) 높이 자료가 둘 이상인가.
+  const notReadyCount = ordered.filter((draft) => draft.isHeight && !draft.ready).length;
+  const heightTotal = heightDrafts.length + notReadyCount;
+  const spanDays = shownDates.length > 1 ? dayNumber(shownDates[shownDates.length - 1]!) - dayNumber(shownDates[0]!) : 0;
+  const yearLabels = new Set(shownDates.map((date) => date.slice(0, 4))).size > 1 || spanDays > YEAR_LABEL_SPAN_DAYS;
   const usable = heightDrafts.filter((draft) => draft.crs === null || draft.crs === dominantCrs);
   const status: TimelineStatus = ordered.length === 0
     ? "NO_ORDERABLE"
     : heightDrafts.length < 2
-      ? "ONLY_ONE"
+      ? (heightTotal >= 2 ? "NOT_READY" : "ONLY_ONE")
       : usable.length < 2
         ? "CRS_MISMATCH"
         : "OK";
@@ -339,6 +352,9 @@ export function buildCompareTimeline(input: {
     hiddenCount: ordered.length - shownCount,
     unordered,
     heightCount: heightDrafts.length,
+    heightTotal,
+    notReadyCount,
+    yearLabels,
     referenceCrs,
     referenceSwatch: referenceCrs ? (swatches.get(referenceCrs) ?? null) : null,
     baseline,

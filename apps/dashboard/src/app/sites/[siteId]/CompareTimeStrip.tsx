@@ -103,8 +103,8 @@ function Dot({ role, dimmed }: { role: TimelinePoint["role"]; dimmed: boolean })
 }
 
 function PointBlock({
-  point, withYear, href,
-}: { point: TimelinePoint; withYear: boolean; href: string | null }) {
+  point, withYear, showYear, href,
+}: { point: TimelinePoint; withYear: boolean; showYear: boolean; href: string | null }) {
   const label = pointLabel(point, withYear);
   const muted = point.dimmed !== null;
   const dot = <Dot role={point.role} dimmed={muted} />;
@@ -127,7 +127,9 @@ function PointBlock({
           {dot}
         </button>
       )}
-      <span className={`whitespace-nowrap text-caption ${point.role ? "font-semibold text-ink-1" : muted ? "text-ink-muted" : "text-ink-2"}`}>
+      {/* 해를 넘는 띠는 모든 점에 연도를 둔다 — 위 줄 연도, 아래 줄 MM-DD. 컨테이너 높이(blockHeight)가 이 줄을 포함한다. */}
+      {showYear && <span aria-hidden="true" className="whitespace-nowrap text-micro leading-[14px] text-ink-muted">{point.date.slice(0, 4)}</span>}
+      <span className={`whitespace-nowrap text-caption leading-[18px] ${point.role ? "font-semibold text-ink-1" : muted ? "text-ink-muted" : "text-ink-2"}`}>
         {shortDate(point.date)}{point.time ? ` ${point.time}` : ""}
       </span>
       <span className={muted ? "opacity-80" : ""}><CrsChip point={point} /></span>
@@ -162,10 +164,19 @@ function StatusCard({
     </ResponsiveActionBoundary>
   ) : null;
   const uploadNote = canUpload && uploadHref ? <span className="text-caption text-ink-muted lg:hidden">올리기는 노트북에서 이어서 하세요.</span> : null;
+  if (model.status === "NOT_READY") {
+    // 올려서 풀리는 상황이 아니다 — 올리기 안내를 두지 않고 원인을 사용자 탓으로 돌리지 않는다.
+    return (
+      <div data-compare-state="not-ready" role="status" className="flex flex-col gap-1.5 rounded-lg border border-line bg-sunk px-3 py-2.5">
+        <p className="text-body font-semibold">표시 준비가 끝난 높이 자료가 두 개 이상 필요합니다</p>
+        <p className="text-caption text-ink-2">지금 {model.notReadyCount}건이 표시 준비 전입니다. 준비되면 이 띠에서 고를 수 있습니다.</p>
+      </div>
+    );
+  }
   if (model.status === "ONLY_ONE") {
     return (
       <div data-compare-state="only-one" role="status" className="flex flex-col gap-1.5 rounded-lg border border-line bg-sunk px-3 py-2.5">
-        <p className="text-body font-semibold">{model.heightCount === 0 ? "비교할 높이 자료가 없습니다" : "비교할 높이 자료가 하나뿐입니다"}</p>
+        <p className="text-body font-semibold">{model.heightTotal === 0 ? "비교할 높이 자료가 없습니다" : "비교할 높이 자료가 하나뿐입니다"}</p>
         <p className="text-caption text-ink-2">필요한 것 · 촬영 시각이 있는 높이 자료 두 개</p>
         <div className="flex flex-wrap items-center gap-2">{upload}{uploadNote}</div>
       </div>
@@ -215,8 +226,10 @@ export function CompareTimeStrip({
   analysisHref?: string | null;
 }) {
   if (model.slots.length === 0 && model.unordered.length === 0) return null;
+  // 점 블록 높이 = 이름표 18 + 터치 영역 44 + 날짜(연도 줄 14 포함 시) + 칩 18, 여유 포함. 컨테이너는 이보다 작지 않다.
   const stack = Math.max(1, ...model.slots.map((slot) => slot.points.length));
-  const height = 18 + 44 + 20 + 22 + (stack - 1) * 110;
+  const blockHeight = 18 + 44 + (model.yearLabels ? 14 : 0) + 18 + 22;
+  const height = stack * blockHeight + (stack - 1) * 4 + 8;
   // 점 사이 최소 간격 48px — 터치 영역(44px)이 겹치지 않게 띠의 최소 폭을 잡는다. 넘치면 띠 안에서만 가로로 민다.
   const lefts = model.slots.map((slot) => slot.leftPercent);
   const minGap = lefts.slice(1).reduce((least, value, index) => Math.min(least, value - lefts[index]!), Infinity);
@@ -249,7 +262,7 @@ export function CompareTimeStrip({
       </div>
 
       {model.slots.length > 0 && (
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto overflow-y-hidden">
           <ol aria-label="촬영 날짜" className="relative mx-6" style={{ height, minWidth: `${stripMinWidth}px` }}>
             <li aria-hidden="true" className="absolute inset-x-0 top-[39px] h-0.5 bg-line-strong" />
             {left !== null && right !== null && (
@@ -262,6 +275,7 @@ export function CompareTimeStrip({
                     key={point.key}
                     point={point}
                     withYear={model.withYear}
+                    showYear={model.yearLabels}
                     href={point.pair ? pointHref(sitePath, workAreaId, point.pair) : null}
                   />
                 ))}

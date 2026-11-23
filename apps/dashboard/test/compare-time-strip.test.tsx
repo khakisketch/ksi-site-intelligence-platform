@@ -202,6 +202,61 @@ describe("CompareTimeStrip", () => {
     expect(section.querySelector("[aria-current]")).toBeNull();
   });
 
+  it("해를 넘는 띠는 모든 점에 연도를 위 줄에 두고, 한 해 안이면 MM-DD 한 줄이다", () => {
+    const multi = buildCompareTimeline({
+      facts: facts([fact(1, day("2019-08-20")), fact(2, day("2021-08-17")), fact(3, day("2022-08-24"))]), workAreaId: AREA,
+      catalogAssets: [1, 2, 3].map((n) => catalog(n, "EPSG:5186")),
+    });
+    const { unmount } = render(<CompareTimeStrip model={multi} sitePath={SITE_PATH} workAreaId={AREA} />);
+    const slots = [...document.querySelectorAll("[data-slot-date]")];
+    expect(slots.map((slot) => slot.textContent?.match(/(\d{4})(\d{2}-\d{2})/)?.slice(1).join("|"))).toEqual(["2019|08-20", "2021|08-17", "2022|08-24"]);
+    unmount();
+    strip(); // 같은 해(2026)
+    expect(document.querySelector("[data-slot-date='2026-10-02']")!.textContent).toContain("10-02");
+    expect(document.querySelector("[data-slot-date='2026-10-02']")!.textContent).not.toContain("2026");
+  });
+
+  it("띠 컨테이너는 가로로만 밀리고 세로 스크롤은 없으며 높이가 내용(연도 줄·칩·이름표)을 담는다", () => {
+    const model = buildCompareTimeline({
+      facts: facts([fact(1, day("2019-08-20")), fact(2, day("2021-08-17"))]), workAreaId: AREA,
+      catalogAssets: [catalog(1, "EPSG:5186"), catalog(2, "EPSG:5186")], baselineAssetRef: ref(1), currentAssetRef: ref(2),
+    });
+    render(<CompareTimeStrip model={model} sitePath={SITE_PATH} workAreaId={AREA} />);
+    const list = document.querySelector("[data-compare-timeline] ol") as HTMLElement;
+    const scroller = list.parentElement!;
+    expect(scroller.className).toContain("overflow-x-auto");
+    expect(scroller.className).toContain("overflow-y-hidden");
+    // 이름표 18 + 터치 44 + 연도 14 + 날짜·칩 18 이상. (실제 칩 잘림은 브라우저에서 메인이 다시 확인한다.)
+    expect(parseFloat(list.style.height)).toBeGreaterThanOrEqual(18 + 44 + 14 + 18);
+    const plain = (() => { cleanup(); strip(); return parseFloat((document.querySelector("[data-compare-timeline] ol") as HTMLElement).style.height); })();
+    expect(parseFloat(list.style.height)).toBeGreaterThan(plain);
+  });
+
+  it("표시 준비 전이 원인이면 올리기 안내 없이 준비 전 건수만 알린다", () => {
+    const model = buildCompareTimeline({
+      facts: facts([1, 2, 3].map((n) => fact(n, { ...day(`2021-0${n}-10`), displayReady: false }))), workAreaId: AREA,
+      catalogAssets: [1, 2, 3].map((n) => catalog(n, "EPSG:7850")),
+    });
+    render(<CompareTimeStrip model={model} sitePath={SITE_PATH} workAreaId={AREA} uploadHref={`${SITE_PATH}/upload`} canUpload analysisHref={null} />);
+    const section = screen.getByRole("region", { name: "자료 날짜" });
+    const card = section.querySelector("[data-compare-state='not-ready']")!;
+    expect(card.textContent).toContain("표시 준비가 끝난 높이 자료가 두 개 이상 필요합니다");
+    expect(card.textContent).toContain("지금 3건이 표시 준비 전입니다. 준비되면 이 띠에서 고를 수 있습니다.");
+    expect(section.querySelector("[data-compare-state='only-one']")).toBeNull();
+    expect(within(section).queryByRole("link", { name: "높이 자료 올리기" })).toBeNull();
+    expect(section.textContent).not.toContain("노트북");
+    expect(section.textContent).not.toMatch(/수락|정산|확정|승인/);
+  });
+
+  it("높이 자료가 0건이면 올리기 안내를 유지한다", () => {
+    const model = buildCompareTimeline({ facts: facts([fact(1, { kind: "ortho", ...day("2026-10-02") })]), workAreaId: AREA, catalogAssets: [] });
+    render(<CompareTimeStrip model={model} sitePath={SITE_PATH} workAreaId={AREA} uploadHref={`${SITE_PATH}/upload`} canUpload analysisHref={null} />);
+    const section = screen.getByRole("region", { name: "자료 날짜" });
+    expect(section.querySelector("[data-compare-state='only-one']")!.textContent).toContain("비교할 높이 자료가 없습니다");
+    expect(within(section).getByRole("link", { name: "높이 자료 올리기" })).toBeTruthy();
+    expect(section.textContent).toContain("올리기는 노트북에서 이어서 하세요.");
+  });
+
   it("관측이 하나도 없으면 아무것도 그리지 않는다", () => {
     const model = buildCompareTimeline({ facts: facts([]), workAreaId: AREA, catalogAssets: [] });
     const { container } = render(<CompareTimeStrip model={model} sitePath={SITE_PATH} workAreaId={AREA} />);

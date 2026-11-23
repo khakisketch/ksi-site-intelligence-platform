@@ -200,6 +200,56 @@ describe("buildCompareTimeline", () => {
     expect(model.status).toBe("OK");
   });
 
+  it("연도 라벨: 한 해 안이면 없고, 해를 넘거나 330일을 넘으면 있다", () => {
+    const years = (dates: string[]) => buildCompareTimeline({
+      facts: facts(dates.map((date, i) => fact({ n: i + 1, ...interval(date) }))),
+      workAreaId: AREA,
+      catalogAssets: dates.map((_, i) => catalog(i + 1, "EPSG:5186")),
+    }).yearLabels;
+    expect(years(["2026-01-05", "2026-06-01", "2026-11-20"])).toBe(false); // 319일, 같은 해
+    expect(years(["2019-08-20", "2021-08-17", "2022-08-24"])).toBe(true); // 해를 넘음
+    expect(years(["2025-12-30", "2026-01-02"])).toBe(true); // 사흘이어도 해를 넘음
+    expect(years(["2026-03-01", "2026-03-20"])).toBe(false);
+    expect(years(["2026-01-01"])).toBe(false);
+  });
+
+  it("연도 라벨: 같은 해 안이라도 간격이 330일을 넘으면 있다", () => {
+    // 2024는 윤년 — 1월 1일과 12월 31일은 365일 떨어져 같은 해다.
+    const model = buildCompareTimeline({
+      facts: facts([fact({ n: 1, ...interval("2024-01-01") }), fact({ n: 2, ...interval("2024-12-31") })]),
+      workAreaId: AREA,
+      catalogAssets: [catalog(1, "EPSG:5186"), catalog(2, "EPSG:5186")],
+    });
+    expect(model.slots.map((slot) => slot.date.slice(0, 4))).toEqual(["2024", "2024"]);
+    expect(model.yearLabels).toBe(true);
+  });
+
+  it("NOT_READY: 높이 자료가 둘 이상 있어도 표시 준비된 것이 둘 미만이면 준비 전 수를 센다", () => {
+    const model = buildCompareTimeline({
+      facts: facts([
+        fact({ n: 1, ...interval("2019-08-20"), displayReady: false }),
+        fact({ n: 2, ...interval("2021-08-17"), displayReady: false }),
+        fact({ n: 3, ...interval("2022-08-24"), displayReady: false }),
+      ]),
+      workAreaId: AREA,
+      catalogAssets: [catalog(1, "EPSG:28350"), catalog(2, "EPSG:7850"), catalog(3, "EPSG:7850")],
+    });
+    expect(model.status).toBe("NOT_READY");
+    expect(model.heightTotal).toBe(3);
+    expect(model.heightCount).toBe(0);
+    expect(model.notReadyCount).toBe(3);
+    expect(model.hasPickable).toBe(false);
+  });
+
+  it("높이 자료 0건·1건(준비 전 포함)은 NOT_READY가 아니라 ONLY_ONE", () => {
+    const none = buildCompareTimeline({ facts: facts([fact({ n: 1, kind: "ortho", ...interval("2026-10-02") })]), workAreaId: AREA, catalogAssets: [] });
+    expect(none.status).toBe("ONLY_ONE");
+    expect(none.heightTotal).toBe(0);
+    const one = buildCompareTimeline({ facts: facts([fact({ n: 1, ...interval("2026-10-02"), displayReady: false })]), workAreaId: AREA, catalogAssets: [] });
+    expect(one.status).toBe("ONLY_ONE");
+    expect(one.heightTotal).toBe(1);
+  });
+
   it("ONLY_ONE: 높이 자료가 하나뿐이면 둘 이상 못 고른다", () => {
     const model = buildCompareTimeline({
       facts: facts([fact({ n: 1, ...interval("2026-10-02") }), fact({ n: 2, kind: "ortho", ...interval("2026-11-12") })]),
