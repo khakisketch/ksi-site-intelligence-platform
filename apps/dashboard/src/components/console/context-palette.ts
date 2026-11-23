@@ -1,5 +1,6 @@
 import { SITE_TABS, type SiteTabKey } from "@/lib/site-epochs";
 import { parseScopedNavQuery, type SiteHeaderScope } from "@/lib/operator-journey";
+import type { WorkArea } from "@/lib/core-api/types";
 import type { PaletteItem } from "./palette-items";
 
 function tabLabel(key: SiteTabKey): string {
@@ -38,4 +39,26 @@ export function contextPaletteItems(
     { key: `${site.key}:measure`, label: "측정 선", group: "현재 현장", hint: site.label, href: scopedSiteHref(`${site.href}/measurements`, {}, scope), keywords: "단면 높이 선 거리 기울기 경사 표고" },
     { key: `${site.key}:prepare`, label: "구역 자료 준비", group: "현재 현장", hint: site.label, href: scopedSiteHref(`${site.href}/spatial-data-requests`, {}, scope), keywords: "내보내기 받기 다운로드 요청" },
   ];
+}
+
+/**
+ * 현재 현장의 영역을 팔레트에서 바로 찾는다 — ② 영역 탭(`?panel=areas`)의 선택
+ * 주소로 바로 간다. 셸이 들고 있지 않은 전역 색인이 아니라, 들어가 있는 현장의
+ * 목록을 열 때 한 번 읽는다. 보관된 영역도 숨기지 않고 "보관된 영역"이라 밝힌다.
+ * 읽기에 실패하면 빈 목록을 돌려준다 — 팔레트는 이동 수단이라 영역 검색 없이도
+ * 화면·현장 이동은 막지 않는다.
+ */
+export function areaPaletteItems(
+  siteId: string,
+  areas: readonly WorkArea[],
+): PaletteItem[] {
+  const encoded = encodeURIComponent(siteId);
+  return areas.map((area) => ({
+    key: `area:${siteId}:${area.workAreaId}`,
+    label: area.name,
+    group: "영역",
+    href: `/sites/${encoded}?panel=areas&workAreaId=${encodeURIComponent(area.workAreaId)}`,
+    hint: area.status === "ARCHIVED" ? "보관된 영역" : undefined,
+    keywords: area.workAreaId,
+  }));
 }
