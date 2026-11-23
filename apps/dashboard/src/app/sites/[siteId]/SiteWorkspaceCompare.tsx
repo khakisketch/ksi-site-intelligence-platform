@@ -23,6 +23,8 @@ import {
 import { visualPairCatalogOptions } from "./site-visual-pair";
 import { capturePeriodTitle } from "@/lib/operator-language";
 import { SiteNativeExtentSvg } from "./SiteNativeExtentSvg";
+import { CompareTimeStrip } from "./CompareTimeStrip";
+import { buildCompareTimeline } from "./compare-timeline";
 import {
   disambiguatedAreaNames,
   extractSimpleRing,
@@ -181,7 +183,7 @@ export function SiteWorkspaceCompare({
   exploreHref: string;
   facts: WorkspaceServerFacts;
   /** Same comparison logic, with its observation controls hosted by the workspace rail. */
-  presentation?: "full" | "controls" | "viewer" | "inspector";
+  presentation?: "full" | "controls" | "viewer" | "inspector" | "timeline";
 }) {
   // 무대(viewer)는 짧은 고지·막힘·다음 행동만 둔다. 칸 카드·조건 펼침·
   // 장문 안내는 정보 서랍(inspector)이 맡는다 — 무대는 매체와 선택이 먼저다.
@@ -210,6 +212,32 @@ export function SiteWorkspaceCompare({
   const visualAFact = visualPair.status === "ready" ? visualPair.sideA : null;
   const visualBFact = visualPair.status === "ready" ? visualPair.sideB : null;
   const formAction = selected ? `${sitePath}?` : sitePath;
+  // 시간 띠 — 순서 있는 관측을 날짜로 놓고 이전·이후를 고른다. 점은 같은 GET 주소 파라미터로 이어지는 링크다.
+  // 쌍이 해석되지 않았으면(unresolvable) 표시를 만들지 않는다 — 요청한 참조를 다른 점으로 바꿔 보이지 않는다.
+  const timelineKeep = [
+    ["visualAAssetRef", visualAFact?.assetRef ?? visualARequestedRef],
+    ["visualBAssetRef", visualBFact?.assetRef ?? visualBRequestedRef],
+  ].filter((entry): entry is [string, string] => typeof entry[1] === "string" && entry[1].length > 0);
+  const timelineNode = selected && projectionState === "ready" ? (
+    <CompareTimeStrip
+      model={buildCompareTimeline({
+        facts,
+        workAreaId: selected.workAreaId,
+        catalogAssets,
+        areaCrs: geometry?.crs ?? null,
+        baselineAssetRef: baselineFact?.assetRef ?? null,
+        currentAssetRef: currentFact?.assetRef ?? null,
+        tiedEpochIds: tiedEpochs,
+      })}
+      sitePath={sitePath}
+      workAreaId={selected.workAreaId}
+      keep={timelineKeep}
+      uploadHref={siteUploadHref(sitePath, selected.workAreaId)}
+      canUpload={canCreateWorkOrderHere}
+      analysisHref={canCreateAnalysis ? scopedCompareHref : null}
+    />
+  ) : null;
+  if (presentation === "timeline") return timelineNode;
   const hasOptions = eligible.length > 0;
   const showNoOptionBox = selected !== null
     && projectionState === "ready"
@@ -474,6 +502,7 @@ export function SiteWorkspaceCompare({
             : " · 쌍을 고르세요")}
       </p>
     )}
+    {presentation === "full" && timelineNode}
     {resolution.status === "unresolvable" && (
       <div role="alert" className="rounded-lg border border-line bg-surface px-4 py-3">
         <p className="text-body font-bold">{resolution.headline}</p>

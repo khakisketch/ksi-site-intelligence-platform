@@ -1143,6 +1143,9 @@ export function SiteWorkspaceShell({
           reason="같은 작업구역에 두 시점의 자료가 등록되면 나란히 볼 수 있습니다."
           action={<Link href={exploreHref} className="btn btn-primary">단일 시점으로 돌아가기</Link>}
         />}
+        {areasKnown && selected && !emptyCompare && !materialIssue && (
+          <SiteWorkspaceCompare {...compareProps} presentation="timeline" />
+        )}
         {areasKnown && selected && (comparisonReady || visualReady) && viewerJobsState !== "not-requested" && catalogStatus === null && (
           <>
             <p className="shrink-0 text-caption leading-5 text-ink-muted max-sm:text-micro max-sm:leading-4">각 칸은 독립된 보기입니다. 같은 범위 맞춤·같은 색 눈금은 지원하지 않습니다.</p>
