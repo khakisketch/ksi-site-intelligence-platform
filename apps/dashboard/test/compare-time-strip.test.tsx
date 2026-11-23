@@ -53,7 +53,7 @@ function strip(selected = true) {
     baselineAssetRef: selected ? ref(4) : null, currentAssetRef: selected ? ref(5) : null,
   });
   return render(
-    <CompareTimeStrip model={model} sitePath={SITE_PATH} workAreaId={AREA} keep={[["visualAAssetRef", ref(2)]]}
+    <CompareTimeStrip model={model} sitePath={SITE_PATH} workAreaId={AREA}
       uploadHref={`${SITE_PATH}/upload?workAreaId=${AREA}`} canUpload analysisHref={`${SITE_PATH}/analysis?x=1`} />,
   );
 }
@@ -72,7 +72,8 @@ describe("CompareTimeStrip", () => {
     expect(url.searchParams.get("workAreaId")).toBe(AREA);
     expect(url.searchParams.get("baselineAssetRef")).toBe(ref(4));
     expect(url.searchParams.get("currentAssetRef")).toBe(ref(5));
-    expect(url.searchParams.get("visualAAssetRef")).toBe(ref(2));
+    // 점 주소의 키는 시간순 비교가 받는 네 개뿐이다(독립 보기 키와 함께 실리면 서버가 막는다).
+    expect([...url.searchParams.keys()].sort()).toEqual(["baselineAssetRef", "currentAssetRef", "mode", "workAreaId"]);
     // 누를 수 있는 다른 점: 08-21은 바깥(앞쪽)이라 이전을 바꾼다.
     const other = within(section).getByRole("link", { name: /8월 21일.*이전으로 고르기/ });
     const otherUrl = new URL(other.getAttribute("href")!, "http://x");
@@ -153,6 +154,54 @@ describe("CompareTimeStrip", () => {
     expect(card.textContent).not.toContain("비교 불가");
   });
 
+  it("모든 점 링크가 시간순 비교 키 네 개만 싣는다", () => {
+    strip();
+    const links = [...document.querySelectorAll("[data-compare-timeline] ol a")];
+    expect(links.length).toBeGreaterThan(1);
+    for (const link of links) {
+      const url = new URL(link.getAttribute("href")!, "http://x");
+      expect([...url.searchParams.keys()].sort()).toEqual(["baselineAssetRef", "currentAssetRef", "mode", "workAreaId"]);
+    }
+  });
+
+  it("분석 밖 좌표계는 흐리지 않고 회색 칩 '분석 밖 · 코드'만 붙인다", () => {
+    const model = buildCompareTimeline({
+      facts: facts([fact(1, day("2026-08-01")), fact(2, day("2026-08-20"))]), workAreaId: AREA,
+      catalogAssets: [catalog(1, "EPSG:32750"), catalog(2, "EPSG:32750")],
+    });
+    render(<CompareTimeStrip model={model} sitePath={SITE_PATH} workAreaId={AREA} />);
+    const section = screen.getByRole("region", { name: "자료 날짜" });
+    expect(section.textContent).toContain("분석 밖 · 32750");
+    expect(section.textContent).toContain("기준 좌표계 · 분석 밖 EPSG:32750");
+    expect(within(section).getAllByRole("link", { name: /고르기$/ })).toHaveLength(2);
+    expect(section.querySelector("[data-compare-state]")).toBeNull();
+  });
+
+  it("점 사이 최소 간격 48px을 지키도록 띠의 최소 폭을 잡는다", () => {
+    const dated = [1, 2, 3, 4, 5, 6].map((n) => fact(n, day(`2026-10-0${n}`)));
+    const model = buildCompareTimeline({ facts: facts(dated), workAreaId: AREA, catalogAssets: dated.map((_, i) => catalog(i + 1, "EPSG:5186")) });
+    render(<CompareTimeStrip model={model} sitePath={SITE_PATH} workAreaId={AREA} />);
+    const list = document.querySelector("[data-compare-timeline] ol") as HTMLElement;
+    const lefts = model.slots.map((slot) => slot.leftPercent);
+    const minGap = Math.min(...lefts.slice(1).map((value, i) => value - lefts[i]!));
+    const minWidth = parseFloat(list.style.minWidth);
+    expect((minWidth * minGap) / 100).toBeGreaterThanOrEqual(48);
+    expect(list.parentElement!.className).toContain("overflow-x-auto");
+  });
+
+  it("선택한 두 관측이 띠에 없으면 아직 고르지 않았다고 하지 않는다", () => {
+    const model = buildCompareTimeline({
+      facts: facts([fact(1, { chronologyCandidate: false, captureDate: "2026-09-14" }), fact(2, day("2026-10-02")), fact(3, day("2026-11-02"))]),
+      workAreaId: AREA, catalogAssets: [catalog(2, "EPSG:5186"), catalog(3, "EPSG:5186")],
+      baselineAssetRef: ref(1), currentAssetRef: ref(2),
+    });
+    render(<CompareTimeStrip model={model} sitePath={SITE_PATH} workAreaId={AREA} />);
+    const section = screen.getByRole("region", { name: "자료 날짜" });
+    expect(section.textContent).toContain("선택한 두 관측이 이 띠에 없습니다");
+    expect(section.textContent).not.toContain("아직 고르지 않았습니다");
+    expect(section.querySelector("[aria-current]")).toBeNull();
+  });
+
   it("관측이 하나도 없으면 아무것도 그리지 않는다", () => {
     const model = buildCompareTimeline({ facts: facts([]), workAreaId: AREA, catalogAssets: [] });
     const { container } = render(<CompareTimeStrip model={model} sitePath={SITE_PATH} workAreaId={AREA} />);
@@ -186,6 +235,26 @@ describe("SiteWorkspaceCompare presentation=timeline", () => {
     const section = screen.getByRole("region", { name: "자료 날짜" });
     expect(section.textContent).toContain("41일 사이");
     expect(within(section).getByRole("link", { name: /10월 2일.*이전으로 선택됨/ }).getAttribute("aria-current")).toBe("true");
+  });
+
+  it("독립 보기(visualA/B)가 주소에 있어도 점 주소에는 싣지 않는다", () => {
+    render(
+      <SiteWorkspaceCompare
+        sitePath={SITE_PATH} areas={[area]} selectedWorkAreaId={AREA} catalogAssets={CATALOG}
+        projectionState="ready" workspaceHasMore={false} baselineRequestedRef={null} currentRequestedRef={null}
+        resolution={{ status: "prompt" }} visualARequestedRef={ref(2)} visualBRequestedRef={ref(4)}
+        canCreateAnalysis canCreateWorkOrder scopedCompareHref={`${SITE_PATH}/analysis`} exploreHref={SITE_PATH}
+        facts={facts(LIST)} presentation="timeline"
+      />,
+    );
+    const links = [...document.querySelectorAll("[data-compare-timeline] ol a")];
+    expect(links.length).toBeGreaterThan(0);
+    for (const link of links) {
+      const keys = [...new URL(link.getAttribute("href")!, "http://x").searchParams.keys()];
+      expect(keys).not.toContain("visualAAssetRef");
+      expect(keys).not.toContain("visualBAssetRef");
+      expect(keys.sort()).toEqual(["baselineAssetRef", "currentAssetRef", "mode", "workAreaId"]);
+    }
   });
 
   it("쌍이 해석되지 않았으면 선택 표시 없이 고를 수 있는 점만 보인다", () => {

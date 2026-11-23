@@ -97,16 +97,92 @@ describe("buildCompareTimeline", () => {
     expect(pointOf(model, 3).swatch).toBeNull(); // 정사영상은 좌표계를 읽지 않는다.
   });
 
-  it("분석 밖 좌표계는 회색(swatch null)이고 흐리게 둔다", () => {
+  it("분석 좌표계 둘과 분석 밖 하나: OK, 분석 밖 하나는 좌표계 다름으로 흐리게", () => {
     const model = buildCompareTimeline({
       facts: facts([fact({ n: 1, ...interval("2026-08-01") }), fact({ n: 2, ...interval("2026-08-10") }), fact({ n: 3, ...interval("2026-08-20") })]),
       workAreaId: AREA,
       catalogAssets: [catalog(1, "EPSG:5186"), catalog(2, "EPSG:5186"), catalog(3, "EPSG:3857")],
     });
+    expect(model.status).toBe("OK");
     const outside = model.slots.flatMap((slot) => slot.points).find((point) => point.assetRef === ref(3))!;
     expect(outside.swatch).toBeNull();
-    expect(outside.dimmed).toBe("crs-outside-analysis");
+    expect(outside.dimmed).toBe("crs-different");
     expect(outside.pair).toBeNull();
+    expect(pointOf(model, 1).dimmed).toBeNull();
+  });
+
+  it("높이 DSM 둘이 같은 분석 밖 좌표계면 OK이고 둘 다 선택할 수 있다(회색, 흐리지 않음)", () => {
+    const model = buildCompareTimeline({
+      facts: facts([fact({ n: 1, ...interval("2026-08-01") }), fact({ n: 2, ...interval("2026-08-20") })]),
+      workAreaId: AREA,
+      catalogAssets: [catalog(1, "EPSG:32750"), catalog(2, "EPSG:32750")],
+    });
+    expect(model.status).toBe("OK");
+    expect(model.referenceCrs).toBe("EPSG:32750");
+    expect(model.referenceSwatch).toBeNull();
+    for (const n of [1, 2]) {
+      const point = pointOf(model, n);
+      expect(point.dimmed).toBeNull();
+      expect(point.swatch).toBeNull();
+      expect(point.pair).not.toBeNull();
+    }
+    expect(pointOf(model, 2).pair).toEqual({ baselineAssetRef: ref(1), currentAssetRef: ref(2) });
+  });
+
+  it("분석 밖 좌표계 둘이 서로 다르면 CRS_MISMATCH", () => {
+    const model = buildCompareTimeline({
+      facts: facts([fact({ n: 1, ...interval("2026-08-01") }), fact({ n: 2, ...interval("2026-08-20") })]),
+      workAreaId: AREA,
+      catalogAssets: [catalog(1, "EPSG:32750"), catalog(2, "EPSG:3857")],
+    });
+    expect(model.status).toBe("CRS_MISMATCH");
+    // 동률이면 가장 이른 촬영의 좌표계가 기준이다.
+    expect(model.referenceCrs).toBe("EPSG:32750");
+    expect(pointOf(model, 2).dimmed).toBe("crs-different");
+  });
+
+  it("분석 좌표계 하나와 같은 분석 밖 좌표계 둘이면 짝이 되는 분석 밖 쪽을 기준으로 OK", () => {
+    const model = buildCompareTimeline({
+      facts: facts([fact({ n: 1, ...interval("2026-08-01") }), fact({ n: 2, ...interval("2026-08-10") }), fact({ n: 3, ...interval("2026-08-20") })]),
+      workAreaId: AREA,
+      catalogAssets: [catalog(1, "EPSG:5186"), catalog(2, "EPSG:32750"), catalog(3, "EPSG:32750")],
+    });
+    expect(model.status).toBe("OK");
+    expect(model.referenceCrs).toBe("EPSG:32750");
+    expect(pointOf(model, 1).dimmed).toBe("crs-different");
+  });
+
+  it("고른 쌍이 있으면 이전 자료의 좌표계가 기준이고, 상태는 쌍과 무관하다", () => {
+    const model = build({ baselineAssetRef: ref(1), currentAssetRef: ref(5) });
+    expect(model.referenceCrs).toBe("EPSG:32652");
+    expect(model.status).toBe("OK");
+  });
+
+  it("짝 후보는 띠에 올라온 점으로 한정한다(오래된 점을 고르지 않는다)", () => {
+    const dated = Array.from({ length: 10 }, (_, i) =>
+      fact({ n: i + 1, ...interval(new Date(Date.UTC(2026, 0, 1 + i * 10)).toISOString().slice(0, 10)) }));
+    const model = buildCompareTimeline({
+      facts: facts(dated),
+      workAreaId: AREA,
+      catalogAssets: dated.map((_, i) => catalog(i + 1, "EPSG:5186")),
+    });
+    expect(model.slots).toHaveLength(8);
+    expect(model.hiddenCount).toBe(2);
+    // 가장 오래된 올라온 점(3번)은 이전이 되어 바로 뒤와 짝이 된다. 숨은 1·2번과 짝이 되지 않는다.
+    expect(pointOf(model, 3).pair).toEqual({ baselineAssetRef: ref(3), currentAssetRef: ref(4) });
+  });
+
+  it("해석된 쌍을 요청했는데 점에서 못 찾으면 selectionMissing", () => {
+    const missing = build({ baselineAssetRef: ref(3), currentAssetRef: ref(5) }); // 3은 정사영상이라도 순서 점이다
+    expect(missing.selectionMissing).toBe(false);
+    const tied = buildCompareTimeline({
+      facts: facts([fact({ n: 1, chronologyCandidate: false, captureDate: "2026-09-14" }), fact({ n: 2, ...interval("2026-10-02") })]),
+      workAreaId: AREA, catalogAssets: [catalog(2, "EPSG:5186")],
+      baselineAssetRef: ref(1), currentAssetRef: ref(2),
+    });
+    expect(tied.selectionMissing).toBe(true);
+    expect(tied.baseline).toBeNull();
+    expect(build().selectionMissing).toBe(false);
   });
 
   it("표시 준비 전인 순서 후보는 흐리게 두고 누를 수 없다", () => {

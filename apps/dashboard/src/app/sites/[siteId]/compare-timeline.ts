@@ -1,5 +1,5 @@
 import type { SpatialAssetCatalogItem } from "@/lib/core-api/spatial-assets";
-import { assignCrsSwatches, normalizeCrs, summarizeAreaDsmCrs } from "@/lib/crs-match";
+import { assignCrsSwatches, normalizeCrs } from "@/lib/crs-match";
 import { isAnalysisCrs } from "@/lib/geo/known-crs";
 import { koreanCalendarDate } from "@/lib/observation-default-name";
 import {
@@ -24,8 +24,8 @@ import { CAPTURE_STRIP_WIDTH, layoutCaptureStrip } from "./areas/area-summary";
 
 export type TimelineStatus = "OK" | "ONLY_ONE" | "CRS_MISMATCH" | "NO_ORDERABLE";
 
-/** 점을 고를 수 없게 흐리는 이유. 선택된 점은 흐리지 않는다(이미 고른 것을 숨기지 않는다). */
-export type TimelineDimReason = "no-height" | "not-ready" | "crs-different" | "crs-outside-analysis";
+/** 점을 고를 수 없게 흐리는 이유. 선택된 점은 흐리지 않는다. 분석 밖 좌표계는 흐리는 이유가 아니다(칩으로만 알린다). */
+export type TimelineDimReason = "no-height" | "not-ready" | "crs-different";
 
 export type TimelineRole = "baseline" | "current";
 
@@ -97,6 +97,8 @@ export type CompareTimeline = {
   withYear: boolean;
   /** 점을 하나라도 누를 수 있는가(안내 문구용). */
   hasPickable: boolean;
+  /** 서버가 해석한 쌍을 요청했는데 띠에서 두 점을 찾지 못했다. */
+  selectionMissing: boolean;
 };
 
 function startMsOf(fact: WorkspaceObservationFact): number | null {
@@ -206,19 +208,30 @@ export function buildCompareTimeline(input: {
     ? { baseline: baselineDraft, current: currentDraft }
     : null;
 
+  // 기준 좌표계 — 높이 DSM을 읽은 좌표계(normalizeCrs)로 묶는다. 짝이 되는 건 같은 좌표계끼리다.
+  // 고른 쌍이 있으면 이전 자료의 좌표계, 없으면 짝이 될 수 있는(2건 이상) 그룹 → 분석 좌표계 → 건수 많은 쪽 →
+  // 영역 좌표계 → 가장 이른 촬영 순이다. 분석 밖 좌표계도 기준이 될 수 있다 — 분석 가능 여부는 분석 화면이 판단한다.
   const heightDrafts = ordered.filter((draft) => draft.isHeight && draft.ready);
-  const analysisGroups = summarizeAreaDsmCrs(
-    heightDrafts.map((draft) => catalogByRef.get(draft.fact.assetRef)).filter((item): item is SpatialAssetCatalogItem => item !== undefined),
-    false,
-  ).groups.filter((group) => isAnalysisCrs(group.crs));
   const areaCrs = normalizeCrs(input.areaCrs);
-  const selectedCrs = selection
-    ? [selection.baseline.crs, selection.current.crs].find((crs): crs is string => crs !== null && isAnalysisCrs(crs)) ?? null
-    : null;
-  const referenceCrs = selectedCrs ?? [...analysisGroups]
-    .sort((a, b) => b.count - a.count || Number(b.crs === areaCrs) - Number(a.crs === areaCrs) || a.crs.localeCompare(b.crs))[0]?.crs ?? null;
+  const crsGroups = new Map<string, { count: number; firstMs: number }>();
+  for (const draft of heightDrafts) {
+    if (draft.crs === null) continue;
+    const group = crsGroups.get(draft.crs) ?? { count: 0, firstMs: draft.startMs };
+    group.count += 1;
+    group.firstMs = Math.min(group.firstMs, draft.startMs);
+    crsGroups.set(draft.crs, group);
+  }
+  const dominantCrs = [...crsGroups.entries()].sort(([codeA, a], [codeB, b]) =>
+    Number(b.count >= 2) - Number(a.count >= 2)
+    || Number(isAnalysisCrs(codeB)) - Number(isAnalysisCrs(codeA))
+    || b.count - a.count
+    || Number(codeB === areaCrs) - Number(codeA === areaCrs)
+    || a.firstMs - b.firstMs
+    || codeA.localeCompare(codeB))[0]?.[0] ?? null;
+  const selectedCrs = selection ? (selection.baseline.crs ?? selection.current.crs) : null;
+  const referenceCrs = selectedCrs ?? dominantCrs;
   const swatches = assignCrsSwatches([
-    ...(referenceCrs ? [referenceCrs] : []),
+    ...(referenceCrs && isAnalysisCrs(referenceCrs) ? [referenceCrs] : []),
     ...ordered.map((draft) => draft.crs).filter((crs): crs is string => crs !== null && isAnalysisCrs(crs)),
   ]);
 
@@ -227,13 +240,20 @@ export function buildCompareTimeline(input: {
     if (!draft.isHeight) return "no-height";
     if (!draft.ready) return "not-ready";
     if (draft.crs === null) return null; // 좌표계를 아직 읽지 못함 — 단정하지 않고 고를 수 있게 둔다.
-    if (!isAnalysisCrs(draft.crs)) return "crs-outside-analysis";
     return referenceCrs !== null && draft.crs !== referenceCrs ? "crs-different" : null;
   };
 
   const years = new Set(ordered.map((draft) => draft.date.slice(0, 4)));
   const sameDateCount = new Map<string, number>();
   for (const draft of ordered) sameDateCount.set(draft.date, (sameDateCount.get(draft.date) ?? 0) + 1);
+
+  // 띠에 올릴 날짜 — 최근 8개. 고른 두 날짜는 오래되어도 반드시 올린다. 짝 후보도 올라온 점으로 한정한다.
+  const allDates = [...new Set(ordered.map((draft) => draft.date))].sort();
+  const selectedDates = new Set(selection ? [selection.baseline.date, selection.current.date] : []);
+  const room = Math.max(0, 8 - selectedDates.size);
+  const recent = allDates.filter((date) => !selectedDates.has(date)).slice(-room);
+  const shownDates = [...new Set([...selectedDates, ...recent])].sort();
+  const shownSet = new Set(shownDates);
 
   // 4) 눌렀을 때의 쌍. 시간 순서가 뒤집히지 않게 항상 (이전, 이후) 순으로 만든다.
   const pickable = (draft: Draft) => dimOf(draft) === null;
@@ -257,7 +277,7 @@ export function buildCompareTimeline(input: {
         : { pair: { baselineAssetRef: lo.ref, currentAssetRef: draft.fact.assetRef }, becomes: "current" };
     }
     // 쌍이 아직 없다 — 고른 점이 이후, 바로 앞의 누를 수 있는 점이 이전. 앞이 없으면 고른 점이 이전, 바로 뒤가 이후.
-    const others = ordered.filter((other) => other !== draft && pickable(other));
+    const others = ordered.filter((other) => other !== draft && pickable(other) && shownSet.has(other.date));
     const before = [...others].reverse().find((other) => other.startMs < draft.startMs) ?? null;
     if (before) return { pair: { baselineAssetRef: before.fact.assetRef, currentAssetRef: draft.fact.assetRef }, becomes: "current" };
     const after = others.find((other) => other.startMs > draft.startMs) ?? null;
@@ -285,12 +305,6 @@ export function buildCompareTimeline(input: {
     });
   }
 
-  // 5) 띠에 올릴 날짜 — 최근 8개. 고른 두 날짜는 오래되어도 반드시 올린다.
-  const allDates = [...new Set(ordered.map((draft) => draft.date))].sort();
-  const selectedDates = new Set(selection ? [selection.baseline.date, selection.current.date] : []);
-  const room = Math.max(0, 8 - selectedDates.size);
-  const recent = allDates.filter((date) => !selectedDates.has(date)).slice(-room);
-  const shownDates = [...new Set([...selectedDates, ...recent])].sort();
   const strip = layoutCaptureStrip(shownDates);
   const slots: TimelineSlot[] = strip
     ? strip.points.map((point) => ({
@@ -308,7 +322,8 @@ export function buildCompareTimeline(input: {
   const days = baseline && current ? Math.round(Math.abs(dayNumber(current.date) - dayNumber(baseline.date))) : null;
   const selectionCrsMismatch = Boolean(baseline && current && baseline.crs && current.crs && baseline.crs !== current.crs);
 
-  const usable = heightDrafts.filter((draft) => draft.crs === null || draft.crs === referenceCrs);
+  // 상태는 고른 쌍과 무관하게 정한다 — 같은 좌표계로 묶이는(아직 모르는 것 포함) 높이 자료가 둘 이상인가.
+  const usable = heightDrafts.filter((draft) => draft.crs === null || draft.crs === dominantCrs);
   const status: TimelineStatus = ordered.length === 0
     ? "NO_ORDERABLE"
     : heightDrafts.length < 2
@@ -332,6 +347,7 @@ export function buildCompareTimeline(input: {
     reversed,
     selectionCrsMismatch,
     withYear: years.size > 1,
+    selectionMissing: Boolean(input.baselineAssetRef && input.currentAssetRef && !selection),
     hasPickable: [...points.values()].some((point) => point.pair !== null),
   };
 }

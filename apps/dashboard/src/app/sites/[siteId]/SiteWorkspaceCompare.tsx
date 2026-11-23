@@ -213,11 +213,8 @@ export function SiteWorkspaceCompare({
   const visualBFact = visualPair.status === "ready" ? visualPair.sideB : null;
   const formAction = selected ? `${sitePath}?` : sitePath;
   // 시간 띠 — 순서 있는 관측을 날짜로 놓고 이전·이후를 고른다. 점은 같은 GET 주소 파라미터로 이어지는 링크다.
-  // 쌍이 해석되지 않았으면(unresolvable) 표시를 만들지 않는다 — 요청한 참조를 다른 점으로 바꿔 보이지 않는다.
-  const timelineKeep = [
-    ["visualAAssetRef", visualAFact?.assetRef ?? visualARequestedRef],
-    ["visualBAssetRef", visualBFact?.assetRef ?? visualBRequestedRef],
-  ].filter((entry): entry is [string, string] => typeof entry[1] === "string" && entry[1].length > 0);
+  // 점의 주소에는 시간순 비교 키만 싣는다 — 독립 보기(visualA/B)와 함께 보내면 서버가 막으므로 점을 누르면 독립 보기 선택은 버려진다.
+  // 해석된 쌍(ready)만 선택으로 표시한다 — 요청한 참조를 다른 점으로 바꿔 보이지 않는다.
   const timelineNode = selected && projectionState === "ready" ? (
     <CompareTimeStrip
       model={buildCompareTimeline({
@@ -231,7 +228,6 @@ export function SiteWorkspaceCompare({
       })}
       sitePath={sitePath}
       workAreaId={selected.workAreaId}
-      keep={timelineKeep}
       uploadHref={siteUploadHref(sitePath, selected.workAreaId)}
       canUpload={canCreateWorkOrderHere}
       analysisHref={canCreateAnalysis ? scopedCompareHref : null}

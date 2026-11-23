@@ -2,6 +2,7 @@ import Link from "next/link";
 
 import { ResponsiveActionBoundary } from "@/components/responsive/ResponsiveActionBoundary";
 import { Disclosure } from "@/components/ui/Disclosure";
+import { isAnalysisCrs } from "@/lib/geo/known-crs";
 import { dataKindLabel } from "@/lib/operator-language";
 
 import { shortDate, spokenDate } from "./areas/area-summary";
@@ -27,8 +28,10 @@ const DIM_LABEL: Record<TimelineDimReason, string> = {
   "no-height": "높이 자료 없음",
   "not-ready": "표시 준비 전",
   "crs-different": "좌표계 다름",
-  "crs-outside-analysis": "분석 밖 좌표계",
 };
+
+/** 이웃한 점 사이 최소 간격(px) — 터치 영역 44px보다 크다. */
+const MIN_POINT_GAP_PX = 48;
 
 const ROLE_LABEL = { baseline: "이전", current: "이후" } as const;
 /** 조사까지 붙인 형태("이전으로"/"이후로"). */
@@ -44,16 +47,19 @@ function swatchStyle(swatch: number | null) {
   return { background: swatch ? `var(--crs-${swatch})` : "var(--idle)" };
 }
 
-function pointHref(
+/**
+ * 점의 주소 — 시간순 비교가 받는 키(mode·workAreaId·baselineAssetRef·currentAssetRef)만 싣는다.
+ * 독립 보기(visualA/B)를 함께 실으면 서버가 "비교 선택 방식을 하나만 사용하세요"로 막으므로,
+ * 점을 누르면 시간순 비교로 바뀌고 독립 보기 선택은 버려진다.
+ */
+export function pointHref(
   sitePath: string,
   workAreaId: string,
   pair: NonNullable<TimelinePoint["pair"]>,
-  keep: ReadonlyArray<readonly [string, string]>,
 ): string {
   const query = new URLSearchParams();
   query.set("mode", "compare");
   query.set("workAreaId", workAreaId);
-  for (const [key, value] of keep) query.set(key, value);
   query.set("baselineAssetRef", pair.baselineAssetRef);
   query.set("currentAssetRef", pair.currentAssetRef);
   return `${sitePath}?${query.toString()}`;
@@ -65,11 +71,11 @@ function CrsChip({ point }: { point: TimelinePoint }) {
   if (point.dimmed === "not-ready") return <span className="rounded-full bg-sunk px-1.5 text-micro leading-[18px] text-ink-2">표시 준비 전</span>;
   if (point.crs === null) return <span className="rounded-full bg-sunk px-1.5 text-micro leading-[18px] text-ink-2">좌표계 확인 전</span>;
   const code = shortCrs(point.crs);
-  const label = point.dimmed === "crs-different" ? `좌표계 다름 · ${code}`
-    : point.dimmed === "crs-outside-analysis" ? `분석 밖 · ${code}`
-      : code;
+  // 분석 밖 좌표계는 흐리지 않고 회색 칩으로만 알린다 — 분석 가능 여부는 분석 화면이 판단한다.
+  const outside = !isAnalysisCrs(point.crs);
+  const label = point.dimmed === "crs-different" ? `좌표계 다름 · ${code}` : outside ? `분석 밖 · ${code}` : code;
   return (
-    <span className={`inline-flex items-center gap-1 whitespace-nowrap text-micro leading-[18px] ${point.dimmed ? "rounded-full bg-sunk px-1.5 text-ink-2" : "text-ink-2"}`}>
+    <span className={`inline-flex items-center gap-1 whitespace-nowrap text-micro leading-[18px] ${point.dimmed || outside ? "rounded-full bg-sunk px-1.5 text-ink-2" : "text-ink-2"}`}>
       <i aria-hidden="true" className="inline-block size-1.5 rounded-full" style={swatchStyle(point.swatch)} />
       {label}
     </span>
@@ -125,9 +131,6 @@ function PointBlock({
         {shortDate(point.date)}{point.time ? ` ${point.time}` : ""}
       </span>
       <span className={muted ? "opacity-80" : ""}><CrsChip point={point} /></span>
-      {point.role && point.dimmed === null && point.crs && point.swatch === null && (
-        <span className="text-micro text-ink-muted">분석 밖 좌표계</span>
-      )}
     </div>
   );
 }
@@ -201,13 +204,11 @@ function VolumeNotice({ analysisHref }: { analysisHref: string | null }) {
 }
 
 export function CompareTimeStrip({
-  model, sitePath, workAreaId, keep = [], uploadHref = null, canUpload = false, analysisHref = null,
+  model, sitePath, workAreaId, uploadHref = null, canUpload = false, analysisHref = null,
 }: {
   model: CompareTimeline;
   sitePath: string;
   workAreaId: string;
-  /** 쌍을 바꿔도 그대로 둘 주소 파라미터(독립 보기 A·B 등). */
-  keep?: ReadonlyArray<readonly [string, string]>;
   uploadHref?: string | null;
   canUpload?: boolean;
   /** 분석 조건 확인 화면 — 권한이 없으면 null. */
@@ -216,9 +217,13 @@ export function CompareTimeStrip({
   if (model.slots.length === 0 && model.unordered.length === 0) return null;
   const stack = Math.max(1, ...model.slots.map((slot) => slot.points.length));
   const height = 18 + 44 + 20 + 22 + (stack - 1) * 110;
+  // 점 사이 최소 간격 48px — 터치 영역(44px)이 겹치지 않게 띠의 최소 폭을 잡는다. 넘치면 띠 안에서만 가로로 민다.
+  const lefts = model.slots.map((slot) => slot.leftPercent);
+  const minGap = lefts.slice(1).reduce((least, value, index) => Math.min(least, value - lefts[index]!), Infinity);
+  const stripMinWidth = Number.isFinite(minGap) && minGap > 0 ? Math.max(56, Math.ceil((MIN_POINT_GAP_PX * 100) / minGap)) : 56;
   const summary = model.baseline && model.current
     ? `이전 ${spokenDate(model.baseline.date, model.withYear)}, 이후 ${spokenDate(model.current.date, model.withYear)}, ${model.days === 0 ? "같은 날" : `${model.days}일 사이`}`
-    : "이전·이후를 아직 고르지 않았습니다";
+    : model.selectionMissing ? "선택한 두 관측이 이 띠에 없습니다" : "이전·이후를 아직 고르지 않았습니다";
   const left = model.baseline && model.current ? Math.min(...[model.baseline, model.current].map((p) => slotLeft(model, p))) : null;
   const right = model.baseline && model.current ? Math.max(...[model.baseline, model.current].map((p) => slotLeft(model, p))) : null;
   return (
@@ -228,7 +233,7 @@ export function CompareTimeStrip({
         {model.referenceCrs && (
           <span className="inline-flex items-center gap-1.5 rounded-full bg-sunk px-2 text-caption leading-6">
             <i aria-hidden="true" className="inline-block size-2 rounded-full" style={swatchStyle(model.referenceSwatch)} />
-            분석 좌표계 {model.referenceCrs}
+            {isAnalysisCrs(model.referenceCrs) ? "분석 좌표계" : "기준 좌표계 · 분석 밖"} {model.referenceCrs}
           </span>
         )}
         <span className="flex-1" />
@@ -237,14 +242,15 @@ export function CompareTimeStrip({
           <span aria-hidden="true">
             {model.baseline && model.current
               ? (model.days === 0 ? "같은 날" : `${model.days}일 사이`)
-              : model.hasPickable ? "날짜를 누르세요" : ""}
+              : model.selectionMissing ? "선택한 두 관측이 이 띠에 없습니다"
+                : model.hasPickable ? "날짜를 누르세요" : ""}
           </span>
         </p>
       </div>
 
       {model.slots.length > 0 && (
         <div className="overflow-x-auto">
-          <ol aria-label="촬영 날짜" className="relative mx-6" style={{ height, minWidth: `${model.slots.length * 56}px` }}>
+          <ol aria-label="촬영 날짜" className="relative mx-6" style={{ height, minWidth: `${stripMinWidth}px` }}>
             <li aria-hidden="true" className="absolute inset-x-0 top-[39px] h-0.5 bg-line-strong" />
             {left !== null && right !== null && (
               <li aria-hidden="true" data-compare-range className="absolute top-[37px] h-1.5 rounded-full bg-ink-1" style={{ left: `${left}%`, width: `${right - left}%` }} />
@@ -256,7 +262,7 @@ export function CompareTimeStrip({
                     key={point.key}
                     point={point}
                     withYear={model.withYear}
-                    href={point.pair ? pointHref(sitePath, workAreaId, point.pair, keep) : null}
+                    href={point.pair ? pointHref(sitePath, workAreaId, point.pair) : null}
                   />
                 ))}
               </li>
