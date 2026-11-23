@@ -89,7 +89,7 @@ export default async function SiteDetailPage({
       ...normalizeCatalogFilters({ q: firstValue(query.q), kind: firstValue(query.kind), state: firstValue(query.state) }),
     }));
   }
-  const panel = query.panel === "materials" || query.panel === "intake" ? query.panel : null;
+  const panel = query.panel === "materials" || query.panel === "intake" || query.panel === "areas" ? query.panel : null;
   const cursor = typeof query.cursor === "string" && query.cursor.length <= 1024 ? query.cursor || undefined : undefined;
   const filters = normalizeCatalogFilters({
     q: typeof query.q === "string" ? query.q : undefined,

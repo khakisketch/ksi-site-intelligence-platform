@@ -42,7 +42,8 @@ export function normalizeCrs(value: string | null | undefined): string | null {
   return code ? code : null;
 }
 
-function captureDateOf(item: SpatialAssetCatalogItem): string | null {
+/** 촬영일(`YYYY-MM-DD`). 선언한 날짜가 먼저이고, 없으면 촬영 시작 시각의 한국 달력 날짜다. 모르면 null. */
+export function captureDateOf(item: SpatialAssetCatalogItem): string | null {
   const { captureDate, captureStartedAt } = item.declared;
   if (captureDate) return captureDate;
   if (!captureStartedAt) return null;

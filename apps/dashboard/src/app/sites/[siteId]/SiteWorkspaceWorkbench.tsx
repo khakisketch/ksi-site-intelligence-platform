@@ -22,6 +22,9 @@ export function SiteWorkspaceWorkbench({
   catalog,
   catalogLabel,
   intake,
+  areas,
+  areasLabel = "영역",
+  areasStage,
   initialPanel = null,
   initialInfoOpen = false,
   stage,
@@ -38,7 +41,16 @@ export function SiteWorkspaceWorkbench({
   /** 목록 드로어 이름. */
   catalogLabel: string;
   intake?: ReactNode;
-  initialPanel?: "materials" | "intake" | null;
+  /** "영역" 탭 내용(목록·상세). 주면 목록 서랍의 토글에 세 번째 항목이 생긴다. */
+  areas?: ReactNode;
+  /** "영역" 토글 이름 — 예: `영역 3`. */
+  areasLabel?: string;
+  /**
+   * "영역" 탭이 열려 있을 때 lg+에서 무대 자리를 대신 채우는 지도. 원래 무대는 마운트를 유지한 채 가린다
+   * (뷰어 상태를 잃지 않는다). 없으면 무대는 그대로다.
+   */
+  areasStage?: ReactNode;
+  initialPanel?: "materials" | "intake" | "areas" | null;
   initialInfoOpen?: boolean;
   /** 중앙 시각 무대 — 단일 또는 좌·우 독립 보기. */
   stage: ReactNode;
@@ -54,19 +66,35 @@ export function SiteWorkspaceWorkbench({
   viewerMode?: boolean;
 }) {
   const [infoOpen, setInfoOpen] = useState(initialInfoOpen);
-  const [panel, setPanel] = useState<"materials" | "intake">(initialPanel ?? "materials");
+  const [panel, setPanel] = useState<"materials" | "intake" | "areas">(initialPanel ?? "materials");
   const tabId = "workspace-catalog-tab";
-  const catalogBody = intake ? (
+  const toggles: Array<{ key: "materials" | "intake" | "areas"; label: string }> = [
+    { key: "materials", label: "자료" },
+    ...(intake ? [{ key: "intake" as const, label: "등록 진행" }] : []),
+    ...(areas ? [{ key: "areas" as const, label: areasLabel }] : []),
+  ];
+  // 내용이 없는 항목을 가리키던 상태는 자료로 되돌린다.
+  const shown = toggles.some((toggle) => toggle.key === panel) ? panel : "materials";
+  const catalogBody = toggles.length > 1 ? (
     <div className="flex min-w-0 flex-col gap-3">
       <div role="group" aria-label="자료 패널 보기" className="flex flex-wrap gap-1 rounded-md bg-sunk p-1">
-        <button type="button" onClick={() => setPanel("materials")} aria-pressed={panel === "materials"} aria-controls={tabId}
-          className={`tap-target grow rounded-md px-2 text-caption ${panel === "materials" ? "bg-surface font-bold" : "text-ink-2"}`}>자료</button>
-        <button type="button" onClick={() => setPanel("intake")} aria-pressed={panel === "intake"} aria-controls={tabId}
-          className={`tap-target grow rounded-md px-2 text-caption ${panel === "intake" ? "bg-surface font-bold" : "text-ink-2"}`}>등록 진행</button>
+        {toggles.map((toggle) => (
+          <button key={toggle.key} type="button" onClick={() => setPanel(toggle.key)} aria-pressed={shown === toggle.key} aria-controls={tabId}
+            className={`tap-target grow rounded-md px-2 text-caption ${shown === toggle.key ? "bg-surface font-bold" : "text-ink-2"}`}>{toggle.label}</button>
+        ))}
       </div>
-      <div id={tabId}>{panel === "intake" ? intake : catalog}</div>
+      <div id={tabId}>{shown === "intake" ? intake : shown === "areas" ? areas : catalog}</div>
     </div>
   ) : catalog;
+  const areasMapOpen = shown === "areas" && Boolean(areasStage);
+  const stageBody = areasStage ? (
+    <>
+      {/* 영역 탭이 열려 있는 동안만 lg+에서 원래 무대를 가린다. 서랍을 닫으면(프레임의 data-catalog-open)
+          뷰어가 돌아온다. 좁은 화면은 서랍 안의 작은 지도를 쓴다. */}
+      <div className={areasMapOpen ? "h-full lg:in-data-[catalog-open=true]:hidden" : "contents"}>{stage}</div>
+      {areasMapOpen && <div className="hidden h-full lg:in-data-[catalog-open=true]:block">{areasStage}</div>}
+    </>
+  ) : stage;
   return (
     <SpatialWorkbenchFrame
       contextBar={
@@ -87,7 +115,7 @@ export function SiteWorkspaceWorkbench({
       catalog={catalogBody}
       defaultCatalogOpen={initialPanel !== null}
       catalogLabel={catalogLabel}
-      stage={stage}
+      stage={stageBody}
       inspector={
         <>
           <div data-workbench-inspector-heading className="flex min-w-0 items-center justify-between gap-2">
