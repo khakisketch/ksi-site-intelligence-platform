@@ -14,7 +14,9 @@ import { SITE_STATUS_LABEL } from "@/lib/core-api/labels";
 import { useAccountDisplayLock } from "@/components/nav/AccountDisplayBoundary";
 import { useCommandModifierLabel } from "./command-modifier";
 import { resolveShortcut } from "./shortcuts";
-import { contextPaletteItems } from "./context-palette";
+import { areaPaletteItems, contextPaletteItems } from "./context-palette";
+import { resolveSiteId } from "@/components/nav/site-context";
+import type { WorkArea } from "@/lib/core-api/types";
 
 /** 사이드바의 검색 버튼이 팔레트를 여는 신호. 컨텍스트 대신 이벤트를 쓰는 이유는
  *  셸의 절반이 서버 컴포넌트라, 프로바이더로 감싸면 그 경계가 통째로 클라이언트가
@@ -53,9 +55,45 @@ export function CommandPalette({ items }: { items: PaletteItem[] }) {
   const restoreFocusRef = useRef<HTMLElement | null>(null);
   const listboxId = "ksi-palette-listbox";
 
+  // 현재 현장의 영역 — 팔레트를 열 때 그 현장의 목록을 한 번 읽는다. 셸이 쥔
+  // 전역 색인이 아니라 들어와 있는 현장의 영역만 찾는다(없는 범위를 암시하지
+  // 않는다). 읽기에 실패하면 조용히 비워 둔다 — 영역 검색 없이도 화면·현장
+  // 이동은 막지 않는다. 닫히면 버리고 다음에 열 때 다시 읽는다.
+  const [areaItems, setAreaItems] = useState<PaletteItem[]>([]);
+  useEffect(() => {
+    if (!open) return;
+    const siteId = pathname ? resolveSiteId(pathname) : null;
+    if (!siteId || typeof fetch !== "function") return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const response = await fetch(
+          `/api/sites/${encodeURIComponent(siteId)}/work-areas?include_archived=true`,
+          { credentials: "same-origin" },
+        );
+        if (!response.ok || cancelled) return;
+        const data = (await response.json()) as { workAreas?: WorkArea[] };
+        // 빈 목록으로의 교체는 렌더를 일으키지 않는다 — 열어 둔 팔레트에
+        // 읽기가 닿지 않았다는 이유로 테스트·리더에 소음을 남기지 않는다.
+        if (!cancelled) {
+          const next = areaPaletteItems(siteId, data.workAreas ?? []);
+          setAreaItems((prev) => (prev.length === 0 && next.length === 0 ? prev : next));
+        }
+      } catch {
+        // 조용히 — 영역 검색 없이도 팔레트는 이동 수단으로 남는다.
+      }
+    })();
+    return () => {
+      cancelled = true;
+      setAreaItems([]);
+    };
+  }, [open, pathname]);
+
   const results = useMemo(
-    () => filterPaletteItems([...contextPaletteItems(effectiveItems, pathname ?? "", scopeSearch), ...effectiveItems], query),
-    [effectiveItems, pathname, query, scopeSearch],
+    // 영역은 찾는 대상이지 둘러보는 목록이 아니다 — 검색어가 있을 때만 섞는다.
+    // 빈 검색어에 전 현장의 영역을 늘어놓으면 "어디에 있는지" 감각이 깨진다.
+    () => filterPaletteItems([...contextPaletteItems(effectiveItems, pathname ?? "", scopeSearch), ...(query.trim() ? areaItems : []), ...effectiveItems], query),
+    [effectiveItems, pathname, query, scopeSearch, areaItems],
   );
   const scopedSite = scopeSearch ? parseScopedNavQuery(scopeSearch) : null;
   const shortcutRows: Array<{ keys: string[]; desc: string }> = [
@@ -373,8 +411,8 @@ export function CommandPalette({ items }: { items: PaletteItem[] }) {
                   setActive(0);
                 }}
                 onKeyDown={onInputKeyDown}
-                placeholder="화면 · 현장 검색"
-                aria-label="화면 또는 현장 검색"
+                placeholder="화면 · 현장 · 영역 검색"
+                aria-label="화면, 현장 또는 영역 검색"
                 role="combobox"
                 aria-expanded={results.length > 0}
                 aria-controls={listboxId}
@@ -404,11 +442,12 @@ export function CommandPalette({ items }: { items: PaletteItem[] }) {
                 </svg>
               </button>
             </div>
-            {/* 정직한 범위 — 팔레트는 셸이 쥔 화면·현장 이름만 찾는다. 파일·작업
-                기록은 각 현장 화면에서 확인한다(없는 범위를 암시하지 않는다).
+            {/* 정직한 범위 — 팔레트는 셸이 쥔 화면·현장 이름과, 들어와 있는 현장의
+                영역만 찾는다. 파일·작업 기록·다른 현장의 영역은 각 화면에서
+                확인한다(없는 범위를 암시하지 않는다).
                 현재 현장 범위(작업구역·관측)가 있으면 같은 범위로 이동한다. */}
             <p className="border-b border-line bg-sunk px-3.5 py-1.5 text-caption break-keep text-ink-muted">
-              화면·현장 이름 검색이며 파일·작업 기록은 각 현장에서 확인
+              화면·현장·영역 이름 검색이며 파일·작업 기록은 각 현장에서 확인
               {scopedSite?.workAreaId ? " · 현재 현장 범위를 함께 이동합니다" : ""}
             </p>
 
@@ -424,7 +463,7 @@ export function CommandPalette({ items }: { items: PaletteItem[] }) {
             >
               {results.length === 0 ? (
                 <li role="presentation" className="px-4 py-8 text-center text-body break-keep text-ink-muted">
-                  일치하는 화면이나 현장이 없습니다.
+                  일치하는 화면·현장·영역이 없습니다.
                 </li>
               ) : (
                 results.map((item, index) => (

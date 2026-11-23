@@ -1,81 +1,43 @@
 import Link from "next/link";
 
-import { SiteVisualPlaceholder } from "@/components/site/SiteVisualPlaceholder";
+import { formatKoreanDateTime, formatRelativeKo } from "@/lib/datetime";
 
 export interface HomeRecentUpdateView {
   key: string;
   siteName: string;
+  /** 소식의 종류(새 결과·최근 관측·현재 등록 상태). */
   label: string;
   title: string;
-  detail: string;
-  observedAt: string;
   href: string;
-  image: { src: string; alt: string } | null;
-  imageFallbackLabel: string;
+  /** 근거 시점(ISO)과 그 뜻 — 화면에는 상대 시각만, 뜻은 툴팁에 싣는다. */
+  observedAt: string;
+  timeLabel: string;
 }
 
-function ArrowIcon() {
-  return (
-    <svg aria-hidden="true" viewBox="0 0 24 24" className="size-4" fill="none" stroke="currentColor" strokeWidth="1.8">
-      <path d="m9 6 6 6-6 6" />
-    </svg>
-  );
-}
-
-export function HomeRecentUpdates({ items }: { items: HomeRecentUpdateView[] }) {
-  // 경영 홈은 확인할 결과가 있을 때만 이 영역을 만든다. 빈 섹션을 채우기 위한
-  // 설명은 사용자가 해야 할 판단을 늘리지 않고 홈의 정보 밀도만 떨어뜨린다.
+/**
+ * 확인할 일이 없는 프로젝트의 최근 소식 — 한 줄씩, 최대 몇 건만(ADR-KSI-025 D4의 의미·중복 제외는 그대로).
+ * 확인할 일 목록과 프로젝트 카드가 말하지 않는 "최근에 무슨 일이 있었나"만 남기고, 설명 문단과 이미지는 두지 않는다.
+ */
+export function HomeRecentUpdates({ items }: { items: readonly HomeRecentUpdateView[] }) {
   if (items.length === 0) return null;
-
-  // 확인 목록과 같은 한 행 구조다 — 큰 카드·띠 대신 현장 표식, 현장명·종류·시점,
-  // 제목, 세부를 한 줄 묶음으로 읽고 행 전체가 링크다. 실제 근거 이미지가 있을
-  // 때만 작은 썸네일이 표식을 대신한다(D3: 합성·고정 placeholder 금지).
   return (
-    <section aria-labelledby="home-recent-updates" className="flex flex-col gap-3 border-t border-line pt-5 sm:pt-6">
-      <div className="flex items-center justify-between gap-4">
-        <div>
-          <h2 id="home-recent-updates" className="text-title font-bold tracking-[-0.02em]">최근 업데이트</h2>
-          <p className="mt-1 text-caption break-keep text-ink-2">결과와 사람이 정리한 안건만 표시합니다.</p>
-        </div>
-        <Link href="/sites" className="tap-target inline-flex items-center text-caption font-semibold text-accent-text hover:underline">
-          현장 전체
-        </Link>
-      </div>
-
-      <ul className="divide-y divide-line overflow-hidden rounded-lg border border-line bg-surface">
+    <section aria-labelledby="home-recent-updates" className="flex min-w-0 flex-col gap-2">
+      <h2 id="home-recent-updates" className="text-lead font-bold tracking-[-0.01em]">최근 소식</h2>
+      <ul className="divide-y divide-line overflow-hidden rounded-xl border border-line bg-surface">
         {items.map((item) => (
           <li key={item.key}>
             <Link
               href={item.href}
               aria-label={`${item.siteName}, ${item.label}, ${item.title}`}
-              className="group flex min-w-0 items-center gap-3 px-4 py-3 transition-colors hover:bg-page focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-accent"
+              className="flex min-w-0 items-center gap-3 px-3.5 py-2.5 text-caption transition-colors hover:bg-page focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-accent"
             >
-              {item.image ? (
-                <figure className="w-20 flex-none overflow-hidden rounded-md border border-line bg-sunk">
-                  {/* Presigned evidence URLs are short-lived and bypass static image optimization. */}
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={item.image.src}
-                    alt={item.image.alt}
-                    loading="lazy"
-                    referrerPolicy="no-referrer"
-                    className="block aspect-[3/2] w-full object-cover"
-                  />
-                </figure>
-              ) : (
-                <SiteVisualPlaceholder siteName={item.siteName} label={item.imageFallbackLabel} size="mini" />
-              )}
-              <div className="min-w-0 flex-1">
-                <p className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-0.5 text-caption text-ink-2">
-                  <span className="font-semibold break-keep text-ink-1">{item.siteName}</span>
-                  <span aria-hidden="true" className="text-ink-muted">·</span>
-                  <span className="break-keep">{item.label}</span>
-                  <span className="num ml-auto text-micro text-ink-muted">{item.observedAt}</span>
-                </p>
-                <h3 className="mt-0.5 text-lead font-semibold break-keep">{item.title}</h3>
-                <p className="mt-0.5 max-w-[72ch] text-caption break-keep text-ink-2">{item.detail}</p>
-              </div>
-              <span className="flex-none text-ink-muted group-hover:text-ink-1"><ArrowIcon /></span>
+              <span className="shrink-0 rounded-full bg-sunk px-2 py-0.5 text-micro font-bold text-ink-2">{item.label}</span>
+              <span className="min-w-0 flex-1 truncate text-ink-1"><span className="font-semibold">{item.siteName}</span> <span aria-hidden="true">·</span> {item.title}</span>
+              <time
+                dateTime={item.observedAt}
+                title={`${item.timeLabel} ${formatKoreanDateTime(item.observedAt, { dateStyle: "medium", timeStyle: "short" })}`}
+                className="num shrink-0 text-micro text-ink-muted"
+              >{formatRelativeKo(item.observedAt)}</time>
             </Link>
           </li>
         ))}

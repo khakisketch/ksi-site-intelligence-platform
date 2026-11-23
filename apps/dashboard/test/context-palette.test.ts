@@ -1,10 +1,11 @@
 /** @vitest-environment jsdom */
 import { createElement as h } from "react";
 import { act } from "react";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { contextPaletteItems } from "@/components/console/context-palette";
+import { areaPaletteItems, contextPaletteItems } from "@/components/console/context-palette";
 import { filterPaletteItems, type PaletteItem } from "@/components/console/palette-items";
+import type { WorkArea } from "@/lib/core-api/types";
 
 const items = [{ key: "site:one", label: "남측 현장", group: "현장", href: "/sites/site-1", keywords: "opaque-source-1", hint: "현장 자료와 작업 보기" }];
 
@@ -110,8 +111,8 @@ describe("palette modal interaction", () => {
     expect(screen.queryByRole("dialog")).toBeNull();
     openPalette();
     expect(screen.getByRole("dialog", { name: "검색 및 이동" })).toBeTruthy();
-    const input = screen.getByLabelText("화면 또는 현장 검색");
-    expect(input.getAttribute("placeholder")).toBe("화면 · 현장 검색");
+    const input = screen.getByLabelText("화면, 현장 또는 영역 검색");
+    expect(input.getAttribute("placeholder")).toBe("화면 · 현장 · 영역 검색");
     expect(document.activeElement).toBe(input);
     expect(input.getAttribute("role")).toBe("combobox");
     const listbox = document.getElementById(input.getAttribute("aria-controls") ?? "");
@@ -126,7 +127,7 @@ describe("palette modal interaction", () => {
   it("traps Tab and Shift+Tab between input and close button", () => {
     render(h(CommandPalette, { items: paletteItems }));
     openPalette();
-    const input = screen.getByLabelText("화면 또는 현장 검색");
+    const input = screen.getByLabelText("화면, 현장 또는 영역 검색");
     const close = screen.getByRole("button", { name: "팔레트 닫기" });
     // jsdom 은 Tab 기본 이동을 구현하지 않으므로 핸들러가 직접 움직이는
     // 경계(막→처음, 처음→막 Shift)만 단언한다. 중간 이동은 브라우저 기본 동작이다.
@@ -155,7 +156,7 @@ describe("palette modal interaction", () => {
     // Tab 정지가 아닌 곳에서 Tab 을 치면 첫 정지로 회수하고 기본 이동을 막는다.
     const prevented = !fireEvent.keyDown(options[1], { key: "Tab" });
     expect(prevented).toBe(true);
-    expect(document.activeElement).toBe(screen.getByLabelText("화면 또는 현장 검색"));
+    expect(document.activeElement).toBe(screen.getByLabelText("화면, 현장 또는 영역 검색"));
   });
 
   it("locks background siblings inert and scroll while open, restores both on Escape with focus", () => {
@@ -174,7 +175,7 @@ describe("palette modal interaction", () => {
     openPalette();
     expect(main.inert).toBe(true);
     expect(document.body.style.overflow).toBe("hidden");
-    fireEvent.keyDown(screen.getByLabelText("화면 또는 현장 검색"), { key: "Escape" });
+    fireEvent.keyDown(screen.getByLabelText("화면, 현장 또는 영역 검색"), { key: "Escape" });
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(main.inert).toBe(inertBefore);
     expect(document.body.style.overflow).toBe("");
@@ -184,7 +185,7 @@ describe("palette modal interaction", () => {
   it("moves with arrows and routes with Enter", () => {
     render(h(CommandPalette, { items: paletteItems }));
     openPalette();
-    const input = screen.getByLabelText("화면 또는 현장 검색");
+    const input = screen.getByLabelText("화면, 현장 또는 영역 검색");
     fireEvent.keyDown(input, { key: "ArrowDown" });
     fireEvent.keyDown(input, { key: "Enter" });
     // pathname /sites/site-1 의 두 번째 맥락 항목 = 자료.
@@ -195,9 +196,9 @@ describe("palette modal interaction", () => {
   it("keeps a valid listbox on empty results and recovers when the query clears", () => {
     render(h(CommandPalette, { items: paletteItems }));
     openPalette();
-    const input = screen.getByLabelText("화면 또는 현장 검색");
+    const input = screen.getByLabelText("화면, 현장 또는 영역 검색");
     fireEvent.change(input, { target: { value: "ㅁㅁㅁㅁㅁ" } });
-    expect(screen.getByText("일치하는 화면이나 현장이 없습니다.")).toBeTruthy();
+    expect(screen.getByText("일치하는 화면·현장·영역이 없습니다.")).toBeTruthy();
     expect(screen.getByRole("listbox")).toBeTruthy();
     expect(screen.queryByRole("option")).toBeNull();
     expect(document.getElementById(input.getAttribute("aria-controls") ?? "")).toBeTruthy();
@@ -397,5 +398,106 @@ describe("palette server-resolved scope bridge", () => {
     const scoped = screen.getAllByRole("option").find((option) => option.textContent?.startsWith("자료 패널"));
     fireEvent.click(scoped!);
     expect(push).toHaveBeenCalledWith("/sites/site-1?panel=materials&workAreaId=wa-a");
+  });
+});
+
+function workArea(overrides: Partial<WorkArea> = {}): WorkArea {
+  return {
+    schemaVersion: "v1",
+    workAreaId: "wa-1",
+    siteId: "site-1",
+    name: "2구역 성토부",
+    polygon: {},
+    crs: "EPSG:5186",
+    status: "ACTIVE",
+    supersedes: null,
+    createdAt: "2026-10-01T00:00:00Z",
+    ...overrides,
+  } as WorkArea;
+}
+
+describe("palette area search (current Site only)", () => {
+  it("maps areas to the areas tab and marks archived areas instead of hiding them", () => {
+    const items = areaPaletteItems("site-1", [
+      workArea(),
+      workArea({ workAreaId: "wa-old", name: "구 1구역", status: "ARCHIVED" }),
+    ]);
+    expect(items.map((item) => item.label)).toEqual(["2구역 성토부", "구 1구역"]);
+    expect(items.every((item) => item.group === "영역")).toBe(true);
+    expect(items[0]).toMatchObject({
+      key: "area:site-1:wa-1",
+      href: "/sites/site-1?panel=areas&workAreaId=wa-1",
+    });
+    expect(items[0].hint).toBeUndefined();
+    expect(items[1].hint).toBe("보관된 영역");
+    // 식별자 검색은 유지하되 보조 문구로 반복하지 않는다.
+    expect(items[0].keywords).toBe("wa-1");
+    expect(filterPaletteItems(items, "성토")[0]?.label).toBe("2구역 성토부");
+    expect(filterPaletteItems(items, "보관")).toHaveLength(1);
+    expect(areaPaletteItems("site-1", [])).toEqual([]);
+  });
+});
+
+describe("palette area fetch on open", () => {
+  afterEach(() => {
+    cleanup();
+    push.mockClear();
+    vi.unstubAllGlobals();
+    navPath.current = "/sites/site-1";
+    window.history.replaceState({}, "", "/");
+  });
+
+  function mockAreas(areas: WorkArea[]) {
+    const fetcher = vi.fn(async () => new Response(JSON.stringify({ workAreas: areas }), { status: 200 }));
+    vi.stubGlobal("fetch", fetcher);
+    return fetcher;
+  }
+
+  it("reads the current Site areas when opened and jumps to the areas tab", async () => {
+    const fetcher = mockAreas([workArea(), workArea({ workAreaId: "wa-old", name: "구 1구역", status: "ARCHIVED" })]);
+    navPath.current = "/sites/site-1/analysis";
+    window.history.replaceState({}, "", "/sites/site-1/analysis");
+    render(h(CommandPalette, { items: paletteItems }));
+    openPalette();
+    await waitFor(() => expect(fetcher).toHaveBeenCalledWith(
+      "/api/sites/site-1/work-areas?include_archived=true",
+      { credentials: "same-origin" },
+    ));
+    const input = screen.getByLabelText("화면, 현장 또는 영역 검색");
+    fireEvent.change(input, { target: { value: "성토" } });
+    const option = await screen.findByRole("option", { name: /2구역 성토부/ });
+    fireEvent.click(option);
+    expect(push).toHaveBeenCalledWith("/sites/site-1?panel=areas&workAreaId=wa-1");
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("does not list areas on an empty query — areas are searched, not browsed", async () => {
+    mockAreas([workArea()]);
+    render(h(CommandPalette, { items: paletteItems }));
+    openPalette();
+    await waitFor(() => expect(vi.mocked(fetch)).toHaveBeenCalled());
+    expect(screen.queryByRole("option", { name: /2구역 성토부/ })).toBeNull();
+    expect(screen.getAllByRole("option").length).toBeGreaterThan(0);
+  });
+
+  it("keeps screen and Site navigation when the area read fails", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => { throw new Error("network down"); }));
+    render(h(CommandPalette, { items: paletteItems }));
+    openPalette();
+    const input = screen.getByLabelText("화면, 현장 또는 영역 검색");
+    fireEvent.change(input, { target: { value: "ㅁㅁㅁㅁㅁ" } });
+    expect(await screen.findByText("일치하는 화면·현장·영역이 없습니다.")).toBeTruthy();
+    fireEvent.change(input, { target: { value: "" } });
+    expect(screen.getAllByRole("option").length).toBeGreaterThan(0);
+  });
+
+  it("does not read areas outside a Site", async () => {
+    const fetcher = mockAreas([workArea()]);
+    navPath.current = "/";
+    window.history.replaceState({}, "", "/");
+    render(h(CommandPalette, { items: paletteItems }));
+    openPalette();
+    await waitFor(() => expect(screen.getAllByRole("option").length).toBeGreaterThan(0));
+    expect(fetcher).not.toHaveBeenCalled();
   });
 });

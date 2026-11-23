@@ -1,15 +1,11 @@
 import { Disclosure } from "@/components/ui/Disclosure";
 import Link from "next/link";
 
-import { HomeAttentionList, type HomeAttentionCardView } from "./HomeAttentionList";
+import { HomeInbox, type HomeInboxItem } from "./HomeInbox";
+import { HomeProjects, parseHomeProjectSort } from "./HomeProjects";
 import { HomeRecentUpdates, type HomeRecentUpdateView } from "./HomeRecentUpdates";
-import { HomeSiteGrid } from "./HomeSiteGrid";
-import { HomeSituationList, type HomeSituationItem } from "./HomeSituationList";
-import { presentWorkOrder } from "./field/work-order-stage";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { ErrorState } from "@/components/ui/ErrorState";
-import { InlineNotice } from "@/components/ui/InlineNotice";
-import { Stat } from "@/components/ui/Stat";
 import { whoAmI } from "@/lib/core-api/auth";
 import { resolveSiteRegistrationMode } from "@/lib/core-api/permissions";
 import { getAnalysisReviewTarget, listAnalyses, listAnalysisReviews } from "@/lib/core-api/analysis";
@@ -20,11 +16,10 @@ import { listExternalPendingDecisions } from "@/lib/core-api/external-decisions"
 import { listObservationWorkOrderOperations, listObservationWorkOrdersForOrganization } from "@/lib/core-api/observation-work-orders";
 import { listWorkInbox } from "@/lib/core-api/work-collaboration";
 import type { SiteView } from "@/lib/core-api/types";
-import { formatKoreanDateTime } from "@/lib/datetime";
 import { externalDecisionCardText } from "@/lib/home-external-decision";
-import { selectHomeAnalysisReviewSources, selectHomeAttentionSources, selectHomeInitialSetupSites, selectHomeQuickAccessSites, selectHomeRecentSiteSources, selectHomeRecentUpdates, summarizeHomeAnalysisReviewReads, type HomeAnalysisReviewRecord, type HomeAnalysisReviewSiteRead, type HomeAnalysisReviewSource, type HomeAttentionSource, type HomeRecentSiteSource, type HomeRecentUpdateSource } from "@/lib/home-operations";
+import { selectHomeAnalysisReviewSources, selectHomeAttentionSources, selectHomeInitialSetupSites, selectHomeRecentSiteSources, selectHomeRecentUpdates, summarizeHomeAnalysisReviewReads, type HomeAnalysisReviewRecord, type HomeAnalysisReviewSiteRead, type HomeAnalysisReviewSource, type HomeAttentionSource, type HomeRecentUpdateSource } from "@/lib/home-operations";
 import { resolveSiteOperatorNextAction } from "@/lib/operator-next-action";
-import { formatHomeReviewTechnicalRef, homeAnalysisReviewCardText, indexWorkAreaNamesBySite } from "@/lib/work-context-names";
+import { formatHomeReviewTechnicalRef, indexWorkAreaNamesBySite } from "@/lib/work-context-names";
 import { TopUnattendedHeadline } from "./TopUnattendedHeadline";
 
 export const metadata = { title: "홈 · KSI" };
@@ -99,9 +94,9 @@ async function loadHomeAnalysisReviewSources(siteIds: readonly string[]): Promis
 }
 
 /**
- * 검토 대기 분석이 가리키는 실제 작업구역 이름. 검토 대상은 최대 3개 현장으로
- * 한정되어 있어 현장별 한 번씩만 읽는다(보관 구역 포함 — 과거 분석 맥락용).
- * 구역 ID는 현장 안에서만 유일하므로 현장별로 나눠 둔다.
+ * 검토 대기 분석이 가리키는 실제 영역 이름. 검토 대상은 최대 3개 현장으로
+ * 한정되어 있어 현장별 한 번씩만 읽는다(보관 영역 포함 — 과거 분석 맥락용).
+ * 영역 ID는 현장 안에서만 유일하므로 현장별로 나눠 둔다.
  * 실패는 이름 확인 불가로 접고 Home을 깨뜨리지 않는다.
  */
 async function loadReviewWorkAreaNames(siteIds: readonly string[]): Promise<ReadonlyMap<string, ReadonlyMap<string, string>>> {
@@ -116,71 +111,63 @@ async function loadReviewWorkAreaNames(siteIds: readonly string[]): Promise<Read
   return indexWorkAreaNamesBySite(pages.filter((page) => page !== null));
 }
 
-function observedAt(value: string): string {
-  return formatKoreanDateTime(value, { dateStyle: "medium", timeStyle: "short" });
+function inboxTitleForWorkOrder(source: Extract<HomeAttentionSource, { kind: "WORK_ORDER" }>): { kind: HomeInboxItem["kind"]; title: string } {
+  switch (source.workOrder.status) {
+    case "DRAFT":
+    case "AWAITING_APPROVAL": return { kind: "approval", title: "작업 범위를 승인하세요" };
+    case "BLOCKED": return { kind: "work", title: "막힌 작업을 확인하세요" };
+    case "REOBSERVATION_PENDING": return { kind: "decision", title: "추가 관측을 결정하세요" };
+    case "REVIEW_READY": return { kind: "review", title: "작업 결과를 검토하세요" };
+    default: return { kind: "work", title: "작업을 확인하세요" };
+  }
 }
 
-function attentionWorkOrderDetail(source: Extract<HomeAttentionSource, { kind: "WORK_ORDER" }>): string {
-  const order = source.workOrder;
-  if (order.statusReason) return order.statusReason;
-  if (order.status === "BLOCKED") return "작업 진행을 막은 사유와 복구 경로를 확인해야 합니다.";
-  if (order.status === "DRAFT" || order.status === "AWAITING_APPROVAL") return `조사 범위 ${order.workAreaIds.length}개 구역과 목적을 검토해야 합니다.`;
-  if (order.status === "REOBSERVATION_PENDING") return "부족한 근거와 추가 관측 범위를 확인한 뒤 사람이 결정합니다.";
-  if (order.status === "REVIEW_READY") return "외부 결과와 보관 근거를 검토합니다.";
-  return "현재 작업 상태와 확인 근거를 살펴봅니다.";
-}
-
-function attentionView(source: HomeAttentionSource, siteById: ReadonlyMap<string, SiteView>, areaNameBySite: ReadonlyMap<string, ReadonlyMap<string, string>> = new Map()): HomeAttentionCardView {
-  const siteName = siteById.get(source.siteId)?.name ?? "이름을 확인할 수 없는 현장";
+/** 확인할 일 한 줄 — 제목은 해야 할 일(동사), 프로젝트·대상은 보조, 행동은 하나다. 문장형 설명은 각 화면이 말한다. */
+function inboxItemView(source: HomeAttentionSource, siteById: ReadonlyMap<string, SiteView>, areaNameBySite: ReadonlyMap<string, ReadonlyMap<string, string>> = new Map()): HomeInboxItem {
+  const siteName = siteById.get(source.siteId)?.name ?? "이름을 확인할 수 없는 프로젝트";
   if (source.kind === "EXTERNAL_DECISION") {
     const card = externalDecisionCardText(source.decision);
-    return { key: source.key, siteName, label: card.label, title: card.title, detail: card.detail, timeLabel: "결과 보고", observedAt: observedAt(source.observedAt), href: card.href, actionLabel: card.actionLabel, image: null };
+    return {
+      key: source.key, kind: source.decision.stage === "AWAITING_REVIEW" ? "review" : "approval",
+      title: source.decision.stage === "AWAITING_REVIEW" ? "외부 결과를 검토하세요" : "재관측 제안을 승인하세요",
+      siteName, subject: card.title, href: card.href, actionLabel: "결과 보기", observedAt: source.observedAt, timeLabel: "결과 보고",
+    };
   }
   if (source.kind === "ANALYSIS_REVIEW") {
     const analysis = source.analysis;
     const areaName = areaNameBySite.get(source.siteId)?.get(analysis.workAreaId) ?? null;
-    const card = homeAnalysisReviewCardText({ siteName: siteById.get(source.siteId)?.name ?? null, workAreaId: analysis.workAreaId, areaName });
     return {
-      key: source.key,
-      siteName,
-      label: "분석 검토 대기",
-      title: card.title,
-      detail: card.detail,
-      timeLabel: "분석 생성",
-      observedAt: observedAt(source.observedAt),
+      key: source.key, kind: "review", title: "분석 결과를 검토하세요", siteName, subject: areaName,
       href: `/sites/${encodeURIComponent(source.siteId)}/analysis?analysisId=${encodeURIComponent(analysis.analysisId)}&workAreaId=${encodeURIComponent(analysis.workAreaId)}`,
-      actionLabel: "분석 결과 검토",
-      image: null,
+      actionLabel: "결과 보기", observedAt: source.observedAt, timeLabel: "분석 생성",
       technicalRef: formatHomeReviewTechnicalRef(analysis.analysisId, analysis.workAreaId),
     };
   }
   if (source.kind === "WORK_ORDER") {
     const order = source.workOrder;
-    const presentation = presentWorkOrder(order.status, order.executionMode);
-    return { key: source.key, siteName, label: presentation.label, title: order.name, detail: attentionWorkOrderDetail(source), timeLabel: "작업 갱신", observedAt: observedAt(source.observedAt), href: `/field/work-orders/${encodeURIComponent(order.workOrderId)}`, actionLabel: order.status === "REVIEW_READY" ? "결과와 근거 보기" : "작업 맥락 보기", image: null };
+    const { kind, title } = inboxTitleForWorkOrder(source);
+    return { key: source.key, kind, title, siteName, subject: order.name, href: `/field/work-orders/${encodeURIComponent(order.workOrderId)}`, actionLabel: "작업 보기", observedAt: source.observedAt, timeLabel: "작업 갱신" };
   }
   const status = SITE_STATUS_LABEL[source.site.status];
-  const title = source.site.status === "UNMAPPED" ? "초기 관측 범위를 준비해야 합니다." : source.site.status === "REMAP_REQUIRED" ? "새 기준 관측이 필요합니다." : "최근 현장 상태를 다시 관측해야 합니다.";
-  return { key: source.key, siteName, label: status.label, title, detail: "현장 상태와 조사할 공사 구역을 확인한 뒤 필요한 관측 범위를 결정할 수 있습니다.", timeLabel: "현장 갱신", observedAt: observedAt(source.observedAt), href: `/sites/${encodeURIComponent(source.siteId)}`, actionLabel: "현장 맥락 보기", image: null };
+  return {
+    key: source.key, kind: "site",
+    title: source.site.status === "REMAP_REQUIRED" ? "새 기준 관측이 필요합니다" : "프로젝트 상태를 확인하세요",
+    siteName, subject: status.label, href: `/sites/${encodeURIComponent(source.siteId)}`, actionLabel: "프로젝트 열기", observedAt: source.observedAt, timeLabel: "프로젝트 갱신",
+  };
 }
 
 function recentUpdateView(source: HomeRecentUpdateSource, siteById: ReadonlyMap<string, SiteView>): HomeRecentUpdateView {
-  const siteName = siteById.get(source.siteId)?.name ?? "이름을 확인할 수 없는 현장";
+  const siteName = siteById.get(source.siteId)?.name ?? "이름을 확인할 수 없는 프로젝트";
   if ("site" in source) {
-    return { key: source.key, siteName, label: "현재 등록 상태", title: "등록된 대기 작업 없음", detail: "현재 조회된 작업 기준입니다. 현장 전체의 정상이나 안전을 의미하지 않습니다.", observedAt: `현장 갱신 ${observedAt(source.observedAt)}`, href: `/sites/${encodeURIComponent(source.site.siteId)}`, image: null, imageFallbackLabel: "연결된 미리보기 없음" };
+    return { key: source.key, siteName, label: "현재 상태", title: "대기 작업 없음", href: `/sites/${encodeURIComponent(source.site.siteId)}`, observedAt: source.observedAt, timeLabel: "프로젝트 갱신" };
   }
   if (source.kind === "RESULT_READY" || source.kind === "OBSERVATION_COMPLETED") {
-    return { key: source.key, siteName, label: source.kind === "RESULT_READY" ? "새 결과" : "최근 관측", title: source.workOrder.name, detail: source.kind === "RESULT_READY" ? "외부 결과와 보관 근거를 검토합니다." : "관측 결과가 작업 기록에 등록되었습니다.", observedAt: observedAt(source.observedAt), href: `/field/work-orders/${encodeURIComponent(source.workOrder.workOrderId)}`, image: null, imageFallbackLabel: "연결된 미리보기 없음" };
+    return { key: source.key, siteName, label: source.kind === "RESULT_READY" ? "새 결과" : "최근 관측", title: source.workOrder.name, href: `/field/work-orders/${encodeURIComponent(source.workOrder.workOrderId)}`, observedAt: source.observedAt, timeLabel: source.kind === "RESULT_READY" ? "결과 보고" : "작업 갱신" };
   }
   throw new Error("Unsupported Home update source");
 }
 
-function recentSiteView(source: HomeRecentSiteSource): HomeAttentionCardView {
-  const status = SITE_STATUS_LABEL[source.site.status];
-  return { key: source.key, siteName: source.site.name, label: source.site.status === "UNMAPPED" ? "등록 자료 확인" : `현장 관리 상태 · ${status.label}`, title: "현장의 자료와 분석 기록을 확인하세요.", detail: "현장을 열어 작업구역·등록 자료·분석 기록을 확인하세요.", timeLabel: "현장 갱신", observedAt: observedAt(source.site.updatedAt), href: `/sites/${encodeURIComponent(source.siteId)}`, actionLabel: "현장 보기", image: null };
-}
-
-export default async function HomePage() {
+export default async function HomePage({ searchParams }: { searchParams?: Promise<{ sort?: string | string[] }> } = {}) {
   const [sitesResult, whoResult, workOrdersResult, operationsResult, decisionsResult, inboxResult] = await Promise.all([
     settle(listSitesCached()),
     settle(whoAmI()),
@@ -216,77 +203,70 @@ export default async function HomePage() {
   const reviewAreaNameById = await loadReviewWorkAreaNames(analysisReviewSources.map((source) => source.siteId));
   const allAttention = selectHomeAttentionSources({ workOrders, sites, operationsByWorkOrderId, externalDecisions: decisions, analysisReviews: analysisReviewSources }, Number.MAX_SAFE_INTEGER);
   const operationalAttention = allAttention.filter((source) => source.kind !== "SITE" || source.site.status !== "UNMAPPED");
-  const attentionSources = operationalAttention.slice(0, 3);
+  // 가장 위에 오르는 안건의 프로젝트는 "최근 소식"과 겹치지 않게 뺀다(D4 중복 제외).
+  const primaryAttention = operationalAttention.slice(0, 3);
   const attentionSiteIds = new Set(allAttention.map((source) => source.siteId));
-  const primarySiteIds = new Set((attentionSources.length ? attentionSources : recentSiteSources).map((source) => source.siteId));
+  const primarySiteIds = new Set((primaryAttention.length ? primaryAttention : recentSiteSources).map((source) => source.siteId));
   const recentSources = selectHomeRecentUpdates({ workOrders, sites, excludedSiteIds: new Set([...attentionSiteIds, ...primarySiteIds]) });
   const siteById = new Map(sites.map((site) => [site.siteId, site]));
-  const attentionItems = attentionSources.map((source) => attentionView(source, siteById, reviewAreaNameById));
-  const recentSiteItems = recentSiteSources.map(recentSiteView);
   const siteActionPermissions = { canEditSite: permissions.includes("SITES_WRITE"), canCreateWorkOrder: permissions.includes("WORK_ORDERS_WRITE") };
-  const initialSetupItems: HomeSituationItem[] = initialSetupSites.map((site) => {
+  // 확인할 것 = 확인 안건 + 초기 설정. 안건이 앞이고 초기 설정이 뒤다(D1 순서).
+  const setupItems: HomeInboxItem[] = initialSetupSites.map((site) => {
     const nextAction = resolveSiteOperatorNextAction(site, siteActionPermissions);
-    return { key: `initial-setup:${site.siteId}`, siteId: site.siteId, siteName: site.name, statusLabel: SITE_STATUS_LABEL[site.status].label, statusTone: SITE_STATUS_LABEL[site.status].tone, title: "작업구역에 첫 관측 자료를 연결하세요.", detail: "관측 자료 등록에서 작업구역을 선택합니다. 현장 전체 경계는 선택 설정입니다.", href: nextAction?.href ?? `/sites/${encodeURIComponent(site.siteId)}`, actionLabel: nextAction?.label ?? "현장 맥락 보기" };
+    return {
+      key: `initial-setup:${site.siteId}`, kind: "setup", title: "첫 관측 자료를 연결하세요", siteName: site.name, subject: null,
+      href: nextAction?.href ?? `/sites/${encodeURIComponent(site.siteId)}`, actionLabel: nextAction?.label ?? "프로젝트 열기",
+      observedAt: site.updatedAt, timeLabel: "프로젝트 갱신",
+    };
   });
-  // 대기열에 오르지 않은 실제 현장 바로가기 — 확인 목록·초기 설정에 이미 나온
-  // 현장은 빼고, 남는 현장이 있을 때만 한 줄씩 둔다. 장식 이미지·가짜 요약은 두지 않는다.
-  const surfacedSiteIds = new Set([
-    ...attentionSources.map((source) => source.siteId),
-    ...initialSetupItems.map((item) => item.siteId),
-  ]);
-  const otherSites = selectHomeQuickAccessSites(sites, surfacedSiteIds);
-  const recentItems = recentSources.map((source) => recentUpdateView(source, siteById));
+  const inboxItems = [...operationalAttention.map((source) => inboxItemView(source, siteById, reviewAreaNameById)), ...setupItems];
+  // 프로젝트 카드의 "확인 N" — 홈이 읽은 확인할 일을 프로젝트별로 센 값이다.
+  const attentionBySite = new Map<string, number>();
+  for (const source of operationalAttention) attentionBySite.set(source.siteId, (attentionBySite.get(source.siteId) ?? 0) + 1);
+  for (const site of initialSetupSites) attentionBySite.set(site.siteId, (attentionBySite.get(site.siteId) ?? 0) + 1);
+  const recentItems = recentSources.slice(0, 3).map((source) => recentUpdateView(source, siteById));
   const portfolioComplete = sitesResult.ok && workOrdersResult.ok && !operationsUnavailable && !decisionsUnavailable && !analysisReviewsUnknown;
-  const attentionCount = new Set(operationalAttention.map((source) => source.siteId)).size;
-  // 부분 읽기 복구는 하나의 간결한 안내로 묶는다 — 사유별 문구는 그대로 두되
-  // 접힌 `확인하지 못한 항목` 안에만 둔다. 알려진 안건 카드·건수 표시는 가리지 않는다.
+  // 부분 읽기 복구는 하나의 간결한 안내로 묶는다 — 사유별 문구는 그대로 두되 접힌 `자세히` 안에만 둔다.
+  // 알려진 안건과 건수는 가리지 않는다(건수는 하한이므로 "N+"로 쓴다).
   const unknownReasons = [
     ...(operationsUnavailable ? [{ key: "operations", message: "외부 작업의 담당·마감·작업 종료 상태를 확인할 수 없습니다. 해당 작업을 확인 필요나 진행 중으로 분류하지 않았습니다." }] : []),
     ...(decisionsUnavailable ? [{ key: "decisions", message: "외부 결과의 검토·승인 대기 여부를 확인할 수 없습니다. 확인할 결과가 없다는 뜻이 아닙니다." }] : []),
     ...(analysisReviewsUnknown ? [{ key: "analysis-reviews", message: "분석 결과의 검토 대기 여부를 확인할 수 없습니다. 확인할 결과가 없다는 뜻이 아닙니다." }] : []),
   ];
+  const sort = parseHomeProjectSort((await searchParams)?.sort);
 
   return <div className="console-page">
-    <header className="flex flex-wrap items-end justify-between gap-x-8 gap-y-3 border-b border-line pb-4">
-      <dl className="flex flex-wrap gap-x-10 gap-y-3">
-        <Stat label="볼 수 있는 현장" value={sitesResult.ok ? sites.length : "—"} unit={sitesResult.ok ? "곳" : undefined} />
-        <Stat
-          label="확인 필요"
-          value={portfolioComplete ? attentionCount : "—"}
-          unit={portfolioComplete ? "곳" : undefined}
-          className={portfolioComplete && attentionCount > 0 ? "[&_dd:first-of-type]:text-accent" : undefined}
-        />
-      </dl>
-      <nav aria-label="홈 바로가기" className="flex min-h-9 items-center gap-3 text-caption leading-5">
-        <Link href="/field/inbox" className="tap-target inline-flex min-h-9 items-center font-semibold whitespace-nowrap text-ink-2 hover:underline">
-          <TopUnattendedHeadline pendingCount={inboxResult.ok ? inboxResult.value.items.length : null} />
-        </Link>
-        <span aria-hidden="true" className="hidden h-3 w-px bg-line sm:block" />
-        <Link href="/sites" className="tap-target hidden min-h-9 items-center font-semibold whitespace-nowrap text-accent-text hover:underline sm:inline-flex">
-          현장 전체
-        </Link>
-      </nav>
-    </header>
-
     {!sitesResult.ok && <ErrorState message={sitesResult.message} retryable />}
-    {sitesResult.ok && sites.length === 0 && <EmptyState title="현재 계정에서 볼 수 있는 현장이 없습니다" description="찾는 현장이 이미 있다면 관리자에게 이 계정의 현장 접근 권한을 확인해 주세요." action={canRegisterSite ? { label: "현장 등록", href: "/sites/new" } : { label: "현장 목록", href: "/sites" }} />}
-    {sites.length > 0 && !portfolioComplete && <section aria-label="일부 정보를 확인하지 못했습니다">
-      <InlineNotice action={<Link href="/sites" className="tap-target inline-flex items-center underline underline-offset-2">현장 전체를 열어 직접 확인하세요.</Link>}>
-        <p>일부 현장 또는 작업 원장을 불러오지 못해 확인 필요 건수를 추측하지 않습니다.</p>
-        {unknownReasons.length > 0 && <Disclosure className="mt-0.5" label={`미확인 항목 상세 (${unknownReasons.length}건)`}>
-          <ul className="flex flex-col gap-1 pb-1">
-            {unknownReasons.map((reason) => <li key={reason.key} className="leading-5 break-keep">{reason.message}</li>)}
-          </ul>
-        </Disclosure>}
-      </InlineNotice>
-    </section>}
+    {sitesResult.ok && sites.length === 0 && <EmptyState title="현재 계정에서 볼 수 있는 프로젝트가 없습니다" description="찾는 프로젝트가 이미 있다면 관리자에게 이 계정의 프로젝트 접근 권한을 확인해 주세요." action={canRegisterSite ? { label: "프로젝트 등록", href: "/sites/new" } : { label: "프로젝트 목록", href: "/sites" }} />}
 
     {sites.length > 0 && (
-      <div className="flex min-w-0 flex-col gap-6">
-          {attentionItems.length > 0 ? <HomeAttentionList items={attentionItems} /> : recentSiteItems.length > 0 ? <HomeAttentionList items={recentSiteItems} title={portfolioComplete ? "조회된 범위에 새 운영 안건이 없습니다." : "최근 현장을 직접 확인하세요."} description={portfolioComplete ? "현재 조회된 현장·작업과 최근 분석 기록 기준입니다. 전체 기록의 확인 완료나 현장의 정상·안전을 뜻하지 않습니다. 현장을 선택해 자료와 작업 이력을 확인하세요." : "일부 원장을 불러오지 못해 새 안건 여부를 판단하지 않습니다. 현장을 선택해 상태를 직접 확인하세요."} regionLabel="최근 현장 목록" /> : null}
-          {initialSetupItems.length > 0 && <HomeSituationList title="초기 설정이 필요한 현장" description="작업구역을 확인하고 고객이 준비한 관측 자료를 등록하세요." items={initialSetupItems} emptyMessage="초기 설정이 필요한 현장이 없습니다." allHref="/sites" allLabel="현장 전체" />}
-          <HomeSiteGrid sites={otherSites} />
+      <div className="grid min-w-0 gap-8 lg:grid-cols-[minmax(320px,560px)_minmax(0,1fr)] lg:items-start lg:gap-10 2xl:grid-cols-[minmax(0,640px)_minmax(0,1fr)]">
+        <HomeInbox
+          items={inboxItems}
+          complete={portfolioComplete}
+          headerAction={(
+            <Link href="/field/inbox" className="tap-target inline-flex items-center text-caption font-semibold whitespace-nowrap text-ink-2 hover:underline">
+              <TopUnattendedHeadline pendingCount={inboxResult.ok ? inboxResult.value.items.length : null} />
+            </Link>
+          )}
+          notice={!portfolioComplete ? (
+            <section aria-label="일부 정보를 확인하지 못했습니다" className="border-t border-line bg-sunk px-3.5 py-2.5 text-caption text-ink-2">
+              <p>
+                일부를 확인하지 못했습니다. 확인할 것이 이보다 많을 수 있습니다.{" "}
+                <Link href="/sites" className="tap-target inline-flex items-center font-semibold text-ink-1 underline underline-offset-2">프로젝트 전체 열기</Link>
+              </p>
+              {unknownReasons.length > 0 && <Disclosure className="mt-0.5" label={`자세히 (${unknownReasons.length}건)`}>
+                <ul className="flex flex-col gap-1 pb-1">
+                  {unknownReasons.map((reason) => <li key={reason.key} className="leading-5 break-keep">{reason.message}</li>)}
+                </ul>
+              </Disclosure>}
+            </section>
+          ) : null}
+        />
+        <div className="flex min-w-0 flex-col gap-6">
+          <HomeProjects sites={sites} attentionBySite={attentionBySite} sort={sort} />
           <HomeRecentUpdates items={recentItems} />
+        </div>
       </div>
     )}
   </div>;
