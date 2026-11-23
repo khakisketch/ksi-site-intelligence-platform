@@ -31,7 +31,7 @@ const DIM_LABEL: Record<TimelineDimReason, string> = {
 };
 
 /** 이웃한 점 사이 최소 간격(px) — 터치 영역 44px보다 크다. */
-const MIN_POINT_GAP_PX = 48;
+const MIN_POINT_GAP_PX = 76;
 
 const ROLE_LABEL = { baseline: "이전", current: "이후" } as const;
 /** 조사까지 붙인 형태("이전으로"/"이후로"). */
@@ -230,7 +230,7 @@ export function CompareTimeStrip({
   const stack = Math.max(1, ...model.slots.map((slot) => slot.points.length));
   const blockHeight = 18 + 44 + (model.yearLabels ? 14 : 0) + 18 + 22;
   const height = stack * blockHeight + (stack - 1) * 4 + 8;
-  // 점 사이 최소 간격 48px — 터치 영역(44px)이 겹치지 않게 띠의 최소 폭을 잡는다. 넘치면 띠 안에서만 가로로 민다.
+  // 점 사이 최소 간격 76px — 터치 영역(44px)뿐 아니라 점 아래 칩("표시 준비 전" 약 68px, "좌표계 확인 전" 등)이 이웃 칩과 겹치지 않게 띠의 최소 폭을 잡는다. 넘치면 띠 안에서만 가로로 민다.
   const lefts = model.slots.map((slot) => slot.leftPercent);
   const minGap = lefts.slice(1).reduce((least, value, index) => Math.min(least, value - lefts[index]!), Infinity);
   const stripMinWidth = Number.isFinite(minGap) && minGap > 0 ? Math.max(56, Math.ceil((MIN_POINT_GAP_PX * 100) / minGap)) : 56;
@@ -263,13 +263,13 @@ export function CompareTimeStrip({
 
       {model.slots.length > 0 && (
         <div className="overflow-x-auto overflow-y-hidden">
-          <ol aria-label="촬영 날짜" className="relative mx-6" style={{ height, minWidth: `${stripMinWidth}px` }}>
+          <ol aria-label="촬영 날짜" className="relative mx-12" style={{ height, minWidth: `${stripMinWidth}px` }}>
             <li aria-hidden="true" className="absolute inset-x-0 top-[39px] h-0.5 bg-line-strong" />
             {left !== null && right !== null && (
               <li aria-hidden="true" data-compare-range className="absolute top-[37px] h-1.5 rounded-full bg-ink-1" style={{ left: `${left}%`, width: `${right - left}%` }} />
             )}
             {model.slots.map((slot) => (
-              <li key={slot.date} data-slot-date={slot.date} className="absolute top-0 flex -translate-x-1/2 flex-col items-center gap-1" style={{ left: `${slot.leftPercent}%` }}>
+              <li key={slot.date} data-slot-date={slot.date} className="absolute top-0 flex w-[76px] -translate-x-1/2 flex-col items-center gap-1" style={{ left: `${slot.leftPercent}%` }}>
                 {slot.points.map((point) => (
                   <PointBlock
                     key={point.key}

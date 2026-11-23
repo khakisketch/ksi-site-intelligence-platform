@@ -177,7 +177,7 @@ describe("CompareTimeStrip", () => {
     expect(section.querySelector("[data-compare-state]")).toBeNull();
   });
 
-  it("점 사이 최소 간격 48px을 지키도록 띠의 최소 폭을 잡는다", () => {
+  it("점 사이 최소 간격 76px(칩 폭 포함)을 지키도록 띠의 최소 폭을 잡는다", () => {
     const dated = [1, 2, 3, 4, 5, 6].map((n) => fact(n, day(`2026-10-0${n}`)));
     const model = buildCompareTimeline({ facts: facts(dated), workAreaId: AREA, catalogAssets: dated.map((_, i) => catalog(i + 1, "EPSG:5186")) });
     render(<CompareTimeStrip model={model} sitePath={SITE_PATH} workAreaId={AREA} />);
@@ -185,7 +185,7 @@ describe("CompareTimeStrip", () => {
     const lefts = model.slots.map((slot) => slot.leftPercent);
     const minGap = Math.min(...lefts.slice(1).map((value, i) => value - lefts[i]!));
     const minWidth = parseFloat(list.style.minWidth);
-    expect((minWidth * minGap) / 100).toBeGreaterThanOrEqual(48);
+    expect((minWidth * minGap) / 100).toBeGreaterThanOrEqual(76);
     expect(list.parentElement!.className).toContain("overflow-x-auto");
   });
 
