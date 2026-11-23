@@ -55,7 +55,7 @@ type Props = {
 
 const NO_AREA_REASON_DENIED = "영역 등록 권한이 없습니다. 현장 담당자에게 문의하세요.";
 const NO_AREA_REASON_UNKNOWN = "영역 등록 권한을 확인하지 못했습니다.";
-const COMPACT_REASON = "영역 그리기와 편집은 노트북에서 같은 계정으로 이어서 하세요. 여기서는 목록과 지도만 볼 수 있습니다.";
+const COMPACT_REASON = "영역 그리기와 편집은 노트북에서 같은 계정으로 이어서 하세요.";
 
 /** 보관된 영역을 다른 영역이 대체했는가 — `supersedes`는 새 영역이 이전 영역을 가리킨다. */
 function isReplaced(areas: readonly WorkArea[], area: WorkArea): boolean {
@@ -185,8 +185,14 @@ function SelectedDetail({
 
       {summary?.crs.kind === "mixed" && (
         <InlineNotice tone="high" role="note">
-          좌표계가 다른 자료가 섞여 있어 이 영역에서는 두 날짜를 비교할 수 없습니다. 같은 좌표계 자료끼리만 비교됩니다.
+          좌표계가 다른 자료가 섞여 있습니다. 같은 좌표계 자료끼리만 비교할 수 있으며, 가능 여부는 분석 화면에서 확인합니다.
         </InlineNotice>
+      )}
+
+      {summary && summary.crs.kind !== "none" && (summary.crsBasis.measured < summary.crsBasis.dsm || summary.truncated) && (
+        <p data-crs-basis className="text-micro break-keep text-ink-muted">
+          좌표계는 검사가 끝난 DSM {summary.crsBasis.measured}건{summary.crsBasis.measured < summary.crsBasis.dsm ? `(DSM ${summary.crsBasis.dsm}건 중)` : ""} 기준입니다{summary.truncated ? " · 최근 50건만 읽었습니다" : ""}.
+        </p>
       )}
 
       <div className="flex min-w-0 flex-col gap-1">

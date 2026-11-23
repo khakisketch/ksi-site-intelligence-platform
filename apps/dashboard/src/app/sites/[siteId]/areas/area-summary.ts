@@ -81,6 +81,7 @@ export function approxAreaSquareMeters(polygon: Record<string, unknown> | null |
 /** "약 12,480 ㎡". 1,000㎡ 이상은 10㎡ 단위로 반올림해 근삿값임을 드러낸다. 모르면 null. */
 export function formatApproxArea(squareMeters: number | null): string | null {
   if (squareMeters === null || !Number.isFinite(squareMeters)) return null;
+  if (squareMeters < 1) return "1 ㎡ 미만";
   const rounded = squareMeters >= 1000 ? Math.round(squareMeters / 10) * 10 : Math.round(squareMeters);
   return `약 ${rounded.toLocaleString("en-US")} ㎡`;
 }
@@ -276,14 +277,16 @@ export type AreaCrsVerdict = {
  * none: DSM이 없거나 검사 전(좌표계를 읽은 DSM이 0) · single · mixed.
  * 표시 전용이다. 비교 허용은 Core가 같은 좌표계인지 다시 확인한다.
  */
-export function areaCrsVerdict(dsm: AreaDsmCrs): AreaCrsVerdict {
+export function areaCrsVerdict(dsm: AreaDsmCrs, partial = false): AreaCrsVerdict {
   const codes = dsm.groups.map((group) => group.crs);
   if (dsm.groups.length === 0) return { kind: "none", tone: "neutral", label: "좌표계 확인 전", codes };
-  if (dsm.groups.length > 1) return { kind: "mixed", tone: "caution", label: "좌표계 섞임 · 비교 불가", codes };
+  // 섞였다는 사실만 알린다. 같은 좌표계 자료끼리의 비교 가능 여부는 Core가 판정한다(INV-020).
+  if (dsm.groups.length > 1) return { kind: "mixed", tone: "caution", label: "좌표계 섞임", codes };
   const [code] = codes;
-  return isAnalysisCrs(code)
-    ? { kind: "single", tone: "positive", label: `같은 좌표계 · ${code}`, codes }
-    : { kind: "single", tone: "neutral", label: `분석 밖 좌표계 · ${code}`, codes };
+  if (!isAnalysisCrs(code)) return { kind: "single", tone: "neutral", label: `분석 밖 좌표계 · ${code}`, codes };
+  // 검사가 끝난 DSM만 좌표계를 읽는다. 일부만 읽었으면 "같은 좌표계"라고 단정하지 않는다.
+  if (partial) return { kind: "single", tone: "neutral", label: `검사된 DSM은 ${code} · 일부만 확인`, codes };
+  return { kind: "single", tone: "positive", label: `같은 좌표계 · ${code}`, codes };
 }
 
 export type AreaAssetSummary = {
@@ -295,6 +298,8 @@ export type AreaAssetSummary = {
   /** 한 페이지(최근 50건)만 읽었다 — 더 오래된 자료가 있을 수 있다. */
   truncated: boolean;
   crs: AreaCrsVerdict;
+  /** 좌표계 판정의 근거 — 대체되지 않은 DSM 중 검사가 끝나 좌표계를 읽은 수. */
+  crsBasis: { dsm: number; measured: number };
 };
 
 export function summarizeAreaAssets(assets: readonly SpatialAssetCatalogItem[], hasMore: boolean): AreaAssetSummary {
@@ -305,12 +310,15 @@ export function summarizeAreaAssets(assets: readonly SpatialAssetCatalogItem[], 
     if (date) dates.add(date);
   }
   const captureDates = [...dates].sort();
+  const dsmCrs = summarizeAreaDsmCrs(assets, hasMore);
+  const dsm = live.filter((item) => item.kind === "dsm").length;
   return {
     count: live.length,
     captureDates,
     latestDate: captureDates[captureDates.length - 1] ?? null,
     truncated: hasMore,
-    crs: areaCrsVerdict(summarizeAreaDsmCrs(assets, hasMore)),
+    crs: areaCrsVerdict(dsmCrs, dsmCrs.total < dsm),
+    crsBasis: { dsm, measured: dsmCrs.total },
   };
 }
 

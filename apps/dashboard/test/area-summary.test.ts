@@ -68,6 +68,8 @@ describe("approxAreaSquareMeters", () => {
   it("formats as a rounded approximate figure", () => {
     expect(formatApproxArea(12_483)).toBe("약 12,480 ㎡");
     expect(formatApproxArea(742.4)).toBe("약 742 ㎡");
+    // 아주 작은 값을 "약 0 ㎡"로 반올림해 모르는 값처럼 보이게 하지 않는다.
+    expect(formatApproxArea(0.4)).toBe("1 ㎡ 미만");
     expect(formatApproxArea(null)).toBeNull();
   });
 });
@@ -161,10 +163,18 @@ describe("areaCrsVerdict", () => {
     expect(verdict([dsm("EPSG:32634")])).toMatchObject({ kind: "single", tone: "neutral" });
   });
 
-  it("mixed: amber (caution), never the failure colour, and says comparison is not possible", () => {
+  it("mixed: amber (caution), never the failure colour, and does not declare comparison impossible", () => {
     const mixed = verdict([dsm("EPSG:5186"), dsm("EPSG:32652")]);
-    expect(mixed).toMatchObject({ kind: "mixed", tone: "caution", label: "좌표계 섞임 · 비교 불가" });
+    expect(mixed).toMatchObject({ kind: "mixed", tone: "caution", label: "좌표계 섞임" });
     expect(mixed.tone).not.toBe("warning");
+    // 같은 좌표계 자료끼리는 비교할 수 있으므로 "불가"를 단정하지 않는다. 판정은 Core가 한다.
+    expect(mixed.label).not.toMatch(/불가/);
+  });
+
+  it("single but only partly inspected: does not claim the whole area shares one CRS", () => {
+    const partial = areaCrsVerdict(summarizeAreaDsmCrs([dsm("EPSG:5186")], false), true);
+    expect(partial).toMatchObject({ kind: "single", tone: "neutral", label: "검사된 DSM은 EPSG:5186 · 일부만 확인" });
+    expect(partial.label).not.toContain("같은 좌표계");
   });
 });
 
@@ -185,6 +195,17 @@ describe("summarizeAreaAssets", () => {
 
   it("does not turn an empty page into dates", () => {
     expect(summarizeAreaAssets([], false)).toMatchObject({ count: 0, captureDates: [], latestDate: null });
+  });
+
+  it("downgrades the CRS verdict when some DSMs are not inspected, and reports the basis", () => {
+    const pending = dsm("EPSG:5186", "2026-10-02", { inspection: { state: "PENDING", outcome: null, reason: null, raster: null } });
+    const partial = summarizeAreaAssets([dsm("EPSG:5186", "2026-09-14"), pending], false);
+    expect(partial.crsBasis).toEqual({ dsm: 2, measured: 1 });
+    expect(partial.crs).toMatchObject({ kind: "single", tone: "neutral" });
+    expect(partial.crs.label).toContain("일부만 확인");
+    const full = summarizeAreaAssets([dsm("EPSG:5186", "2026-09-14"), dsm("EPSG:5186", "2026-10-02")], false);
+    expect(full.crsBasis).toEqual({ dsm: 2, measured: 2 });
+    expect(full.crs).toMatchObject({ kind: "single", tone: "positive", label: "같은 좌표계 · EPSG:5186" });
   });
 });
 

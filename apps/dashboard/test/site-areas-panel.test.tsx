@@ -100,13 +100,26 @@ describe("SiteAreasPanel · list", () => {
 });
 
 describe("SiteAreasPanel · coordinate verdicts", () => {
-  it("shows mixed coordinate systems as amber with a plain not-comparable message", () => {
+  it("shows mixed coordinate systems as amber and leaves the comparability verdict to the analysis screen", () => {
     panel({ assets: readyAssets(dsm("EPSG:5186", "2026-10-02"), dsm("EPSG:32652", "2026-10-21")) });
-    const chip = screen.getByText("좌표계 섞임 · 비교 불가").closest("span")!;
+    const chip = screen.getByText("좌표계 섞임").closest("span")!;
     expect(chip.className).toContain("bg-high-bg");
     expect(chip.className).not.toContain("crit");
-    expect(screen.getByText(/두 날짜를 비교할 수 없습니다/)).toBeTruthy();
+    expect(screen.getByText(/같은 좌표계 자료끼리만 비교할 수 있으며, 가능 여부는 분석 화면에서 확인합니다/)).toBeTruthy();
+    // 같은 좌표계끼리는 비교할 수 있으므로 "비교할 수 없다"고 단정하지 않는다.
+    expect(screen.queryByText(/비교할 수 없습니다|비교 불가/)).toBeNull();
     expect(screen.getByText(/자료 EPSG:32652 · EPSG:5186/)).toBeTruthy();
+  });
+
+  it("does not call the area one coordinate system when only some DSMs were inspected", () => {
+    const pending = {
+      ...dsm("EPSG:5186", "2026-11-12"),
+      inspection: { state: "PENDING", outcome: null, reason: null, raster: null },
+    } as unknown as SpatialAssetCatalogItem;
+    const { container } = panel({ assets: readyAssets(dsm("EPSG:5186", "2026-09-14"), pending) });
+    expect(screen.queryByText("같은 좌표계 · EPSG:5186")).toBeNull();
+    expect(screen.getAllByText(/일부만 확인/).length).toBeGreaterThan(0);
+    expect(container.querySelector("[data-crs-basis]")!.textContent).toContain("검사가 끝난 DSM 1건(DSM 2건 중) 기준");
   });
 
   it("reads as not-yet-known when no DSM was inspected", () => {

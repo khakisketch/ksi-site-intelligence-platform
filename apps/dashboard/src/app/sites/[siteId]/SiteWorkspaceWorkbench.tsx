@@ -89,9 +89,10 @@ export function SiteWorkspaceWorkbench({
   const areasMapOpen = shown === "areas" && Boolean(areasStage);
   const stageBody = areasStage ? (
     <>
-      {/* 영역 탭이 열리면 lg+에서만 원래 무대를 가린다. 좁은 화면은 서랍 안의 작은 지도를 쓴다. */}
-      <div className={areasMapOpen ? "h-full lg:hidden" : "contents"}>{stage}</div>
-      {areasMapOpen && <div className="hidden h-full lg:block">{areasStage}</div>}
+      {/* 영역 탭이 열려 있는 동안만 lg+에서 원래 무대를 가린다. 서랍을 닫으면(프레임의 data-catalog-open)
+          뷰어가 돌아온다. 좁은 화면은 서랍 안의 작은 지도를 쓴다. */}
+      <div className={areasMapOpen ? "h-full lg:in-data-[catalog-open=true]:hidden" : "contents"}>{stage}</div>
+      {areasMapOpen && <div className="hidden h-full lg:in-data-[catalog-open=true]:block">{areasStage}</div>}
     </>
   ) : stage;
   return (

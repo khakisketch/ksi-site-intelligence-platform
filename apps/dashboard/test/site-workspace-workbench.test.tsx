@@ -116,9 +116,14 @@ describe("workspace workbench overlay", () => {
     expect(screen.queryByText("영역 지도 자리")).toBeNull();
     expect(stageWrapper().className).toContain("contents");
     fireEvent.click(screen.getByRole("button", { name: "영역" }));
-    expect(screen.getByText("영역 지도 자리").parentElement!.className).toContain("lg:block");
+    // 지도는 서랍이 열려 있을 때만(프레임의 data-catalog-open=true) lg+에서 보인다. 서랍을 닫으면 뷰어가 돌아와야 하므로
+    // 단순 `lg:block`/`lg:hidden`이면 안 된다(검토에서 확인된 회귀).
+    const mapClass = screen.getByText("영역 지도 자리").parentElement!.className;
+    expect(mapClass).toContain("lg:in-data-[catalog-open=true]:block");
+    expect(mapClass).not.toMatch(/(^|\s)lg:block/);
     expect(screen.getByText("실제 화면")).toBeTruthy();
-    expect(stageWrapper().className).toContain("lg:hidden");
+    expect(stageWrapper().className).toContain("lg:in-data-[catalog-open=true]:hidden");
+    expect(stageWrapper().className).not.toMatch(/(^|\s)lg:hidden/);
     expect(document.getElementById("workspace-visual-a-layer-controls")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "자료" }));
     expect(screen.queryByText("영역 지도 자리")).toBeNull();
